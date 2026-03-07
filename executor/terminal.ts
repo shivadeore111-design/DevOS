@@ -5,7 +5,10 @@
 // of this software is strictly prohibited.
 // ============================================================
 
+import fs from "fs";
+import path from "path";
 import { spawn } from "child_process";
+import { getRuntimeShell } from "./os-adapter";
 
 export interface TerminalResult {
   success: boolean;
@@ -28,7 +31,8 @@ function isBlocked(command: string): boolean {
 
 export async function runTerminal(
   command: string,
-  timeoutMs = 20000
+  timeoutMs = 20000,
+  workspace?: string
 ): Promise<TerminalResult> {
   if (isBlocked(command)) {
     return {
@@ -43,8 +47,17 @@ export async function runTerminal(
   return new Promise((resolve) => {
     const start = Date.now();
 
+    const { shell } = getRuntimeShell();
+    const sandboxCwd = workspace ? path.join(workspace, "sandbox") : undefined;
+    const cwd = workspace
+      ? (path.basename(workspace) === "sandbox"
+        ? workspace
+        : (sandboxCwd && fs.existsSync(sandboxCwd) ? sandboxCwd : workspace))
+      : undefined;
+
     const child = spawn(command, {
-      shell: true,
+      shell,
+      cwd,
     });
 
     let stdout = "";

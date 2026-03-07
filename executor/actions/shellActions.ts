@@ -9,7 +9,10 @@
 // shellActions.ts — DevOS Shell Action Executor
 // ============================================================
 
+import fs from "fs";
+import path from "path";
 import { execa } from "execa";
+import { getRuntimeShell } from "../os-adapter";
 
 const BLOCKED_PATTERNS = [
   "rm -rf /",
@@ -43,9 +46,15 @@ export async function executeShellAction(action: any, workspace: string): Promis
 
   console.log(`[ShellActions] Executing: ${command}`);
 
+  const { shell, flag } = getRuntimeShell();
+  const sandboxCwd = path.join(workspace, "sandbox");
+  const cwd = path.basename(workspace) === "sandbox"
+    ? workspace
+    : (fs.existsSync(sandboxCwd) ? sandboxCwd : workspace);
+
   try {
-    const result = await execa("bash", ["-c", command], {
-      cwd: workspace,
+    const result = await execa(shell, [flag, command], {
+      cwd,
       timeout: 30000,
       reject: false,
     });

@@ -76,7 +76,8 @@ export class Executor {
         case "terminal.run": {
           const result: TerminalResult = await runTerminal(
             action.command,
-            action.timeoutMs
+            action.timeoutMs,
+            workspace
           );
 
           return {
