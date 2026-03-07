@@ -2,4 +2,7 @@ node_modules/
 .env
 generatedApps/
 workspace/
+projects/sandbox/
+core/core.zip
+*.zip
 *.docx
