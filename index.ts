@@ -31,6 +31,7 @@ import { SkillMemory }                         from "./skills/skillMemory";
 import { Observability }                       from "./core/observability";
 import { CapabilityGraph }                     from "./core/capabilityGraph";
 import { PromptEvolver }                       from "./core/promptEvolver";
+import { dashboard }                           from "./dashboard/metrics";
 
 // ── Bootstrap ─────────────────────────────────────────────────
 
@@ -411,11 +412,7 @@ async function handleCLI(): Promise<void> {
 
     // ── devos dashboard ───────────────────────────────────────
     case "dashboard": {
-      Observability.printDashboard();
-      console.log(SkillMemory.report());
-      console.log(TaskPatternMemory.report());
-      console.log(CapabilityGraph.report());
-      console.log(PromptEvolver.report());
+      dashboard.display();
       break;
     }
 
