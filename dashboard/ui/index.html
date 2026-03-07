@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DevOS Control Plane</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet" />
+  <style>
+    body { margin: 0; font-family: 'Inter', system-ui, sans-serif; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #1f2937; }
+    ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
+    .event-item { border-left: 3px solid transparent; }
+    .event-success { border-color: #10b981; }
+    .event-failure { border-color: #ef4444; }
+    .event-running { border-color: #f59e0b; }
+    .event-info    { border-color: #6366f1; }
+    .pulse { animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+    .slide-in { animation: slideIn 0.2s ease-out; }
+    @keyframes slideIn { from{transform:translateY(-8px);opacity:0} to{transform:translateY(0);opacity:1} }
+  </style>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen">
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+// ── Constants ──────────────────────────────────────────────────
+const API = '';  // same origin
+
+// ── Helpers ───────────────────────────────────────────────────
+function fmtTime(ts) {
+  if (!ts) return '';
+  try { return new Date(ts).toLocaleTimeString(); } catch { return ts; }
+}
+function fmtDuration(ms) {
+  if (!ms) return '–';
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms/1000).toFixed(1)}s`;
+}
+function classifyEvent(type) {
+  if (['goal_completed','step_completed','command_executed','agent_completed'].includes(type)) return 'success';
+  if (['goal_failed','step_failed'].includes(type)) return 'failure';
+  if (['step_started','goal_received','agent_spawned'].includes(type)) return 'running';
+  return 'info';
+}
+function eventIcon(type) {
+  const icons = {
+    goal_received: '🎯', plan_created: '📋', step_started: '▶',
+    command_executed: '⚡', step_failed: '❌', repair_attempt: '🔧',
+    step_completed: '✅', goal_completed: '🏆', goal_failed: '💥',
+    agent_spawned: '🤖', agent_completed: '✔', skill_executed: '🔩',
+    memory_updated: '🧠',
+  };
+  return icons[type] || '•';
+}
+function statusColor(status) {
+  const m = { completed:'text-green-400', failed:'text-red-400', running:'text-yellow-400',
+               queued:'text-blue-400', claimed:'text-purple-400', escalated:'text-orange-400' };
+  return m[status] || 'text-gray-400';
+}
+function statusBadge(status) {
+  const m = { completed:'bg-green-900 text-green-300', failed:'bg-red-900 text-red-300',
+               running:'bg-yellow-900 text-yellow-300', queued:'bg-blue-900 text-blue-300',
+               claimed:'bg-purple-900 text-purple-300', escalated:'bg-orange-900 text-orange-300' };
+  return `px-2 py-0.5 rounded text-xs font-medium ${m[status] || 'bg-gray-700 text-gray-300'}`;
+}
+
+// ── useAPI hook ────────────────────────────────────────────────
+function useAPI(endpoint, interval = 0) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const fetchData = useCallback(async () => {
+    try {
+      const r = await fetch(API + endpoint);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      setData(await r.json());
+      setError(null);
+    } catch(e) { setError(e.message); }
+    finally { setLoading(false); }
+  }, [endpoint]);
+  useEffect(() => {
+    fetchData();
+    if (interval > 0) {
+      const id = setInterval(fetchData, interval);
+      return () => clearInterval(id);
+    }
+  }, [fetchData, interval]);
+  return { data, loading, error, refresh: fetchData };
+}
+
+// ── StatCard ──────────────────────────────────────────────────
+function StatCard({ label, value, sub, color = 'text-white' }) {
+  return (
+    <div className="bg-gray-800 rounded-xl p-5 border border-gray-700">
+      <div className="text-gray-400 text-xs uppercase tracking-wider mb-1">{label}</div>
+      <div className={`text-3xl font-bold ${color}`}>{value ?? '–'}</div>
+      {sub && <div className="text-gray-500 text-xs mt-1">{sub}</div>}
+    </div>
+  );
+}
+
+// ── Pages ──────────────────────────────────────────────────────
+
+function DashboardPage() {
+  const { data: health, loading: hLoading } = useAPI('/api/health', 10000);
+  const { data: metrics, loading: mLoading } = useAPI('/api/metrics', 15000);
+  const { data: tasks } = useAPI('/api/tasks', 15000);
+
+  const recentCompleted = (tasks || []).filter(t => t.status === 'completed').slice(0, 5);
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold text-white">Dashboard</h2>
+
+      {/* System Health */}
+      <div className="bg-gray-800 rounded-xl p-5 border border-gray-700">
+        <div className="text-gray-400 text-sm font-medium mb-3 uppercase tracking-wider">System Health</div>
+        {hLoading ? <div className="text-gray-500 text-sm">Checking...</div> : (
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2">
+              <div className={`w-3 h-3 rounded-full ${health?.ollama ? 'bg-green-400' : 'bg-red-400'}`}></div>
+              <span className="text-sm">Ollama {health?.ollama ? 'connected' : 'offline'}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-green-400"></div>
+              <span className="text-sm">DevOS v{health?.version || '4.0.0'}</span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Stats */}
+      {!mLoading && metrics && (
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <StatCard label="Total Tasks" value={metrics.totalTasks} color="text-purple-400" />
+          <StatCard label="Success Rate" value={metrics.successRate} color="text-green-400" />
+          <StatCard label="Avg Duration" value={fmtDuration(metrics.avgDurationMs)} color="text-blue-400" />
+          <StatCard label="Failures" value={metrics.failureCount} color="text-red-400" />
+        </div>
+      )}
+
+      {/* Recent completed goals */}
+      <div className="bg-gray-800 rounded-xl p-5 border border-gray-700">
+        <div className="text-gray-400 text-sm font-medium mb-3 uppercase tracking-wider">Recent Completed Goals</div>
+        {recentCompleted.length === 0
+          ? <div className="text-gray-600 text-sm">No completed tasks yet.</div>
+          : recentCompleted.map(t => (
+            <div key={t.id} className="py-2 border-b border-gray-700 last:border-0">
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-gray-200 truncate max-w-xl">{t.goal}</div>
+                <div className="text-xs text-gray-500 ml-4 flex-shrink-0">{fmtTime(t.completedAt)}</div>
+              </div>
+            </div>
+          ))
+        }
+      </div>
+
+      {/* Top skills */}
+      {metrics?.topSkills?.length > 0 && (
+        <div className="bg-gray-800 rounded-xl p-5 border border-gray-700">
+          <div className="text-gray-400 text-sm font-medium mb-3 uppercase tracking-wider">Top Skills</div>
+          <div className="space-y-2">
+            {metrics.topSkills.map(s => (
+              <div key={s.name} className="flex items-center gap-3">
+                <span className="text-sm text-gray-300 w-40 truncate">{s.name}</span>
+                <div className="flex-1 bg-gray-700 rounded-full h-2">
+                  <div className="bg-purple-500 h-2 rounded-full" style={{ width: `${Math.min(100, s.count * 10)}%` }}></div>
+                </div>
+                <span className="text-xs text-gray-500">{s.count}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TasksPage({ events }) {
+  const [goal, setGoal] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [lastResult, setLastResult] = useState(null);
+  const streamRef = useRef(null);
+
+  const runGoal = async () => {
+    if (!goal.trim()) return;
+    setSubmitting(true);
+    setLastResult(null);
+    try {
+      const r = await fetch(API + '/api/goal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ goal }),
+      });
+      const data = await r.json();
+      setLastResult(data);
+      setGoal('');
+    } catch(e) {
+      setLastResult({ error: e.message });
+    } finally { setSubmitting(false); }
+  };
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold text-white">Mission Control — Live Events</h2>
+
+      {/* Goal Input */}
+      <div className="bg-gray-800 rounded-xl p-5 border border-gray-700">
+        <div className="text-gray-400 text-sm font-medium mb-3 uppercase tracking-wider">Run a Goal</div>
+        <div className="flex gap-3">
+          <input
+            className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+            placeholder='e.g. "Build a REST API for user management"'
+            value={goal}
+            onChange={e => setGoal(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && !submitting && runGoal()}
+          />
+          <button
+            onClick={runGoal}
+            disabled={submitting || !goal.trim()}
+            className="bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors"
+          >
+            {submitting ? '⟳ Running...' : '▶ Run Goal'}
+          </button>
+        </div>
+        {lastResult && (
+          <div className={`mt-2 text-xs px-3 py-1.5 rounded ${lastResult.error ? 'bg-red-900/50 text-red-300' : 'bg-green-900/50 text-green-300'}`}>
+            {lastResult.error ? `Error: ${lastResult.error}` : `✓ Queued — Task ID: ${lastResult.taskId}`}
+          </div>
+        )}
+      </div>
+
+      {/* Live Event Stream */}
+      <div className="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">
+        <div className="px-5 py-3 border-b border-gray-700 flex items-center justify-between">
+          <span className="text-gray-400 text-sm font-medium uppercase tracking-wider">Live Event Stream</span>
+          <span className="flex items-center gap-1.5 text-xs text-green-400">
+            <span className="w-2 h-2 rounded-full bg-green-400 pulse"></span>
+            LIVE
+          </span>
+        </div>
+        <div ref={streamRef} className="overflow-y-auto" style={{ maxHeight: '520px' }}>
+          {events.length === 0
+            ? <div className="text-gray-600 text-sm text-center py-12">Waiting for events...</div>
+            : [...events].reverse().map((ev, i) => {
+                const cls = classifyEvent(ev.type);
+                const colorMap = { success:'border-green-500', failure:'border-red-500', running:'border-yellow-500', info:'border-purple-500' };
+                return (
+                  <div key={i} className={`event-item px-5 py-3 border-b border-gray-700 last:border-0 slide-in ${colorMap[cls]}`}
+                       style={{ borderLeftWidth: '3px', borderLeftStyle: 'solid' }}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-base flex-shrink-0">{eventIcon(ev.type)}</span>
+                        <div className="min-w-0">
+                          <span className={`text-xs font-semibold uppercase tracking-wide ${
+                            cls==='success'?'text-green-400':cls==='failure'?'text-red-400':cls==='running'?'text-yellow-400':'text-purple-400'
+                          }`}>{ev.type.replace(/_/g,' ')}</span>
+                          {ev.taskId && <span className="text-gray-600 text-xs ml-2">#{ev.taskId.slice(0,8)}</span>}
+                          {ev.payload && (
+                            <div className="text-gray-400 text-xs mt-0.5 truncate max-w-xl">
+                              {ev.payload.goal ? `"${ev.payload.goal}"` :
+                               ev.payload.error ? `Error: ${ev.payload.error}` :
+                               ev.payload.action?.type ? `${ev.payload.action.type}` :
+                               JSON.stringify(ev.payload).slice(0,120)}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="text-gray-600 text-xs flex-shrink-0">{fmtTime(ev.timestamp)}</div>
+                    </div>
+                  </div>
+                );
+              })
+          }
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SkillsPage() {
+  const { data: skills, loading } = useAPI('/api/skills', 30000);
+
+  if (loading) return <div className="text-gray-500 text-sm">Loading skills...</div>;
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold text-white">Skills Registry</h2>
+      <div className="text-gray-400 text-sm">{skills?.length || 0} skills registered</div>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
+        {(skills || []).map(skill => (
+          <div key={skill.name} className="bg-gray-800 rounded-xl p-5 border border-gray-700 hover:border-purple-600 transition-colors">
+            <div className="flex items-start justify-between mb-2">
+              <div>
+                <div className="font-semibold text-white text-sm">{skill.name}</div>
+                {skill.category && (
+                  <span className="text-xs text-purple-400 bg-purple-900/40 px-2 py-0.5 rounded mt-1 inline-block">{skill.category}</span>
+                )}
+              </div>
+              {skill.metric && (
+                <div className={`text-xs font-bold ${skill.metric.successRate >= 0.8 ? 'text-green-400' : skill.metric.successRate >= 0.5 ? 'text-yellow-400' : 'text-red-400'}`}>
+                  {(skill.metric.successRate * 100).toFixed(0)}%
+                </div>
+              )}
+            </div>
+            <p className="text-gray-400 text-xs mb-3 line-clamp-2">{skill.description}</p>
+            {skill.metric ? (
+              <div className="flex items-center gap-3 text-xs text-gray-500">
+                <span>Runs: {skill.metric.totalRuns}</span>
+                <span>✓ {skill.metric.successes}</span>
+                <span>✗ {skill.metric.failures}</span>
+                <span>~{fmtDuration(skill.metric.avgDurationMs)}</span>
+              </div>
+            ) : (
+              <div className="text-xs text-gray-600">No executions yet</div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MemoryPage() {
+  const { data: entries, loading } = useAPI('/api/memory', 30000);
+
+  if (loading) return <div className="text-gray-500 text-sm">Loading memory...</div>;
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold text-white">Memory Store</h2>
+      <div className="text-gray-400 text-sm">{entries?.length || 0} recent entries</div>
+      <div className="space-y-3">
+        {(entries || []).length === 0
+          ? <div className="text-gray-600 text-sm bg-gray-800 rounded-xl p-5 border border-gray-700 text-center">No memory entries yet.</div>
+          : (entries || []).map(entry => (
+            <div key={entry.id} className="bg-gray-800 rounded-xl p-5 border border-gray-700 hover:border-gray-600 transition-colors">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm text-gray-200 mb-1 line-clamp-2">{entry.text}</div>
+                  {entry.tags?.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {entry.tags.map(tag => (
+                        <span key={tag} className="text-xs bg-gray-700 text-gray-400 px-2 py-0.5 rounded">{tag}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <div className="text-xs text-gray-600">{fmtTime(entry.createdAt)}</div>
+                  <div className="text-xs text-gray-600 font-mono mt-1">{entry.id?.slice(0,12)}...</div>
+                </div>
+              </div>
+            </div>
+          ))
+        }
+      </div>
+    </div>
+  );
+}
+
+function MissionControlPage() {
+  const { data: tasks } = useAPI('/api/tasks', 5000);
+  const activeAgents = (tasks || []).filter(t => t.status === 'running' || t.status === 'claimed');
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold text-white">Mission Control</h2>
+
+      {/* Active Agents */}
+      <div className="bg-gray-800 rounded-xl p-5 border border-gray-700">
+        <div className="text-gray-400 text-sm font-medium mb-4 uppercase tracking-wider">
+          Active Agents ({activeAgents.length})
+        </div>
+        {activeAgents.length === 0
+          ? <div className="text-gray-600 text-sm">No active agents.</div>
+          : activeAgents.map(t => (
+            <div key={t.id} className="flex items-center gap-3 py-2 border-b border-gray-700 last:border-0">
+              <div className="w-2 h-2 rounded-full bg-yellow-400 pulse"></div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm text-gray-200 truncate">{t.goal}</div>
+                <div className="text-xs text-gray-500">{t.claimedBy || 'unknown agent'}</div>
+              </div>
+              <span className={statusBadge(t.status)}>{t.status}</span>
+            </div>
+          ))
+        }
+      </div>
+
+      {/* Company Mode placeholder */}
+      <div className="bg-gray-800 rounded-xl p-8 border border-purple-900/50 text-center">
+        <div className="text-4xl mb-4">🏢</div>
+        <div className="text-purple-400 text-lg font-semibold mb-2">Company Mode</div>
+        <div className="text-gray-500 text-sm">Coming in DevOS v4.1</div>
+        <div className="text-gray-600 text-xs mt-2">Multi-agent orchestration, department routing, autonomous org chart</div>
+      </div>
+    </div>
+  );
+}
+
+// ── Sidebar ────────────────────────────────────────────────────
+const NAV = [
+  { id: 'dashboard', icon: '⬡', label: 'Dashboard' },
+  { id: 'tasks',     icon: '⚡', label: 'Tasks' },
+  { id: 'skills',    icon: '🔩', label: 'Skills' },
+  { id: 'memory',    icon: '🧠', label: 'Memory' },
+  { id: 'mission',   icon: '🎯', label: 'Mission Control' },
+];
+
+// ── WebSocket hook ─────────────────────────────────────────────
+function useWebSocket() {
+  const [events, setEvents] = useState([]);
+  const [wsStatus, setWsStatus] = useState('connecting');
+  const wsRef = useRef(null);
+  const reconnectTimer = useRef(null);
+
+  const connect = useCallback(() => {
+    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const ws = new WebSocket(`${proto}://${window.location.host}`);
+    wsRef.current = ws;
+    setWsStatus('connecting');
+
+    ws.onopen = () => setWsStatus('connected');
+    ws.onclose = () => {
+      setWsStatus('disconnected');
+      reconnectTimer.current = setTimeout(connect, 3000);
+    };
+    ws.onerror = () => setWsStatus('error');
+    ws.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.type === 'replay' && Array.isArray(data.events)) {
+          setEvents(prev => [...prev, ...data.events].slice(-200));
+        } else {
+          setEvents(prev => [...prev, data].slice(-200));
+        }
+      } catch {}
+    };
+  }, []);
+
+  useEffect(() => {
+    connect();
+    return () => {
+      clearTimeout(reconnectTimer.current);
+      wsRef.current?.close();
+    };
+  }, [connect]);
+
+  return { events, wsStatus };
+}
+
+// ── App ────────────────────────────────────────────────────────
+function App() {
+  const [page, setPage] = useState('dashboard');
+  const { events, wsStatus } = useWebSocket();
+
+  const wsColor = { connected: 'text-green-400', connecting: 'text-yellow-400', disconnected: 'text-red-400', error: 'text-red-400' };
+
+  return (
+    <div className="flex h-screen bg-gray-900 overflow-hidden">
+      {/* Sidebar */}
+      <aside className="w-56 bg-gray-950 border-r border-gray-800 flex flex-col flex-shrink-0">
+        {/* Logo */}
+        <div className="px-5 py-5 border-b border-gray-800">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-purple-600 rounded-lg flex items-center justify-center text-white font-bold text-sm">D</div>
+            <div>
+              <div className="text-white font-bold text-sm leading-tight">DevOS</div>
+              <div className="text-gray-600 text-xs">Control Plane v4</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Nav */}
+        <nav className="flex-1 px-3 py-4 space-y-1">
+          {NAV.map(item => (
+            <button
+              key={item.id}
+              onClick={() => setPage(item.id)}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                page === item.id
+                  ? 'bg-purple-600/20 text-purple-300 font-medium'
+                  : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
+              }`}
+            >
+              <span className="text-base">{item.icon}</span>
+              {item.label}
+            </button>
+          ))}
+        </nav>
+
+        {/* WS Status */}
+        <div className="px-5 py-4 border-t border-gray-800">
+          <div className={`flex items-center gap-2 text-xs ${wsColor[wsStatus] || 'text-gray-500'}`}>
+            <span className={`w-2 h-2 rounded-full ${wsStatus === 'connected' ? 'bg-green-400 pulse' : 'bg-red-400'}`}></span>
+            WebSocket {wsStatus}
+          </div>
+          <div className="text-gray-700 text-xs mt-1">{events.length} events received</div>
+        </div>
+      </aside>
+
+      {/* Main content */}
+      <main className="flex-1 overflow-y-auto">
+        <div className="max-w-5xl mx-auto px-6 py-6">
+          {page === 'dashboard' && <DashboardPage />}
+          {page === 'tasks'     && <TasksPage events={events} />}
+          {page === 'skills'    && <SkillsPage />}
+          {page === 'memory'    && <MemoryPage />}
+          {page === 'mission'   && <MissionControlPage />}
+        </div>
+      </main>
+    </div>
+  );
+}
+
+ReactDOM.render(<App />, document.getElementById('root'));
+</script>
+</body>
+</html>

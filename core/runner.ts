@@ -13,6 +13,7 @@
 import { DevOSTask } from "./task";
 import { taskStore } from "./taskStore";
 import { taskQueue } from "./taskQueue";
+import { eventBus }  from "../dashboard/events";
 
 export interface ExecutionEngine {
   execute(plan: any): Promise<{ success: boolean; output?: any; error?: string }>;
@@ -42,6 +43,15 @@ export class Runner {
     console.log(`\n[Runner:${this.agentId}] CLI — "${goal}"`);
 
     const task = taskQueue.create({ goal, priority: "high", plan });
+
+    // Emit goal_received
+    eventBus.emit({
+      type:      "goal_received",
+      taskId:    task.id,
+      agentId:   this.agentId,
+      payload:   { goal, plan },
+      timestamp: new Date().toISOString(),
+    });
 
     // Allow the task store's persist() to flush before claiming.
     await this.sleep(150);
@@ -100,12 +110,36 @@ export class Runner {
 
     try {
       const plan   = task.plan ?? { summary: task.goal, actions: [] };
+
+      // Emit plan_created
+      eventBus.emit({
+        type:      "plan_created",
+        taskId:    task.id,
+        agentId:   this.agentId,
+        payload:   { plan },
+        timestamp: new Date().toISOString(),
+      });
+
       const result = await this.engine.execute(plan);
 
       if (result.success) {
         taskQueue.complete(task.id, result.output);
+        eventBus.emit({
+          type:      "goal_completed",
+          taskId:    task.id,
+          agentId:   this.agentId,
+          payload:   { goal: task.goal, output: result.output },
+          timestamp: new Date().toISOString(),
+        });
       } else {
         taskQueue.fail(task.id, result.error ?? "Engine returned failure.", "Engine indicated failure");
+        eventBus.emit({
+          type:      "goal_failed",
+          taskId:    task.id,
+          agentId:   this.agentId,
+          payload:   { goal: task.goal, error: result.error },
+          timestamp: new Date().toISOString(),
+        });
         const latest = taskStore.get(task.id);
         if (latest?.status === "failed") {
           taskQueue.escalate(task.id, "critical", `Retries exhausted: ${result.error}`);
@@ -115,6 +149,13 @@ export class Runner {
       const msg = err?.message ?? String(err);
       console.error(`[Runner:${this.agentId}] Exception on ${task.id}: ${msg}`);
       taskQueue.fail(task.id, msg, "Unhandled exception");
+      eventBus.emit({
+        type:      "goal_failed",
+        taskId:    task.id,
+        agentId:   this.agentId,
+        payload:   { goal: task.goal, error: msg },
+        timestamp: new Date().toISOString(),
+      });
       const latest = taskStore.get(task.id);
       if (latest?.status === "failed") {
         taskQueue.escalate(task.id, "critical", `Exception: ${msg}`);

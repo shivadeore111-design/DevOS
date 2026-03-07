@@ -15,6 +15,7 @@ import { executeShellAction }  from "./actions/shellActions";
 import { executeWebAction }    from "./actions/webActions";
 import { llmCall }             from "../llm/router";
 import { OpenClawAdapter }     from "../openclaw/openclaw-adapter";
+import { eventBus }            from "../dashboard/events";
 
 export interface EngineResult {
   success: boolean;
@@ -56,9 +57,21 @@ export class DevOSEngine {
       const route = this.decision.decide(action, plan.complexity);
       console.log(`[Engine] Decision: ${route}`);
 
+      // ── Emit step_started ─────────────────────────────────
+      eventBus.emit({
+        type:    "step_started",
+        payload: { step: i + 1, total: plan.actions.length, action, route },
+        timestamp: new Date().toISOString(),
+      });
+
       if (route === "blocked") {
         console.error(`[Engine] Action blocked: ${action.command ?? action.type}`);
         results.push({ action, blocked: true });
+        eventBus.emit({
+          type:    "step_failed",
+          payload: { step: i + 1, action, reason: "blocked" },
+          timestamp: new Date().toISOString(),
+        });
         continue;
       }
 
@@ -104,8 +117,21 @@ export class DevOSEngine {
 
       if (!result.success) {
         console.error(`[Engine] Action failed: ${result.error}`);
+        eventBus.emit({
+          type:    "step_failed",
+          payload: { step: i + 1, action, error: result.error },
+          timestamp: new Date().toISOString(),
+        });
         return { success: false, error: result.error, output: results };
       }
+
+      // ── Emit step_completed / command_executed ─────────────
+      const emitType = action.type === "shell_exec" ? "command_executed" : "step_completed";
+      eventBus.emit({
+        type:    emitType,
+        payload: { step: i + 1, action, output: result.output },
+        timestamp: new Date().toISOString(),
+      });
     }
 
     console.log(`\n[Engine] ✅ All ${plan.actions.length} actions completed.`);

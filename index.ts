@@ -410,6 +410,17 @@ async function handleCLI(): Promise<void> {
       break;
     }
 
+    // ── devos serve ───────────────────────────────────────────
+    case "serve": {
+      const { dashboardServer } = await import("./dashboard/server");
+      await dashboardServer.start();
+      console.log("🖥  DevOS Control Plane running at http://localhost:3333");
+      console.log("   Press Ctrl+C to stop");
+      process.on("SIGINT",  () => { dashboardServer.stop(); process.exit(0); });
+      process.on("SIGTERM", () => { dashboardServer.stop(); process.exit(0); });
+      break;
+    }
+
     // ── devos dashboard ───────────────────────────────────────
     case "dashboard": {
       dashboard.display();
@@ -464,6 +475,7 @@ Business Modes:
 Utilities:
   doctor               Check system health + config
   test                 Run built-in test suite
+  serve                Start Control Plane UI at http://localhost:3333
   dashboard            Show agent scores, task stats, skill usage
   capabilities <goal>  Analyze what capabilities a goal needs
 

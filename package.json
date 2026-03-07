@@ -16,16 +16,19 @@
   },
   "dependencies": {
     "axios": "^1.13.5",
+    "cors": "^2.8.5",
     "dotenv": "^17.3.1",
     "execa": "^8.0.1",
-    "uuid": "^9.0.0"
+    "express": "^4.18.2",
+    "uuid": "^9.0.0",
+    "ws": "^8.16.0"
   },
   "devDependencies": {
     "@types/node": "^25.3.0",
     "@types/uuid": "^9.0.0",
+    "@vitest/ui": "^1.6.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3",
-    "vitest": "^1.6.0",
-    "@vitest/ui": "^1.6.0"
+    "vitest": "^1.6.0"
   }
 }
