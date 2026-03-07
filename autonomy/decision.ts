@@ -19,9 +19,12 @@ export interface Action {
 }
 
 export interface Plan {
-  summary: string;
-  complexity?: string;
-  actions: Action[];
+  summary:                string;
+  complexity?:            string;
+  actions:                Action[];
+  delegateTo?:            "openclaw" | "executor";
+  requiredCapabilities?:  string[];
+  missingCapabilities?:   string[];
 }
 
 export type Decision = "executor" | "openclaw" | "block";

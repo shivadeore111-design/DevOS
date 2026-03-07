@@ -5,6 +5,7 @@
 // of this software is strictly prohibited.
 // ============================================================
 
+// @ts-ignore — playwright must be installed separately: npm install playwright
 import { chromium, Browser, Page, BrowserContext } from "playwright";
 
 export class BrowserManager {

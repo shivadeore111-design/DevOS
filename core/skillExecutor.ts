@@ -126,3 +126,34 @@ export function editFile(
   fs.writeFileSync(filePath, content);
   logExecution(`EDIT FILE: ${filePath}`);
 }
+
+// ── SkillExecutor class (used by agentLoop, executionController) ──
+
+/**
+ * Class-based wrapper so legacy consumers that do `new SkillExecutor()`
+ * keep working while the underlying logic stays in the free functions above.
+ */
+export class SkillExecutor {
+  private cwd: string;
+
+  constructor(cwd: string = process.cwd()) {
+    this.cwd = cwd;
+  }
+
+  async execute(skill: string, args: Record<string, unknown> = {}): Promise<unknown> {
+    const command = typeof args.command === "string" ? args.command : skill;
+    return runCommand(command, "low", this.cwd);
+  }
+
+  async run(command: string, risk: "low" | "medium" | "high" = "low"): Promise<string> {
+    return runCommand(command, risk, this.cwd);
+  }
+
+  write(filePath: string, content: string, risk: "low" | "medium" | "high" = "low"): void {
+    createFile(filePath, content, risk);
+  }
+
+  edit(filePath: string, content: string, risk: "low" | "medium" | "high" = "low"): void {
+    editFile(filePath, content, risk);
+  }
+}

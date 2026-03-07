@@ -43,9 +43,20 @@ export class Runner {
 
     const task = taskQueue.create({ goal, priority: "high", plan });
 
-    const claimed = taskStore.claimNext(this.agentId);
-    if (!claimed || claimed.id !== task.id) {
-      throw new Error(`[Runner] Failed to claim task ${task.id}`);
+    // Allow the task store's persist() to flush before claiming.
+    await this.sleep(150);
+
+    // Retry claim up to 3 times with 100 ms between attempts.
+    let claimed: DevOSTask | undefined;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      claimed = taskStore.claim(task.id, this.agentId);
+      if (claimed) break;
+      console.warn(`[Runner:${this.agentId}] Claim attempt ${attempt}/3 failed for ${task.id} — retrying…`);
+      await this.sleep(100);
+    }
+
+    if (!claimed) {
+      throw new Error(`[Runner] Failed to claim task ${task.id} after 3 attempts`);
     }
 
     await this.executeTask(claimed);

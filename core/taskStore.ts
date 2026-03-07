@@ -60,6 +60,28 @@ export class TaskStore {
   }
 
   /**
+   * Directly claim a specific task by ID if its status is `queued`.
+   * Allows the runner to claim its just-created task without racing
+   * against other queued tasks.
+   */
+  claim(taskId: string, agentId: string): DevOSTask | undefined {
+    const task = this.tasks.get(taskId);
+    if (!task || task.status !== "queued") return undefined;
+
+    task.status    = "claimed";
+    task.claimedBy = agentId;
+    task.claimedAt = new Date().toISOString();
+    task.logs.push({
+      timestamp: new Date().toISOString(),
+      level: "info",
+      message: `Claimed by agent ${agentId}`,
+    });
+
+    this.save(task);
+    return task;
+  }
+
+  /**
    * Atomically claim the next eligible queued task.
    * AND-logic: all blockedBy deps must be completed first.
    * Priority order: critical > high > normal > low

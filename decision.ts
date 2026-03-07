@@ -13,6 +13,34 @@
 import fs   from "fs";
 import path from "path";
 
+// ── Exported types (used by autonomy/complexity-scorer.ts) ────
+
+export type ActionType =
+  | "file_write" | "file_append" | "file_read"
+  | "shell_exec" | "web_fetch"  | "web_search"
+  | "llm_task"   | "system_task";
+
+export interface Action {
+  type:        ActionType;
+  description?: string;
+  path?:       string;
+  content?:    string;
+  command?:    string;
+  url?:        string;
+  query?:      string;
+  prompt?:     string;
+  risk?:       "low" | "medium" | "high";
+}
+
+export interface Plan {
+  summary:             string;
+  complexity:          "low" | "medium" | "high";
+  actions:             Action[];
+  delegateTo?:         "openclaw" | "executor";  // routing hint
+  requiredCapabilities?: string[];
+  missingCapabilities?:  string[];
+}
+
 type DecisionResult = "executor" | "openclaw" | "blocked";
 
 export class DecisionLayer {

@@ -5,6 +5,7 @@
 // of this software is strictly prohibited.
 // ============================================================
 
+// @ts-ignore — @openclaw/core is not installed; stub for future use
 import { OpenClaw } from "@openclaw/core";
 
 export class OpenClawClient {

@@ -69,5 +69,5 @@ export async function runAutonomousGoal(goal: string) {
     }
   }
 
-  await executeWithIntelligence(goal, stageMap, {});
+  await executeWithIntelligence(stageMap, goal);
 }

@@ -11,7 +11,7 @@ import { loadMemory, saveMemory } from "../core/memory";
 export async function runHealthCheckSkill(projectRoot: string) {
   console.log("🧩 Running Deployment Health Check...");
 
-  const memory = loadMemory(projectRoot);
+  const memory = loadMemory();
 
   if (!memory.lastDeploymentUrl) {
     console.log("⚠ No deployment URL found in memory.");
@@ -33,13 +33,13 @@ export async function runHealthCheckSkill(projectRoot: string) {
           memory.lastError = `Health check failed with status ${status}`;
         }
 
-        saveMemory(projectRoot, memory);
+        saveMemory(memory);
         resolve();
       })
       .on("error", (err) => {
         console.log("🚨 Health check failed:", err.message);
         memory.lastError = err.message;
-        saveMemory(projectRoot, memory);
+        saveMemory(memory);
         resolve();
       });
   });

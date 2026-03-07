@@ -65,6 +65,7 @@ function loadGraph(): Record<string, Capability> {
 
   // Seed with DevOS built-in capabilities
   return {
+    // ── Core built-ins ────────────────────────────────────────
     "file_read":    { id: "file_read",    name: "file_read",    description: "Read files from disk",         category: "file",  available: true,  usageCount: 0 },
     "file_write":   { id: "file_write",   name: "file_write",   description: "Write files to disk",          category: "file",  available: true,  usageCount: 0 },
     "shell_exec":   { id: "shell_exec",   name: "shell_exec",   description: "Execute shell commands",       category: "shell", available: true,  usageCount: 0 },
@@ -73,6 +74,33 @@ function loadGraph(): Record<string, Capability> {
     "llm_task":     { id: "llm_task",     name: "llm_task",     description: "Run LLM reasoning/generation", category: "llm",   available: true,  usageCount: 0 },
     "git_push":     { id: "git_push",     name: "git_push",     description: "Push code to git",             category: "shell", available: true,  usageCount: 0 },
     "browser":      { id: "browser",      name: "browser",      description: "Control browser automation",   category: "web",   available: true,  usageCount: 0 },
+
+    // ── system_design ─────────────────────────────────────────
+    "system_design":        { id: "system_design",        name: "system_design",        description: "Design complete system architectures",       category: "skill", available: true,  skillFile: "skills/architecture/systemArchitect.ts",    usageCount: 0 },
+    "api_design":           { id: "api_design",           name: "api_design",           description: "Design REST/GraphQL APIs with schemas",      category: "skill", available: true,  skillFile: "skills/architecture/apiDesigner.ts",        usageCount: 0 },
+    "database_design":      { id: "database_design",      name: "database_design",      description: "Design database schemas with migration SQL", category: "skill", available: true,  skillFile: "skills/architecture/databaseDesigner.ts",   usageCount: 0 },
+    "scalability_planning": { id: "scalability_planning", name: "scalability_planning", description: "Plan caching, queues, and load balancing",   category: "skill", available: true,  skillFile: "skills/architecture/scalabilityPlanner.ts", usageCount: 0 },
+
+    // ── planning ──────────────────────────────────────────────
+    "planning":             { id: "planning",             name: "planning",             description: "Convert goals into ordered execution plans", category: "skill", available: true,  skillFile: "skills/planning/taskPlanner.ts",            usageCount: 0 },
+    "project_scaffolding":  { id: "project_scaffolding",  name: "project_scaffolding",  description: "Scaffold full project structures",           category: "skill", available: true,  skillFile: "skills/planning/projectScaffolder.ts",     usageCount: 0 },
+
+    // ── coding ────────────────────────────────────────────────
+    "coding":               { id: "coding",               name: "coding",               description: "Generate and write feature implementations", category: "skill", available: true,  skillFile: "skills/coding/featureBuilder.ts",           usageCount: 0 },
+    "code_quality":         { id: "code_quality",         name: "code_quality",         description: "Enforce clean code and detect issues",       category: "skill", available: true,  skillFile: "skills/coding/cleanCodeEnforcer.ts",        usageCount: 0 },
+    "typescript_improvement":{ id: "typescript_improvement",name: "typescript_improvement",description: "Improve TypeScript types and safety",     category: "skill", available: true,  skillFile: "skills/coding/typescriptExpert.ts",         usageCount: 0 },
+    "dependency_management":{ id: "dependency_management", name: "dependency_management",description: "Install, upgrade, and resolve npm deps",    category: "skill", available: true,  skillFile: "skills/coding/dependencyManager.ts",        usageCount: 0 },
+
+    // ── devops ────────────────────────────────────────────────
+    "devops":               { id: "devops",               name: "devops",               description: "Deploy and manage infrastructure",           category: "skill", available: false, skillFile: "skills/devops/deploymentEngineer.ts",       usageCount: 0 },
+    "ci_build":             { id: "ci_build",             name: "ci_build",             description: "Build and run CI pipelines",                 category: "skill", available: false, skillFile: "skills/devops/ciBuilder.ts",                usageCount: 0 },
+
+    // ── security ──────────────────────────────────────────────
+    "security_audit":       { id: "security_audit",       name: "security_audit",       description: "Audit code for security vulnerabilities",    category: "skill", available: false, skillFile: "skills/security/securityAudit.ts",          usageCount: 0 },
+    "dependency_audit":     { id: "dependency_audit",     name: "dependency_audit",     description: "Audit dependencies for CVEs",               category: "skill", available: false, skillFile: "skills/security/dependencyAudit.ts",        usageCount: 0 },
+
+    // ── performance ───────────────────────────────────────────
+    "cost_optimization":    { id: "cost_optimization",    name: "cost_optimization",    description: "Identify unnecessary cost drivers",          category: "skill", available: true,  skillFile: "skills/performance/costOptimizer.ts",       usageCount: 0 },
   };
 }
 

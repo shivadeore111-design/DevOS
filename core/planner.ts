@@ -42,6 +42,9 @@ Rules:
 - For complex tasks, break into multiple small actions
 - Never include secrets or credentials in plans`;
 
+/** Alias kept for legacy imports: `import { planGoal } from "./planner"` */
+export const planGoal = (goal: string) => generatePlan(goal);
+
 export async function generatePlan(goal: string): Promise<any> {
   console.log(`[Planner] Generating plan for: "${goal}"`);
 
