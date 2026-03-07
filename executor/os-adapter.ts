@@ -7,6 +7,11 @@
 
 import os from "os";
 
+export interface RuntimeShell {
+  shell: string;
+  flag: string;
+}
+
 // ─────────────────────────────────────────────
 // PLATFORM
 // ─────────────────────────────────────────────
@@ -18,6 +23,14 @@ export function detectPlatform(): Platform {
 }
 
 export const CURRENT_PLATFORM: Platform = detectPlatform();
+
+export function getRuntimeShell(): RuntimeShell {
+  const isWindows = os.platform() === "win32";
+  return {
+    shell: isWindows ? "cmd.exe" : "/bin/bash",
+    flag: isWindows ? "/c" : "-c",
+  };
+}
 
 // ─────────────────────────────────────────────
 // ADAPT RESULT TYPE
