@@ -1,0 +1,90 @@
+// ============================================================
+// DevOS — Autonomous AI Execution System
+// Copyright (c) 2026 Shiva Deore. All rights reserved.
+// Unauthorized copying, distribution, or modification
+// of this software is strictly prohibited.
+// ============================================================
+
+import { spawn } from "child_process";
+
+export interface TerminalResult {
+  success: boolean;
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  durationMs: number;
+}
+
+const BLOCKED_PATTERNS = [
+  /rm\s+-rf\s+\//i,
+  /shutdown/i,
+  /format/i,
+  /del\s+\/f\s+\/s\s+\/q/i,
+];
+
+function isBlocked(command: string): boolean {
+  return BLOCKED_PATTERNS.some((pattern) => pattern.test(command));
+}
+
+export async function runTerminal(
+  command: string,
+  timeoutMs = 20000
+): Promise<TerminalResult> {
+  if (isBlocked(command)) {
+    return {
+      success: false,
+      exitCode: -1,
+      stdout: "",
+      stderr: "Blocked dangerous command.",
+      durationMs: 0,
+    };
+  }
+
+  return new Promise((resolve) => {
+    const start = Date.now();
+
+    const child = spawn(command, {
+      shell: true,
+    });
+
+    let stdout = "";
+    let stderr = "";
+    let finished = false;
+
+    const timer = setTimeout(() => {
+      if (!finished) {
+        child.kill("SIGKILL");
+        finished = true;
+        resolve({
+          success: false,
+          exitCode: -1,
+          stdout,
+          stderr: "Process timed out.",
+          durationMs: Date.now() - start,
+        });
+      }
+    }, timeoutMs);
+
+    child.stdout.on("data", (data) => {
+      stdout += data.toString();
+    });
+
+    child.stderr.on("data", (data) => {
+      stderr += data.toString();
+    });
+
+    child.on("close", (code) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+
+      resolve({
+        success: code === 0,
+        exitCode: code ?? -1,
+        stdout,
+        stderr,
+        durationMs: Date.now() - start,
+      });
+    });
+  });
+}

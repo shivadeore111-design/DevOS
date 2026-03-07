@@ -1,0 +1,384 @@
+{
+  "entries": [
+    {
+      "topic": "Exploring cross-domain applications of autonomous AI systems in emerging industries",
+      "summary": "Extraction failed",
+      "coreConcepts": [],
+      "toolsMentioned": [],
+      "domains": [],
+      "opportunities": [],
+      "risks": [],
+      "implementationIdeas": [],
+      "confidenceScore": 5,
+      "timestamp": "2026-02-21T17:03:46.925Z"
+    },
+    {
+      "topic": "Exploring cross-domain applications of autonomous AI systems in emerging industries",
+      "summary": "Autonomous AI systems are revolutionizing industries worldwide by applying their capabilities across various domains, including emerging sectors.",
+      "coreConcepts": [
+        {
+          "name": "Artificial Intelligence",
+          "description": "AI's ability to learn and make decisions autonomously"
+        },
+        {
+          "name": "Autonomous Systems",
+          "description": "Systems that operate independently without human intervention"
+        }
+      ],
+      "toolsMentioned": [],
+      "domains": [
+        {
+          "name": "Emerging Industries",
+          "description": "New sectors such as healthcare, finance, and education"
+        },
+        {
+          "name": "Cross-Domain Applications",
+          "description": "AI systems applying their capabilities across multiple domains"
+        }
+      ],
+      "opportunities": [
+        {
+          "name": "Increased Efficiency",
+          "description": "Autonomous AI systems can automate tasks, reducing human error and increasing productivity"
+        },
+        {
+          "name": "Improved Decision-Making",
+          "description": "AI's ability to analyze large datasets and make data-driven decisions"
+        }
+      ],
+      "risks": [
+        {
+          "name": "Job Displacement",
+          "description": "The potential for autonomous AI systems to replace human jobs"
+        },
+        {
+          "name": "Data Security",
+          "description": "The risk of sensitive data being compromised or misused by AI systems"
+        }
+      ],
+      "implementationIdeas": [
+        {
+          "name": "Pilot Projects",
+          "description": "Starting small-scale projects to test and refine AI applications in emerging industries"
+        },
+        {
+          "name": "Collaboration with Experts",
+          "description": "Working closely with domain experts to develop tailored AI solutions"
+        }
+      ],
+      "confidenceScore": 9,
+      "timestamp": "2026-02-21T17:15:43.136Z"
+    },
+    {
+      "topic": "Uncovering Human-AI Collaboration Patterns in Creative Industries: A Study on Co-Creation and Innovation",
+      "summary": "Uncovering Human-AI Collaboration Patterns in Creative Industries: A Study on Co-Creation and Innovation",
+      "coreConcepts": [
+        {
+          "name": "Human-AI collaboration",
+          "description": ""
+        },
+        {
+          "name": "Co-creation",
+          "description": ""
+        },
+        {
+          "name": "Innovation",
+          "description": ""
+        }
+      ],
+      "toolsMentioned": [],
+      "domains": [
+        {
+          "name": "Creative industries",
+          "description": ""
+        }
+      ],
+      "opportunities": [
+        {
+          "name": "Exploring creativity in human-AI co-creation",
+          "description": ""
+        },
+        {
+          "name": "Uncovering collaboration patterns",
+          "description": ""
+        }
+      ],
+      "risks": [],
+      "implementationIdeas": [
+        {
+          "name": "Comparative study on human-AI co-creation",
+          "description": ""
+        },
+        {
+          "name": "Case study on human-AI collaboration",
+          "description": ""
+        }
+      ],
+      "confidenceScore": 9,
+      "timestamp": "2026-02-21T17:37:15.342Z"
+    },
+    {
+      "topic": "Unraveling the Synergies: Exploring AI-Generated Soundscapes in Electronic Music Production",
+      "summary": "Exploring AI-generated soundscapes in electronic music production",
+      "coreConcepts": [
+        {
+          "name": "AI-generated soundscapes",
+          "description": ""
+        },
+        {
+          "name": "electronic music production",
+          "description": ""
+        }
+      ],
+      "toolsMentioned": [],
+      "domains": [
+        {
+          "name": "music",
+          "description": ""
+        },
+        {
+          "name": "artificial intelligence",
+          "description": ""
+        }
+      ],
+      "opportunities": [
+        {
+          "name": "reshaping digital content production",
+          "description": ""
+        },
+        {
+          "name": "evolution and impact of AI in music",
+          "description": ""
+        }
+      ],
+      "risks": [],
+      "implementationIdeas": [],
+      "confidenceScore": 9,
+      "timestamp": "2026-02-21T17:39:03.457Z"
+    },
+    {
+      "topic": "Emotional Resonance in AI-Generated Soundscapes: A Study on Empathy, Musicality, and Human-AI Co-Creation",
+      "summary": "Emotional resonance in AI-generated soundscapes: A study on empathy, musicality, and human-AI co-creation",
+      "coreConcepts": [
+        {
+          "name": "Emotional Resonance",
+          "description": ""
+        },
+        {
+          "name": "AI-Generated Soundscapes",
+          "description": ""
+        },
+        {
+          "name": "Empathy",
+          "description": ""
+        },
+        {
+          "name": "Musicality",
+          "description": ""
+        },
+        {
+          "name": "Human-AI Co-Creation",
+          "description": ""
+        }
+      ],
+      "toolsMentioned": [],
+      "domains": [
+        {
+          "name": "Music Technology",
+          "description": ""
+        },
+        {
+          "name": "Artificial Intelligence",
+          "description": ""
+        }
+      ],
+      "opportunities": [
+        {
+          "name": "Improved emotional connection through AI-generated soundscapes",
+          "description": ""
+        },
+        {
+          "name": "Enhanced musicality and creativity through human-AI collaboration",
+          "description": ""
+        }
+      ],
+      "risks": [],
+      "implementationIdeas": [],
+      "confidenceScore": 9,
+      "timestamp": "2026-02-21T17:59:31.907Z"
+    },
+    {
+      "topic": "Efficient PDF Ingestion and Parsing Techniques for Autonomous Systems: A Study on Optimizing Document Understanding Capabilities",
+      "summary": "Efficient PDF Ingestion and Parsing Techniques for Autonomous Systems",
+      "coreConcepts": [
+        {
+          "name": "PDF Ingestion",
+          "description": ""
+        },
+        {
+          "name": "Parsing",
+          "description": ""
+        },
+        {
+          "name": "Autonomous Systems",
+          "description": ""
+        }
+      ],
+      "toolsMentioned": [
+        {
+          "name": "Large Language Models (LLM)",
+          "description": ""
+        }
+      ],
+      "domains": [
+        {
+          "name": "Artificial Intelligence",
+          "description": ""
+        },
+        {
+          "name": "Natural Language Processing",
+          "description": ""
+        }
+      ],
+      "opportunities": [
+        {
+          "name": "Optimizing Document Understanding Capabilities",
+          "description": ""
+        }
+      ],
+      "risks": [],
+      "implementationIdeas": [
+        {
+          "name": "Advanced ingestion process powered by LLM parsing",
+          "description": ""
+        }
+      ],
+      "confidenceScore": 9,
+      "timestamp": "2026-02-21T18:07:20.135Z"
+    },
+    {
+      "topic": "Efficient Vector Retrieval via Graph-Based Indexing and Query Optimization for Large-Scale Document Collections",
+      "summary": "Efficient Vector Retrieval via Graph-Based Indexing and Query Optimization for Large-Scale Document Collections",
+      "coreConcepts": [
+        {
+          "name": "Vector Retrieval",
+          "description": ""
+        },
+        {
+          "name": "Graph-Based Indexing",
+          "description": ""
+        },
+        {
+          "name": "Query Optimization",
+          "description": ""
+        }
+      ],
+      "toolsMentioned": [],
+      "domains": [
+        {
+          "name": "Information Retrieval",
+          "description": ""
+        },
+        {
+          "name": "Natural Language Processing",
+          "description": ""
+        }
+      ],
+      "opportunities": [
+        {
+          "name": "Improved search efficiency for large-scale document collections",
+          "description": ""
+        },
+        {
+          "name": "Enhanced query processing capabilities",
+          "description": ""
+        }
+      ],
+      "risks": [
+        {
+          "name": "Potential complexity in graph-based indexing and query optimization",
+          "description": ""
+        },
+        {
+          "name": "Need for careful tuning of parameters for optimal performance",
+          "description": ""
+        }
+      ],
+      "implementationIdeas": [
+        {
+          "name": "Use a combination of graph-based indexing and traditional indexing techniques",
+          "description": ""
+        },
+        {
+          "name": "Develop custom query optimization algorithms for specific use cases",
+          "description": ""
+        }
+      ],
+      "confidenceScore": 9,
+      "timestamp": "2026-02-21T19:01:00.725Z"
+    },
+    {
+      "topic": "Efficient Vector Retrieval via Graph-Based Indexing and Query Optimization for Enhanced Information Access",
+      "summary": "Efficient Vector Retrieval via Graph-Based Indexing and Query Optimization for Enhanced Information Access",
+      "coreConcepts": [
+        {
+          "name": "Vector Retrieval",
+          "description": ""
+        },
+        {
+          "name": "Graph-Based Indexing",
+          "description": ""
+        },
+        {
+          "name": "Query Optimization",
+          "description": ""
+        }
+      ],
+      "toolsMentioned": [],
+      "domains": [
+        {
+          "name": "Information Access",
+          "description": ""
+        }
+      ],
+      "opportunities": [],
+      "risks": [],
+      "implementationIdeas": [],
+      "confidenceScore": 9,
+      "timestamp": "2026-02-21T19:14:31.245Z"
+    },
+    {
+      "topic": "test.txt - chunk 1",
+      "coreConcepts": [
+        {
+          "name": "Scalability",
+          "description": "systems must handle increasing load"
+        },
+        {
+          "name": "Reliability",
+          "description": "systems must tolerate failure"
+        },
+        {
+          "name": "Observability",
+          "description": "logging and monitoring are essential"
+        }
+      ],
+      "toolsMentioned": [
+        {
+          "name": "Microservices architecture",
+          "description": ""
+        },
+        {
+          "name": "Vector databases",
+          "description": ""
+        }
+      ],
+      "domains": [],
+      "opportunities": [],
+      "risks": [],
+      "implementationIdeas": [],
+      "confidenceScore": 8,
+      "timestamp": "2026-02-21T19:41:09.506Z"
+    }
+  ]
+}
