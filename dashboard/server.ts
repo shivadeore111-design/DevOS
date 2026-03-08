@@ -238,6 +238,30 @@ export class DashboardServer {
       }
     });
 
+    // GET /api/graph/:goalId — return task graph snapshot for a goal
+    app.get("/api/graph/:goalId", async (req: any, res: any) => {
+      try {
+        const { stateSnapshot } = await import("../devos/runtime/stateSnapshot");
+        const snap = await stateSnapshot.load(req.params.goalId);
+        if (!snap) {
+          return res.status(404).json({ error: `No snapshot found for goal: ${req.params.goalId}` });
+        }
+        res.json(snap);
+      } catch (err: any) {
+        res.status(500).json({ error: err.message });
+      }
+    });
+
+    // GET /api/graphs — list all snapshot goalIds
+    app.get("/api/graphs", async (_req: any, res: any) => {
+      try {
+        const { stateSnapshot } = await import("../devos/runtime/stateSnapshot");
+        res.json({ goalIds: stateSnapshot.list() });
+      } catch (err: any) {
+        res.status(500).json({ error: err.message });
+      }
+    });
+
     // Serve the React SPA — any other route returns index.html
     app.get("*", (_req: any, res: any) => {
       const uiDist = path.join(__dirname, "ui", "dist", "index.html");

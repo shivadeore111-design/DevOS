@@ -489,6 +489,46 @@ async function handleCLI(): Promise<void> {
       break;
     }
 
+    // ── devos resume <goalId> ─────────────────────────────────
+    case "resume": {
+      const goalId = goalArgs[0];
+      if (!goalId) {
+        console.error("❌ Usage: ts-node index.ts resume <goalId>");
+        process.exit(1);
+      }
+      await assertOllamaReady();
+      const { stateSnapshot, graphFromSnapshot } = await import("./devos/runtime/stateSnapshot");
+      const { createGraphExecutor }              = await import("./core/graphExecutor");
+
+      const snap = await stateSnapshot.load(goalId);
+      if (!snap) {
+        console.error(`❌ No snapshot found for goal: ${goalId}`);
+        process.exit(1);
+      }
+
+      console.log(`\n♻️  Resuming goal: ${goalId}`);
+      console.log(`   Workspace: ${snap.workspacePath}`);
+      console.log(`   Snapshot:  ${new Date(snap.timestamp).toLocaleString()}`);
+
+      const graph         = graphFromSnapshot(snap);
+      const resumeEngine  = new DevOSEngine(workspace, dryRun);
+      const graphExecutor = createGraphExecutor(
+        (action: any, wp: string) => resumeEngine.executeOne(action, wp)
+      );
+
+      const result = await graphExecutor.execute(graph, snap.workspacePath);
+
+      console.log(`\n${result.success ? "✅" : "❌"} Resume complete:`);
+      console.log(`   Nodes completed: ${result.nodesCompleted}/${result.totalNodes}`);
+      console.log(`   Duration: ${(result.durationMs / 1000).toFixed(1)}s`);
+
+      if (result.success) {
+        await stateSnapshot.delete(goalId);
+        console.log("   Snapshot cleaned up.");
+      }
+      break;
+    }
+
     // ── devos help / default ──────────────────────────────────
     case "help":
     case "--help":

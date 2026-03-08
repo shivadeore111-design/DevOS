@@ -36,6 +36,56 @@ export class DevOSEngine {
     this.openclaw  = new OpenClawAdapter();
   }
 
+  /**
+   * Execute a single action — used by the GraphExecutor.
+   * All action types are supported: file_write, shell_exec, web_fetch, llm_task, etc.
+   */
+  async executeOne(action: any, workspacePath?: string): Promise<EngineResult> {
+    const ws = workspacePath ?? this.workspace;
+
+    if (this.dryRun) {
+      console.log(`[Engine] DRY RUN — skipping: ${JSON.stringify(action)}`);
+      return { success: true, output: { skipped: true } };
+    }
+
+    const route = this.decision.decide(action, "low");
+
+    if (route === "blocked") {
+      return { success: false, error: `Blocked command: ${action.command ?? action.type}` };
+    }
+
+    if (route === "openclaw") {
+      return this.openclaw.executeEscalation(action, ws);
+    }
+
+    switch (action.type) {
+      case "file_write":
+      case "file_append":
+      case "file_read":
+        return executeFileAction(action, ws);
+
+      case "shell_exec":
+        return executeShellAction(action, ws);
+
+      case "web_fetch":
+      case "web_search":
+        return executeWebAction(action);
+
+      case "llm_task": {
+        const { content, provider, tokensEstimate } = await llmCall(
+          action.query ?? action.description,
+          action.systemPrompt,
+        );
+        return { success: true, output: { content, provider, tokensEstimate } };
+      }
+
+      default:
+        return { success: false, error: `Unknown action type: ${action.type}` };
+    }
+  }
+
+  // ── Legacy linear executor (kept for compatibility) ────────
+
   async execute(plan: any): Promise<EngineResult> {
     if (!plan?.actions?.length) {
       return { success: false, error: "Plan has no actions" };
@@ -57,10 +107,9 @@ export class DevOSEngine {
       const route = this.decision.decide(action, plan.complexity);
       console.log(`[Engine] Decision: ${route}`);
 
-      // ── Emit step_started ─────────────────────────────────
       eventBus.emit({
-        type:    "step_started",
-        payload: { step: i + 1, total: plan.actions.length, action, route },
+        type:      "step_started",
+        payload:   { step: i + 1, total: plan.actions.length, action, route },
         timestamp: new Date().toISOString(),
       });
 
@@ -68,8 +117,8 @@ export class DevOSEngine {
         console.error(`[Engine] Action blocked: ${action.command ?? action.type}`);
         results.push({ action, blocked: true });
         eventBus.emit({
-          type:    "step_failed",
-          payload: { step: i + 1, action, reason: "blocked" },
+          type:      "step_failed",
+          payload:   { step: i + 1, action, reason: "blocked" },
           timestamp: new Date().toISOString(),
         });
         continue;
@@ -84,52 +133,23 @@ export class DevOSEngine {
         continue;
       }
 
-      let result: any;
-      switch (action.type) {
-        case "file_write":
-        case "file_append":
-        case "file_read":
-          result = await executeFileAction(action, this.workspace);
-          break;
-        case "shell_exec":
-          result = await executeShellAction(action, this.workspace);
-          break;
-        case "web_fetch":
-        case "web_search":
-          result = await executeWebAction(action);
-          break;
-        case "llm_task": {
-          const { content, provider, tokensEstimate } = await llmCall(
-            action.query ?? action.description,
-            action.systemPrompt
-          );
-          result = {
-            success: true,
-            output:  { content, provider, tokensEstimate },
-          };
-          break;
-        }
-        default:
-          result = { success: false, error: `Unknown action type: ${action.type}` };
-      }
-
+      const result = await this.executeOne(action);
       results.push({ action, route: "executor", ...result });
 
       if (!result.success) {
         console.error(`[Engine] Action failed: ${result.error}`);
         eventBus.emit({
-          type:    "step_failed",
-          payload: { step: i + 1, action, error: result.error },
+          type:      "step_failed",
+          payload:   { step: i + 1, action, error: result.error },
           timestamp: new Date().toISOString(),
         });
         return { success: false, error: result.error, output: results };
       }
 
-      // ── Emit step_completed / command_executed ─────────────
       const emitType = action.type === "shell_exec" ? "command_executed" : "step_completed";
       eventBus.emit({
-        type:    emitType,
-        payload: { step: i + 1, action, output: result.output },
+        type:      emitType,
+        payload:   { step: i + 1, action, output: result.output },
         timestamp: new Date().toISOString(),
       });
     }
