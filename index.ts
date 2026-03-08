@@ -476,6 +476,68 @@ async function handleCLI(): Promise<void> {
       break
     }
 
+    // ── devos sessions ───────────────────────────────────────
+    case "sessions": {
+      const { sessionManager } = await import("./core/sessionManager");
+      const sessions = sessionManager.list();
+      if (!sessions.length) {
+        console.log("📭 No sessions found.");
+        break;
+      }
+      console.log(`\n📋 Sessions (${sessions.length} total):\n`);
+      const sorted = [...sessions].sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+      for (const s of sorted) {
+        const icon = s.status === "completed" ? "✅"
+          : s.status === "active"    ? "🔵"
+          : s.status === "failed"    ? "❌"
+          : s.status === "paused"    ? "⏸ "
+          : "❓";
+        const created = new Date(s.createdAt).toLocaleString();
+        console.log(`  ${icon} [${s.status.padEnd(9)}] ${s.id}  ${created}`);
+        console.log(`     Goal: "${s.goal.slice(0, 70)}"`);
+      }
+      console.log("");
+      break;
+    }
+
+    // ── devos session <id> ────────────────────────────────────
+    case "session": {
+      const sessionId = goalArgs[0];
+      if (!sessionId) {
+        console.error("❌ Usage: ts-node index.ts session <sessionId>");
+        process.exit(1);
+      }
+      const { sessionManager } = await import("./core/sessionManager");
+      const sess = sessionManager.get(sessionId);
+      if (!sess) {
+        console.error(`❌ Session not found: ${sessionId}`);
+        process.exit(1);
+      }
+      console.log(`\n📋 Session: ${sess.id}`);
+      console.log(`   Status:    ${sess.status}`);
+      console.log(`   Goal:      "${sess.goal}"`);
+      console.log(`   Workspace: ${sess.workspacePath}`);
+      console.log(`   Created:   ${new Date(sess.createdAt).toLocaleString()}`);
+      console.log(`   Updated:   ${new Date(sess.updatedAt).toLocaleString()}`);
+      console.log(`\n   History (${sess.history.length} entries):`);
+      if (!sess.history.length) {
+        console.log("     (empty)");
+      } else {
+        for (const h of sess.history) {
+          const ts   = new Date(h.timestamp).toLocaleTimeString();
+          const icon = h.role === "user" ? "👤" : "🤖";
+          console.log(`     ${icon} [${ts}] ${h.role.padEnd(5)}: ${h.content.slice(0, 100)}`);
+        }
+      }
+      if (sess.memoryRefs.length) {
+        console.log(`\n   Memory refs: ${sess.memoryRefs.join(", ")}`);
+      }
+      console.log("");
+      break;
+    }
+
     // ── devos stop <taskId> ───────────────────────────────────
     case "stop": {
       const taskId = goalArgs[0];
@@ -560,6 +622,8 @@ Utilities:
   capabilities <goal>  Analyze what capabilities a goal needs
   company   <goal>     Launch multi-agent Company Mode
   evolve               Run Skill Evolution Engine (analyze + improve + deploy)
+  sessions             List all agent sessions with status and goal
+  session   <id>       Show full session detail including history
 
 Flags:
   --dry-run    Plan but don't execute actions

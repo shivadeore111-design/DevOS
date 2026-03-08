@@ -6,6 +6,7 @@
 // ============================================================
 
 import { AgentLoop } from "./agentLoop";
+import { sessionManager } from "./sessionManager";
 import { appendMemory } from "../memory/memoryEngine";
 import { reflectOnResearch } from "./reflectionEngine";
 import { readPage } from "../skills/browser/pageReader";
@@ -17,7 +18,8 @@ export class ResearchAgent {
     console.log(`\nResearching: ${topic}\n`);
 
     try {
-      const searchResults = await this.agent.run(`search ${topic}`);
+      const sess = sessionManager.create(`search ${topic}`, process.cwd());
+      const searchResults = await this.agent.run(`search ${topic}`, sess.id);
 
       console.log("Search Results:", searchResults);
 

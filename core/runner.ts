@@ -24,6 +24,8 @@ import { DevOSEngine }              from "../executor/engine";
 import { planConfidence }           from "./planConfidence";
 import { goalGovernor }             from "../control/goalGovernor";
 import { budgetManager }            from "../control/budgetManager";
+import { sessionManager }           from "./sessionManager";
+import { heartbeat }                from "./heartbeat";
 import * as readline                from "readline";
 
 export interface ExecutionEngine {
@@ -140,9 +142,16 @@ export class Runner {
 
     console.log(`[Runner:${this.agentId}] ▶ ${task.id}: "${task.goal}"`);
 
+    // ── Session + heartbeat lifecycle ───────────────────────
+    const workspacePath0  = workspaceManager.get(task.id);
+    const session         = sessionManager.create(task.goal, workspacePath0 ?? "");
+    const sessionId       = session.id;
+    sessionManager.addHistory(sessionId, "user", task.goal);
+    heartbeat.start(task.id);
+
     try {
       const plan          = task.plan ?? { summary: task.goal, actions: [] };
-      const workspacePath = workspaceManager.get(task.id);
+      const workspacePath = workspacePath0;
 
       // ── Plan confidence scoring ──────────────────────────
       const parsedGoal  = (plan as any)._meta?.parsedGoal ?? {}
@@ -227,6 +236,9 @@ export class Runner {
         });
         resourceManager.stopTracking(task.id);
         goalGovernor.unregister(task.id);
+        sessionManager.addHistory(sessionId, "agent", "Goal completed successfully");
+        sessionManager.complete(sessionId);
+        heartbeat.stop(task.id);
         // Clean up snapshot on success
         await stateSnapshot.delete(task.id);
 
@@ -242,6 +254,8 @@ export class Runner {
         });
         resourceManager.stopTracking(task.id);
         goalGovernor.unregister(task.id);
+        sessionManager.fail(sessionId);
+        heartbeat.stop(task.id);
 
         const latest = taskStore.get(task.id);
         if (latest?.status === "failed") {
@@ -264,6 +278,8 @@ export class Runner {
       });
       resourceManager.stopTracking(task.id);
       goalGovernor.unregister(task.id);
+      sessionManager.fail(sessionId);
+      heartbeat.stop(task.id);
 
       const latest = taskStore.get(task.id);
       if (latest?.status === "failed") {

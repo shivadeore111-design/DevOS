@@ -6,13 +6,15 @@
 // ============================================================
 
 import { AgentLoop } from "./agentLoop";
+import { sessionManager } from "./sessionManager";
 
 async function run() {
   const agent = new AgentLoop();
+  const sess  = sessionManager.create("search AI agents 2026", process.cwd());
 
-  const result = await agent.run("search AI agents 2026");
+  await agent.run("search AI agents 2026", sess.id);
 
-  console.log("\nFinal Result:\n", result);
+  console.log("\nAgent loop finished. Check session:", sess.id);
 }
 
 run();
