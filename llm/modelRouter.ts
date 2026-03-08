@@ -74,7 +74,7 @@ export function scoreModelForTask(modelName: string, taskType: TaskType): number
   }
 
   const base  = scores[taskType];
-  const bonus = /14b|34b|70b/.test(name) ? 5 : 0;
+  if (/14b|30b|72b/.test(name)) return 0; // too large for 6GB GPU
   return Math.min(base + bonus, 100);
 }
 
@@ -135,20 +135,8 @@ export async function promptUserToSwitch(rec: ModelRecommendation): Promise<stri
 
   return new Promise((resolve) => {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    let resolved = false;
-
-    const timer = setTimeout(() => {
-      if (resolved) return;
-      resolved = true;
-      rl.close();
-      console.log(`\n   ⏱ Auto-switched to ${rec.recommendedModel}`);
-      resolve(rec.recommendedModel);
-    }, 10000);
 
     rl.question("   Use recommended? [Y/n]: ", (answer) => {
-      if (resolved) return;
-      resolved = true;
-      clearTimeout(timer);
       rl.close();
 
       const val = answer.trim().toLowerCase();
@@ -167,3 +155,4 @@ export async function resolveModel(prompt: string, systemPrompt?: string): Promi
   const rec = await recommendModel(prompt, systemPrompt);
   return promptUserToSwitch(rec);
 }
+
