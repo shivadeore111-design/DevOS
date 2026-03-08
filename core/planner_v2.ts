@@ -22,6 +22,8 @@ import { scoreRelevance }      from "../llm/contextCompressor";
 import { osContext }           from "./osContext";
 import { parseGoal, ParsedGoal } from "./goalParser";
 import { validatePlan }        from "./planValidator";
+import { patternDetector }     from "./patternDetector";
+import { getMicroPlanner }     from "./microPlanners/index";
 
 function buildSystemPrompt(parsedGoal: ParsedGoal): string {
   return `You are DevOS, an autonomous AI operating system planner.
@@ -80,7 +82,44 @@ export async function generatePlan(goal: string, extraContext?: string): Promise
   // ── 1. Parse goal into structured context ────────────────────
   const parsedGoal = parseGoal(goal);
 
-  // ── 2. Retrieve RAG context ──────────────────────────────────
+  // ── 2. Micro-planner fast path ────────────────────────────────
+  const match = await patternDetector.detect(parsedGoal);
+
+  if (match && match.confidence > 0.85) {
+    const planner = getMicroPlanner(match.microPlanner);
+
+    if (planner && planner.canHandle(parsedGoal)) {
+      console.log(
+        `[Planner] ⚡ Using micro-planner: ${match.microPlanner}` +
+        ` (confidence: ${match.confidence.toFixed(2)}) — skipping LLM`
+      );
+
+      const microPlan  = planner.buildPlan(parsedGoal);
+      const validation = validatePlan(microPlan, parsedGoal);
+
+      if (validation.valid) {
+        return {
+          ...microPlan,
+          _meta: {
+            provider:       "micro-planner",
+            tokensEstimate: 0,
+            ragUsed:        false,
+            parsedGoal,
+            validation,
+            microPlanner:   match.microPlanner,
+            confidence:     match.confidence,
+            reason:         match.reason,
+          },
+        };
+      }
+
+      console.warn(`[Planner] Micro-planner plan failed validation — falling through to LLM`);
+    }
+  } else {
+    console.log(`[Planner] 🧠 No micro-planner match — using LLM planner`);
+  }
+
+  // ── 3. Retrieve RAG context ───────────────────────────────────
   const ragCtx      = await RAGRetriever.retrieveSimilarTasks(goal);
   const patternHint = await TaskPatternMemory.getPlanningHint(goal);
 
@@ -116,6 +155,7 @@ export async function generatePlan(goal: string, extraContext?: string): Promise
     : goal;
 
   // ── 6. Call LLM ───────────────────────────────────────────────
+  console.log(`[Planner] 🧠 Calling LLM for plan...`);
   const { content, provider, tokensEstimate } = await llmCall(fullPrompt, systemPrompt);
   console.log(`[Planner] Plan received from ${provider} (~${tokensEstimate} tokens)`);
 
@@ -152,9 +192,10 @@ export async function generatePlan(goal: string, extraContext?: string): Promise
     _meta: {
       provider,
       tokensEstimate,
-      ragUsed:    ragCtx.hasResults,
+      ragUsed:      ragCtx.hasResults,
       parsedGoal,
       validation,
+      microPlanner: null,
     },
   };
 }
