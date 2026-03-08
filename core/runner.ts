@@ -26,6 +26,8 @@ import { goalGovernor }             from "../control/goalGovernor";
 import { budgetManager }            from "../control/budgetManager";
 import { sessionManager }           from "./sessionManager";
 import { heartbeat }                from "./heartbeat";
+import { executionMemory }          from "../memory/executionMemory";
+import { successEvaluator }         from "./successEvaluator";
 import * as readline                from "readline";
 
 export interface ExecutionEngine {
@@ -153,9 +155,18 @@ export class Runner {
       const plan          = task.plan ?? { summary: task.goal, actions: [] };
       const workspacePath = workspacePath0;
 
+      // ── Execution memory lookup ──────────────────────────
+      const parsedGoal = (plan as any)._meta?.parsedGoal ?? {}
+      const memEntry   = executionMemory.lookup(parsedGoal)
+      if (memEntry && memEntry.successRate > 0.8) {
+        console.log(
+          `[ExecutionMemory] Reusing proven pattern "${memEntry.pattern.slice(0, 50)}" ` +
+          `(${(memEntry.successRate * 100).toFixed(0)}% success rate, used ${memEntry.useCount}x)`
+        )
+      }
+
       // ── Plan confidence scoring ──────────────────────────
-      const parsedGoal  = (plan as any)._meta?.parsedGoal ?? {}
-      const confScore   = planConfidence.score(plan, parsedGoal)
+      const confScore    = planConfidence.score(plan, parsedGoal)
       const confDecision = planConfidence.decide(confScore)
 
       if (confDecision === "auto") {
@@ -239,6 +250,27 @@ export class Runner {
         sessionManager.addHistory(sessionId, "agent", "Goal completed successfully");
         sessionManager.complete(sessionId);
         heartbeat.stop(task.id);
+
+        // ── Success evaluation + execution memory ─────────
+        const evalResult = await successEvaluator.evaluate(
+          { ...task, workspacePath: workspacePath0 },
+          output,
+          parsedGoal,
+        )
+        const durationMs = resourceManager.getRuntimeMs(task.id)
+        executionMemory.store({
+          pattern:    task.goal,
+          goalType:   parsedGoal.type  ?? "unknown",
+          domain:     parsedGoal.domain ?? "general",
+          stack:      parsedGoal.stack  ?? [],
+          outcome:    evalResult.success ? "success" : "failure",
+          reason:     evalResult.summary,
+          actions:    plan.actions ?? [],
+          durationMs,
+          retryCount: 0,
+        })
+        if (memEntry) executionMemory.recordUse(memEntry.id, evalResult.success)
+
         // Clean up snapshot on success
         await stateSnapshot.delete(task.id);
 
@@ -256,6 +288,21 @@ export class Runner {
         goalGovernor.unregister(task.id);
         sessionManager.fail(sessionId);
         heartbeat.stop(task.id);
+
+        // ── Failure execution memory ──────────────────────
+        const failDurationMs = resourceManager.getRuntimeMs(task.id)
+        executionMemory.store({
+          pattern:    task.goal,
+          goalType:   parsedGoal.type  ?? "unknown",
+          domain:     parsedGoal.domain ?? "general",
+          stack:      parsedGoal.stack  ?? [],
+          outcome:    "failure",
+          reason:     errorMsg ?? "unknown failure",
+          actions:    plan.actions ?? [],
+          durationMs: failDurationMs,
+          retryCount: 0,
+        })
+        if (memEntry) executionMemory.recordUse(memEntry.id, false)
 
         const latest = taskStore.get(task.id);
         if (latest?.status === "failed") {

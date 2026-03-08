@@ -4,9 +4,35 @@
 // ============================================================
 import fs   from "fs";
 import path from "path";
+import * as net                from "net";
 import { execa }              from "execa";
 import { getRuntimeShell }    from "../os-adapter";
 import { processSupervisor }  from "../../devos/runtime/processSupervisor";
+
+// ── Port conflict detection ───────────────────────────────
+
+function isPortInUse(port: number): Promise<boolean> {
+  return new Promise(resolve => {
+    const s = net.createConnection(port, "127.0.0.1");
+    s.once("connect", () => { s.destroy(); resolve(true); });
+    s.once("error",   () => { s.destroy(); resolve(false); });
+  });
+}
+
+function extractPort(command: string): number {
+  // Match patterns: PORT=3000, -p 3000, :3000, standalone 4-digit port numbers
+  const patterns = [
+    /PORT[=\s]+(\d{4,5})/i,
+    /-p\s+(\d{4,5})/i,
+    /:(\d{4,5})\b/,
+    /\b(3000|3001|4000|4200|5000|8000|8080|8888)\b/,
+  ];
+  for (const re of patterns) {
+    const m = command.match(re);
+    if (m) return parseInt(m[1], 10);
+  }
+  return 3000; // default
+}
 
 const BLOCKED_PATTERNS = [
   "rm -rf /",
@@ -52,6 +78,14 @@ export async function executeShellAction(
   const isServerCmd    = serverPatterns.some(p => command.toLowerCase().includes(p));
 
   if (isServerCmd) {
+    // ── Port conflict check ─────────────────────────────
+    const port    = extractPort(command);
+    const inUse   = await isPortInUse(port);
+    if (inUse) {
+      console.log(`[ShellActions] Port ${port} already in use — server may already be running`);
+      return { success: true, output: { stdout: `Port ${port} already in use — skipping spawn`, stderr: "", exitCode: 0 } };
+    }
+
     const proc = require("child_process").spawn(shell, [flag, command], {
       cwd, detached: true, stdio: "ignore",
     });
@@ -69,9 +103,16 @@ export async function executeShellAction(
       catch { return false; }
     })();
 
-    return alive
-      ? { success: true, output: { stdout: "Server started in background", stderr: "", exitCode: 0 } }
-      : { success: false, error: "Server process exited immediately" };
+    if (!alive) {
+      // Port may have come up even if PID check failed (process detached)
+      const portUp = await isPortInUse(port);
+      if (portUp) {
+        return { success: true, output: { stdout: `Server listening on port ${port}`, stderr: "", exitCode: 0 } };
+      }
+      return { success: false, error: "Server process exited immediately" };
+    }
+
+    return { success: true, output: { stdout: "Server started in background", stderr: "", exitCode: 0 } };
   }
 
   try {

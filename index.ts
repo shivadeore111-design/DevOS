@@ -18,6 +18,8 @@ import { taskQueue }                           from "./core/taskQueue";
 import { Runner }                              from "./core/runner";
 import { DevOSEngine }                         from "./executor/engine";
 import { generatePlan }                        from "./core/planner_v2";
+import { executionMemory }                     from "./memory/executionMemory";
+import { parseGoal }                           from "./core/goalParser";
 import { verifyTask }                          from "./core/verifier";
 import { memoryStore }                         from "./memory/memoryStore";
 import { checkOllamaHealth, listOllamaModels } from "./llm/ollama";
@@ -230,7 +232,17 @@ async function handleCLI(): Promise<void> {
           actions: [{ type: "file_append", path: "test.txt", content: "More content\n", risk: "low" }],
         };
       } else {
-        plan = await generatePlan(goal);
+        // ── Execution memory hint ──────────────────────────
+        const parsed   = parseGoal(goal);
+        const memHint  = executionMemory.lookup(parsed);
+        let extraCtx: string | undefined;
+        if (memHint && memHint.successRate > 0.8) {
+          extraCtx = `<!--executionMemoryHint:${JSON.stringify({
+            actions:     memHint.actions,
+            successRate: memHint.successRate,
+          })}-->`;
+        }
+        plan = await generatePlan(goal, extraCtx);
       }
 
       console.log("\n📦 Plan:");
@@ -476,6 +488,39 @@ async function handleCLI(): Promise<void> {
       break
     }
 
+    // ── devos memory [prune] ──────────────────────────────────
+    case "memory": {
+      const subCmd = goalArgs[0];
+      const { executionMemory: em } = await import("./memory/executionMemory");
+
+      if (subCmd === "prune") {
+        const { memoryAging } = await import("./memory/memoryAging");
+        const before = em.getAll().length;
+        memoryAging.runAging(em);
+        const after  = em.getAll().length;
+        console.log(`\n🧹 Memory pruning complete: ${before} → ${after} entries (${before - after} removed)\n`);
+        break;
+      }
+
+      // Default: show top 10 patterns
+      const top = em.getTopPatterns(10);
+      if (!top.length) {
+        console.log("📭 No execution memory entries yet. Run some goals first.");
+        break;
+      }
+      console.log(`\n🧠 Top Execution Memory Patterns (${em.getAll().length} total):\n`);
+      for (const [i, e] of top.entries()) {
+        const bar   = "█".repeat(Math.round(e.successRate * 10)) + "░".repeat(10 - Math.round(e.successRate * 10));
+        const icon  = e.outcome === "success" ? "✅" : "❌";
+        const ts    = new Date(e.timestamp).toLocaleDateString();
+        console.log(`  ${(i + 1).toString().padStart(2)}. ${icon} [${bar}] ${(e.successRate * 100).toFixed(0)}%  used: ${e.useCount}x  ${ts}`);
+        console.log(`      Pattern: "${e.pattern.slice(0, 65)}"`);
+        console.log(`      Type: ${e.goalType} / ${e.domain}  Stack: ${e.stack.join(", ") || "—"}  Duration: ${(e.durationMs / 1000).toFixed(1)}s`);
+      }
+      console.log("");
+      break;
+    }
+
     // ── devos sessions ───────────────────────────────────────
     case "sessions": {
       const { sessionManager } = await import("./core/sessionManager");
@@ -624,6 +669,8 @@ Utilities:
   evolve               Run Skill Evolution Engine (analyze + improve + deploy)
   sessions             List all agent sessions with status and goal
   session   <id>       Show full session detail including history
+  memory               Show top 10 execution memory patterns with success rates
+  memory prune         Run memory aging and prune low-quality entries
 
 Flags:
   --dry-run    Plan but don't execute actions

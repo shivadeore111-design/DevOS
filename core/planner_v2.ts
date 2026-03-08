@@ -143,7 +143,24 @@ export async function generatePlan(goal: string, extraContext?: string): Promise
   }
 
   if (extraContext) {
-    contextBlock += extraContext + "\n\n";
+    // Check for executionMemoryHint JSON tag injected by runner
+    const hintMatch = extraContext.match(/<!--executionMemoryHint:(.+?)-->/s)
+    if (hintMatch) {
+      try {
+        const hint = JSON.parse(hintMatch[1])
+        const actionSummary = (hint.actions as any[])
+          .slice(0, 6)
+          .map((a: any, i: number) => `  ${i + 1}. [${a.type}] ${a.description ?? a.command ?? a.path ?? ""}`)
+          .join("\n")
+        contextBlock +=
+          `PROVEN PATTERN: This exact goal type succeeded before with these actions:\n` +
+          `${actionSummary}\n` +
+          `Success rate: ${(hint.successRate * 100).toFixed(0)}%. Prefer reusing this pattern.\n\n`
+        console.log(`[Planner] Execution memory hint injected (${(hint.successRate * 100).toFixed(0)}% success rate)`)
+      } catch { /* malformed hint — ignore */ }
+    } else {
+      contextBlock += extraContext + "\n\n";
+    }
   }
 
   // ── 4. Build dynamic system prompt using parsed goal + OS context
