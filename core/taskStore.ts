@@ -112,6 +112,23 @@ export class TaskStore {
     return next;
   }
 
+  /**
+   * Remove tasks whose `updatedAt` is older than `maxAgeMs` milliseconds.
+   * Returns the count of tasks removed.
+   */
+  clearStale(maxAgeMs: number = 3600000): number {
+    const cutoff = Date.now() - maxAgeMs;
+    let count = 0;
+    for (const task of Array.from(this.tasks.values())) {
+      if (Date.parse(task.updatedAt) < cutoff) {
+        this.tasks.delete(task.id);
+        count++;
+      }
+    }
+    if (count > 0) this.persist();
+    return count;
+  }
+
   private persist(): void {
     const tmp = STORE_FILE + ".tmp";
     try {

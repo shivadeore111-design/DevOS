@@ -366,13 +366,145 @@ function MemoryPage() {
   );
 }
 
+const AGENT_ROLES_ORDER = ['strategy','research','product','engineering','qa','growth'];
+const AGENT_ROLE_ICONS  = { strategy:'🧭', research:'🔬', product:'📋', engineering:'⚙️', qa:'🧪', growth:'📈' };
+
+function agentStatusDot(status) {
+  const m = { idle:'bg-gray-500', running:'bg-yellow-400 pulse', completed:'bg-green-400', failed:'bg-red-400' };
+  return m[status] || 'bg-gray-500';
+}
+function projectStatusBadge(status) {
+  const m = { planning:'bg-blue-900 text-blue-300', active:'bg-yellow-900 text-yellow-300',
+               paused:'bg-gray-700 text-gray-400', completed:'bg-green-900 text-green-300' };
+  return `px-2 py-0.5 rounded text-xs font-medium ${m[status] || 'bg-gray-700 text-gray-300'}`;
+}
+
+function ProjectCard({ project }) {
+  const completedCount = project.agents.filter(a => a.status === 'completed').length;
+  const totalAgents    = project.agents.length || 6;
+  const progress       = Math.round((completedCount / totalAgents) * 100);
+
+  const agentMap = {};
+  for (const a of (project.agents || [])) agentMap[a.role] = a;
+
+  return (
+    <div className="bg-gray-800 rounded-xl p-5 border border-gray-700 hover:border-purple-600 transition-colors">
+      <div className="flex items-start justify-between mb-2">
+        <div className="flex-1 min-w-0 pr-4">
+          <div className="text-white font-semibold text-sm truncate">{project.name}</div>
+          <div className="text-gray-400 text-xs mt-0.5 line-clamp-2">{project.objective}</div>
+        </div>
+        <span className={projectStatusBadge(project.status)}>{project.status}</span>
+      </div>
+
+      {/* Agent grid */}
+      <div className="grid grid-cols-6 gap-2 my-3">
+        {AGENT_ROLES_ORDER.map(role => {
+          const agent  = agentMap[role] || { status: 'idle' };
+          const icon   = AGENT_ROLE_ICONS[role] || '•';
+          return (
+            <div key={role} className="flex flex-col items-center gap-1" title={`${role}: ${agent.status}`}>
+              <div className="text-base">{icon}</div>
+              <div className={`w-2.5 h-2.5 rounded-full ${agentStatusDot(agent.status)}`}></div>
+              <div className="text-gray-600 text-xs capitalize">{role.slice(0,4)}</div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Progress bar */}
+      <div className="mt-2">
+        <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
+          <span>{completedCount}/{totalAgents} agents done</span>
+          <span>{progress}%</span>
+        </div>
+        <div className="w-full bg-gray-700 rounded-full h-1.5">
+          <div
+            className="bg-purple-500 h-1.5 rounded-full transition-all duration-500"
+            style={{ width: `${progress}%` }}
+          ></div>
+        </div>
+      </div>
+
+      <div className="text-gray-600 text-xs mt-2">{fmtTime(project.updatedAt)}</div>
+    </div>
+  );
+}
+
+function NewGoalModal({ onClose, onSubmit }) {
+  const [goalText, setGoalText] = useState('');
+  const [loading, setLoading]   = useState(false);
+  const [result, setResult]     = useState(null);
+
+  const handleSubmit = async () => {
+    if (!goalText.trim()) return;
+    setLoading(true);
+    try {
+      const r = await fetch('/api/company', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ goal: goalText }),
+      });
+      const data = await r.json();
+      setResult(data);
+      setTimeout(() => onClose(), 1500);
+    } catch(e) {
+      setResult({ error: e.message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-gray-800 border border-gray-700 rounded-2xl p-6 w-full max-w-lg mx-4 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="text-white font-bold text-lg mb-4">🏢 New Company Goal</div>
+        <textarea
+          className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 resize-none"
+          rows={4}
+          placeholder='e.g. "Build a B2B SaaS for freelance invoice management"'
+          value={goalText}
+          onChange={e => setGoalText(e.target.value)}
+          autoFocus
+        />
+        {result && (
+          <div className={`mt-2 text-xs px-3 py-1.5 rounded ${result.error ? 'bg-red-900/50 text-red-300' : 'bg-green-900/50 text-green-300'}`}>
+            {result.error ? `Error: ${result.error}` : `✓ Project started: ${result.projectId}`}
+          </div>
+        )}
+        <div className="flex gap-3 mt-4">
+          <button onClick={onClose} className="flex-1 bg-gray-700 hover:bg-gray-600 text-gray-300 py-2 rounded-lg text-sm transition-colors">Cancel</button>
+          <button
+            onClick={handleSubmit}
+            disabled={loading || !goalText.trim()}
+            className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white py-2 rounded-lg text-sm font-medium transition-colors"
+          >
+            {loading ? '⟳ Starting...' : '🚀 Launch Company'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MissionControlPage() {
-  const { data: tasks } = useAPI('/api/tasks', 5000);
+  const { data: tasks,    refresh: refreshTasks }    = useAPI('/api/tasks',    5000);
+  const { data: projects, refresh: refreshProjects } = useAPI('/api/projects', 5000);
+  const [showModal, setShowModal] = useState(false);
+
   const activeAgents = (tasks || []).filter(t => t.status === 'running' || t.status === 'claimed');
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-white">Mission Control</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-bold text-white">Mission Control</h2>
+        <button
+          onClick={() => setShowModal(true)}
+          className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+        >
+          🏢 New Company Goal
+        </button>
+      </div>
 
       {/* Active Agents */}
       <div className="bg-gray-800 rounded-xl p-5 border border-gray-700">
@@ -394,13 +526,39 @@ function MissionControlPage() {
         }
       </div>
 
-      {/* Company Mode placeholder */}
-      <div className="bg-gray-800 rounded-xl p-8 border border-purple-900/50 text-center">
-        <div className="text-4xl mb-4">🏢</div>
-        <div className="text-purple-400 text-lg font-semibold mb-2">Company Mode</div>
-        <div className="text-gray-500 text-sm">Coming in DevOS v4.1</div>
-        <div className="text-gray-600 text-xs mt-2">Multi-agent orchestration, department routing, autonomous org chart</div>
+      {/* Active Projects */}
+      <div>
+        <div className="text-gray-400 text-sm font-medium mb-3 uppercase tracking-wider">
+          Company Projects ({(projects || []).length})
+        </div>
+        {(projects || []).length === 0
+          ? (
+            <div className="bg-gray-800 rounded-xl p-8 border border-purple-900/50 text-center">
+              <div className="text-4xl mb-4">🏢</div>
+              <div className="text-purple-400 text-lg font-semibold mb-2">Company Mode</div>
+              <div className="text-gray-500 text-sm mb-4">Launch a multi-agent company to build your product end-to-end</div>
+              <button
+                onClick={() => setShowModal(true)}
+                className="bg-purple-600 hover:bg-purple-700 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors"
+              >
+                🚀 Start First Company Goal
+              </button>
+            </div>
+          )
+          : (
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              {(projects || []).map(p => <ProjectCard key={p.id} project={p} />)}
+            </div>
+          )
+        }
       </div>
+
+      {showModal && (
+        <NewGoalModal
+          onClose={() => { setShowModal(false); refreshProjects(); }}
+          onSubmit={() => { setShowModal(false); refreshProjects(); }}
+        />
+      )}
     </div>
   );
 }

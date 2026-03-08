@@ -93,16 +93,22 @@ export class DashboardServer {
     // GET /api/skills
     app.get("/api/skills", (_req: any, res: any) => {
       try {
-        const skillList  = skillRegistry.getAll();
+        const names      = skillRegistry.list();
         const allMetrics = SkillMemory.getAll();
         const metricsMap = new Map(allMetrics.map(m => [m.name, m]));
 
-        const result = skillList.map(skill => ({
-          name:         skill.name,
-          description:  skill.description,
-          category:     (skill as any).category ?? "general",
-          metric:       metricsMap.get(skill.name) ?? null,
-        }));
+        const result = names.map(name => {
+          const skill  = skillRegistry.get(name)!;
+          const metric = metricsMap.get(name);
+          return {
+            name:           skill.name,
+            category:       (skill as any).category ?? "general",
+            description:    skill.description,
+            successRate:    metric ? metric.successRate    : 0,
+            executionCount: metric ? metric.totalRuns      : 0,
+            avgDuration:    metric ? metric.avgDurationMs  : 0,
+          };
+        });
 
         res.json(result);
       } catch (err: any) {
@@ -183,6 +189,30 @@ export class DashboardServer {
       }
     });
 
+    // GET /api/projects
+    app.get("/api/projects", async (_req: any, res: any) => {
+      try {
+        const { ProjectStore } = await import("../devos/company/projectContext");
+        const store = new ProjectStore();
+        res.json(store.list());
+      } catch (err: any) {
+        res.status(500).json({ error: err.message });
+      }
+    });
+
+    // POST /api/company
+    app.post("/api/company", async (req: any, res: any) => {
+      try {
+        const { goal } = req.body;
+        if (!goal) return res.status(400).json({ error: "goal is required" });
+        const { companyManager } = await import("../devos/company/companyManager");
+        const projectId = await companyManager.run(goal);
+        res.json({ projectId });
+      } catch (err: any) {
+        res.status(500).json({ error: err.message });
+      }
+    });
+
     // Serve the React SPA — any other route returns index.html
     app.get("*", (_req: any, res: any) => {
       const uiDist = path.join(__dirname, "ui", "dist", "index.html");
@@ -200,6 +230,12 @@ export class DashboardServer {
   // ── Start ────────────────────────────────────────────────────
 
   async start(): Promise<void> {
+    // Clear tasks older than 1 hour from taskStore to prevent stale event replay
+    const removed = taskStore.clearStale();
+    if (removed > 0) {
+      console.log(`[Dashboard] Cleared ${removed} stale task(s) on startup.`);
+    }
+
     return new Promise((resolve) => {
       this.server = http.createServer(this.app);
 

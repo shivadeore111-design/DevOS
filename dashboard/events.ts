@@ -27,7 +27,13 @@ export interface DevOSEvent {
     | "agent_spawned"
     | "agent_completed"
     | "skill_executed"
-    | "memory_updated";
+    | "memory_updated"
+    | "company_started"
+    | "company_plan_created"
+    | "agent_task_started"
+    | "agent_task_completed"
+    | "company_completed"
+    | "company_failed";
   taskId?:  string;
   goalId?:  string;
   agentId?: string;

@@ -449,6 +449,20 @@ async function handleCLI(): Promise<void> {
       break;
     }
 
+    // ── devos company ─────────────────────────────────────────
+    case "company": {
+      if (!goal) {
+        console.log('Usage: devos company "your objective"')
+        break
+      }
+      const { companyManager } = await import('./devos/company/companyManager')
+      console.log('🏢 Starting Company Mode...')
+      const projectId = await companyManager.run(goal)
+      console.log(`✅ Company project started: ${projectId}`)
+      console.log(`   Monitor at: http://localhost:3333`)
+      break
+    }
+
     // ── devos help / default ──────────────────────────────────
     case "help":
     case "--help":
