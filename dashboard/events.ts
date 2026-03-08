@@ -33,7 +33,12 @@ export interface DevOSEvent {
     | "agent_task_started"
     | "agent_task_completed"
     | "company_completed"
-    | "company_failed";
+    | "company_failed"
+    | "skill_evolved"
+    | "skill_created"
+    | "skill_benchmark_complete"
+    | "evolution_started"
+    | "evolution_complete";
   taskId?:  string;
   goalId?:  string;
   agentId?: string;

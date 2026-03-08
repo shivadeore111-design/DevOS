@@ -286,43 +286,126 @@ function TasksPage({ events }) {
 }
 
 function SkillsPage() {
-  const { data: skills, loading } = useAPI('/api/skills', 30000);
+  const { data: skills,     loading,    refresh: refreshSkills }     = useAPI('/api/skills',     30000);
+  const { data: benchmarks, refresh: refreshBenchmarks } = useAPI('/api/benchmarks', 30000);
+  const [evolving, setEvolving] = useState(false);
+  const [evolveResult, setEvolveResult] = useState(null);
+
+  const runEvolve = async () => {
+    setEvolving(true);
+    setEvolveResult(null);
+    try {
+      const r = await fetch('/api/evolve', { method: 'POST' });
+      const data = await r.json();
+      setEvolveResult(data);
+      refreshSkills();
+      refreshBenchmarks();
+    } catch(e) {
+      setEvolveResult({ error: e.message });
+    } finally {
+      setEvolving(false);
+    }
+  };
 
   if (loading) return <div className="text-gray-500 text-sm">Loading skills...</div>;
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-white">Skills Registry</h2>
-      <div className="text-gray-400 text-sm">{skills?.length || 0} skills registered</div>
+      {/* Header row */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-white">Skills Registry</h2>
+          <div className="text-gray-400 text-sm mt-1">{skills?.length || 0} skills registered</div>
+        </div>
+        <button
+          onClick={runEvolve}
+          disabled={evolving}
+          className="bg-green-700 hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+        >
+          {evolving ? '⟳ Evolving...' : '🧬 Evolve Skills'}
+        </button>
+      </div>
+
+      {/* Evolve result banner */}
+      {evolveResult && (
+        <div className={`px-4 py-3 rounded-lg text-sm ${evolveResult.error ? 'bg-red-900/40 text-red-300' : 'bg-green-900/40 text-green-300'}`}>
+          {evolveResult.error
+            ? `Evolution error: ${evolveResult.error}`
+            : `✅ Evolution complete — analyzed: ${evolveResult.skillsAnalyzed}, deployed: ${evolveResult.skillsDeployed}, discarded: ${evolveResult.skillsDiscarded}`
+          }
+        </div>
+      )}
+
+      {/* Skill cards */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
-        {(skills || []).map(skill => (
-          <div key={skill.name} className="bg-gray-800 rounded-xl p-5 border border-gray-700 hover:border-purple-600 transition-colors">
-            <div className="flex items-start justify-between mb-2">
-              <div>
-                <div className="font-semibold text-white text-sm">{skill.name}</div>
-                {skill.category && (
-                  <span className="text-xs text-purple-400 bg-purple-900/40 px-2 py-0.5 rounded mt-1 inline-block">{skill.category}</span>
+        {(skills || []).map(skill => {
+          const needsImprovement = skill.executionCount >= 3 && skill.successRate < 0.7;
+          return (
+            <div key={skill.name} className={`bg-gray-800 rounded-xl p-5 border transition-colors ${needsImprovement ? 'border-yellow-700 hover:border-yellow-500' : 'border-gray-700 hover:border-purple-600'}`}>
+              <div className="flex items-start justify-between mb-2">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <div className="font-semibold text-white text-sm">{skill.name}</div>
+                    {needsImprovement && (
+                      <span className="text-xs bg-yellow-900/60 text-yellow-400 px-1.5 py-0.5 rounded font-medium">⚠ needs improvement</span>
+                    )}
+                  </div>
+                  {skill.category && (
+                    <span className="text-xs text-purple-400 bg-purple-900/40 px-2 py-0.5 rounded mt-1 inline-block">{skill.category}</span>
+                  )}
+                </div>
+                {skill.executionCount > 0 && (
+                  <div className={`text-xs font-bold flex-shrink-0 ml-2 ${skill.successRate >= 0.8 ? 'text-green-400' : skill.successRate >= 0.5 ? 'text-yellow-400' : 'text-red-400'}`}>
+                    {(skill.successRate * 100).toFixed(0)}%
+                  </div>
                 )}
               </div>
-              {skill.metric && (
-                <div className={`text-xs font-bold ${skill.metric.successRate >= 0.8 ? 'text-green-400' : skill.metric.successRate >= 0.5 ? 'text-yellow-400' : 'text-red-400'}`}>
-                  {(skill.metric.successRate * 100).toFixed(0)}%
+              <p className="text-gray-400 text-xs mb-3 line-clamp-2">{skill.description}</p>
+              {skill.executionCount > 0 ? (
+                <div className="flex items-center gap-3 text-xs text-gray-500">
+                  <span>Runs: {skill.executionCount}</span>
+                  <span>~{fmtDuration(skill.avgDuration)}</span>
                 </div>
+              ) : (
+                <div className="text-xs text-gray-600">No executions yet</div>
               )}
             </div>
-            <p className="text-gray-400 text-xs mb-3 line-clamp-2">{skill.description}</p>
-            {skill.metric ? (
-              <div className="flex items-center gap-3 text-xs text-gray-500">
-                <span>Runs: {skill.metric.totalRuns}</span>
-                <span>✓ {skill.metric.successes}</span>
-                <span>✗ {skill.metric.failures}</span>
-                <span>~{fmtDuration(skill.metric.avgDurationMs)}</span>
-              </div>
-            ) : (
-              <div className="text-xs text-gray-600">No executions yet</div>
-            )}
-          </div>
-        ))}
+          );
+        })}
+      </div>
+
+      {/* Evolution History */}
+      <div className="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">
+        <div className="px-5 py-3 border-b border-gray-700">
+          <span className="text-gray-400 text-sm font-medium uppercase tracking-wider">Evolution History</span>
+        </div>
+        {!(benchmarks && benchmarks.length > 0)
+          ? <div className="text-gray-600 text-sm text-center py-8">No benchmarks run yet. Click "Evolve Skills" to start.</div>
+          : (
+            <div className="divide-y divide-gray-700">
+              {(benchmarks || []).slice(0, 5).map((b, i) => (
+                <div key={i} className="px-5 py-3 flex items-center justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm text-white font-medium">{b.skillName}</div>
+                    <div className="text-xs text-gray-500 mt-0.5">{fmtTime(b.testedAt)}</div>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs flex-shrink-0">
+                    <span className="text-gray-400">{(b.oldSuccessRate * 100).toFixed(0)}%</span>
+                    <span className="text-gray-600">→</span>
+                    <span className={b.newSuccessRate >= b.oldSuccessRate ? 'text-green-400' : 'text-red-400'}>
+                      {(b.newSuccessRate * 100).toFixed(0)}%
+                    </span>
+                    <span className={`px-2 py-0.5 rounded font-medium ${
+                      b.recommendation === 'deploy'  ? 'bg-green-900 text-green-300' :
+                      b.recommendation === 'discard' ? 'bg-red-900 text-red-300' :
+                                                       'bg-yellow-900 text-yellow-300'
+                    }`}>{b.recommendation}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
+        }
       </div>
     </div>
   );

@@ -463,6 +463,19 @@ async function handleCLI(): Promise<void> {
       break
     }
 
+    // ── devos evolve ──────────────────────────────────────────
+    case "evolve": {
+      const { skillEvolutionEngine } = await import('./devos/evolution/skillEvolutionEngine')
+      console.log('🧬 Running Skill Evolution Engine...')
+      const evolveResult = await skillEvolutionEngine.run()
+      console.log(`✅ Evolution complete:`)
+      console.log(`   Skills analyzed:  ${evolveResult.skillsAnalyzed}`)
+      console.log(`   Skills improved:  ${evolveResult.skillsImproved}`)
+      console.log(`   Skills deployed:  ${evolveResult.skillsDeployed}`)
+      console.log(`   Skills discarded: ${evolveResult.skillsDiscarded}`)
+      break
+    }
+
     // ── devos help / default ──────────────────────────────────
     case "help":
     case "--help":
@@ -492,6 +505,8 @@ Utilities:
   serve                Start Control Plane UI at http://localhost:3333
   dashboard            Show agent scores, task stats, skill usage
   capabilities <goal>  Analyze what capabilities a goal needs
+  company   <goal>     Launch multi-agent Company Mode
+  evolve               Run Skill Evolution Engine (analyze + improve + deploy)
 
 Flags:
   --dry-run    Plan but don't execute actions

@@ -189,6 +189,31 @@ export class DashboardServer {
       }
     });
 
+    // POST /api/evolve
+    app.post("/api/evolve", async (_req: any, res: any) => {
+      try {
+        const { skillEvolutionEngine } = await import("../devos/evolution/skillEvolutionEngine");
+        const result = await skillEvolutionEngine.run();
+        res.json(result);
+      } catch (err: any) {
+        res.status(500).json({ error: err.message });
+      }
+    });
+
+    // GET /api/benchmarks
+    app.get("/api/benchmarks", (_req: any, res: any) => {
+      try {
+        const file = path.join(process.cwd(), "workspace", "benchmark-results.json");
+        if (fs.existsSync(file)) {
+          res.json(JSON.parse(fs.readFileSync(file, "utf-8")));
+        } else {
+          res.json([]);
+        }
+      } catch (err: any) {
+        res.status(500).json({ error: err.message });
+      }
+    });
+
     // GET /api/projects
     app.get("/api/projects", async (_req: any, res: any) => {
       try {
