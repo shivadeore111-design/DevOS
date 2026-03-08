@@ -12,6 +12,8 @@
 
 import https from "https";
 import http  from "http";
+import { fetchPage }  from "../../web/pageFetcher";
+import { webSearch }  from "../../web/searchEngine";
 
 export interface WebActionResult {
   success: boolean;
@@ -43,29 +45,29 @@ export async function executeWebAction(action: any): Promise<WebActionResult> {
     switch (action.type) {
 
       case "web_fetch": {
-        const url = action.url as string;
-        if (!url) return { success: false, error: "No URL provided" };
+        const targetUrl = action.url as string;
+        if (!targetUrl) return { success: false, error: "No URL provided" };
 
-        console.log(`[WebActions] Fetching: ${url}`);
-        const { status, body } = await httpGet(url);
-        const ok = status >= 200 && status < 300;
+        console.log(`[WebActions] Fetching: ${targetUrl}`);
+        const result = await fetchPage(targetUrl);
 
         return {
-          success: ok,
-          output:  { url, status, body: body.substring(0, 5000) },
-          error:   ok ? undefined : `HTTP ${status}`,
+          success: result.success,
+          output:  { url: targetUrl, statusCode: result.statusCode, text: result.text ?? "" },
+          error:   result.success ? undefined : result.error,
         };
       }
 
       case "web_search": {
-        // Local stub — no external search API
-        console.log(`[WebActions] Search query: ${action.query}`);
+        const query = action.query as string;
+        if (!query) return { success: false, error: "No query provided" };
+
+        console.log(`[WebActions] Searching: ${query}`);
+        const results = await webSearch(query);
+
         return {
           success: true,
-          output:  {
-            query: action.query,
-            note:  "Web search not available in local mode. Wire a local search tool if needed.",
-          },
+          output:  { query, results, count: results.length },
         };
       }
 

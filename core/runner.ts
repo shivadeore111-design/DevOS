@@ -28,6 +28,7 @@ import { sessionManager }           from "./sessionManager";
 import { heartbeat }                from "./heartbeat";
 import { executionMemory }          from "../memory/executionMemory";
 import { successEvaluator }         from "./successEvaluator";
+import { researchEngine }           from "../research/researchEngine";
 import * as readline                from "readline";
 
 export interface ExecutionEngine {
@@ -163,6 +164,24 @@ export class Runner {
           `[ExecutionMemory] Reusing proven pattern "${memEntry.pattern.slice(0, 50)}" ` +
           `(${(memEntry.successRate * 100).toFixed(0)}% success rate, used ${memEntry.useCount}x)`
         )
+      }
+
+      // ── Research pre-pass for research-type goals ────────
+      if (parsedGoal.type === "research") {
+        try {
+          const report     = await researchEngine.research(task.goal, parsedGoal)
+          const researchCtx = researchEngine.toExtraContext(report)
+          // Inject research context into plan's extraContext if plan supports it
+          if ((plan as any)._meta) {
+            (plan as any)._meta.researchContext = researchCtx
+          }
+          console.log(
+            `[Runner] Research pre-pass complete — ` +
+            `${report.insights.length} insights injected into context`
+          )
+        } catch (err: any) {
+          console.warn(`[Runner] Research pre-pass failed (continuing): ${err.message}`)
+        }
       }
 
       // ── Plan confidence scoring ──────────────────────────

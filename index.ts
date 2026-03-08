@@ -20,6 +20,7 @@ import { DevOSEngine }                         from "./executor/engine";
 import { generatePlan }                        from "./core/planner_v2";
 import { executionMemory }                     from "./memory/executionMemory";
 import { parseGoal }                           from "./core/goalParser";
+import { researchEngine }                      from "./research/researchEngine";
 import { verifyTask }                          from "./core/verifier";
 import { memoryStore }                         from "./memory/memoryStore";
 import { checkOllamaHealth, listOllamaModels } from "./llm/ollama";
@@ -521,6 +522,37 @@ async function handleCLI(): Promise<void> {
       break;
     }
 
+    // ── devos research <topic> ────────────────────────────────
+    case "research": {
+      if (!goal) {
+        console.error('❌ Usage: ts-node index.ts research "your topic"');
+        process.exit(1);
+      }
+      await assertOllamaReady();
+      console.log(`\n🔍 Researching: "${goal}"\n`);
+
+      const parsed = parseGoal(goal);
+      const report = await researchEngine.research(goal, parsed);
+
+      console.log("\n" + "═".repeat(60));
+      console.log("📊 RESEARCH COMPLETE");
+      console.log("═".repeat(60));
+      console.log(`\nGoal:    ${report.goal}`);
+      console.log(`Summary: ${report.summary}`);
+      console.log(`\nKey Insights (${report.insights.length}):`);
+      for (const [i, ins] of report.insights.entries()) {
+        console.log(`  ${i + 1}. ${ins.point}`);
+        if (ins.source) console.log(`     Source: ${ins.source}`);
+      }
+      if (report.sources.length > 0) {
+        console.log(`\nSources (${report.sources.length}):`);
+        for (const s of report.sources) console.log(`  - ${s}`);
+      }
+      console.log(`\n⏱  Duration: ${(report.durationMs / 1000).toFixed(1)}s`);
+      console.log(`📄 Full report saved → workspace/research/\n`);
+      break;
+    }
+
     // ── devos sessions ───────────────────────────────────────
     case "sessions": {
       const { sessionManager } = await import("./core/sessionManager");
@@ -667,6 +699,7 @@ Utilities:
   capabilities <goal>  Analyze what capabilities a goal needs
   company   <goal>     Launch multi-agent Company Mode
   evolve               Run Skill Evolution Engine (analyze + improve + deploy)
+  research  <topic>    Research a topic — DDG search + page fetch + LLM synthesis
   sessions             List all agent sessions with status and goal
   session   <id>       Show full session detail including history
   memory               Show top 10 execution memory patterns with success rates
@@ -682,6 +715,7 @@ Examples:
   ts-node index.ts plan "Build niche SaaS for real estate agents"
   ts-node index.ts grow "AI backtesting platform for NSE traders"
   ts-node index.ts agent "Build and market a SaaS for freelancers"
+  ts-node index.ts research "best Node.js frameworks for REST APIs 2026"
       `);
     }
   }
