@@ -46,6 +46,20 @@ export async function executeShellAction(action: any, workspace: string): Promis
 
   console.log(`[ShellActions] Executing: ${command}`);
 
+  const serverPatterns = ["node server", "npm start", "python app", "flask run"];
+  const isServerCmd = serverPatterns.some(p => command.toLowerCase().includes(p));
+  if (isServerCmd) {
+    const proc = require("child_process").spawn(shell, [flag, command], {
+      cwd, detached: true, stdio: "ignore"
+    });
+    proc.unref();
+    await new Promise(r => setTimeout(r, 3000));
+    const alive = (() => { try { process.kill(proc.pid!, 0); return true; } catch { return false; } })();
+    return alive
+      ? { success: true, output: { stdout: "Server started in background", stderr: "", exitCode: 0 } }
+      : { success: false, error: "Server process exited immediately" };
+  }
+
   const { shell, flag } = getRuntimeShell();
   const sandboxCwd = path.join(workspace, "sandbox");
   const cwd = path.basename(workspace) === "sandbox"
@@ -59,19 +73,23 @@ export async function executeShellAction(action: any, workspace: string): Promis
       reject: false,
     });
 
-    const success = result.exitCode === 0;
-    console.log(`[ShellActions] Exit ${result.exitCode}: ${command}`);
+    const exitCode = result.exitCode ?? (result.stdout && !result.stderr ? 0 : 1);
+    const success = exitCode === 0;
+    console.log(`[ShellActions] Exit ${exitCode}: ${command}`);
 
     return {
       success,
       output: {
         stdout: result.stdout,
         stderr: result.stderr,
-        exitCode: result.exitCode,
+        exitCode: exitCode,
       },
-      error: success ? undefined : `Exit ${result.exitCode}: ${result.stderr}`,
+      error: success ? undefined : `Exit ${exitCode}: ${result.stderr}`,
     };
   } catch (err: any) {
     return { success: false, error: err.message };
   }
 }
+
+
+
