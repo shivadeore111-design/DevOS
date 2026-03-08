@@ -1,5 +1,5 @@
 // ============================================================
-// DevOS — Autonomous AI Execution System
+// DevOS - Autonomous AI Execution System
 // Copyright (c) 2026 Shiva Deore. All rights reserved.
 // Unauthorized copying, distribution, or modification
 // of this software is strictly prohibited.
@@ -64,17 +64,13 @@ export function detectTaskType(prompt: string, systemPrompt?: string): TaskType 
 
 export function scoreModelForTask(modelName: string, taskType: TaskType): number {
   const name = modelName.toLowerCase();
+  if (/14b|30b|72b/.test(name)) return 0;
   let scores = DEFAULT_SCORES;
-
   for (const key of Object.keys(SCORE_TABLE)) {
-    if (name.includes(key)) {
-      scores = SCORE_TABLE[key];
-      break;
-    }
+    if (name.includes(key)) { scores = SCORE_TABLE[key]; break; }
   }
-
   const base  = scores[taskType];
-  if (/14b|30b|72b/.test(name)) return 0; // too large for 6GB GPU
+  const bonus = /7b|34b|70b/.test(name) ? 5 : 0;
   return Math.min(base + bonus, 100);
 }
 
@@ -115,7 +111,7 @@ export async function recommendModel(prompt: string, systemPrompt?: string): Pro
   const scoreDiff     = bestScore - currentScore;
   const shouldSuggest = scoreDiff >= 15;
   const message       = shouldSuggest
-    ? `💡 ${bestModel} scores higher for ${taskType} tasks (${bestScore} vs ${currentScore}). Switch?`
+    ? `${bestModel} scores higher for ${taskType} tasks (${bestScore} vs ${currentScore}). Switch?`
     : "";
 
   return {
@@ -127,7 +123,7 @@ export async function recommendModel(prompt: string, systemPrompt?: string): Pro
 
 export async function promptUserToSwitch(rec: ModelRecommendation): Promise<string> {
   if (!rec.shouldSuggest) {
-    console.log(`[ModelRouter] Task: ${rec.taskType} → Model: ${rec.currentModel} (score: ${rec.currentScore})`);
+    console.log(`[ModelRouter] Task: ${rec.taskType} -> Model: ${rec.currentModel} (score: ${rec.currentScore})`);
     return rec.currentModel;
   }
 
@@ -138,13 +134,12 @@ export async function promptUserToSwitch(rec: ModelRecommendation): Promise<stri
 
     rl.question("   Use recommended? [Y/n]: ", (answer) => {
       rl.close();
-
       const val = answer.trim().toLowerCase();
       if (val === "y" || val === "") {
-        console.log(`   ✅ Switching to ${rec.recommendedModel} for this task`);
+        console.log(`   Switching to ${rec.recommendedModel} for this task`);
         resolve(rec.recommendedModel);
       } else {
-        console.log(`   ➡️  Keeping ${rec.currentModel}`);
+        console.log(`   Keeping ${rec.currentModel}`);
         resolve(rec.currentModel);
       }
     });
@@ -155,4 +150,3 @@ export async function resolveModel(prompt: string, systemPrompt?: string): Promi
   const rec = await recommendModel(prompt, systemPrompt);
   return promptUserToSwitch(rec);
 }
-

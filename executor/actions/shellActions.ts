@@ -1,14 +1,7 @@
 // ============================================================
-// DevOS — Autonomous AI Execution System
+// DevOS - Autonomous AI Execution System
 // Copyright (c) 2026 Shiva Deore. All rights reserved.
-// Unauthorized copying, distribution, or modification
-// of this software is strictly prohibited.
 // ============================================================
-
-// ============================================================
-// shellActions.ts — DevOS Shell Action Executor
-// ============================================================
-
 import fs from "fs";
 import path from "path";
 import { execa } from "execa";
@@ -19,7 +12,7 @@ const BLOCKED_PATTERNS = [
   "del /f /s /q c:\\",
   "format c:",
   "shutdown",
-  ":(){ :|:& };:",  // fork bomb
+  ":(){ :|:& };:",
 ];
 
 export interface ShellActionResult {
@@ -30,10 +23,8 @@ export interface ShellActionResult {
 
 export async function executeShellAction(action: any, workspace: string): Promise<ShellActionResult> {
   const command = action.command as string;
-
   if (!command) return { success: false, error: "No command provided" };
 
-  // Safety check
   for (const blocked of BLOCKED_PATTERNS) {
     if (command.toLowerCase().includes(blocked.toLowerCase())) {
       return { success: false, error: `Blocked command pattern: "${blocked}"` };
@@ -43,6 +34,12 @@ export async function executeShellAction(action: any, workspace: string): Promis
   if (action.risk === "high") {
     return { success: false, error: "High-risk shell commands require OpenClaw escalation" };
   }
+
+  const { shell, flag } = getRuntimeShell();
+  const sandboxCwd = path.join(workspace, "sandbox");
+  const cwd = path.basename(workspace) === "sandbox"
+    ? workspace
+    : (fs.existsSync(sandboxCwd) ? sandboxCwd : workspace);
 
   console.log(`[ShellActions] Executing: ${command}`);
 
@@ -60,36 +57,21 @@ export async function executeShellAction(action: any, workspace: string): Promis
       : { success: false, error: "Server process exited immediately" };
   }
 
-  const { shell, flag } = getRuntimeShell();
-  const sandboxCwd = path.join(workspace, "sandbox");
-  const cwd = path.basename(workspace) === "sandbox"
-    ? workspace
-    : (fs.existsSync(sandboxCwd) ? sandboxCwd : workspace);
-
   try {
     const result = await execa(shell, [flag, command], {
       cwd,
       timeout: 30000,
       reject: false,
     });
-
     const exitCode = result.exitCode ?? (result.stdout && !result.stderr ? 0 : 1);
     const success = exitCode === 0;
     console.log(`[ShellActions] Exit ${exitCode}: ${command}`);
-
     return {
       success,
-      output: {
-        stdout: result.stdout,
-        stderr: result.stderr,
-        exitCode: exitCode,
-      },
+      output: { stdout: result.stdout, stderr: result.stderr, exitCode },
       error: success ? undefined : `Exit ${exitCode}: ${result.stderr}`,
     };
   } catch (err: any) {
     return { success: false, error: err.message };
   }
 }
-
-
-
