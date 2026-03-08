@@ -476,6 +476,19 @@ async function handleCLI(): Promise<void> {
       break
     }
 
+    // ── devos stop <taskId> ───────────────────────────────────
+    case "stop": {
+      const taskId = goalArgs[0];
+      if (!taskId) {
+        console.error("❌ Usage: ts-node index.ts stop <taskId>");
+        process.exit(1);
+      }
+      const { emergencyStop } = await import("./control/emergencyStop");
+      await emergencyStop.stop(taskId);
+      console.log(`\n⛔ Task ${taskId} stopped.`);
+      break;
+    }
+
     // ── devos help / default ──────────────────────────────────
     case "help":
     case "--help":

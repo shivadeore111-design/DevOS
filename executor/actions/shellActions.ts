@@ -2,10 +2,11 @@
 // DevOS - Autonomous AI Execution System
 // Copyright (c) 2026 Shiva Deore. All rights reserved.
 // ============================================================
-import fs from "fs";
+import fs   from "fs";
 import path from "path";
-import { execa } from "execa";
-import { getRuntimeShell } from "../os-adapter";
+import { execa }              from "execa";
+import { getRuntimeShell }    from "../os-adapter";
+import { processSupervisor }  from "../../devos/runtime/processSupervisor";
 
 const BLOCKED_PATTERNS = [
   "rm -rf /",
@@ -21,7 +22,11 @@ export interface ShellActionResult {
   error?: string;
 }
 
-export async function executeShellAction(action: any, workspace: string): Promise<ShellActionResult> {
+export async function executeShellAction(
+  action: any,
+  workspace: string,
+  goalId?: string,
+): Promise<ShellActionResult> {
   const command = action.command as string;
   if (!command) return { success: false, error: "No command provided" };
 
@@ -44,14 +49,26 @@ export async function executeShellAction(action: any, workspace: string): Promis
   console.log(`[ShellActions] Executing: ${command}`);
 
   const serverPatterns = ["node server", "npm start", "python app", "flask run"];
-  const isServerCmd = serverPatterns.some(p => command.toLowerCase().includes(p));
+  const isServerCmd    = serverPatterns.some(p => command.toLowerCase().includes(p));
+
   if (isServerCmd) {
     const proc = require("child_process").spawn(shell, [flag, command], {
-      cwd, detached: true, stdio: "ignore"
+      cwd, detached: true, stdio: "ignore",
     });
     proc.unref();
+
+    // Register with process supervisor so it can be killed later
+    if (proc.pid !== undefined && goalId) {
+      processSupervisor.register(proc.pid, command, goalId);
+    }
+
     await new Promise(r => setTimeout(r, 3000));
-    const alive = (() => { try { process.kill(proc.pid!, 0); return true; } catch { return false; } })();
+
+    const alive = (() => {
+      try { process.kill(proc.pid!, 0); return true; }
+      catch { return false; }
+    })();
+
     return alive
       ? { success: true, output: { stdout: "Server started in background", stderr: "", exitCode: 0 } }
       : { success: false, error: "Server process exited immediately" };
@@ -61,15 +78,15 @@ export async function executeShellAction(action: any, workspace: string): Promis
     const result = await execa(shell, [flag, command], {
       cwd,
       timeout: 30000,
-      reject: false,
+      reject:  false,
     });
     const exitCode = result.exitCode ?? (result.stdout && !result.stderr ? 0 : 1);
-    const success = exitCode === 0;
+    const success  = exitCode === 0;
     console.log(`[ShellActions] Exit ${exitCode}: ${command}`);
     return {
       success,
       output: { stdout: result.stdout, stderr: result.stderr, exitCode },
-      error: success ? undefined : `Exit ${exitCode}: ${result.stderr}`,
+      error:  success ? undefined : `Exit ${exitCode}: ${result.stderr}`,
     };
   } catch (err: any) {
     return { success: false, error: err.message };
