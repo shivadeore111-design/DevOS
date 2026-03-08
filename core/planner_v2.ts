@@ -18,6 +18,8 @@ import { RAGRetriever }        from "../memory/ragRetriever";
 import { TaskPatternMemory }   from "../memory/taskPatterns";
 import { scoreRelevance }      from "../llm/contextCompressor";
 
+const OS_CONTEXT = `Running on: ${process.platform === "win32" ? "Windows - use cmd.exe commands (mkdir, cd, node, npm). Never use curl, sudo, apt-get, bash, or any Linux commands." : "Linux/Mac - use bash commands."}`
+
 const BASE_SYSTEM_PROMPT = `You are DevOS, an autonomous AI operating system planner.
 Your job is to convert a user's goal into a structured JSON execution plan.
 
@@ -47,6 +49,11 @@ Rules:
 - Prefer file_write over shell_exec when possible
 - For complex tasks, break into multiple small actions
 - Never include secrets or credentials in plans
+- IMPORTANT: ${OS_CONTEXT}
+- Node.js, npm, and git are already installed. Never include steps to install them.
+- Never use choco, winget, or any package manager to install runtimes.
+- Always run npm init and npm install in the sandbox directory, not in C:\\ root.
+- Never use "cmd /c" prefix - commands run through cmd.exe already.
 - If past experience or patterns are provided, USE THEM as a template`;
 
 export async function generatePlan(goal: string, extraContext?: string): Promise<any> {
@@ -111,3 +118,6 @@ export async function generatePlan(goal: string, extraContext?: string): Promise
     };
   }
 }
+
+
+
