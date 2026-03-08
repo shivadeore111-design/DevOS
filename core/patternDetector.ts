@@ -103,11 +103,7 @@ export class PatternDetector {
           }
         }
 
-        // Embeddings available but no strong match → skip keyword fallback; LLM needed
-        if (bestScore > 0) {
-          console.log(`[PatternDetector] No strong embedding match (best: ${bestName} @ ${(bestScore * 100).toFixed(1)}%)`)
-          return null
-        }
+        console.log(`[PatternDetector] No strong embedding match (best: ${bestName} @ ${(bestScore * 100).toFixed(1)}%) — trying keyword fallback`)
       }
     } catch {
       // Ollama embeddings unavailable — fall through to keyword matching
@@ -138,3 +134,4 @@ export class PatternDetector {
 }
 
 export const patternDetector = new PatternDetector()
+

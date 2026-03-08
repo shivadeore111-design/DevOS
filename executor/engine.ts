@@ -16,6 +16,7 @@ import { executeWebAction }    from "./actions/webActions";
 import { llmCall }             from "../llm/router";
 import { OpenClawAdapter }     from "../openclaw/openclaw-adapter";
 import { eventBus }            from "../dashboard/events";
+import { controlKernel }       from "../control/controlKernel";
 
 export interface EngineResult {
   success: boolean;
@@ -40,12 +41,19 @@ export class DevOSEngine {
    * Execute a single action — used by the GraphExecutor.
    * All action types are supported: file_write, shell_exec, web_fetch, llm_task, etc.
    */
-  async executeOne(action: any, workspacePath?: string): Promise<EngineResult> {
+  async executeOne(action: any, workspacePath?: string, goalId?: string): Promise<EngineResult> {
     const ws = workspacePath ?? this.workspace;
 
     if (this.dryRun) {
       console.log(`[Engine] DRY RUN — skipping: ${JSON.stringify(action)}`);
       return { success: true, output: { skipped: true } };
+    }
+
+    // ── Control Kernel: validate before execution ─────────
+    const gid        = goalId ?? "unknown";
+    const validation = controlKernel.validate(action, gid);
+    if (!validation.approved) {
+      return { success: false, error: `[ControlKernel] Blocked: ${validation.reason}` };
     }
 
     const route = this.decision.decide(action, "low");

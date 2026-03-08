@@ -21,10 +21,14 @@ import { eventBus }                 from "./eventBus";
 import { taskGraphBuilder }         from "./taskGraph";
 import { createGraphExecutor }      from "./graphExecutor";
 import { DevOSEngine }              from "../executor/engine";
+import { planConfidence }           from "./planConfidence";
+import { goalGovernor }             from "../control/goalGovernor";
+import { budgetManager }            from "../control/budgetManager";
+import * as readline                from "readline";
 
 export interface ExecutionEngine {
-  execute(plan: any):                   Promise<{ success: boolean; output?: any; error?: string }>;
-  executeOne?(action: any, ws?: string): Promise<{ success: boolean; output?: any; error?: string }>;
+  execute(plan: any):                                      Promise<{ success: boolean; output?: any; error?: string }>;
+  executeOne?(action: any, ws?: string, goalId?: string): Promise<{ success: boolean; output?: any; error?: string }>;
 }
 
 interface RunnerOptions {
@@ -50,7 +54,17 @@ export class Runner {
   async runOnce(goal: string, plan?: any): Promise<DevOSTask> {
     console.log(`\n[Runner:${this.agentId}] CLI — "${goal}"`);
 
+    // ── Duplicate goal detection ─────────────────────────
+    const dupCheck = goalGovernor.checkSimilarActive(goal);
+    if (dupCheck.duplicate) {
+      console.warn(`[Runner] ⚠️  Duplicate goal already running (${dupCheck.existingId}) — proceeding anyway`);
+    }
+
     const task = taskQueue.create({ goal, priority: "high", plan });
+
+    // Register with governor and budget manager
+    goalGovernor.register(task.id, goal);
+    budgetManager.canContinue(task.id); // initialises budget entry
 
     // Emit goal_received on both buses
     eventBus.emit("goal_received", { goal, taskId: task.id, agentId: this.agentId });
@@ -130,6 +144,32 @@ export class Runner {
       const plan          = task.plan ?? { summary: task.goal, actions: [] };
       const workspacePath = workspaceManager.get(task.id);
 
+      // ── Plan confidence scoring ──────────────────────────
+      const parsedGoal  = (plan as any)._meta?.parsedGoal ?? {}
+      const confScore   = planConfidence.score(plan, parsedGoal)
+      const confDecision = planConfidence.decide(confScore)
+
+      if (confDecision === "auto") {
+        console.log(`[Runner] Auto-executing (confidence: ${confScore.toFixed(2)})`)
+      } else if (confDecision === "confirm") {
+        console.log(`[Runner] ⚠️  Plan confidence: ${confScore.toFixed(2)} — confirmation required`)
+        console.log(`[Runner] Plan summary: ${plan.summary ?? "(no summary)"}`)
+        const confirmed = await this.promptYesNo("Execute? [Y/n]: ")
+        if (!confirmed) {
+          taskQueue.fail(task.id, "User cancelled at confirmation prompt", "User cancelled");
+          goalGovernor.unregister(task.id);
+          resourceManager.stopTracking(task.id);
+          return;
+        }
+      } else {
+        // approve — block execution, require manual override
+        console.log(`[Runner] 🚫 Plan confidence too low (${confScore.toFixed(2)}) — blocked`)
+        taskQueue.fail(task.id, "Plan confidence below approval threshold", "Low confidence");
+        goalGovernor.unregister(task.id);
+        resourceManager.stopTracking(task.id);
+        return;
+      }
+
       // Emit plan_created (dashboard bus)
       dashboardBus.emit({
         type:      "plan_created",
@@ -154,7 +194,7 @@ export class Runner {
       if (this.engine instanceof DevOSEngine) {
         // Graph path: parallel execution via GraphExecutor
         const graphExecutor = createGraphExecutor(
-          (action: any, wp: string) => (this.engine as DevOSEngine).executeOne(action, wp)
+          (action: any, wp: string) => (this.engine as DevOSEngine).executeOne(action, wp, task.id)
         );
         const graphResult = await graphExecutor.execute(graph, workspacePath);
         success  = graphResult.success;
@@ -186,6 +226,7 @@ export class Runner {
           timestamp: new Date().toISOString(),
         });
         resourceManager.stopTracking(task.id);
+        goalGovernor.unregister(task.id);
         // Clean up snapshot on success
         await stateSnapshot.delete(task.id);
 
@@ -200,6 +241,7 @@ export class Runner {
           timestamp: new Date().toISOString(),
         });
         resourceManager.stopTracking(task.id);
+        goalGovernor.unregister(task.id);
 
         const latest = taskStore.get(task.id);
         if (latest?.status === "failed") {
@@ -221,6 +263,7 @@ export class Runner {
         timestamp: new Date().toISOString(),
       });
       resourceManager.stopTracking(task.id);
+      goalGovernor.unregister(task.id);
 
       const latest = taskStore.get(task.id);
       if (latest?.status === "failed") {
@@ -229,7 +272,20 @@ export class Runner {
     }
   }
 
+  // ── Helpers ───────────────────────────────────────────
+
   private sleep(ms: number) {
     return new Promise<void>(r => setTimeout(r, ms));
+  }
+
+  private promptYesNo(question: string): Promise<boolean> {
+    return new Promise(resolve => {
+      const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
+      rl.question(question, (answer: string) => {
+        rl.close()
+        const a = answer.trim().toLowerCase()
+        resolve(a === "" || a === "y" || a === "yes")
+      })
+    })
   }
 }
