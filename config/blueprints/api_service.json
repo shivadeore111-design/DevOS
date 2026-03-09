@@ -1,0 +1,18 @@
+{
+  "id": "api_service",
+  "name": "REST API Service",
+  "description": "Production-ready REST API with auth and database",
+  "version": "1.0.0",
+  "modules": ["auth", "database", "api"],
+  "stack": {
+    "backend": "express",
+    "database": "postgres",
+    "auth": "jwt"
+  },
+  "steps": [
+    { "order": 1, "module": "database", "action": "setup", "description": "Initialize database" },
+    { "order": 2, "module": "auth",     "action": "setup", "description": "Setup authentication" },
+    { "order": 3, "module": "api",      "action": "setup", "description": "Create API endpoints" }
+  ],
+  "successCriteria": ["server running", "API endpoints respond correctly"]
+}

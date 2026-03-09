@@ -87,6 +87,20 @@ export class DevOSEngine {
         return { success: true, output: { content, provider, tokensEstimate } };
       }
 
+      case "product_build": {
+        const { productGenerator } = await import("../devos/product/productGenerator");
+        const result = await productGenerator.generate(
+          action.goal ?? action.description ?? "build product",
+          action.blueprintId,
+          ws,
+        );
+        return {
+          success: result.status === "completed",
+          output:  result,
+          error:   result.status === "failed" ? `Product build failed: ${result.modulesFailed.join(", ")}` : undefined,
+        };
+      }
+
       default:
         return { success: false, error: `Unknown action type: ${action.type}` };
     }

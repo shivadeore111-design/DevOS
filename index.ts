@@ -44,6 +44,10 @@ import { ingestionEngine }                    from "./knowledge/ingestionEngine"
 import { knowledgeStore }                     from "./knowledge/knowledgeStore";
 import { knowledgeQuery }                     from "./knowledge/knowledgeQuery";
 import { github }                             from "./integrations/github";
+import { blueprintRegistry }                  from "./devos/product/blueprintRegistry";
+import { productManager }                     from "./devos/product/productManager";
+import { productGenerator }                   from "./devos/product/productGenerator";
+import { deploymentOrchestrator }             from "./devos/product/deploymentOrchestrator";
 
 // ── Bootstrap ─────────────────────────────────────────────────
 
@@ -942,6 +946,111 @@ async function handleCLI(): Promise<void> {
       break;
     }
 
+    // ── devos blueprints ──────────────────────────────────────
+    case "blueprints": {
+      const bps = blueprintRegistry.list();
+      if (!bps.length) {
+        console.log("📭 No blueprints found in config/blueprints/");
+        break;
+      }
+      console.log(`\n📐 Available Blueprints (${bps.length})\n`);
+      for (const bp of bps) {
+        console.log(`  [${bp.id}]  ${bp.name}  v${bp.version}`);
+        console.log(`           ${bp.description}`);
+        console.log(`           Modules: ${bp.modules.join(" → ")}`);
+        const stackStr = Object.entries(bp.stack).map(([k,v]) => `${k}:${v}`).join("  ");
+        console.log(`           Stack:   ${stackStr}`);
+        console.log(`           Criteria: ${bp.successCriteria.join(", ")}\n`);
+      }
+      break;
+    }
+
+    // ── devos products ────────────────────────────────────────
+    case "products": {
+      const builds = productManager.list();
+      if (!builds.length) {
+        console.log("📭 No product builds yet. Run: devos build \"your goal\"");
+        break;
+      }
+      console.log(`\n🏗️  Product Builds (${builds.length})\n`);
+      for (const b of builds) {
+        const statusIcon = b.status === "completed" ? "✅"
+          : b.status === "failed"    ? "❌"
+          : b.status === "building"  ? "⚙️ "
+          : "📋";
+        const date = new Date(b.startedAt).toLocaleString();
+        const dur  = b.completedAt
+          ? `${((new Date(b.completedAt).getTime() - new Date(b.startedAt).getTime()) / 1000).toFixed(1)}s`
+          : "running";
+        console.log(`  ${statusIcon} [${b.id}] ${b.blueprintId}  (${dur})`);
+        console.log(`           Goal:      "${b.goal.slice(0, 70)}"`);
+        console.log(`           Started:   ${date}`);
+        console.log(`           Completed: ${b.modulesCompleted.join(", ") || "—"}`);
+        if (b.modulesFailed.length) {
+          console.log(`           Failed:    ${b.modulesFailed.join(", ")}`);
+        }
+        console.log(`           Workspace: ${b.workspacePath}\n`);
+      }
+      break;
+    }
+
+    // ── devos build "<goal>" ──────────────────────────────────
+    case "build": {
+      if (!goal) {
+        console.error('❌ Usage: ts-node index.ts build "your product goal"');
+        console.error('   Example: ts-node index.ts build "build a SaaS web app with auth and billing"');
+        process.exit(1);
+      }
+
+      console.log(`\n🏗️  DevOS Product Builder`);
+      console.log(`   Goal: "${goal}"\n`);
+
+      // Match blueprint
+      const { parseGoal: pg } = await import("./core/goalParser");
+      const parsed = pg(goal);
+      const bp = blueprintRegistry.match({ ...parsed, goal });
+
+      if (!bp) {
+        console.error("❌ No matching blueprint found for this goal.");
+        console.error("   Available blueprints: devos blueprints");
+        console.error("   Or run: devos run \"" + goal + "\" (LLM-planned execution)");
+        process.exit(1);
+      }
+
+      console.log(`📐 Blueprint matched: ${bp.name} [${bp.id}]`);
+      console.log(`   Modules: ${bp.modules.join(" → ")}\n`);
+
+      // Workspace for this build
+      const buildDir = path.join(process.cwd(), "workspace", "builds", bp.id + "_" + Date.now());
+      fs.mkdirSync(buildDir, { recursive: true });
+
+      // Generate
+      const build = await productGenerator.generate(goal, bp.id, buildDir);
+
+      if (build.status === "completed") {
+        console.log(`\n✅ Build complete!`);
+        console.log(`   Workspace: ${buildDir}`);
+        console.log(`   Modules:   ${build.modulesCompleted.join(", ")}`);
+
+        // Deploy locally
+        console.log("\n🚀 Deploying locally...");
+        const deploy = await deploymentOrchestrator.deploy(build, "local");
+        if (deploy.success) {
+          console.log(`\n✅ Ready! Start your app:`);
+          console.log(`   cd "${buildDir}"`);
+          console.log(`   npm install && node server.js`);
+          console.log(`   Then open: ${deploy.url}`);
+        } else {
+          console.log(`⚠️  Deployment note: ${deploy.error}`);
+        }
+      } else {
+        console.error(`\n❌ Build failed. Modules failed: ${build.modulesFailed.join(", ")}`);
+        console.error(`   Workspace: ${buildDir}`);
+      }
+      console.log("");
+      break;
+    }
+
     // ── devos help / default ──────────────────────────────────
     case "help":
     case "--help":
@@ -984,6 +1093,11 @@ Utilities:
   session   <id>       Show full session detail including history
   memory               Show top 10 execution memory patterns with success rates
   memory prune         Run memory aging and prune low-quality entries
+
+Product Engine:
+  blueprints                List available product blueprints
+  build     "<goal>"        Match blueprint, generate product, deploy locally
+  products                  List all product builds with status
 
 Knowledge:
   knowledge list            List all entries in the knowledge store

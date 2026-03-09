@@ -24,6 +24,7 @@ import { parseGoal, ParsedGoal } from "./goalParser";
 import { validatePlan }        from "./planValidator";
 import { patternDetector }     from "./patternDetector";
 import { getMicroPlanner }     from "./microPlanners/index";
+import { blueprintRegistry }   from "../devos/product/blueprintRegistry";
 
 function buildSystemPrompt(parsedGoal: ParsedGoal): string {
   return `You are DevOS, an autonomous AI operating system planner.
@@ -117,6 +118,35 @@ export async function generatePlan(goal: string, extraContext?: string): Promise
     }
   } else {
     console.log(`[Planner] 🧠 No micro-planner match — using LLM planner`);
+  }
+
+  // ── 2b. Blueprint fast path (for build-type goals) ───────────
+  if (parsedGoal.type === "build" || /build|create|scaffold|generate/i.test(goal)) {
+    const bp = blueprintRegistry.match({ ...parsedGoal, goal });
+    if (bp) {
+      console.log(`[Planner] 🏗️  Blueprint match: ${bp.id} — using product generator`);
+      return {
+        summary:    `Build ${bp.name} using blueprint ${bp.id}`,
+        complexity: "high",
+        actions: [
+          {
+            type:        "product_build",
+            blueprintId: bp.id,
+            goal,
+            description: `Assemble ${bp.name}: ${bp.modules.join(", ")}`,
+            risk:        "low",
+          },
+        ],
+        _meta: {
+          provider:       "blueprint",
+          tokensEstimate: 0,
+          ragUsed:        false,
+          parsedGoal,
+          blueprintId:    bp.id,
+          blueprintName:  bp.name,
+        },
+      };
+    }
   }
 
   // ── 3. Retrieve RAG context ───────────────────────────────────
