@@ -51,6 +51,8 @@ import { deploymentOrchestrator }             from "./devos/product/deploymentOr
 import { pilotRegistry }                      from "./devos/pilots/pilotRegistry";
 import { pilotExecutor }                      from "./devos/pilots/pilotExecutor";
 import { pilotScheduler }                     from "./devos/pilots/pilotScheduler";
+import { startApiServer }                      from "./api/server";
+import apiConfig                               from "./config/api.json";
 
 // ── Bootstrap ─────────────────────────────────────────────────
 
@@ -451,9 +453,12 @@ async function handleCLI(): Promise<void> {
       await dashboardServer.start();
       startAllTriggers();
       pilotScheduler.start();
+      startApiServer(apiConfig.port);
       console.log("🖥  DevOS Control Plane running at http://localhost:3333");
       console.log("   Webhook server      at http://localhost:3001");
       console.log("   SSE event stream    at http://localhost:3333/api/stream");
+      console.log(`   REST API            at http://localhost:${apiConfig.port}`);
+      console.log(`   API Docs            at http://localhost:${apiConfig.port}/api/docs`);
       console.log("   Press Ctrl+C to stop");
       const onServeSig = () => {
         dashboardServer.stop();
@@ -1149,6 +1154,68 @@ async function handleCLI(): Promise<void> {
       break;
     }
 
+    // ── devos api ─────────────────────────────────────────────
+    case "api": {
+      console.log(`
+╔══════════════════════════════════════════════════════════════╗
+║              DevOS REST API  (port ${apiConfig.port})               ║
+╚══════════════════════════════════════════════════════════════╝
+
+Start the API:  ts-node index.ts serve
+Docs:           http://localhost:${apiConfig.port}/api/docs
+
+Goals
+  POST   /api/goals                   Submit a goal { goal, async? }
+  GET    /api/goals                   List recent goals (last 20)
+  GET    /api/goals/:id               Get goal detail (status, plan, result)
+  DELETE /api/goals/:id               Cancel a running goal
+  POST   /api/goals/:id/retry         Retry a failed goal
+
+Pilots
+  GET    /api/pilots                  List all pilots with status + last run
+  GET    /api/pilots/:id              Get pilot detail + last 5 runs
+  POST   /api/pilots/:id/run          Trigger pilot immediately
+  POST   /api/pilots/:id/enable       Enable a pilot
+  POST   /api/pilots/:id/disable      Disable a pilot
+  GET    /api/pilots/:id/history      Full run history for a pilot
+  PUT    /api/pilots/:id              Update pilot manifest fields
+
+Knowledge
+  GET    /api/knowledge               List all knowledge entries
+  POST   /api/knowledge/ingest        Ingest { filePath } | { url } | { text, title }
+  POST   /api/knowledge/query         Query { question } → { answer, sources, confidence }
+  GET    /api/knowledge/:id           Get specific knowledge entry
+  DELETE /api/knowledge/:id           Delete a knowledge entry
+
+Memory
+  GET    /api/memory                  List all execution memory entries
+  GET    /api/memory/stats            { totalEntries, successRate, topPatterns }
+  DELETE /api/memory/prune            Prune low-quality entries
+  GET    /api/memory/:goalType        Entries for a specific goal type
+
+System
+  GET    /api/system/health           Health check (no auth required)
+  GET    /api/system/status           Full status: goals, pilots, memory, knowledge
+  POST   /api/system/stop             Emergency stop all running goals
+  GET    /api/system/sessions         Recent agent sessions
+  GET    /api/system/skills           All indexed skills
+  GET    /api/system/blueprints       All product blueprints
+
+Streaming (SSE)
+  GET    /api/stream                  All DevOS events (no auth required)
+  GET    /api/stream/goals/:id        Events for a specific goal
+
+Docs
+  GET    /api/docs                    OpenAPI 3.0 spec (JSON)
+
+Auth
+  Set "DEVOS_API_KEY" in config/api.json or DEVOS_API_KEY env var.
+  Pass as:  Authorization: Bearer <key>
+  Empty key = dev mode (no auth required).
+`);
+      break;
+    }
+
     // ── devos help / default ──────────────────────────────────
     case "help":
     case "--help":
@@ -1175,7 +1242,8 @@ Business Modes:
 Utilities:
   doctor               Check system health + config
   test                 Run built-in test suite
-  serve                Start Control Plane UI at http://localhost:3333
+  serve                Start DevOS server + API at http://localhost:4200
+  api                  Print all available API endpoints with descriptions
   dashboard            Show agent scores, task stats, skill usage
   capabilities <goal>  Analyze what capabilities a goal needs
   company   <goal>     Launch multi-agent Company Mode

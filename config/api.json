@@ -1,0 +1,10 @@
+{
+  "port": 4200,
+  "apiKey": "",
+  "corsOrigins": ["*"],
+  "rateLimit": {
+    "windowMs": 60000,
+    "maxRequests": 100
+  },
+  "enableSwagger": true
+}
