@@ -18,6 +18,7 @@ import { knowledgeStore }    from "../../knowledge/knowledgeStore";
 import { pilotRegistry }     from "../../devos/pilots/pilotRegistry";
 import { skillIndex }        from "../../skills/skillIndex";
 import { blueprintRegistry } from "../../devos/product/blueprintRegistry";
+import { auditLogger, AuditEntry } from "../../security/auditLogger";
 
 const router   = express.Router();
 const START_TIME = Date.now();
@@ -85,6 +86,23 @@ router.get("/api/system/skills", (_req: any, res: any) => {
 // GET /api/system/blueprints
 router.get("/api/system/blueprints", (_req: any, res: any) => {
   res.json(blueprintRegistry.list());
+});
+
+// GET /api/system/audit — last 50 audit entries (admin only)
+// Supports ?type=<entryType> query param for filtering
+router.get("/api/system/audit", (req: any, res: any) => {
+  // Admin-only guard
+  if (req.role && req.role !== "admin") {
+    res.status(403).json({ error: "Audit log requires admin role" });
+    return;
+  }
+
+  const typeFilter = req.query?.type as AuditEntry["type"] | undefined;
+  const entries    = typeFilter
+    ? auditLogger.getByType(typeFilter)
+    : auditLogger.getRecent(50);
+
+  res.json(entries);
 });
 
 export default router;

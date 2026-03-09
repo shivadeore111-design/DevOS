@@ -30,6 +30,7 @@ import { executionMemory }          from "../memory/executionMemory";
 import { successEvaluator }         from "./successEvaluator";
 import { researchEngine }           from "../research/researchEngine";
 import { slack }                    from "../integrations/slack";
+import { auditLogger }              from "../security/auditLogger";
 import * as readline                from "readline";
 
 export interface ExecutionEngine {
@@ -271,6 +272,16 @@ export class Runner {
         sessionManager.complete(sessionId);
         heartbeat.stop(task.id);
 
+        // ── Audit log ─────────────────────────────────────
+        auditLogger.log({
+          timestamp: new Date().toISOString(),
+          type:      "goal_executed",
+          actor:     this.agentId,
+          action:    `completed:${task.id}`,
+          detail:    task.goal.slice(0, 200),
+          success:   true,
+        });
+
         // ── Success evaluation + execution memory ─────────
         const evalResult = await successEvaluator.evaluate(
           { ...task, workspacePath: workspacePath0 },
@@ -311,6 +322,16 @@ export class Runner {
         goalGovernor.unregister(task.id);
         sessionManager.fail(sessionId);
         heartbeat.stop(task.id);
+
+        // ── Audit log ─────────────────────────────────────
+        auditLogger.log({
+          timestamp: new Date().toISOString(),
+          type:      "goal_executed",
+          actor:     this.agentId,
+          action:    `failed:${task.id}`,
+          detail:    (errorMsg ?? task.goal).slice(0, 200),
+          success:   false,
+        });
 
         // ── Failure execution memory ──────────────────────
         const failDurationMs = resourceManager.getRuntimeMs(task.id)
@@ -353,6 +374,16 @@ export class Runner {
       goalGovernor.unregister(task.id);
       sessionManager.fail(sessionId);
       heartbeat.stop(task.id);
+
+      // ── Audit log ───────────────────────────────────────
+      auditLogger.log({
+        timestamp: new Date().toISOString(),
+        type:      "goal_executed",
+        actor:     this.agentId,
+        action:    `exception:${task.id}`,
+        detail:    msg.slice(0, 200),
+        success:   false,
+      });
 
       const latest = taskStore.get(task.id);
       if (latest?.status === "failed") {

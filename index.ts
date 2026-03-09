@@ -52,6 +52,7 @@ import { pilotRegistry }                      from "./devos/pilots/pilotRegistry
 import { pilotExecutor }                      from "./devos/pilots/pilotExecutor";
 import { pilotScheduler }                     from "./devos/pilots/pilotScheduler";
 import { startApiServer }                      from "./api/server";
+import { generateApiKey }                      from "./api/middleware/permissions";
 import apiConfig                               from "./config/api.json";
 
 // ── Bootstrap ─────────────────────────────────────────────────
@@ -1156,6 +1157,27 @@ async function handleCLI(): Promise<void> {
 
     // ── devos api ─────────────────────────────────────────────
     case "api": {
+      const apiSub = goalArgs[0];
+
+      // devos api keygen <role> <label>
+      if (apiSub === "keygen") {
+        const role  = goalArgs[1] as "admin" | "automation" | "read-only";
+        const label = goalArgs.slice(2).join(" ") || "unnamed";
+        if (!["admin", "automation", "read-only"].includes(role)) {
+          console.log("Usage: ts-node index.ts api keygen <admin|automation|read-only> <label>");
+          process.exit(1);
+        }
+        const key = generateApiKey(role, label);
+        console.log(`\n✅ API Key generated:`);
+        console.log(`   Key:   ${key}`);
+        console.log(`   Role:  ${role}`);
+        console.log(`   Label: ${label}`);
+        console.log(`\n   Add to requests: Authorization: Bearer ${key}`);
+        console.log(`   ⚠️  Save this key — it will not be shown again\n`);
+        break;
+      }
+
+      // devos api  — print endpoint listing
       console.log(`
 ╔══════════════════════════════════════════════════════════════╗
 ║              DevOS REST API  (port ${apiConfig.port})               ║
@@ -1200,17 +1222,19 @@ System
   GET    /api/system/sessions         Recent agent sessions
   GET    /api/system/skills           All indexed skills
   GET    /api/system/blueprints       All product blueprints
+  GET    /api/system/audit            Audit log — last 50 entries (admin only)
 
 Streaming (SSE)
-  GET    /api/stream                  All DevOS events (no auth required)
+  GET    /api/stream                  All DevOS events
   GET    /api/stream/goals/:id        Events for a specific goal
 
 Docs
   GET    /api/docs                    OpenAPI 3.0 spec (JSON)
 
-Auth
-  Set "DEVOS_API_KEY" in config/api.json or DEVOS_API_KEY env var.
-  Pass as:  Authorization: Bearer <key>
+Auth & Keys
+  devos api keygen <role> <label>     Generate a hashed API key
+  Roles: admin | automation | read-only
+  Pass as: Authorization: Bearer <key>
   Empty key = dev mode (no auth required).
 `);
       break;

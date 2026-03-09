@@ -8,6 +8,7 @@
 
 import * as fs   from "fs";
 import * as path from "path";
+import { auditLogger } from "../../security/auditLogger";
 
 interface ApiConfig { apiKey: string; }
 
@@ -21,19 +22,48 @@ function loadApiKey(): string {
 
 export function apiKeyAuth(req: any, res: any, next: any): void {
   const configuredKey = loadApiKey();
-  const ip            = req.ip ?? req.socket?.remoteAddress ?? "unknown";
+  const ip            = (req.ip ?? req.socket?.remoteAddress ?? "unknown") as string;
 
   console.log(`[API] Auth: ${req.method} ${req.path} — ${ip}`);
 
-  // Dev mode: empty key skips auth
-  if (configuredKey === "") { next(); return; }
+  // Dev mode: empty key skips auth — log as passthrough
+  if (configuredKey === "") {
+    auditLogger.log({
+      timestamp: new Date().toISOString(),
+      type:      "api_request",
+      actor:     "dev-mode",
+      action:    `${req.method} ${req.path}`,
+      ip,
+      success:   true,
+    });
+    next();
+    return;
+  }
 
   const authHeader = (req.headers["authorization"] ?? "") as string;
   const token      = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
 
   if (!token || token !== configuredKey) {
+    auditLogger.log({
+      timestamp: new Date().toISOString(),
+      type:      "auth_failed",
+      actor:     "unknown",
+      action:    `${req.method} ${req.path}`,
+      detail:    token ? "Invalid token" : "Missing token",
+      ip,
+      success:   false,
+    });
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
+
+  auditLogger.log({
+    timestamp: new Date().toISOString(),
+    type:      "api_request",
+    actor:     "bearer",
+    action:    `${req.method} ${req.path}`,
+    ip,
+    success:   true,
+  });
   next();
 }

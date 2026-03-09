@@ -10,6 +10,7 @@ import { policyEngine }         from "./policyEngine"
 import { riskEvaluator, RiskLevel } from "./riskEvaluator"
 import { budgetManager }        from "./budgetManager"
 import { eventBus }             from "../core/eventBus"
+import { auditLogger }          from "../security/auditLogger"
 
 export interface ValidationResult {
   approved:  boolean
@@ -62,6 +63,14 @@ export class ControlKernel {
     ].filter(Boolean).join(" ");
 
     if (inputsToScan && this.scanForInjection(inputsToScan)) {
+      auditLogger.log({
+        timestamp: new Date().toISOString(),
+        type:      "injection_blocked",
+        actor:     "control-kernel",
+        action:    `blocked:${action.type ?? "unknown"}`,
+        detail:    inputsToScan.slice(0, 200),
+        success:   false,
+      });
       return { approved: false, reason: "Prompt injection detected", riskLevel: "critical" };
     }
 

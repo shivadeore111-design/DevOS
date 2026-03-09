@@ -9,21 +9,25 @@
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const express = require("express") as any;
 
-import { apiKeyAuth }  from "./middleware/auth";
-import { rateLimiter } from "./middleware/rateLimit";
-import goalsRouter     from "./routes/goals";
-import pilotsRouter    from "./routes/pilots";
-import knowledgeRouter from "./routes/knowledge";
-import memoryRouter    from "./routes/memory";
-import systemRouter    from "./routes/system";
-import streamRouter    from "./routes/stream";
+import * as fs    from "fs";
+import * as path  from "path";
+import { apiKeyAuth }       from "./middleware/auth";
+import { rateLimiter }      from "./middleware/rateLimit";
+import { permissionCheck }  from "./middleware/permissions";
+import goalsRouter          from "./routes/goals";
+import pilotsRouter         from "./routes/pilots";
+import knowledgeRouter      from "./routes/knowledge";
+import memoryRouter         from "./routes/memory";
+import systemRouter         from "./routes/system";
+import streamRouter         from "./routes/stream";
 
 export function createApiServer(): any {
   const app = express();
 
+  // 1. JSON body parsing
   app.use(express.json());
 
-  // CORS
+  // 2. CORS
   app.use((req: any, res: any, next: any) => {
     res.setHeader("Access-Control-Allow-Origin",  "*");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
@@ -32,21 +36,24 @@ export function createApiServer(): any {
     next();
   });
 
-  // Rate limiter on all routes
+  // 3. Rate limiter
   app.use(rateLimiter);
 
-  // Auth on all routes except /api/system/health and /api/stream
+  // 4. Auth (skip only /api/system/health — public health check)
   app.use((req: any, res: any, next: any) => {
-    if (req.path === "/api/system/health")  return next();
-    if (req.path.startsWith("/api/stream")) return next();
+    if (req.path === "/api/system/health") return next();
     return apiKeyAuth(req, res, next);
   });
 
-  // Swagger docs at /api/docs
+  // 5. Permission check (role-based)
+  app.use(permissionCheck);
+
+  // Swagger docs
   app.get("/api/docs", (_req: any, res: any) => {
     res.json(generateSwaggerSpec());
   });
 
+  // 6. Routes
   app.use(goalsRouter);
   app.use(pilotsRouter);
   app.use(knowledgeRouter);
@@ -93,17 +100,24 @@ function generateSwaggerSpec() {
       "/api/system/sessions":      { get:  { summary: "Recent agent sessions" } },
       "/api/system/skills":        { get:  { summary: "All indexed skills" } },
       "/api/system/blueprints":    { get:  { summary: "All product blueprints" } },
-      "/api/stream":               { get:  { summary: "SSE all events (no auth required)" } },
+      "/api/system/audit":         { get:  { summary: "Audit log (admin only)" } },
+      "/api/stream":               { get:  { summary: "SSE all DevOS events" } },
       "/api/stream/goals/{id}":    { get:  { summary: "SSE stream for one goal" } },
     },
   };
 }
 
-export function startApiServer(port: number): any {
+export function startApiServer(portArg?: number): any {
+  const cfgPath   = path.join(process.cwd(), "config", "api.json");
+  const apiConfig = JSON.parse(fs.readFileSync(cfgPath, "utf-8"));
+  const host      = (apiConfig.host as string) || "127.0.0.1";
+  const port      = (portArg ?? apiConfig.port ?? 4200) as number;
+
   const app = createApiServer();
-  app.listen(port, () => {
-    console.log(`[API] 🚀 DevOS API server running at http://localhost:${port}`);
-    console.log(`[API] 📖 Docs at http://localhost:${port}/api/docs`);
+  app.listen(port, host, () => {
+    console.log(`[API] 🚀 DevOS API running at http://${host}:${port}`);
+    console.log(`[API] 🔒 Bound to ${host} — localhost only`);
+    console.log(`[API] 📖 Docs at http://${host}:${port}/api/docs`);
   });
   return app;
 }
