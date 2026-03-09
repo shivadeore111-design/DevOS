@@ -1,151 +1,145 @@
 // ============================================================
-// DevOS — Autonomous AI Execution System
+// DevOS � Autonomous AI Execution System
 // Copyright (c) 2026 Shiva Deore. All rights reserved.
 // ============================================================
 
-// web/searchEngine.ts — DuckDuckGo HTML scraper
+// web/searchEngine.ts � DuckDuckGo Instant Answer API + fallback
 
-import * as https        from "https";
-import * as url          from "url";
-import { researchCache } from "../research/researchCache";
+import * as https        from "https"
+import { researchCache } from "../research/researchCache"
 
-const DDG_HOST    = "html.duckduckgo.com";
-const DDG_PATH    = "/html/";
-const TIMEOUT_MS  = 10_000;
-const MAX_RESULTS = 5;
+const TIMEOUT_MS  = 10_000
+const MAX_RESULTS = 5
 
 export interface SearchResult {
-  title:   string;
-  url:     string;
-  snippet: string;
+  title:   string
+  url:     string
+  snippet: string
 }
 
-// ── DuckDuckGo raw fetch ──────────────────────────────────
-
-function ddgFetch(query: string): Promise<string> {
+function ddgJsonFetch(query: string): Promise<any> {
   return new Promise((resolve, reject) => {
-    const body = `q=${encodeURIComponent(query)}&kl=us-en`;
-
+    const path = `/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`
     const options: https.RequestOptions = {
-      hostname: DDG_HOST,
+      hostname: "api.duckduckgo.com",
       port:     443,
-      path:     DDG_PATH,
-      method:   "POST",
-      headers: {
-        "Content-Type":   "application/x-www-form-urlencoded",
-        "Content-Length": Buffer.byteLength(body),
-        "User-Agent":     "DevOS/1.0 (research bot)",
-        "Accept":         "text/html",
-      },
-      timeout: TIMEOUT_MS,
-    };
-
+      path,
+      method:   "GET",
+      headers:  { "User-Agent": "DevOS/1.0 (research bot)" },
+      timeout:  TIMEOUT_MS,
+    }
     const req = https.request(options, res => {
-      if ((res.statusCode ?? 0) >= 400) {
-        res.resume();
-        reject(new Error(`DDG responded with HTTP ${res.statusCode}`));
-        return;
-      }
-
-      let html = "";
-      res.setEncoding("utf-8");
-      res.on("data", chunk => { html += chunk; });
-      res.on("end",  () => resolve(html));
-      res.on("error", reject);
-    });
-
-    req.on("timeout", () => { req.destroy(); reject(new Error("DDG request timed out")); });
-    req.on("error", reject);
-    req.write(body);
-    req.end();
-  });
+      let data = ""
+      res.setEncoding("utf-8")
+      res.on("data", chunk => { data += chunk })
+      res.on("end",  () => {
+        try { resolve(JSON.parse(data)) }
+        catch { reject(new Error("Failed to parse DDG JSON")) }
+      })
+      res.on("error", reject)
+    })
+    req.on("timeout", () => { req.destroy(); reject(new Error("DDG request timed out")) })
+    req.on("error", reject)
+    req.end()
+  })
 }
 
-// ── HTML parser for DDG results ───────────────────────────
-
-function parseDDGResults(html: string): SearchResult[] {
-  const results: SearchResult[] = [];
-
-  // DDG HTML structure: <div class="result__body"> or <div class="results_links">
-  // Title: <a class="result__a" href="...">Title</a>
-  // Snippet: <a class="result__snippet">...</a>
-
-  const resultBlockRe = /<div class="result__body">([\s\S]*?)<\/div>\s*<\/div>/gi;
-  let blockMatch: RegExpExecArray | null;
-
-  while ((blockMatch = resultBlockRe.exec(html)) !== null && results.length < MAX_RESULTS) {
-    const block = blockMatch[1];
-
-    // Extract URL
-    const hrefMatch = /href="([^"]+)"/.exec(block);
-    if (!hrefMatch) continue;
-    let resultUrl = hrefMatch[1];
-
-    // DDG uses redirect URLs like //duckduckgo.com/l/?uddg=...
-    const uddgMatch = /uddg=([^&"]+)/.exec(resultUrl);
-    if (uddgMatch) {
-      try { resultUrl = decodeURIComponent(uddgMatch[1]); } catch { continue; }
+function ddgLiteFetch(query: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const path = `/lite/?q=${encodeURIComponent(query)}&kl=us-en`
+    const options: https.RequestOptions = {
+      hostname: "lite.duckduckgo.com",
+      port:     443,
+      path,
+      method:   "GET",
+      headers:  {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept":     "text/html",
+      },
+      timeout:  TIMEOUT_MS,
     }
-    if (!resultUrl.startsWith("http")) continue;
-
-    // Extract title
-    const titleMatch = /<a[^>]*class="result__a"[^>]*>([\s\S]*?)<\/a>/i.exec(block);
-    const title = titleMatch
-      ? titleMatch[1].replace(/<[^>]+>/g, "").trim()
-      : resultUrl;
-
-    // Extract snippet
-    const snippetMatch = /<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/i.exec(block);
-    const snippet = snippetMatch
-      ? snippetMatch[1].replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim()
-      : "";
-
-    results.push({ title, url: resultUrl, snippet });
-  }
-
-  // Fallback: simpler regex if structured blocks weren't found
-  if (results.length === 0) {
-    const linkRe = /<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
-    let m: RegExpExecArray | null;
-    while ((m = linkRe.exec(html)) !== null && results.length < MAX_RESULTS) {
-      let resultUrl = m[1];
-      const uddgMatch = /uddg=([^&"]+)/.exec(resultUrl);
-      if (uddgMatch) {
-        try { resultUrl = decodeURIComponent(uddgMatch[1]); } catch { continue; }
-      }
-      if (!resultUrl.startsWith("http")) continue;
-      const title = m[2].replace(/<[^>]+>/g, "").trim();
-      results.push({ title, url: resultUrl, snippet: "" });
-    }
-  }
-
-  return results;
+    const req = https.request(options, res => {
+      let html = ""
+      res.setEncoding("utf-8")
+      res.on("data", chunk => { html += chunk })
+      res.on("end",  () => resolve(html))
+      res.on("error", reject)
+    })
+    req.on("timeout", () => { req.destroy(); reject(new Error("DDG lite timed out")) })
+    req.on("error", reject)
+    req.end()
+  })
 }
 
-// ── Public API ────────────────────────────────────────────
+function parseLiteResults(html: string): SearchResult[] {
+  const results: SearchResult[] = []
+  const rowRe = /<a[^>]+href="([^"]+)"[^>]*>([^<]+)<\/a>/gi
+  let m: RegExpExecArray | null
+  while ((m = rowRe.exec(html)) !== null && results.length < MAX_RESULTS) {
+    let u = m[1]
+    if (!u.startsWith("http")) continue
+    if (u.includes("duckduckgo.com")) continue
+    results.push({ title: m[2].trim(), url: u, snippet: "" })
+  }
+  return results
+}
 
 export async function webSearch(query: string): Promise<SearchResult[]> {
-  const cacheKey = `search:${query.toLowerCase().trim()}`;
-  const cached   = researchCache.get(cacheKey);
-
+  const cacheKey = `search:${query.toLowerCase().trim()}`
+  const cached   = researchCache.get(cacheKey)
   if (cached) {
-    console.log(`[SearchEngine] Cache hit for: "${query}"`);
-    return cached.results as SearchResult[];
+    console.log(`[SearchEngine] Cache hit for: "${query}"`)
+    return cached.results as SearchResult[]
   }
 
-  console.log(`[SearchEngine] Searching DDG: "${query}"`);
+  console.log(`[SearchEngine] Searching DDG: "${query}"`)
 
+  // Try JSON API first
   try {
-    const html    = await ddgFetch(query);
-    const results = parseDDGResults(html);
+    const data = await ddgJsonFetch(query)
+    const results: SearchResult[] = []
 
-    console.log(`[SearchEngine] Found ${results.length} results for: "${query}"`);
+    // Abstract + RelatedTopics
+    if (data.Abstract && data.AbstractURL) {
+      results.push({
+        title:   data.Heading || query,
+        url:     data.AbstractURL,
+        snippet: data.AbstractText || "",
+      })
+    }
+    if (Array.isArray(data.RelatedTopics)) {
+      for (const t of data.RelatedTopics) {
+        if (results.length >= MAX_RESULTS) break
+        if (t.FirstURL && t.Text) {
+          results.push({ title: t.Text.slice(0, 80), url: t.FirstURL, snippet: t.Text })
+        }
+      }
+    }
 
-    researchCache.set(cacheKey, query, results, undefined, 6 * 60 * 60 * 1000); // 6h TTL
-    return results;
-
+    if (results.length > 0) {
+      console.log(`[SearchEngine] Found ${results.length} results (JSON API)`)
+      researchCache.set(cacheKey, query, results, undefined, 6 * 60 * 60 * 1000)
+      return results
+    }
   } catch (err: any) {
-    console.error(`[SearchEngine] Error: ${err.message}`);
-    return [];
+    console.log(`[SearchEngine] JSON API failed: ${err.message} � trying lite`)
+  }
+
+  // Fallback to lite.duckduckgo.com
+  try {
+    const html    = await ddgLiteFetch(query)
+    const results = parseLiteResults(html)
+    console.log(`[SearchEngine] Found ${results.length} results (lite)`)
+    researchCache.set(cacheKey, query, results, undefined, 6 * 60 * 60 * 1000)
+    return results
+  } catch (err: any) {
+    console.error(`[SearchEngine] All search methods failed: ${err.message}`)
+    return []
   }
 }
+
+export class SearchEngine {
+  search(query: string): Promise<SearchResult[]> { return webSearch(query) }
+}
+export const searchEngine = new SearchEngine()
+
