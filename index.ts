@@ -40,6 +40,10 @@ import { skillWarmup }                         from "./executor/skillWarmup";
 import { skillIndex }                          from "./skills/skillIndex";
 import { cronTrigger, webhookTrigger,
          startAllTriggers, stopAllTriggers }   from "./core/triggers";
+import { ingestionEngine }                    from "./knowledge/ingestionEngine";
+import { knowledgeStore }                     from "./knowledge/knowledgeStore";
+import { knowledgeQuery }                     from "./knowledge/knowledgeQuery";
+import { github }                             from "./integrations/github";
 
 // ── Bootstrap ─────────────────────────────────────────────────
 
@@ -818,6 +822,126 @@ async function handleCLI(): Promise<void> {
       break;
     }
 
+    // ── devos knowledge ───────────────────────────────────────
+    case "knowledge": {
+      const sub     = goalArgs[0];
+      const kTarget = goalArgs.slice(1).join(" ").trim();
+
+      // devos knowledge ingest <filePath|url>
+      if (sub === "ingest") {
+        if (!kTarget) {
+          console.error("❌ Usage: ts-node index.ts knowledge ingest <filePath|url>");
+          process.exit(1);
+        }
+        console.log(`\n📥 Ingesting: "${kTarget}"\n`);
+        if (kTarget.startsWith("http://") || kTarget.startsWith("https://")) {
+          const id    = await ingestionEngine.ingestUrl(kTarget);
+          const entry = knowledgeStore.get(id);
+          if (entry) {
+            console.log(`✅ Ingested URL: ${entry.title}`);
+            console.log(`   Chunks: ${entry.chunks.length}  Tags: ${entry.tags.join(", ")}`);
+          } else {
+            console.log("⚠️  Nothing ingested from URL.");
+          }
+        } else {
+          const id    = await ingestionEngine.ingest(kTarget);
+          const entry = knowledgeStore.get(id);
+          if (entry) {
+            console.log(`✅ Ingested: ${entry.title}`);
+            console.log(`   Chunks: ${entry.chunks.length}  Tags: ${entry.tags.join(", ")}`);
+          } else {
+            console.log("⚠️  Nothing ingested (unsupported type or empty file).");
+          }
+        }
+        break;
+      }
+
+      // devos knowledge query "<question>"
+      if (sub === "query") {
+        if (!kTarget) {
+          console.error('❌ Usage: ts-node index.ts knowledge query "<question>"');
+          process.exit(1);
+        }
+        console.log(`\n🔍 Querying knowledge: "${kTarget}"\n`);
+        const result = await knowledgeQuery.query(kTarget);
+        console.log(`📖 Answer (confidence: ${(result.confidence * 100).toFixed(0)}%):`);
+        console.log(`   ${result.answer}`);
+        if (result.sources.length > 0) {
+          console.log(`\n📚 Sources (${result.sources.length}):`);
+          for (const s of result.sources) {
+            console.log(`   • [${s.id.slice(0, 8)}] ${s.title}  (${s.source})`);
+          }
+        }
+        console.log("");
+        break;
+      }
+
+      // devos knowledge list (default)
+      {
+        const all = knowledgeStore.list();
+        if (!all.length) {
+          console.log("📭 Knowledge store is empty. Run: devos knowledge ingest <file>");
+          break;
+        }
+        console.log(`\n🧠 Knowledge Store (${all.length} entries)\n`);
+        const sorted = [...all].sort(
+          (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+        );
+        for (const e of sorted) {
+          const date  = new Date(e.updatedAt).toLocaleDateString();
+          const tags  = e.tags.slice(0, 4).join(", ") || "—";
+          const hits  = `access: ${e.accessCount}`;
+          console.log(`  [${e.id.slice(0, 8)}] ${e.title}`);
+          console.log(`           source: ${e.source}  chunks: ${e.chunks.length}  ${hits}  ${date}`);
+          console.log(`           tags:   ${tags}`);
+        }
+        console.log("");
+        break;
+      }
+    }
+
+    // ── devos github ──────────────────────────────────────────
+    case "github": {
+      const sub = goalArgs[0];
+
+      if (sub === "issues" || !sub) {
+        let cfg: any = {};
+        try { cfg = JSON.parse(fs.readFileSync("config/integrations.json", "utf-8")); } catch {}
+        const repo  = goalArgs[1] ?? cfg?.github?.defaultRepo ?? "";
+        const state = (goalArgs[2] as "open" | "closed" | "all") ?? "open";
+
+        if (!repo) {
+          console.error("❌ Usage: ts-node index.ts github issues <owner/repo> [open|closed|all]");
+          console.error("   Or set defaultRepo in config/integrations.json");
+          process.exit(1);
+        }
+
+        console.log(`\n🐙 GitHub Issues — ${repo} (${state})\n`);
+        try {
+          const issues = await github.listIssues(repo, state);
+          if (!issues.length) {
+            console.log(`  No ${state} issues found.`);
+          } else {
+            for (const issue of issues) {
+              const labels = issue.labels.length ? `  [${issue.labels.join(", ")}]` : "";
+              const date   = new Date(issue.createdAt).toLocaleDateString();
+              console.log(`  #${String(issue.id).padEnd(5)} [${issue.state}] ${issue.title}${labels}`);
+              console.log(`           created: ${date}`);
+            }
+          }
+          console.log(`\n  Total: ${issues.length} issue(s)\n`);
+        } catch (err: any) {
+          console.error(`❌ GitHub error: ${err.message}`);
+          console.error("   Set GITHUB_TOKEN env var or token in config/integrations.json");
+        }
+        break;
+      }
+
+      console.error(`❌ Unknown github sub-command: ${sub}`);
+      console.error("   Available: issues");
+      break;
+    }
+
     // ── devos help / default ──────────────────────────────────
     case "help":
     case "--help":
@@ -860,6 +984,14 @@ Utilities:
   session   <id>       Show full session detail including history
   memory               Show top 10 execution memory patterns with success rates
   memory prune         Run memory aging and prune low-quality entries
+
+Knowledge:
+  knowledge list            List all entries in the knowledge store
+  knowledge ingest <file>   Ingest a file or URL into the knowledge store
+  knowledge query "<q>"     Query the knowledge store with natural language
+
+Integrations:
+  github issues [repo]      List open GitHub issues (repo: owner/repo)
 
 Flags:
   --dry-run    Plan but don't execute actions

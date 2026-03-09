@@ -1,0 +1,282 @@
+[
+  {
+    "name": "analyzeBuildError",
+    "path": "/sessions/sleepy-adoring-gates/mnt/DevOS/skills/analyzeBuildError.ts",
+    "tier": "core",
+    "description": "",
+    "usageCount": 0,
+    "successRate": 1
+  },
+  {
+    "name": "architecture/apiDesigner",
+    "path": "/sessions/sleepy-adoring-gates/mnt/DevOS/skills/architecture/apiDesigner.ts",
+    "tier": "domain",
+    "description": "",
+    "usageCount": 0,
+    "successRate": 1
+  },
+  {
+    "name": "architecture/databaseDesigner",
+    "path": "/sessions/sleepy-adoring-gates/mnt/DevOS/skills/architecture/databaseDesigner.ts",
+    "tier": "domain",
+    "description": "",
+    "usageCount": 0,
+    "successRate": 1
+  },
+  {
+    "name": "architecture/scalabilityPlanner",
+    "path": "/sessions/sleepy-adoring-gates/mnt/DevOS/skills/architecture/scalabilityPlanner.ts",
+    "tier": "domain",
+    "description": "",
+    "usageCount": 0,
+    "successRate": 1
+  },
+  {
+    "name": "architecture/systemArchitect",
+    "path": "/sessions/sleepy-adoring-gates/mnt/DevOS/skills/architecture/systemArchitect.ts",
+    "tier": "domain",
+    "description": "",
+    "usageCount": 0,
+    "successRate": 1
+  },
+  {
+    "name": "browser/browser",
+    "path": "/sessions/sleepy-adoring-gates/mnt/DevOS/skills/browser/browser.ts",
+    "tier": "domain",
+    "description": "",
+    "usageCount": 0,
+    "successRate": 1
+  },
+  {
+    "name": "browser/browserManager",
+    "path": "/sessions/sleepy-adoring-gates/mnt/DevOS/skills/browser/browserManager.ts",
+    "tier": "domain",
+    "description": "",
+    "usageCount": 0,
+    "successRate": 1
+  },
+  {
+    "name": "browser/pageReader",
+    "path": "/sessions/sleepy-adoring-gates/mnt/DevOS/skills/browser/pageReader.ts",
+    "tier": "domain",
+    "description": "",
+    "usageCount": 0,
+    "successRate": 1
+  },
+  {
+    "name": "browser/testBrowser",
+    "path": "/sessions/sleepy-adoring-gates/mnt/DevOS/skills/browser/testBrowser.ts",
+    "tier": "domain",
+    "description": "",
+    "usageCount": 0,
+    "successRate": 1
+  },
+  {
+    "name": "browser/webActions",
+    "path": "/sessions/sleepy-adoring-gates/mnt/DevOS/skills/browser/webActions.ts",
+    "tier": "domain",
+    "description": "",
+    "usageCount": 0,
+    "successRate": 1
+  },
+  {
+    "name": "builder/projectBuilder",
+    "path": "/sessions/sleepy-adoring-gates/mnt/DevOS/skills/builder/projectBuilder.ts",
+    "tier": "core",
+    "description": "",
+    "usageCount": 0,
+    "successRate": 1
+  },
+  {
+    "name": "checkDeploymentHealth",
+    "path": "/sessions/sleepy-adoring-gates/mnt/DevOS/skills/checkDeploymentHealth.ts",
+    "tier": "core",
+    "description": "",
+    "usageCount": 0,
+    "successRate": 1
+  },
+  {
+    "name": "coding/cleanCodeEnforcer",
+    "path": "/sessions/sleepy-adoring-gates/mnt/DevOS/skills/coding/cleanCodeEnforcer.ts",
+    "tier": "domain",
+    "description": "",
+    "usageCount": 0,
+    "successRate": 1
+  },
+  {
+    "name": "coding/dependencyManager",
+    "path": "/sessions/sleepy-adoring-gates/mnt/DevOS/skills/coding/dependencyManager.ts",
+    "tier": "domain",
+    "description": "",
+    "usageCount": 0,
+    "successRate": 1
+  },
+  {
+    "name": "coding/featureBuilder",
+    "path": "/sessions/sleepy-adoring-gates/mnt/DevOS/skills/coding/featureBuilder.ts",
+    "tier": "domain",
+    "description": "",
+    "usageCount": 0,
+    "successRate": 1
+  },
+  {
+    "name": "coding/typescriptExpert",
+    "path": "/sessions/sleepy-adoring-gates/mnt/DevOS/skills/coding/typescriptExpert.ts",
+    "tier": "domain",
+    "description": "",
+    "usageCount": 0,
+    "successRate": 1
+  },
+  {
+    "name": "debug/logAnalyzer",
+    "path": "/sessions/sleepy-adoring-gates/mnt/DevOS/skills/debug/logAnalyzer.ts",
+    "tier": "domain",
+    "description": "",
+    "usageCount": 0,
+    "successRate": 1
+  },
+  {
+    "name": "debug/rootCauseAnalyzer",
+    "path": "/sessions/sleepy-adoring-gates/mnt/DevOS/skills/debug/rootCauseAnalyzer.ts",
+    "tier": "domain",
+    "description": "",
+    "usageCount": 0,
+    "successRate": 1
+  },
+  {
+    "name": "debug/selfRepair",
+    "path": "/sessions/sleepy-adoring-gates/mnt/DevOS/skills/debug/selfRepair.ts",
+    "tier": "domain",
+    "description": "",
+    "usageCount": 0,
+    "successRate": 1
+  },
+  {
+    "name": "debug/systematicDebugger",
+    "path": "/sessions/sleepy-adoring-gates/mnt/DevOS/skills/debug/systematicDebugger.ts",
+    "tier": "domain",
+    "description": "",
+    "usageCount": 0,
+    "successRate": 1
+  },
+  {
+    "name": "devops/ciBuilder",
+    "path": "/sessions/sleepy-adoring-gates/mnt/DevOS/skills/devops/ciBuilder.ts",
+    "tier": "domain",
+    "description": "",
+    "usageCount": 0,
+    "successRate": 1
+  },
+  {
+    "name": "devops/deploymentEngineer",
+    "path": "/sessions/sleepy-adoring-gates/mnt/DevOS/skills/devops/deploymentEngineer.ts",
+    "tier": "domain",
+    "description": "",
+    "usageCount": 0,
+    "successRate": 1
+  },
+  {
+    "name": "docs/docGenerator",
+    "path": "/sessions/sleepy-adoring-gates/mnt/DevOS/skills/docs/docGenerator.ts",
+    "tier": "domain",
+    "description": "",
+    "usageCount": 0,
+    "successRate": 1
+  },
+  {
+    "name": "express",
+    "path": "/sessions/sleepy-adoring-gates/mnt/DevOS/skills/express.ts",
+    "tier": "core",
+    "description": "",
+    "usageCount": 0,
+    "successRate": 1
+  },
+  {
+    "name": "gitPush",
+    "path": "/sessions/sleepy-adoring-gates/mnt/DevOS/skills/gitPush.ts",
+    "tier": "core",
+    "description": "",
+    "usageCount": 0,
+    "successRate": 1
+  },
+  {
+    "name": "performance/costOptimizer",
+    "path": "/sessions/sleepy-adoring-gates/mnt/DevOS/skills/performance/costOptimizer.ts",
+    "tier": "domain",
+    "description": "",
+    "usageCount": 0,
+    "successRate": 1
+  },
+  {
+    "name": "performance/optimizer",
+    "path": "/sessions/sleepy-adoring-gates/mnt/DevOS/skills/performance/optimizer.ts",
+    "tier": "domain",
+    "description": "",
+    "usageCount": 0,
+    "successRate": 1
+  },
+  {
+    "name": "planning/projectScaffolder",
+    "path": "/sessions/sleepy-adoring-gates/mnt/DevOS/skills/planning/projectScaffolder.ts",
+    "tier": "domain",
+    "description": "",
+    "usageCount": 0,
+    "successRate": 1
+  },
+  {
+    "name": "planning/taskPlanner",
+    "path": "/sessions/sleepy-adoring-gates/mnt/DevOS/skills/planning/taskPlanner.ts",
+    "tier": "domain",
+    "description": "",
+    "usageCount": 0,
+    "successRate": 1
+  },
+  {
+    "name": "security/dependencyAudit",
+    "path": "/sessions/sleepy-adoring-gates/mnt/DevOS/skills/security/dependencyAudit.ts",
+    "tier": "domain",
+    "description": "",
+    "usageCount": 0,
+    "successRate": 1
+  },
+  {
+    "name": "security/securityAudit",
+    "path": "/sessions/sleepy-adoring-gates/mnt/DevOS/skills/security/securityAudit.ts",
+    "tier": "domain",
+    "description": "",
+    "usageCount": 0,
+    "successRate": 1
+  },
+  {
+    "name": "system/environmentBuilder",
+    "path": "/sessions/sleepy-adoring-gates/mnt/DevOS/skills/system/environmentBuilder.ts",
+    "tier": "domain",
+    "description": "",
+    "usageCount": 0,
+    "successRate": 1
+  },
+  {
+    "name": "system/terminalOperator",
+    "path": "/sessions/sleepy-adoring-gates/mnt/DevOS/skills/system/terminalOperator.ts",
+    "tier": "domain",
+    "description": "",
+    "usageCount": 0,
+    "successRate": 1
+  },
+  {
+    "name": "utils/terminalOperator",
+    "path": "/sessions/sleepy-adoring-gates/mnt/DevOS/skills/utils/terminalOperator.ts",
+    "tier": "domain",
+    "description": "",
+    "usageCount": 0,
+    "successRate": 1
+  },
+  {
+    "name": "vercelDeploy",
+    "path": "/sessions/sleepy-adoring-gates/mnt/DevOS/skills/vercelDeploy.ts",
+    "tier": "core",
+    "description": "",
+    "usageCount": 0,
+    "successRate": 1
+  }
+]

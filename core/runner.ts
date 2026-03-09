@@ -29,6 +29,7 @@ import { heartbeat }                from "./heartbeat";
 import { executionMemory }          from "../memory/executionMemory";
 import { successEvaluator }         from "./successEvaluator";
 import { researchEngine }           from "../research/researchEngine";
+import { slack }                    from "../integrations/slack";
 import * as readline                from "readline";
 
 export interface ExecutionEngine {
@@ -290,6 +291,9 @@ export class Runner {
         })
         if (memEntry) executionMemory.recordUse(memEntry.id, evalResult.success)
 
+        // ── Slack notification ────────────────────────────
+        slack.notify(task.id, "completed", evalResult.summary || task.goal).catch(() => {})
+
         // Clean up snapshot on success
         await stateSnapshot.delete(task.id);
 
@@ -322,6 +326,9 @@ export class Runner {
           retryCount: 0,
         })
         if (memEntry) executionMemory.recordUse(memEntry.id, false)
+
+        // ── Slack notification ────────────────────────────
+        slack.notify(task.id, "failed", errorMsg ?? task.goal).catch(() => {})
 
         const latest = taskStore.get(task.id);
         if (latest?.status === "failed") {

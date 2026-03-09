@@ -4,5 +4,11 @@
     "goal": "check for new github issues and triage them",
     "enabled": true,
     "id": "cron_mmizzp2p_387u"
+  },
+  {
+    "schedule": "0 9 * * *",
+    "goal": "check for new github issues and triage them",
+    "enabled": true,
+    "id": "cron_mmj04s44_x7t5"
   }
 ]
