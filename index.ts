@@ -35,6 +35,9 @@ import { Observability }                       from "./core/observability";
 import { CapabilityGraph }                     from "./core/capabilityGraph";
 import { PromptEvolver }                       from "./core/promptEvolver";
 import { dashboard }                           from "./dashboard/metrics";
+import { skillSanitizer }                      from "./executor/skillSanitizer";
+import { skillWarmup }                         from "./executor/skillWarmup";
+import { skillIndex }                          from "./skills/skillIndex";
 
 // ── Bootstrap ─────────────────────────────────────────────────
 
@@ -44,6 +47,11 @@ if (!fs.existsSync(workspace)) fs.mkdirSync(workspace, { recursive: true });
 taskStore.load();
 memoryStore.load();
 vectorMemory.load();
+
+// Sanitize any LLM-generated skill files on every startup
+skillSanitizer.sanitizeDirectory("skills/generated").then(n => {
+  if (n > 0) console.log(`[Boot] Sanitized ${n} generated skill file(s)`);
+}).catch(() => {});
 
 // ── Ollama health check ────────────────────────────────────────
 
@@ -425,6 +433,7 @@ async function handleCLI(): Promise<void> {
 
     // ── devos serve ───────────────────────────────────────────
     case "serve": {
+      await skillWarmup.preloadOnServe();
       const { dashboardServer } = await import("./dashboard/server");
       await dashboardServer.start();
       console.log("🖥  DevOS Control Plane running at http://localhost:3333");
@@ -668,6 +677,37 @@ async function handleCLI(): Promise<void> {
       break;
     }
 
+    // ── devos skills ──────────────────────────────────────────
+    case "skills": {
+      const all = skillIndex.getAll();
+      if (!all.length) {
+        console.log("📭 No skills indexed yet.");
+        break;
+      }
+
+      // Group by tier
+      const byTier: Record<string, typeof all> = {};
+      for (const s of all) {
+        (byTier[s.tier] ??= []).push(s);
+      }
+
+      console.log(`\n🛠  DevOS Skills (${all.length} total)\n`);
+      const tierOrder = ["core", "domain", "generated"];
+      for (const tier of tierOrder) {
+        const skills = byTier[tier];
+        if (!skills?.length) continue;
+        console.log(`  ── ${tier.toUpperCase()} (${skills.length}) ──`);
+        for (const s of skills) {
+          const bar   = "█".repeat(Math.round(s.successRate * 10)).padEnd(10, "░");
+          const rate  = (s.successRate * 100).toFixed(0).padStart(3);
+          const usage = String(s.usageCount).padStart(4);
+          console.log(`    ${bar} ${rate}%  runs: ${usage}  ${s.name}`);
+        }
+        console.log("");
+      }
+      break;
+    }
+
     // ── devos help / default ──────────────────────────────────
     case "help":
     case "--help":
@@ -700,6 +740,7 @@ Utilities:
   company   <goal>     Launch multi-agent Company Mode
   evolve               Run Skill Evolution Engine (analyze + improve + deploy)
   research  <topic>    Research a topic — DDG search + page fetch + LLM synthesis
+  skills               List all indexed skills with tier + success rate
   sessions             List all agent sessions with status and goal
   session   <id>       Show full session detail including history
   memory               Show top 10 execution memory patterns with success rates

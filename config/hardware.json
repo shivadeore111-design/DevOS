@@ -1,0 +1,21 @@
+{
+  "gpu": {
+    "name": "GTX 1060",
+    "vramGb": 6,
+    "cuda": true
+  },
+  "cpu": {
+    "cores": 12,
+    "name": "auto-detect"
+  },
+  "ramGb": 16,
+  "maxModelSizeB": 7000000000,
+  "recommendedModels": {
+    "default": "mistral-nemo:12b",
+    "coding": "qwen2.5-coder:7b",
+    "embedding": "nomic-embed-text:latest",
+    "fast": "qwen2.5:7b-instruct"
+  },
+  "blockedModels": [],
+  "maxConcurrentModels": 1
+}

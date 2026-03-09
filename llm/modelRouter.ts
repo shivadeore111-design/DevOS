@@ -6,6 +6,7 @@
 // ============================================================
 import axios    from "axios";
 import readline from "readline";
+import { hardwareConfig } from "../core/hardwareConfig";
 
 export type TaskType =
   | "coding"
@@ -64,7 +65,7 @@ export function detectTaskType(prompt: string, systemPrompt?: string): TaskType 
 
 export function scoreModelForTask(modelName: string, taskType: TaskType): number {
   const name = modelName.toLowerCase();
-  if (/14b|30b|72b/.test(name)) return 0;
+  if (!hardwareConfig.isModelAllowed(name)) return 0;
   let scores = DEFAULT_SCORES;
   for (const key of Object.keys(SCORE_TABLE)) {
     if (name.includes(key)) { scores = SCORE_TABLE[key]; break; }
@@ -100,8 +101,11 @@ export async function recommendModel(prompt: string, systemPrompt?: string): Pro
     };
   }
 
-  let bestModel = currentModel;
-  let bestScore = currentScore;
+  // Seed with the hardware-config recommendation as the starting best candidate
+  const hwRecommended  = hardwareConfig.getRecommendedModel(taskType);
+  const hwScore        = scoreModelForTask(hwRecommended, taskType);
+  let   bestModel      = hwScore > currentScore ? hwRecommended : currentModel;
+  let   bestScore      = hwScore > currentScore ? hwScore       : currentScore;
 
   for (const model of available) {
     const score = scoreModelForTask(model, taskType);

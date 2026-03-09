@@ -4,7 +4,7 @@
 // ============================================================
 
 // web/browserFetcher.ts — Playwright-based headless browser fetcher with
-//                          stealth and fingerprint spoofing
+//                          stealth, fingerprint spoofing, and persistent browser.
 
 import { stealthPlugin }      from "./stealthPlugin"
 import { fingerprintSpoofer } from "./fingerprintSpoofer"
@@ -14,43 +14,52 @@ const MAX_CONTENT_CHARS  = 8_000
 const MAX_CONCURRENT     = 3
 
 export interface PageResult {
-  success:    boolean
-  url:        string
-  title?:     string
-  text?:      string
-  html?:      string
-  error?:     string
+  success:     boolean
+  url:         string
+  title?:      string
+  text?:       string
+  html?:       string
+  error?:      string
   statusCode?: number
 }
 
 export class BrowserFetcher {
 
+  private browser: any | null = null
+  private _launching           = false
+  private _launchQueue: Array<{ resolve: (b: any) => void; reject: (e: Error) => void }> = []
+
   /**
-   * Fetch a single URL using a headless Chromium browser.
-   * Applies stealth + random fingerprint. Returns page title and text content.
+   * Returns the shared Chromium browser, launching it once if needed.
+   * Concurrent callers wait for the single launch to finish.
    */
-  async fetch(
-    url: string,
-    options: { waitFor?: string; timeout?: number } = {},
-  ): Promise<PageResult> {
-    const timeout = options.timeout ?? DEFAULT_TIMEOUT
+  async getBrowser(): Promise<any> {
+    if (this.browser) return this.browser
+
+    // If already launching, queue up
+    if (this._launching) {
+      return new Promise<any>((resolve, reject) => {
+        this._launchQueue.push({ resolve, reject })
+      })
+    }
+
+    this._launching = true
 
     let playwright: any
     try {
       playwright = require("playwright")
-    } catch {
-      return {
-        success: false,
-        url,
-        error: "Playwright is not installed. Run: npm install playwright && npx playwright install chromium",
-      }
+    } catch (e: any) {
+      this._launching = false
+      const err = new Error(
+        "Playwright is not installed. Run: npm install playwright && npx playwright install chromium"
+      )
+      for (const waiter of this._launchQueue) waiter.reject(err)
+      this._launchQueue = []
+      throw err
     }
 
-    const fp      = fingerprintSpoofer.getRandomFingerprint()
-    let   browser: any = null
-
     try {
-      browser = await playwright.chromium.launch({
+      this.browser = await playwright.chromium.launch({
         headless: true,
         args: [
           "--no-sandbox",
@@ -61,7 +70,54 @@ export class BrowserFetcher {
         ],
       })
 
-      const context = await browser.newContext({
+      // Register exit handler once
+      process.on("exit", () => { this.close().catch(() => {}) })
+
+      for (const waiter of this._launchQueue) waiter.resolve(this.browser)
+      this._launchQueue = []
+      this._launching   = false
+
+      return this.browser
+
+    } catch (err: any) {
+      this._launching = false
+      for (const waiter of this._launchQueue) waiter.reject(err)
+      this._launchQueue = []
+      throw err
+    }
+  }
+
+  /** Closes the shared browser instance. Safe to call multiple times. */
+  async close(): Promise<void> {
+    if (this.browser) {
+      try { await this.browser.close() } catch { /* ignore */ }
+      this.browser  = null
+      this._launching = false
+    }
+  }
+
+  /**
+   * Fetch a single URL. Creates a new context + page from the shared browser,
+   * applies stealth + random fingerprint, extracts title + text, then closes context.
+   */
+  async fetch(
+    url: string,
+    options: { waitFor?: string; timeout?: number } = {},
+  ): Promise<PageResult> {
+    const timeout = options.timeout ?? DEFAULT_TIMEOUT
+
+    let browser: any
+    try {
+      browser = await this.getBrowser()
+    } catch (err: any) {
+      return { success: false, url, error: err.message }
+    }
+
+    const fp      = fingerprintSpoofer.getRandomFingerprint()
+    let   context: any = null
+
+    try {
+      context = await browser.newContext({
         userAgent:         fp.userAgent,
         viewport:          fp.viewport,
         locale:            fp.locale,
@@ -81,17 +137,22 @@ export class BrowserFetcher {
 
       const statusCode = response?.status() ?? 0
       const title      = await page.title()
-      const text       = (await page.evaluate(() => (document as any).body?.innerText ?? "") as string)
-                           .slice(0, MAX_CONTENT_CHARS)
-      const html       = await page.content()
+      const text       = (
+        (await page.evaluate(() => (document as any).body?.innerText ?? "")) as string
+      ).slice(0, MAX_CONTENT_CHARS)
+      const html = await page.content()
 
-      await browser.close()
+      await context.close()
 
       return { success: true, url, title, text, html, statusCode }
 
     } catch (err: any) {
-      if (browser) {
-        try { await browser.close() } catch { /* ignore */ }
+      if (context) {
+        try { await context.close() } catch { /* ignore */ }
+      }
+      // If browser crashed, clear it so next call relaunches
+      try { await browser.isConnected() } catch {
+        this.browser = null
       }
       return { success: false, url, error: err.message }
     }
@@ -99,16 +160,17 @@ export class BrowserFetcher {
 
   /**
    * Fetch multiple URLs in parallel with a concurrency cap of MAX_CONCURRENT.
+   * All fetches share the same browser instance.
    */
   async fetchMultiple(urls: string[]): Promise<PageResult[]> {
-    const results: PageResult[] = []
-    const queue                 = [...urls]
+    const results: PageResult[] = new Array(urls.length)
+    const queue  = urls.map((url, i) => ({ url, i }))
 
     const worker = async (): Promise<void> => {
       while (queue.length > 0) {
-        const url = queue.shift()
-        if (!url) return
-        results.push(await this.fetch(url))
+        const item = queue.shift()
+        if (!item) return
+        results[item.i] = await this.fetch(item.url)
       }
     }
 
