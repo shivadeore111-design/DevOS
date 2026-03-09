@@ -38,6 +38,8 @@ import { dashboard }                           from "./dashboard/metrics";
 import { skillSanitizer }                      from "./executor/skillSanitizer";
 import { skillWarmup }                         from "./executor/skillWarmup";
 import { skillIndex }                          from "./skills/skillIndex";
+import { cronTrigger, webhookTrigger,
+         startAllTriggers, stopAllTriggers }   from "./core/triggers";
 
 // ── Bootstrap ─────────────────────────────────────────────────
 
@@ -436,10 +438,17 @@ async function handleCLI(): Promise<void> {
       await skillWarmup.preloadOnServe();
       const { dashboardServer } = await import("./dashboard/server");
       await dashboardServer.start();
+      startAllTriggers();
       console.log("🖥  DevOS Control Plane running at http://localhost:3333");
+      console.log("   Webhook server      at http://localhost:3001");
       console.log("   Press Ctrl+C to stop");
-      process.on("SIGINT",  () => { dashboardServer.stop(); process.exit(0); });
-      process.on("SIGTERM", () => { dashboardServer.stop(); process.exit(0); });
+      const onServeSig = () => {
+        dashboardServer.stop();
+        stopAllTriggers();
+        process.exit(0);
+      };
+      process.on("SIGINT",  onServeSig);
+      process.on("SIGTERM", onServeSig);
       break;
     }
 
@@ -708,6 +717,107 @@ async function handleCLI(): Promise<void> {
       break;
     }
 
+    // ── devos cron ────────────────────────────────────────────
+    case "cron": {
+      const sub = goalArgs[0];
+
+      if (sub === "list" || !sub) {
+        const jobs = cronTrigger.list();
+        if (!jobs.length) {
+          console.log("📭 No cron jobs configured. Use: devos cron add \"<schedule>\" \"<goal>\"");
+          break;
+        }
+        console.log(`\n⏰ Cron Jobs (${jobs.length}):\n`);
+        for (const j of jobs) {
+          const status = j.enabled ? "✅" : "⏸ ";
+          const last   = j.lastRun ? new Date(j.lastRun).toLocaleString() : "never";
+          console.log(`  ${status} [${j.id}]`);
+          console.log(`     Schedule: ${j.schedule}`);
+          console.log(`     Goal:     "${j.goal}"`);
+          console.log(`     Last run: ${last}\n`);
+        }
+        break;
+      }
+
+      if (sub === "add") {
+        const schedule = goalArgs[1];
+        const cronGoal = goalArgs.slice(2).join(" ").trim();
+        if (!schedule || !cronGoal) {
+          console.error('❌ Usage: ts-node index.ts cron add "<schedule>" "<goal>"');
+          console.error('   Example: ts-node index.ts cron add "0 9 * * *" "check github issues"');
+          process.exit(1);
+        }
+        const id = cronTrigger.add({ schedule, goal: cronGoal, enabled: true });
+        console.log(`\n✅ Cron job added: ${id}`);
+        console.log(`   Schedule: ${schedule}`);
+        console.log(`   Goal:     "${cronGoal}"\n`);
+        break;
+      }
+
+      if (sub === "remove") {
+        const id = goalArgs[1];
+        if (!id) {
+          console.error("❌ Usage: ts-node index.ts cron remove <id>");
+          process.exit(1);
+        }
+        cronTrigger.remove(id);
+        console.log(`\n✅ Cron job removed: ${id}\n`);
+        break;
+      }
+
+      if (sub === "enable") {
+        cronTrigger.enable(goalArgs[1] ?? "");
+        console.log(`✅ Enabled: ${goalArgs[1]}`);
+        break;
+      }
+
+      if (sub === "disable") {
+        cronTrigger.disable(goalArgs[1] ?? "");
+        console.log(`✅ Disabled: ${goalArgs[1]}`);
+        break;
+      }
+
+      console.error(`❌ Unknown cron sub-command: ${sub}`);
+      break;
+    }
+
+    // ── devos webhook ─────────────────────────────────────────
+    case "webhook": {
+      const sub = goalArgs[0];
+
+      if (sub === "list" || !sub) {
+        const hooks = webhookTrigger.list();
+        if (!hooks.length) {
+          console.log("📭 No webhooks registered. Use: devos webhook add <path> \"<goal>\"");
+          break;
+        }
+        console.log(`\n🔗 Webhooks (${hooks.length}):\n`);
+        for (const h of hooks) {
+          const secured = h.secret ? " 🔒" : "";
+          console.log(`  POST ${h.path}${secured}`);
+          console.log(`       → "${h.goal}"\n`);
+        }
+        break;
+      }
+
+      if (sub === "add") {
+        const webhookPath = goalArgs[1];
+        const hookGoal    = goalArgs.slice(2).join(" ").trim();
+        if (!webhookPath || !hookGoal) {
+          console.error('❌ Usage: ts-node index.ts webhook add <path> "<goal>"');
+          console.error('   Example: ts-node index.ts webhook add /webhook/deploy "deploy the app to production"');
+          process.exit(1);
+        }
+        webhookTrigger.register(webhookPath, hookGoal);
+        console.log(`\n✅ Webhook registered: POST ${webhookPath}`);
+        console.log(`   Goal: "${hookGoal}"\n`);
+        break;
+      }
+
+      console.error(`❌ Unknown webhook sub-command: ${sub}`);
+      break;
+    }
+
     // ── devos help / default ──────────────────────────────────
     case "help":
     case "--help":
@@ -741,6 +851,11 @@ Utilities:
   evolve               Run Skill Evolution Engine (analyze + improve + deploy)
   research  <topic>    Research a topic — DDG search + page fetch + LLM synthesis
   skills               List all indexed skills with tier + success rate
+  cron list            List all scheduled cron jobs
+  cron add <s> <goal>  Add cron job e.g. cron add "0 9 * * *" "check issues"
+  cron remove <id>     Remove a cron job by ID
+  webhook list         List registered webhook endpoints
+  webhook add <p> <g>  Register webhook e.g. webhook add /deploy "deploy app"
   sessions             List all agent sessions with status and goal
   session   <id>       Show full session detail including history
   memory               Show top 10 execution memory patterns with success rates

@@ -1,0 +1,6 @@
+[
+  {
+    "path": "/webhook/deploy",
+    "goal": "deploy the app to production"
+  }
+]
