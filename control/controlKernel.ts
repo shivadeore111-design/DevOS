@@ -21,10 +21,49 @@ const APPROVAL_TIMEOUT_MS = 30_000
 
 export class ControlKernel {
 
+  // ── Prompt injection scanner ────────────────────────────
+
+  private scanForInjection(input: string): boolean {
+    const INJECTION_PATTERNS = [
+      /ignore\s+previous\s+instructions/i,
+      /disregard\s+(all\s+)?(previous|prior|earlier)/i,
+      /override\s+(your\s+)?(instructions|directives|rules)/i,
+      /you\s+are\s+now\s+/i,
+      /forget\s+your\s+/i,
+      /new\s+persona/i,
+      /act\s+as\s+(a\s+|an\s+)?(?!devos)/i,
+      /jailbreak/i,
+      /rm\s+-rf\s+\//i,
+      /DROP\s+TABLE/i,
+      /;\s*cat\s+\/etc\/passwd/i,
+      /\/etc\/shadow/i,
+      /base64\s*--decode/i,
+      /eval\s*\(/i,
+    ];
+
+    for (const pattern of INJECTION_PATTERNS) {
+      if (pattern.test(input)) {
+        console.warn(`[ControlKernel] 🚨 Prompt injection detected: ${input.slice(0, 100)}`);
+        return true;
+      }
+    }
+    return false;
+  }
+
   // ── Main validation gate ────────────────────────────────
 
   validate(action: any, goalId: string): ValidationResult {
     const actionLabel = `${action.type}${action.description ? ` "${action.description.slice(0, 40)}"` : ""}`
+
+    // 0. Prompt injection scan — check goal, description, command, query fields
+    const inputsToScan = [
+      action.goal, action.description, action.command,
+      action.query, action.content, action.prompt,
+    ].filter(Boolean).join(" ");
+
+    if (inputsToScan && this.scanForInjection(inputsToScan)) {
+      return { approved: false, reason: "Prompt injection detected", riskLevel: "critical" };
+    }
 
     // 1. Budget / runtime check
     const budget = budgetManager.canContinue(goalId)

@@ -20,7 +20,8 @@ const cors    = require("cors")    as any;
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const WS      = require("ws")      as any;
 
-import { eventBus, DevOSEvent }   from "./events";
+import { eventBus as coreEventBus }         from "../core/eventBus";
+import { eventBus, DevOSEvent }             from "./events";
 import { taskStore }              from "../core/taskStore";
 import { skillRegistry }          from "../skills/registry";
 import { SkillMemory }            from "../skills/skillMemory";
@@ -257,6 +258,50 @@ export class DashboardServer {
       try {
         const { stateSnapshot } = await import("../devos/runtime/stateSnapshot");
         res.json({ goalIds: stateSnapshot.list() });
+      } catch (err: any) {
+        res.status(500).json({ error: err.message });
+      }
+    });
+
+    // ── SSE event stream ─────────────────────────────────────
+    app.get("/api/stream", (req: any, res: any) => {
+      res.setHeader("Content-Type",                "text/event-stream");
+      res.setHeader("Cache-Control",               "no-cache");
+      res.setHeader("Connection",                  "keep-alive");
+      res.setHeader("Access-Control-Allow-Origin", "*");
+
+      // Send an initial heartbeat so the browser knows the stream is live
+      res.write(`: heartbeat\n\n`);
+
+      const handler = (data: any) => {
+        res.write(`data: ${JSON.stringify(data)}\n\n`);
+      };
+
+      const SSE_EVENTS = [
+        "goal_started", "goal_completed", "goal_failed",
+        "action_executed", "plan_generated", "session_created",
+        "product_module_completed", "emergency_stop",
+      ] as const;
+
+      SSE_EVENTS.forEach(e => coreEventBus.on(e, handler));
+      req.on("close", () => SSE_EVENTS.forEach(e => coreEventBus.off(e, handler)));
+    });
+
+    // ── Pilots API ───────────────────────────────────────────
+    app.get("/api/pilots", async (_req: any, res: any) => {
+      try {
+        const { pilotRegistry } = await import("../devos/pilots/pilotRegistry");
+        res.json(pilotRegistry.list());
+      } catch (err: any) {
+        res.status(500).json({ error: err.message });
+      }
+    });
+
+    app.post("/api/pilots/:id/run", async (req: any, res: any) => {
+      try {
+        const { pilotScheduler } = await import("../devos/pilots/pilotScheduler");
+        const run = await pilotScheduler.runNow(req.params.id);
+        res.json(run);
       } catch (err: any) {
         res.status(500).json({ error: err.message });
       }

@@ -5,6 +5,7 @@
 
 // core/agentLoop.ts — Observe → Plan → Act → Reflect execution loop
 
+import crypto                           from "crypto"
 import { AgentSession, sessionManager } from "./sessionManager"
 import { eventBus }                     from "./eventBus"
 import { goalGovernor }                 from "../control/goalGovernor"
@@ -49,6 +50,9 @@ export class AgentLoop {
     }
     this.running.set(sessionId, ctx)
 
+    // SHA-256 plan hash ring — stores last 5 plan hashes for loop detection
+    const planHashRing = new Set<string>()
+
     eventBus.emit("loop_started", { sessionId, goal, maxIterations })
     console.log(`[AgentLoop] Starting loop for "${goal}" — max ${maxIterations} iterations`)
 
@@ -83,6 +87,26 @@ export class AgentLoop {
           sessionManager.addHistory(sessionId, "agent", `Loop detected: ${loopCheck.reason}`)
           ctx.shouldContinue = false
           break
+        }
+
+        // SHA-256 plan hash guard — detect repeated identical action sequences
+        const planHash = crypto
+          .createHash("sha256")
+          .update(JSON.stringify(plan.actions ?? []))
+          .digest("hex")
+
+        if (planHashRing.has(planHash)) {
+          console.warn(`[AgentLoop] 🔄 Loop detected — breaking (plan hash repeated)`)
+          sessionManager.addHistory(sessionId, "agent", "Loop detected: identical plan generated twice")
+          ctx.shouldContinue = false
+          break
+        }
+
+        // Keep only the last 5 hashes
+        planHashRing.add(planHash)
+        if (planHashRing.size > 5) {
+          const oldest = planHashRing.values().next().value as string
+          planHashRing.delete(oldest)
         }
       } catch (err: any) {
         console.error(`[AgentLoop] Plan generation failed: ${err.message}`)

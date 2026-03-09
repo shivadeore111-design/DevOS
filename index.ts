@@ -48,6 +48,9 @@ import { blueprintRegistry }                  from "./devos/product/blueprintReg
 import { productManager }                     from "./devos/product/productManager";
 import { productGenerator }                   from "./devos/product/productGenerator";
 import { deploymentOrchestrator }             from "./devos/product/deploymentOrchestrator";
+import { pilotRegistry }                      from "./devos/pilots/pilotRegistry";
+import { pilotExecutor }                      from "./devos/pilots/pilotExecutor";
+import { pilotScheduler }                     from "./devos/pilots/pilotScheduler";
 
 // ── Bootstrap ─────────────────────────────────────────────────
 
@@ -447,12 +450,15 @@ async function handleCLI(): Promise<void> {
       const { dashboardServer } = await import("./dashboard/server");
       await dashboardServer.start();
       startAllTriggers();
+      pilotScheduler.start();
       console.log("🖥  DevOS Control Plane running at http://localhost:3333");
       console.log("   Webhook server      at http://localhost:3001");
+      console.log("   SSE event stream    at http://localhost:3333/api/stream");
       console.log("   Press Ctrl+C to stop");
       const onServeSig = () => {
         dashboardServer.stop();
         stopAllTriggers();
+        pilotScheduler.stop();
         process.exit(0);
       };
       process.on("SIGINT",  onServeSig);
@@ -946,6 +952,98 @@ async function handleCLI(): Promise<void> {
       break;
     }
 
+    // ── devos pilot ───────────────────────────────────────────
+    case "pilot": {
+      const sub      = goalArgs[0];
+      const pilotId  = goalArgs[1] ?? "";
+
+      // devos pilot list
+      if (sub === "list" || !sub) {
+        const all = pilotRegistry.list();
+        if (!all.length) {
+          console.log("📭 No pilots configured. Add JSON files to config/pilots/");
+          break;
+        }
+        console.log(`\n🤖 Pilots (${all.length})\n`);
+        for (const p of all) {
+          const statusIcon  = p.enabled ? "✅" : "⏸ ";
+          const lastRun     = pilotExecutor.getLastRun(p.id);
+          const lastRunStr  = lastRun
+            ? `last: ${new Date(lastRun.startedAt).toLocaleString()} [${lastRun.status}]`
+            : "never run";
+          console.log(`  ${statusIcon} [${p.id}]  ${p.name}`);
+          console.log(`           schedule: ${p.schedule ?? "—"}  output: ${p.outputFormat}`);
+          console.log(`           ${lastRunStr}\n`);
+        }
+        break;
+      }
+
+      // devos pilot run <id>
+      if (sub === "run") {
+        if (!pilotId) {
+          console.error("❌ Usage: ts-node index.ts pilot run <id>");
+          process.exit(1);
+        }
+        const manifest = pilotRegistry.get(pilotId);
+        if (!manifest) {
+          console.error(`❌ Pilot not found: ${pilotId}`);
+          process.exit(1);
+        }
+        console.log(`\n▶️  Running pilot: ${manifest.name}\n`);
+        const run = await pilotExecutor.run(pilotId);
+        const dur = run.completedAt
+          ? `${((new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime()) / 1000).toFixed(1)}s`
+          : "—";
+        const icon = run.status === "completed" ? "✅" : "❌";
+        console.log(`\n${icon} Pilot run ${run.id}: ${run.status} in ${dur}`);
+        if (run.error) console.error(`   Error: ${run.error}`);
+        break;
+      }
+
+      // devos pilot enable <id>
+      if (sub === "enable") {
+        if (!pilotId) { console.error("❌ Usage: ts-node index.ts pilot enable <id>"); process.exit(1); }
+        pilotRegistry.enable(pilotId);
+        console.log(`✅ Pilot enabled: ${pilotId}`);
+        break;
+      }
+
+      // devos pilot disable <id>
+      if (sub === "disable") {
+        if (!pilotId) { console.error("❌ Usage: ts-node index.ts pilot disable <id>"); process.exit(1); }
+        pilotRegistry.disable(pilotId);
+        console.log(`⏸  Pilot disabled: ${pilotId}`);
+        break;
+      }
+
+      // devos pilot history <id>
+      if (sub === "history") {
+        if (!pilotId) { console.error("❌ Usage: ts-node index.ts pilot history <id>"); process.exit(1); }
+        const history = pilotExecutor.getHistory(pilotId).slice(0, 5);
+        if (!history.length) {
+          console.log(`📭 No runs found for pilot: ${pilotId}`);
+          break;
+        }
+        const manifest = pilotRegistry.get(pilotId);
+        console.log(`\n📋 Pilot History: ${manifest?.name ?? pilotId} (last 5)\n`);
+        for (const run of history) {
+          const dur     = run.completedAt
+            ? `${((new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime()) / 1000).toFixed(1)}s`
+            : "running";
+          const icon    = run.status === "completed" ? "✅" : run.status === "failed" ? "❌" : "⏳";
+          const started = new Date(run.startedAt).toLocaleString();
+          console.log(`  ${icon} [${run.id}] ${run.status}  ${dur}  ${started}`);
+          if (run.error) console.log(`       Error: ${run.error}`);
+        }
+        console.log("");
+        break;
+      }
+
+      console.error(`❌ Unknown pilot sub-command: ${sub}`);
+      console.error("   Available: list, run, enable, disable, history");
+      break;
+    }
+
     // ── devos blueprints ──────────────────────────────────────
     case "blueprints": {
       const bps = blueprintRegistry.list();
@@ -1093,6 +1191,13 @@ Utilities:
   session   <id>       Show full session detail including history
   memory               Show top 10 execution memory patterns with success rates
   memory prune         Run memory aging and prune low-quality entries
+
+Pilots:
+  pilot list                List all pilots with schedule, status, last run
+  pilot run <id>            Run a pilot immediately
+  pilot enable <id>         Enable a pilot (auto-schedules on next serve)
+  pilot disable <id>        Disable a pilot
+  pilot history <id>        Show last 5 runs for a pilot
 
 Product Engine:
   blueprints                List available product blueprints

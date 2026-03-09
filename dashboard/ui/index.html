@@ -789,6 +789,7 @@ const NAV = [
   { id: 'skills',    icon: '🔩', label: 'Skills' },
   { id: 'memory',    icon: '🧠', label: 'Memory' },
   { id: 'mission',   icon: '🎯', label: 'Mission Control' },
+  { id: 'pilots',    icon: '🤖', label: 'Pilots' },
 ];
 
 // ── WebSocket hook ─────────────────────────────────────────────
@@ -891,8 +892,136 @@ function App() {
           {page === 'skills'    && <SkillsPage />}
           {page === 'memory'    && <MemoryPage />}
           {page === 'mission'   && <MissionControlPage />}
+          {page === 'pilots'    && <PilotsPage />}
         </div>
       </main>
+    </div>
+  );
+}
+
+// ── SSE hook ───────────────────────────────────────────────────
+function useSSE(setLiveEvents) {
+  useEffect(() => {
+    const es = new EventSource('/api/stream');
+    es.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        setLiveEvents(prev => [{ ...data, _ts: Date.now() }, ...prev].slice(0, 100));
+      } catch {}
+    };
+    es.onerror = () => {};
+    return () => es.close();
+  }, []);
+}
+
+// ── PilotsPage ─────────────────────────────────────────────────
+function PilotsPage() {
+  const [pilots, setPilots]       = useState([]);
+  const [running, setRunning]     = useState({});
+  const [results, setResults]     = useState({});
+  const [liveEvents, setLive]     = useState([]);
+
+  useSSE(setLive);
+
+  useEffect(() => {
+    fetch('/api/pilots')
+      .then(r => r.json())
+      .then(setPilots)
+      .catch(() => setPilots([]));
+  }, []);
+
+  const runNow = async (id) => {
+    setRunning(p => ({ ...p, [id]: true }));
+    try {
+      const res  = await fetch(`/api/pilots/${id}/run`, { method: 'POST' });
+      const data = await res.json();
+      setResults(p => ({ ...p, [id]: data }));
+    } catch (err) {
+      setResults(p => ({ ...p, [id]: { error: err.message } }));
+    } finally {
+      setRunning(p => ({ ...p, [id]: false }));
+    }
+  };
+
+  const statusBadge = (p) => {
+    if (p.enabled) return <span className="text-xs px-2 py-0.5 rounded-full bg-green-900 text-green-300">enabled</span>;
+    return <span className="text-xs px-2 py-0.5 rounded-full bg-gray-700 text-gray-400">disabled</span>;
+  };
+
+  return (
+    <div>
+      <div className="text-white font-bold text-xl mb-6">🤖 Pilots</div>
+
+      {/* Pilot cards */}
+      <div className="grid grid-cols-1 gap-4 mb-8">
+        {pilots.length === 0 && (
+          <div className="text-gray-500 text-sm">No pilots found. Add JSON configs to config/pilots/</div>
+        )}
+        {pilots.map(p => (
+          <div key={p.id} className="bg-gray-800 border border-gray-700 rounded-xl p-5">
+            <div className="flex items-start justify-between mb-3">
+              <div>
+                <div className="flex items-center gap-3 mb-1">
+                  <span className="text-white font-semibold">{p.name}</span>
+                  {statusBadge(p)}
+                  <span className="text-xs text-gray-500">v{p.version}</span>
+                </div>
+                <div className="text-gray-400 text-sm leading-relaxed">{p.description}</div>
+              </div>
+              <button
+                onClick={() => runNow(p.id)}
+                disabled={!!running[p.id]}
+                className="ml-4 flex-shrink-0 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 text-white text-xs rounded-lg transition-colors"
+              >
+                {running[p.id] ? '⏳ Running…' : '▶ Run Now'}
+              </button>
+            </div>
+
+            <div className="flex flex-wrap gap-4 text-xs text-gray-500 mt-2">
+              {p.schedule && <span>⏰ {p.schedule}</span>}
+              {p.triggerOnStart && <span>🚀 trigger on start</span>}
+              <span>🔧 {p.tools.join(', ')}</span>
+              <span>📄 output: {p.outputFormat}</span>
+              <span>🔁 max {p.maxIterations} iterations</span>
+            </div>
+
+            {results[p.id] && (
+              <div className={`mt-3 p-3 rounded-lg text-xs font-mono ${
+                results[p.id].status === 'completed'
+                  ? 'bg-green-900/40 text-green-300'
+                  : results[p.id].error || results[p.id].status === 'failed'
+                    ? 'bg-red-900/40 text-red-300'
+                    : 'bg-gray-700 text-gray-300'
+              }`}>
+                {results[p.id].error
+                  ? `❌ ${results[p.id].error}`
+                  : `✅ Run ${results[p.id].id} — ${results[p.id].status} (${results[p.id].iterationsUsed} iter)`
+                }
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Live SSE event log */}
+      <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
+        <div className="text-white font-semibold text-sm mb-3">📡 Live Event Stream ({liveEvents.length} events)</div>
+        <div className="space-y-1 max-h-64 overflow-y-auto font-mono text-xs">
+          {liveEvents.length === 0 && (
+            <div className="text-gray-600">Waiting for events… (SSE connected to /api/stream)</div>
+          )}
+          {liveEvents.map((ev, i) => (
+            <div key={i} className="flex gap-2 text-gray-400">
+              <span className="text-gray-600 flex-shrink-0">{new Date(ev._ts).toLocaleTimeString()}</span>
+              <span className={
+                (ev.type||'').includes('fail') || (ev.type||'').includes('error') ? 'text-red-400' :
+                (ev.type||'').includes('complete') ? 'text-green-400' : 'text-blue-300'
+              }>{ev.type || JSON.stringify(ev)}</span>
+              {ev.goal && <span className="text-gray-500 truncate">— {String(ev.goal).slice(0, 60)}</span>}
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
