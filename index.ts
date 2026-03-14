@@ -5,7 +5,7 @@
 // of this software is strictly prohibited.
 // ============================================================
 // index.ts — DevOS Entry Point
-// Commands: run, daemon, status, enqueue, plan, grow, agent, goal, goals, doctor, test
+// Commands: run, daemon, status, enqueue, plan, grow, agent, goal, goals, agents, coordinate, doctor, test
 // ============================================================
 
 import "dotenv/config";
@@ -56,6 +56,10 @@ import { generateApiKey }                      from "./api/middleware/permission
 import apiConfig                               from "./config/api.json";
 import { goalEngine }                          from "./goals/goalEngine";
 import { goalStore }                           from "./goals/goalStore";
+import { agentRegistry }                       from "./agents/agentRegistry";
+import { agentMessenger }                      from "./agents/agentMessenger";
+import { coordinationLoop }                    from "./agents/coordinationLoop";
+import { AgentRole }                           from "./agents/types";
 
 // ── Bootstrap ─────────────────────────────────────────────────
 
@@ -422,15 +426,67 @@ async function handleCLI(): Promise<void> {
       break;
     }
 
-    // ── devos agent ───────────────────────────────────────────
+    // ── devos agent <role|goal> ───────────────────────────────
+    // If first arg is a known agent role → show agent detail (Sprint 14)
+    // Otherwise → launch legacy multi-agent pipeline (Sprint 12)
     case "agent": {
+      const agentArg = goalArgs[0];
+      const knownRoles: AgentRole[] = ["ceo", "engineer", "researcher", "operator"];
+
+      if (knownRoles.includes(agentArg as AgentRole)) {
+        // ── Sprint 14: devos agent <role> — show detail
+        const agentDetail = agentRegistry.get(agentArg as AgentRole);
+        if (!agentDetail) {
+          console.error(`❌ Unknown agent role: ${agentArg}`);
+          console.error("   Valid roles: ceo, engineer, researcher, operator");
+          process.exit(1);
+        }
+        const statusIcon = agentDetail.status === "idle"      ? "💤"
+          : agentDetail.status === "thinking"  ? "🧠"
+          : agentDetail.status === "executing" ? "⚙️ "
+          : agentDetail.status === "waiting"   ? "⏳"
+          : "❌";
+        console.log(`\n${statusIcon} Agent: ${agentDetail.name} [${agentDetail.role}]`);
+        console.log(`   ID:          ${agentDetail.id}`);
+        console.log(`   Status:      ${agentDetail.status}`);
+        console.log(`   Description: ${agentDetail.description}`);
+        console.log(`   Tools:       ${agentDetail.tools.join(", ")}`);
+        console.log(`   Budget:      ${agentDetail.budget} tokens`);
+        console.log(`   Completed:   ${agentDetail.completedTasks} tasks`);
+        console.log(`   Failed:      ${agentDetail.failedTasks} tasks`);
+        if (agentDetail.lastActiveAt) {
+          console.log(`   Last active: ${new Date(agentDetail.lastActiveAt).toLocaleString()}`);
+        }
+        if (agentDetail.currentTaskId) {
+          console.log(`   Current task: ${agentDetail.currentTaskId}`);
+        }
+        const recentMsgs = agentMessenger.getRecent(50).filter(
+          m => m.fromAgent === agentArg || m.toAgent === agentArg || m.toAgent === "all"
+        ).slice(-10);
+        if (recentMsgs.length > 0) {
+          console.log(`\n   Recent Messages (${recentMsgs.length}):`);
+          for (const msg of recentMsgs) {
+            const ts   = new Date(msg.timestamp).toLocaleTimeString();
+            const from = msg.fromAgent.toUpperCase().padEnd(10);
+            const to   = msg.toAgent.toUpperCase().padEnd(10);
+            console.log(`     [${ts}] ${from} → ${to} [${msg.type}]`);
+            console.log(`       ${msg.content.slice(0, 100)}${msg.content.length > 100 ? "…" : ""}`);
+          }
+        } else {
+          console.log("\n   No messages yet.");
+        }
+        console.log("");
+        break;
+      }
+
+      // ── Legacy: devos agent "your goal" — multi-agent pipeline
       if (!goal) {
-        console.log('Usage: ts-node index.ts agent "your goal"');
+        console.log('Usage: ts-node index.ts agent <ceo|engineer|researcher|operator>');
+        console.log('       ts-node index.ts agent "your goal"  (legacy pipeline)');
         process.exit(1);
       }
       await assertOllamaReady();
       console.log('\n[DevOS] 🤖 Launching multi-agent pipeline...\n');
-
       const result      = await AgentCoordinator.runAgentPipeline(goal);
       const agentReport = AgentCoordinator.formatPipelineReport(result);
       console.log(agentReport);
@@ -1241,6 +1297,61 @@ async function handleCLI(): Promise<void> {
       break;
     }
 
+    // ── devos agents ──────────────────────────────────────────
+    case "agents": {
+      const all = agentRegistry.list();
+      console.log(`\n🤖 Agent Layer (${all.length} agents)\n`);
+      for (const a of all) {
+        const statusIcon = a.status === "idle"      ? "💤"
+          : a.status === "thinking"  ? "🧠"
+          : a.status === "executing" ? "⚙️ "
+          : a.status === "waiting"   ? "⏳"
+          : "❌";
+        const lastActive = a.lastActiveAt
+          ? new Date(a.lastActiveAt).toLocaleString()
+          : "never";
+        const successRate = a.completedTasks + a.failedTasks > 0
+          ? `${((a.completedTasks / (a.completedTasks + a.failedTasks)) * 100).toFixed(0)}%`
+          : "n/a";
+        console.log(`  ${statusIcon} [${a.role.padEnd(10)}] ${a.name}`);
+        console.log(`           Status:   ${a.status}  |  Done: ${a.completedTasks}  Failed: ${a.failedTasks}  Rate: ${successRate}`);
+        console.log(`           Tools:    ${a.tools.join(", ")}`);
+        console.log(`           Active:   ${lastActive}`);
+        if (a.currentTaskId) console.log(`           Task:     ${a.currentTaskId}`);
+        console.log("");
+      }
+      break;
+    }
+
+    // ── devos coordinate "<title>" "<description>" ────────────
+    case "coordinate": {
+      const titleArg = goalArgs[0];
+      const descArg  = goalArgs[1];
+      if (!titleArg || !descArg) {
+        console.error('❌ Usage: ts-node index.ts coordinate "<title>" "<description>"');
+        process.exit(1);
+      }
+      await assertOllamaReady();
+      console.log(`\n🔄 Starting multi-agent coordination: "${titleArg}"\n`);
+
+      // Create + plan goal first, then run coordination loop
+      const coordGoal = goalStore.createGoal(titleArg, descArg);
+      console.log(`[Coordinate] 🎯 Goal created: ${coordGoal.id}`);
+
+      const { goalPlanner } = await import("./goals/goalPlanner");
+      await goalPlanner.plan(coordGoal.id);
+
+      await coordinationLoop.start(coordGoal.id);
+
+      const finalCoordGoal = goalStore.getGoal(coordGoal.id)!;
+      const coordIcon = finalCoordGoal.status === "completed" ? "✅" : "❌";
+      console.log(`\n${coordIcon} Coordination finished: ${finalCoordGoal.status}`);
+      console.log(`   ID:       ${finalCoordGoal.id}`);
+      console.log(`   Projects: ${finalCoordGoal.projects.length}`);
+      console.log(`   Run: ts-node index.ts goal status ${finalCoordGoal.id}`);
+      break;
+    }
+
     // ── devos api ─────────────────────────────────────────────
     case "api": {
       const apiSub = goalArgs[0];
@@ -1381,6 +1492,11 @@ Goal Engine:
   goal "<title>" "<desc>"   Create, plan, and execute a structured goal
   goals                     List all goals with status + project count
   goal status <id>          Show full goal breakdown: projects + tasks + status
+
+Agent Layer:
+  agents                    List all agents: CEO, Engineer, Researcher, Operator
+  agent <role>              Show agent detail + recent messages (role: ceo|engineer|researcher|operator)
+  coordinate "<t>" "<d>"    Run full multi-agent coordination on a new goal
 
 Product Engine:
   blueprints                List available product blueprints

@@ -16,6 +16,7 @@ import { rateLimiter }      from "./middleware/rateLimit";
 import { permissionCheck }  from "./middleware/permissions";
 import goalsRouter          from "./routes/goals";
 import goalsV2Router        from "./routes/goals_v2";
+import agentsRouter         from "./routes/agents";
 import pilotsRouter         from "./routes/pilots";
 import knowledgeRouter      from "./routes/knowledge";
 import memoryRouter         from "./routes/memory";
@@ -57,6 +58,7 @@ export function createApiServer(): any {
   // 6. Routes
   app.use(goalsRouter);
   app.use(goalsV2Router);
+  app.use(agentsRouter);
   app.use(pilotsRouter);
   app.use(knowledgeRouter);
   app.use(memoryRouter);
@@ -83,6 +85,11 @@ function generateSwaggerSpec() {
       "/api/goals/v2/{id}/pause":  { post: { summary: "Pause goal execution" } },
       "/api/goals/v2/{id}/resume": { post: { summary: "Resume paused goal" } },
       "/api/goals/v2/{id}/replan": { post: { summary: "Replan a failed goal" } },
+      "/api/agents":               { get:  { summary: "List all agents with status" } },
+      "/api/agents/messages":      { get:  { summary: "Recent agent messages (last 50)" } },
+      "/api/agents/messages/{id}": { get:  { summary: "Message thread for task/goal id" } },
+      "/api/agents/{role}":        { get:  { summary: "Agent detail + recent messages" } },
+      "/api/agents/coordinate":    { post: { summary: "Start coordination loop for a goal" } },
       "/api/goals/{id}":           { get:    { summary: "Get goal detail" },
                                      delete: { summary: "Cancel a running goal" } },
       "/api/goals/{id}/retry":     { post: { summary: "Retry a failed goal" } },
