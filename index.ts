@@ -5,7 +5,7 @@
 // of this software is strictly prohibited.
 // ============================================================
 // index.ts — DevOS Entry Point
-// Commands: run, daemon, status, enqueue, plan, grow, agent, doctor, test
+// Commands: run, daemon, status, enqueue, plan, grow, agent, goal, goals, doctor, test
 // ============================================================
 
 import "dotenv/config";
@@ -54,6 +54,8 @@ import { pilotScheduler }                     from "./devos/pilots/pilotSchedule
 import { startApiServer }                      from "./api/server";
 import { generateApiKey }                      from "./api/middleware/permissions";
 import apiConfig                               from "./config/api.json";
+import { goalEngine }                          from "./goals/goalEngine";
+import { goalStore }                           from "./goals/goalStore";
 
 // ── Bootstrap ─────────────────────────────────────────────────
 
@@ -1155,6 +1157,90 @@ async function handleCLI(): Promise<void> {
       break;
     }
 
+    // ── devos goal "<title>" "<description>" | goal status <id> ─
+    case "goal": {
+      const sub = goalArgs[0];
+
+      // devos goal status <id>
+      if (sub === "status") {
+        const goalId = goalArgs[1];
+        if (!goalId) {
+          console.error("❌ Usage: ts-node index.ts goal status <id>");
+          process.exit(1);
+        }
+        const status = await goalEngine.getStatus(goalId);
+        if (!status.goal) {
+          console.error(`❌ Goal not found: ${goalId}`);
+          process.exit(1);
+        }
+        const { goal: g, projects, tasks } = status;
+        const statusIcon = g.status === "completed" ? "✅"
+          : g.status === "failed"    ? "❌"
+          : g.status === "active"    ? "🔵"
+          : g.status === "paused"    ? "⏸ "
+          : g.status === "planning"  ? "🧠"
+          : "⏳";
+        console.log(`\n${statusIcon} Goal: ${g.title}`);
+        console.log(`   ID:          ${g.id}`);
+        console.log(`   Status:      ${g.status}`);
+        console.log(`   Description: ${g.description}`);
+        console.log(`   Created:     ${new Date(g.createdAt).toLocaleString()}`);
+        if (g.completedAt) console.log(`   Completed:   ${new Date(g.completedAt).toLocaleString()}`);
+        console.log(`\n   Projects (${projects.length}):`);
+        for (const p of projects) {
+          const pIcon = p.status === "completed" ? "✅" : p.status === "failed" ? "❌" : p.status === "active" ? "🔵" : "⏳";
+          const ptasks = tasks.filter(t => t.projectId === p.id);
+          console.log(`   ${pIcon} [${p.order}] ${p.title}  (${ptasks.length} tasks, ${p.status})`);
+          for (const t of ptasks) {
+            const tIcon = t.status === "completed" ? "✅" : t.status === "failed" ? "❌" : t.status === "active" ? "▶ " : "·";
+            console.log(`      ${tIcon} [p${t.priority}] ${t.title}  [${t.status}]`);
+            if (t.error) console.log(`           ↳ Error: ${t.error}`);
+          }
+        }
+        console.log("");
+        break;
+      }
+
+      // devos goal "<title>" "<description>"
+      const titleArg = sub;
+      const descArg  = goalArgs[1];
+      if (!titleArg || !descArg) {
+        console.error('❌ Usage: ts-node index.ts goal "<title>" "<description>"');
+        process.exit(1);
+      }
+      await assertOllamaReady();
+      console.log(`\n🎯 Starting goal: "${titleArg}"\n`);
+      const finalGoal = await goalEngine.run(titleArg, descArg);
+      const icon = finalGoal.status === "completed" ? "✅" : "❌";
+      console.log(`\n${icon} Goal finished: ${finalGoal.status}`);
+      console.log(`   ID:       ${finalGoal.id}`);
+      console.log(`   Projects: ${finalGoal.projects.length}`);
+      break;
+    }
+
+    // ── devos goals ───────────────────────────────────────────
+    case "goals": {
+      const all = await goalEngine.list();
+      if (!all.length) {
+        console.log("📭 No goals yet. Run: ts-node index.ts goal \"<title>\" \"<description>\"");
+        break;
+      }
+      console.log(`\n🎯 Goals (${all.length})\n`);
+      for (const g of [...all].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())) {
+        const icon = g.status === "completed" ? "✅"
+          : g.status === "failed"   ? "❌"
+          : g.status === "active"   ? "🔵"
+          : g.status === "paused"   ? "⏸ "
+          : g.status === "planning" ? "🧠"
+          : "⏳";
+        const date = new Date(g.createdAt).toLocaleDateString();
+        console.log(`  ${icon} [${g.status.padEnd(9)}] ${g.id.slice(0, 12)}  ${date}  Projects: ${g.projects.length}`);
+        console.log(`           "${g.title}"`);
+      }
+      console.log("");
+      break;
+    }
+
     // ── devos api ─────────────────────────────────────────────
     case "api": {
       const apiSub = goalArgs[0];
@@ -1290,6 +1376,11 @@ Pilots:
   pilot enable <id>         Enable a pilot (auto-schedules on next serve)
   pilot disable <id>        Disable a pilot
   pilot history <id>        Show last 5 runs for a pilot
+
+Goal Engine:
+  goal "<title>" "<desc>"   Create, plan, and execute a structured goal
+  goals                     List all goals with status + project count
+  goal status <id>          Show full goal breakdown: projects + tasks + status
 
 Product Engine:
   blueprints                List available product blueprints
