@@ -60,6 +60,7 @@ import { agentRegistry }                       from "./agents/agentRegistry";
 import { agentMessenger }                      from "./agents/agentMessenger";
 import { coordinationLoop }                    from "./agents/coordinationLoop";
 import { AgentRole }                           from "./agents/types";
+import { runInstaller }                        from "./cli/installer";
 
 // ── Bootstrap ─────────────────────────────────────────────────
 
@@ -1437,6 +1438,12 @@ Auth & Keys
       break;
     }
 
+    // ── devos install ─────────────────────────────────────────
+    case "install": {
+      await runInstaller();
+      break;
+    }
+
     // ── devos ui ──────────────────────────────────────────────
     case "ui": {
       const { execSync } = require("child_process") as typeof import("child_process");
@@ -1528,6 +1535,7 @@ Knowledge:
   knowledge query "<q>"     Query the knowledge store with natural language
 
 Integrations:
+  install                   Run setup wizard — checks Node, workspace, deps, Ollama
   github issues [repo]      List open GitHub issues (repo: owner/repo)
 
 Flags:

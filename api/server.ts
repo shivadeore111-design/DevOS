@@ -22,6 +22,7 @@ import knowledgeRouter      from "./routes/knowledge";
 import memoryRouter         from "./routes/memory";
 import systemRouter         from "./routes/system";
 import streamRouter         from "./routes/stream";
+import deployRouter         from "./routes/deploy";
 
 export function createApiServer(): any {
   const app = express();
@@ -64,6 +65,7 @@ export function createApiServer(): any {
   app.use(memoryRouter);
   app.use(systemRouter);
   app.use(streamRouter);
+  app.use(deployRouter);
 
   return app;
 }
@@ -118,6 +120,11 @@ function generateSwaggerSpec() {
       "/api/system/audit":         { get:  { summary: "Audit log (admin only)" } },
       "/api/stream":               { get:  { summary: "SSE all DevOS events" } },
       "/api/stream/goals/{id}":    { get:  { summary: "SSE stream for one goal" } },
+      "/api/deploy/vercel/projects":                         { get:  { summary: "List all Vercel projects" } },
+      "/api/deploy/vercel/deployments/{name}":               { get:  { summary: "List deployments for a Vercel project" } },
+      "/api/deploy/vercel/{name}":                           { post: { summary: "Deploy a directory to Vercel" } },
+      "/api/deploy/railway/projects":                        { get:  { summary: "List all Railway projects" } },
+      "/api/deploy/railway/{projectId}/deploy/{serviceId}":  { post: { summary: "Trigger Railway service deploy" } },
     },
   };
 }
