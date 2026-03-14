@@ -1437,6 +1437,24 @@ Auth & Keys
       break;
     }
 
+    // ── devos ui ──────────────────────────────────────────────
+    case "ui": {
+      const { execSync } = require("child_process") as typeof import("child_process");
+      const uiDir = path.join(process.cwd(), "ui");
+      console.log("[DevOS] 🖥️  Starting Mission Control UI...");
+      console.log(`[DevOS]    Directory: ${uiDir}`);
+      console.log("[DevOS]    Installing dependencies (first run may take ~30s)...");
+      try {
+        execSync("npm install", { cwd: uiDir, stdio: "inherit" });
+        console.log("[DevOS] 🚀 Launching Vite dev server at http://localhost:5173");
+        console.log("[DevOS]    Make sure DevOS API is running: ts-node index.ts serve");
+        execSync("npm run dev", { cwd: uiDir, stdio: "inherit" });
+      } catch (e: any) {
+        console.error("[DevOS] UI failed:", e.message ?? String(e));
+      }
+      break;
+    }
+
     // ── devos help / default ──────────────────────────────────
     case "help":
     case "--help":
@@ -1464,6 +1482,7 @@ Utilities:
   doctor               Check system health + config
   test                 Run built-in test suite
   serve                Start DevOS server + API at http://localhost:4200
+  ui                   Start Mission Control web dashboard at http://localhost:5173
   api                  Print all available API endpoints with descriptions
   dashboard            Show agent scores, task stats, skill usage
   capabilities <goal>  Analyze what capabilities a goal needs
