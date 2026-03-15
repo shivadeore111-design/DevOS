@@ -1,0 +1,26 @@
+[
+  {
+    "keyHash": "4109c68eb72212c506c6dbbbe8bd3d3a8754775a1e987d720981d674acf460b2",
+    "role": "admin",
+    "label": "test key",
+    "createdAt": "2026-03-09T16:30:29.156Z"
+  },
+  {
+    "keyHash": "405253a4ea10be1548b429b33e42cff73d49e1638548c02b10365f28a7690adc",
+    "role": "admin",
+    "label": "test key",
+    "createdAt": "2026-03-09T16:32:32.353Z"
+  },
+  {
+    "keyHash": "531130a2c1550cf49fdcd2810d03fb55ff65d9efe86b52fd82e247234942d7a5",
+    "role": "admin",
+    "label": "test key",
+    "createdAt": "2026-03-09T16:33:06.351Z"
+  },
+  {
+    "keyHash": "7c908c3b67c96ed10bbac428ea4f64bb24a6746dea14a106bb35dd20c4e6c1e6",
+    "role": "automation",
+    "label": "CoachOS",
+    "createdAt": "2026-03-09T16:33:35.194Z"
+  }
+]

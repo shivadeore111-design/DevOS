@@ -10,5 +10,41 @@
     "goal": "check for new github issues and triage them",
     "enabled": true,
     "id": "cron_mmj04s44_x7t5"
+  },
+  {
+    "schedule": "0 8 * * *",
+    "goal": "[Pilot: researcher] Deep autonomous research agent. Given a topic, searches the web, cross-references multiple sources, evaluates credibility, synthesizes findings into a cited markdown report, and stores insights in the knowledge base.",
+    "enabled": true,
+    "id": "cron_mmqmmulq_68sl"
+  },
+  {
+    "schedule": "0 8 * * *",
+    "goal": "[Pilot: researcher] Deep autonomous research agent. Given a topic, searches the web, cross-references multiple sources, evaluates credibility, synthesizes findings into a cited markdown report, and stores insights in the knowledge base.",
+    "enabled": true,
+    "id": "cron_mmrakk2b_idua"
+  },
+  {
+    "schedule": "0 8 * * *",
+    "goal": "[Pilot: researcher] Deep autonomous research agent. Given a topic, searches the web, cross-references multiple sources, evaluates credibility, synthesizes findings into a cited markdown report, and stores insights in the knowledge base.",
+    "enabled": true,
+    "id": "cron_mmrancnq_qvah"
+  },
+  {
+    "schedule": "0 8 * * *",
+    "goal": "[Pilot: researcher] Deep autonomous research agent. Given a topic, searches the web, cross-references multiple sources, evaluates credibility, synthesizes findings into a cited markdown report, and stores insights in the knowledge base.",
+    "enabled": true,
+    "id": "cron_mmrao088_01ha"
+  },
+  {
+    "schedule": "0 8 * * *",
+    "goal": "[Pilot: researcher] Deep autonomous research agent. Given a topic, searches the web, cross-references multiple sources, evaluates credibility, synthesizes findings into a cited markdown report, and stores insights in the knowledge base.",
+    "enabled": true,
+    "id": "cron_mmrn04mm_yznf"
+  },
+  {
+    "schedule": "0 8 * * *",
+    "goal": "[Pilot: researcher] Deep autonomous research agent. Given a topic, searches the web, cross-references multiple sources, evaluates credibility, synthesizes findings into a cited markdown report, and stores insights in the knowledge base.",
+    "enabled": true,
+    "id": "cron_mmrpa1ox_ifup"
   }
 ]

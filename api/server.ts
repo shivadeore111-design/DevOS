@@ -159,7 +159,23 @@ export function createApiServer(): any {
   // ── Sandbox routes ────────────────────────────────────────────────────────
 
   // GET /api/sandbox/status — list all active sandboxes
-  app.get("/api/sandbox/status", (_req: any, res: any) => {
+  
+app.get("/api/models", async (_req: any, res: any) => {
+  const http = require("http");
+  const models = await new Promise<any[]>((resolve) => {
+    const r = http.request({ hostname: "localhost", port: 11434, path: "/api/tags", method: "GET" }, (resp: any) => {
+      let data = "";
+      resp.on("data", (c: any) => data += c);
+      resp.on("end", () => { try { resolve(JSON.parse(data).models || []); } catch { resolve([]); } });
+    });
+    r.on("error", () => resolve([]));
+    r.setTimeout(5000, () => { r.destroy(); resolve([]); });
+    r.end();
+  });
+  const { loadModelSelection } = require("../core/autoModelSelector");
+  res.json({ models, selection: loadModelSelection() });
+});
+app.get("/api/sandbox/status", (_req: any, res: any) => {
     const sandboxes = sandboxManager.listActiveSandboxes()
     res.json({
       enabled:  process.env.DEVOS_SANDBOX === 'true',
@@ -294,3 +310,4 @@ export function startApiServer(portArg?: number): any {
   });
   return app;
 }
+

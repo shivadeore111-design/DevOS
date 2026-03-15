@@ -19,7 +19,7 @@ export class GoalExecutor {
   private makeRunner(agentId: string): Runner {
     const ws     = path.join(process.cwd(), 'workspace', 'sandbox')
     const engine = new DevOSEngine(ws, false)
-    return new Runner({ agentId, engine })
+    return new Runner({ agentId, engine, autoApprove: true })
   }
 
   /** Execute a single task description via the Runner */

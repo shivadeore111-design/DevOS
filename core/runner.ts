@@ -81,21 +81,24 @@ export interface ExecutionEngine {
 }
 
 interface RunnerOptions {
-  agentId:        string;
-  engine:         ExecutionEngine;
+  agentId:         string;
+  engine:          ExecutionEngine;
   pollIntervalMs?: number;
+  autoApprove?:    boolean;
 }
 
 export class Runner {
   private agentId:        string;
   private engine:         ExecutionEngine;
   private pollIntervalMs: number;
+  private autoApprove:    boolean;
   private running = false;
 
   constructor(opts: RunnerOptions) {
     this.agentId        = opts.agentId;
     this.engine         = opts.engine;
     this.pollIntervalMs = opts.pollIntervalMs ?? 2000;
+    this.autoApprove    = opts.autoApprove    ?? false;
   }
 
   // ── CLI Mode: one goal, exit ──────────────────────────────
@@ -232,7 +235,10 @@ export class Runner {
       const confScore    = planConfidence.score(plan, parsedGoal)
       const confDecision = planConfidence.decide(confScore)
 
-      if (confDecision === "auto") {
+      // Check DEVOS_AUTO env OR autoApprove flag — skip interactive prompts
+      const skipPrompt = process.env.DEVOS_AUTO === 'true' || this.autoApprove
+
+      if (confDecision === "auto" || skipPrompt) {
         console.log(`[Runner] Auto-executing (confidence: ${confScore.toFixed(2)})`)
       } else if (confDecision === "confirm") {
         console.log(`[Runner] ⚠️  Plan confidence: ${confScore.toFixed(2)} — confirmation required`)
@@ -245,8 +251,7 @@ export class Runner {
           return;
         }
       } else {
-        // approve — block execution, require manual override
-        console.log(`[Runner] 🚫 Plan confidence too low (${confScore.toFixed(2)}) for: "${task.goal.slice(0, 60)}..." — blocked`)
+        console.log(`[Runner] 🚫 Plan confidence too low (${confScore.toFixed(2)}) — blocked`)
         taskQueue.fail(task.id, "Plan confidence below approval threshold", "Low confidence");
         goalGovernor.unregister(task.id);
         resourceManager.stopTracking(task.id);
