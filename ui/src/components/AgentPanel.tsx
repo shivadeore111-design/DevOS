@@ -24,8 +24,8 @@ export function AgentPanel() {
   useEffect(() => {
     const load = async () => {
       const [a, m] = await Promise.all([api.listAgents(), api.getMessages()])
-      setAgents((a || []) as any[])
-      setMessages(((m || []) as any[]).slice(0, 20))
+      setAgents(Array.isArray(a) ? a : a?.agents || [])
+      setMessages(Array.isArray(m) ? m.slice(0, 20) : (m?.messages || []).slice(0, 20))
     }
     load()
     const interval = setInterval(load, 3000)

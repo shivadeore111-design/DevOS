@@ -16,7 +16,7 @@ export function ProjectsTab() {
   useEffect(() => {
     const load = async () => {
       const g = await api.listGoals()
-      setGoals((g || []) as any[])
+      setGoals(Array.isArray(g) ? g : g?.goals || g?.data || [])
     }
     load()
     const interval = setInterval(load, 5000)

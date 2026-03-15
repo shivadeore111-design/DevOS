@@ -56,9 +56,9 @@ export function createApiServer(): any {
     res.json(generateSwaggerSpec());
   });
 
-  // 6. Routes
-  app.use(goalsRouter);
+  // 6. Routes — goalsV2 must come before goalsRouter to prevent /api/goals/:id catching /api/goals/v2
   app.use(goalsV2Router);
+  app.use(goalsRouter);
   app.use(agentsRouter);
   app.use(pilotsRouter);
   app.use(knowledgeRouter);

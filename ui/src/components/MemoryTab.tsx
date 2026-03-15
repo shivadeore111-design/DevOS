@@ -11,7 +11,7 @@ export function MemoryTab() {
   useEffect(() => {
     const load = async () => {
       const [e, s] = await Promise.all([api.listKnowledge(), api.getMemoryStats()])
-      setEntries((e || []) as any[])
+      setEntries(Array.isArray(e) ? e : e?.entries || e?.data || [])
       setStats(s)
     }
     load()
