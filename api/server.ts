@@ -24,6 +24,9 @@ import systemRouter         from "./routes/system";
 import streamRouter         from "./routes/stream";
 import deployRouter         from "./routes/deploy";
 import missionsRouter       from "./routes/missions";
+import { dialogueEngine }   from "../personality/dialogueEngine";
+import { conversationMemory } from "../personality/conversationMemory";
+import { proactiveEngine }  from "../personality/proactiveEngine";
 
 export function createApiServer(): any {
   const app = express();
@@ -68,6 +71,45 @@ export function createApiServer(): any {
   app.use(streamRouter);
   app.use(deployRouter);
   app.use(missionsRouter);
+
+  // ── Personality / Chat routes ──────────────────────────────────────────────
+
+  // POST /api/chat — SSE streaming chat response
+  app.post("/api/chat", async (req: any, res: any) => {
+    const message = req.body?.message as string | undefined;
+    if (!message?.trim()) {
+      return res.status(400).json({ error: "message is required" });
+    }
+
+    res.setHeader("Content-Type",  "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection",    "keep-alive");
+    res.flushHeaders?.();
+
+    try {
+      for await (const chunk of dialogueEngine.chat(message)) {
+        res.write(`data: ${JSON.stringify({ chunk })}\n\n`);
+      }
+    } catch (err: any) {
+      res.write(`data: ${JSON.stringify({ error: err?.message ?? "stream error" })}\n\n`);
+    } finally {
+      res.write("data: [DONE]\n\n");
+      res.end();
+    }
+  });
+
+  // GET /api/chat/history — last 50 conversation messages
+  app.get("/api/chat/history", (_req: any, res: any) => {
+    const messages = conversationMemory.getRecentMessages(50);
+    res.json(messages);
+  });
+
+  // GET /api/chat/proactive — unshown proactive messages
+  app.get("/api/chat/proactive", (req: any, res: any) => {
+    const id = req.query?.markShown as string | undefined;
+    if (id) proactiveEngine.markShown(id);
+    res.json(proactiveEngine.getUnshown());
+  });
 
   return app;
 }
@@ -135,6 +177,9 @@ function generateSwaggerSpec() {
       "/api/missions/{id}/cancel":      { post: { summary: "Cancel a mission" } },
       "/api/coordination/approve":      { post: { summary: "Approve a human-in-the-loop task" } },
       "/api/coordination/reject":       { post: { summary: "Reject a human-in-the-loop task" } },
+      "/api/chat":                      { post: { summary: "SSE streaming chat with DevOS personality" } },
+      "/api/chat/history":              { get:  { summary: "Last 50 conversation messages" } },
+      "/api/chat/proactive":            { get:  { summary: "Unshown proactive messages (pass ?markShown=id to ack)" } },
     },
   };
 }
@@ -150,6 +195,7 @@ export function startApiServer(portArg?: number): any {
     console.log(`[API] 🚀 DevOS API running at http://${host}:${port}`);
     console.log(`[API] 🔒 Bound to ${host} — localhost only`);
     console.log(`[API] 📖 Docs at http://${host}:${port}/api/docs`);
+    proactiveEngine.start();
   });
   return app;
 }

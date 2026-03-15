@@ -5,7 +5,7 @@
 // of this software is strictly prohibited.
 // ============================================================
 // index.ts — DevOS Entry Point
-// Commands: run, daemon, status, enqueue, plan, grow, agent, goal, goals, agents, coordinate, mission, missions, doctor, test
+// Commands: run, daemon, status, enqueue, plan, grow, agent, goal, goals, agents, coordinate, mission, missions, chat, profile, doctor, test
 // ============================================================
 
 import "dotenv/config";
@@ -61,6 +61,9 @@ import { agentMessenger }                      from "./agents/agentMessenger";
 import { coordinationLoop }                    from "./agents/coordinationLoop";
 import { AgentRole }                           from "./agents/types";
 import { runInstaller }                        from "./cli/installer";
+import { dialogueEngine }                      from "./personality/dialogueEngine";
+import { userProfile }                         from "./personality/userProfile";
+import { conversationMemory }                  from "./personality/conversationMemory";
 
 // ── Bootstrap ─────────────────────────────────────────────────
 
@@ -1552,6 +1555,89 @@ Auth & Keys
       break
     }
 
+    // ── devos chat ["<message>"] — interactive or single-shot chat ──
+    case "chat": {
+      const message = rawArgs.join(' ').trim()
+
+      if (message) {
+        // Single-shot mode: devos chat "what can you do"
+        process.stdout.write('\nDevOS: ')
+        for await (const chunk of dialogueEngine.chat(message)) {
+          process.stdout.write(chunk)
+        }
+        process.stdout.write('\n\n')
+      } else {
+        // REPL mode: interactive loop
+        const readline = await import('readline')
+        const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
+        console.log('\n🤖 DevOS Chat — type your message or "exit" to quit\n')
+
+        const prompt = () => {
+          rl.question('You: ', async (input: string) => {
+            const text = input.trim()
+            if (!text) { prompt(); return }
+            if (text === 'exit' || text === 'quit') { rl.close(); return }
+
+            process.stdout.write('DevOS: ')
+            for await (const chunk of dialogueEngine.chat(text)) {
+              process.stdout.write(chunk)
+            }
+            process.stdout.write('\n\n')
+            prompt()
+          })
+        }
+        prompt()
+        await new Promise<void>(resolve => rl.on('close', resolve))
+      }
+      break
+    }
+
+    // ── devos profile [reset | pilots on|off] ─────────────────
+    case "profile": {
+      const sub = rawArgs[0]?.toLowerCase()
+
+      if (sub === 'reset') {
+        userProfile.reset()
+        conversationMemory.clear()
+        console.log('🔄 Profile and conversation memory cleared. Next run will trigger onboarding.')
+        break
+      }
+
+      if (sub === 'pilots') {
+        const onOff = rawArgs[1]?.toLowerCase()
+        if (onOff === 'on' || onOff === 'off') {
+          const p = userProfile.patch({ pilotsEnabled: onOff === 'on' })
+          console.log(`⚡ Pilots ${p.pilotsEnabled ? 'enabled' : 'disabled'}.`)
+        } else {
+          console.error('Usage: ts-node index.ts profile pilots on|off')
+        }
+        break
+      }
+
+      // Default: print profile
+      const profile = userProfile.loadProfile()
+      const facts   = conversationMemory.getFacts()
+      console.log('\n👤 DevOS User Profile\n')
+      console.log(`  Name:           ${profile.name ?? '(not set)'}`)
+      console.log(`  Primary Goal:   ${profile.primaryGoal ?? '(not set)'}`)
+      console.log(`  Experience:     ${profile.experience ?? '(not set)'}`)
+      console.log(`  Stack:          ${profile.preferredStack ?? '(not set)'}`)
+      console.log(`  Pilots:         ${profile.pilotsEnabled ? '✅ enabled' : '❌ disabled'}`)
+      console.log(`  Onboarding:     ${profile.onboardingDone ? '✅ done' : '⏳ pending'}`)
+      console.log(`  First seen:     ${new Date(profile.firstSeenAt).toLocaleString()}`)
+      console.log(`  Last seen:      ${new Date(profile.lastSeenAt).toLocaleString()}`)
+      console.log(`  Total goals:    ${profile.totalGoals}`)
+      if (profile.recentGoalTypes.length > 0) {
+        console.log(`  Recent goals:   ${profile.recentGoalTypes.slice(-3).join(' | ')}`)
+      }
+      if (facts.length > 0) {
+        console.log(`\n📌 Extracted Facts (${facts.length}):`)
+        facts.slice(-5).forEach(f => console.log(`  • ${f.fact}`))
+      }
+      console.log('')
+      break
+    }
+
     // ── devos ui ──────────────────────────────────────────────
     case "ui": {
       const { execSync } = require("child_process") as typeof import("child_process");
@@ -1629,6 +1715,13 @@ Autonomous Missions:
   mission pause <id>        Pause a running mission
   mission resume <id>       Resume a paused mission
   mission cancel <id>       Cancel a mission permanently
+
+Personality:
+  chat                      Start interactive REPL chat with DevOS
+  chat "<message>"          Send a single message to DevOS
+  profile                   Show your user profile + extracted facts
+  profile reset             Clear profile + conversation memory (re-triggers onboarding)
+  profile pilots on|off     Enable or disable autonomous pilots
 
 Goal Engine:
   goal "<title>" "<desc>"   Create, plan, and execute a structured goal
