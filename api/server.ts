@@ -24,9 +24,12 @@ import systemRouter         from "./routes/system";
 import streamRouter         from "./routes/stream";
 import deployRouter         from "./routes/deploy";
 import missionsRouter       from "./routes/missions";
-import { dialogueEngine }   from "../personality/dialogueEngine";
-import { conversationMemory } from "../personality/conversationMemory";
-import { proactiveEngine }  from "../personality/proactiveEngine";
+import { dialogueEngine }     from "../personality/dialogueEngine";
+import { conversationMemory }  from "../personality/conversationMemory";
+import { proactiveEngine }     from "../personality/proactiveEngine";
+import { morningBriefing }     from "../personal/morningBriefing";
+import { lifeTimeline }        from "../personal/lifeTimeline";
+import { backgroundAgents }    from "../personal/backgroundAgents";
 
 export function createApiServer(): any {
   const app = express();
@@ -111,6 +114,44 @@ export function createApiServer(): any {
     res.json(proactiveEngine.getUnshown());
   });
 
+  // ── Personal Mode routes ───────────────────────────────────────────────────
+
+  // GET /api/personal/briefing — LLM-generated morning briefing
+  app.get("/api/personal/briefing", async (_req: any, res: any) => {
+    const briefing = await morningBriefing.generate();
+    res.json({ briefing });
+  });
+
+  // GET /api/personal/timeline — all life-timeline entries
+  app.get("/api/personal/timeline", (_req: any, res: any) => {
+    res.json(lifeTimeline.getTimeline());
+  });
+
+  // GET /api/personal/agents — list background agents + status
+  app.get("/api/personal/agents", (_req: any, res: any) => {
+    res.json(backgroundAgents.listAgents());
+  });
+
+  // POST /api/personal/agents/:name/enable
+  app.post("/api/personal/agents/:name/enable", async (req: any, res: any) => {
+    try {
+      await backgroundAgents.enableAgent(req.params.name);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // POST /api/personal/agents/:name/disable
+  app.post("/api/personal/agents/:name/disable", async (req: any, res: any) => {
+    try {
+      await backgroundAgents.disableAgent(req.params.name);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
   return app;
 }
 
@@ -177,9 +218,14 @@ function generateSwaggerSpec() {
       "/api/missions/{id}/cancel":      { post: { summary: "Cancel a mission" } },
       "/api/coordination/approve":      { post: { summary: "Approve a human-in-the-loop task" } },
       "/api/coordination/reject":       { post: { summary: "Reject a human-in-the-loop task" } },
-      "/api/chat":                      { post: { summary: "SSE streaming chat with DevOS personality" } },
-      "/api/chat/history":              { get:  { summary: "Last 50 conversation messages" } },
-      "/api/chat/proactive":            { get:  { summary: "Unshown proactive messages (pass ?markShown=id to ack)" } },
+      "/api/chat":                              { post: { summary: "SSE streaming chat with DevOS personality" } },
+      "/api/chat/history":                      { get:  { summary: "Last 50 conversation messages" } },
+      "/api/chat/proactive":                    { get:  { summary: "Unshown proactive messages (pass ?markShown=id to ack)" } },
+      "/api/personal/briefing":                 { get:  { summary: "LLM-generated morning briefing" } },
+      "/api/personal/timeline":                 { get:  { summary: "Full life-timeline entries" } },
+      "/api/personal/agents":                   { get:  { summary: "List background agents with status + schedule" } },
+      "/api/personal/agents/:name/enable":      { post: { summary: "Enable a background agent" } },
+      "/api/personal/agents/:name/disable":     { post: { summary: "Disable a background agent" } },
     },
   };
 }

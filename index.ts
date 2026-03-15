@@ -5,7 +5,7 @@
 // of this software is strictly prohibited.
 // ============================================================
 // index.ts — DevOS Entry Point
-// Commands: run, daemon, status, enqueue, plan, grow, agent, goal, goals, agents, coordinate, mission, missions, chat, profile, doctor, test
+// Commands: run, daemon, status, enqueue, plan, grow, agent, goal, goals, agents, coordinate, mission, missions, chat, profile, personal, builder, briefing, teach, stop, run workflow, agents personal, doctor, test
 // ============================================================
 
 import "dotenv/config";
@@ -64,6 +64,10 @@ import { runInstaller }                        from "./cli/installer";
 import { dialogueEngine }                      from "./personality/dialogueEngine";
 import { userProfile }                         from "./personality/userProfile";
 import { conversationMemory }                  from "./personality/conversationMemory";
+import { morningBriefing }                     from "./personal/morningBriefing";
+import { teachMode }                           from "./personal/teachMode";
+import { backgroundAgents }                    from "./personal/backgroundAgents";
+import { isPersonalMode }                      from "./personal/personalMode";
 
 // ── Bootstrap ─────────────────────────────────────────────────
 
@@ -253,6 +257,16 @@ async function handleCLI(): Promise<void> {
 
     // ── devos run ────────────────────────────────────────────
     case "run": {
+      // ── devos run workflow "<name>" — replay a taught workflow
+      if (rawArgs[0]?.toLowerCase() === 'workflow') {
+        const wfName = rawArgs.slice(1).join(' ').trim()
+        if (!wfName) { console.error('❌ Usage: ts-node index.ts run workflow "<name>"'); break }
+        console.log(`\n▶️  Running workflow: "${wfName}"\n`)
+        const wfOutput = await teachMode.runWorkflow(wfName)
+        console.log(wfOutput)
+        console.log('')
+        break
+      }
       if (!goal) {
         console.error("❌ Usage: ts-node index.ts run \"your goal here\"");
         process.exit(1);
@@ -726,8 +740,17 @@ async function handleCLI(): Promise<void> {
     case "stop": {
       const taskId = goalArgs[0];
       if (!taskId) {
-        console.error("❌ Usage: ts-node index.ts stop <taskId>");
-        process.exit(1);
+        // No taskId — check if teach mode is recording
+        if (teachMode.isRecording()) {
+          const wf = teachMode.stopRecording()
+          console.log(`\n📋 Saved workflow: "${wf.name}"`)
+          console.log(`   Steps: ${wf.steps.length}`)
+          console.log(`   ID:    ${wf.id}`)
+          console.log(`\nRun it with: ts-node index.ts run workflow "${wf.name}"`)
+        } else {
+          console.error("❌ Usage: ts-node index.ts stop <taskId>")
+        }
+        break;
       }
       const { emergencyStop } = await import("./control/emergencyStop");
       await emergencyStop.stop(taskId);
@@ -1310,6 +1333,20 @@ async function handleCLI(): Promise<void> {
 
     // ── devos agents ──────────────────────────────────────────
     case "agents": {
+      // ── devos agents personal — background agent list ──────
+      if (rawArgs[0]?.toLowerCase() === 'personal') {
+        const bgAgents = backgroundAgents.listAgents()
+        console.log(`\n🤖 Background Agents (${bgAgents.length})\n`)
+        console.log('  ' + 'Name'.padEnd(22) + 'Status'.padEnd(12) + 'Schedule')
+        console.log('  ' + '─'.repeat(50))
+        for (const a of bgAgents) {
+          const icon = a.status === 'enabled' ? '✅' : '⏸ '
+          console.log(`  ${icon} ${a.name.padEnd(20)} ${a.status.padEnd(12)} ${a.schedule}`)
+        }
+        console.log('')
+        break
+      }
+      // ── devos agents — agent registry list ────────────────
       const all = agentRegistry.list();
       console.log(`\n🤖 Agent Layer (${all.length} agents)\n`);
       for (const a of all) {
@@ -1645,6 +1682,54 @@ Auth & Keys
       break
     }
 
+    // ── devos personal — switch to personal mode ──────────────
+    case "personal": {
+      const envFile = path.join(process.cwd(), '.env')
+      let envContent = fs.existsSync(envFile) ? fs.readFileSync(envFile, 'utf-8') : ''
+      if (envContent.includes('DEVOS_MODE=')) {
+        envContent = envContent.replace(/DEVOS_MODE=.*/g, 'DEVOS_MODE=personal')
+      } else {
+        envContent += '\nDEVOS_MODE=personal\n'
+      }
+      fs.writeFileSync(envFile, envContent)
+      console.log('🎯 Switched to Personal mode. Restart DevOS to apply.')
+      break
+    }
+
+    // ── devos builder — switch to builder mode ─────────────────
+    case "builder": {
+      const envFile2 = path.join(process.cwd(), '.env')
+      let envContent2 = fs.existsSync(envFile2) ? fs.readFileSync(envFile2, 'utf-8') : ''
+      if (envContent2.includes('DEVOS_MODE=')) {
+        envContent2 = envContent2.replace(/DEVOS_MODE=.*/g, 'DEVOS_MODE=builder')
+      } else {
+        envContent2 += '\nDEVOS_MODE=builder\n'
+      }
+      fs.writeFileSync(envFile2, envContent2)
+      console.log('🔨 Switched to Builder mode.')
+      break
+    }
+
+    // ── devos briefing — generate morning briefing ─────────────
+    case "briefing": {
+      console.log('\n🌅 Generating your morning briefing...\n')
+      const text = await morningBriefing.generate()
+      console.log(text)
+      console.log('')
+      break
+    }
+
+    // ── devos teach "<name>" — start recording a workflow ──────
+    case "teach": {
+      const workflowName = rawArgs.join(' ').trim()
+      if (!workflowName) {
+        console.error('❌ Usage: ts-node index.ts teach "<workflow name>"')
+        break
+      }
+      teachMode.startRecording(workflowName)
+      break
+    }
+
     // ── devos ui ──────────────────────────────────────────────
     case "ui": {
       const { execSync } = require("child_process") as typeof import("child_process");
@@ -1729,6 +1814,15 @@ Personality:
   profile                   Show your user profile + extracted facts
   profile reset             Clear profile + conversation memory (re-triggers onboarding)
   profile pilots on|off     Enable or disable autonomous pilots
+
+Personal Mode:
+  personal                  Switch to Personal mode (set DEVOS_MODE=personal in .env)
+  builder                   Switch to Builder mode (set DEVOS_MODE=builder in .env)
+  briefing                  Generate an LLM morning briefing with recent activity
+  teach "<name>"            Start recording a workflow by name
+  stop                      Stop recording and save the workflow
+  run workflow "<name>"     Replay a saved workflow
+  agents personal           List all background agents with status + schedule
 
 Goal Engine:
   goal "<title>" "<desc>"   Create, plan, and execute a structured goal
