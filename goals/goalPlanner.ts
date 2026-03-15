@@ -5,6 +5,8 @@
 
 // goals/goalPlanner.ts — LLM-powered goal decomposition into projects + tasks
 
+import * as os   from 'os'
+import * as path from 'path'
 import { callOllama }                        from '../llm/ollama'
 import { goalStore }                         from './goalStore'
 import { Task }                              from './types'
@@ -47,7 +49,29 @@ export class GoalPlanner {
 
     goalStore.updateGoal(goalId, { status: 'planning' })
 
-    const prompt = `You are a project planner. Break this goal into projects and tasks.
+    const HOME    = os.homedir()
+    const DESKTOP = path.join(HOME, 'Desktop')
+    const IS_WIN  = process.platform === 'win32'
+
+    const SYSTEM_RULES = `SYSTEM RULES (MUST FOLLOW):
+Platform: ${IS_WIN ? 'Windows' : 'Linux'}
+Home: ${HOME}
+Desktop: ${DESKTOP}
+Working dir: ${process.cwd()}
+
+${IS_WIN ? `WINDOWS ONLY - Use these commands:
+- Create file: echo content > C:\\path\\file.txt
+- Create dir: mkdir "C:\\path\\folder"
+- Delete: del "C:\\path\\file"
+- List: dir "C:\\path"
+- NEVER use: touch, mkdir -p, ls, cat, cp, rm, /home/user
+- Desktop is always: ${DESKTOP}
+- When user says "desktop" use: ${DESKTOP}` : ''}
+`
+
+    const prompt = `${SYSTEM_RULES}
+
+You are a project planner. Break this goal into projects and tasks.
 Goal: ${goal.title} — ${goal.description}
 
 Return JSON only:

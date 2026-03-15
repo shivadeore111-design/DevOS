@@ -25,7 +25,7 @@ export interface ClassifiedIntent {
 
 // Keyword-based fast-path rules (ordered by specificity)
 const KEYWORD_RULES: Array<{ type: IntentType; keywords: string[] }> = [
-  { type: 'build',     keywords: ['build', 'create', 'make', 'generate', 'write', 'scaffold', 'init', 'new project', 'new app', 'new api', 'new service'] },
+  { type: 'build',     keywords: ['build', 'create', 'make', 'generate', 'write', 'scaffold', 'init', 'new project', 'new app', 'new api', 'new service', 'create a file', 'create file', 'write a file', 'make a file', 'create a folder', 'create folder'] },
   { type: 'deploy',    keywords: ['deploy', 'ship', 'release', 'push to', 'go live', 'publish', 'vercel', 'railway', 'heroku'] },
   { type: 'debug',     keywords: ['fix', 'debug', 'error', 'broken', 'not working', 'failing', 'crash', 'exception', 'bug', 'issue'] },
   { type: 'status',    keywords: ['status', 'list', 'show me', 'what\'s running', 'running', 'active goals', 'active missions', 'progress', 'monitor'] },

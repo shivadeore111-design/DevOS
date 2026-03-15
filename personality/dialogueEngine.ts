@@ -5,11 +5,11 @@
 
 // personality/dialogueEngine.ts — Top-level chat orchestrator
 
-import { conversationMemory }  from './conversationMemory'
-import { userProfile }         from './userProfile'
-import { intentClassifier }    from './intentClassifier'
-import { responseComposer }    from './responseComposer'
-import { runOnboarding }       from './onboarding'
+import { conversationMemory }         from './conversationMemory'
+import { userProfile }               from './userProfile'
+import { intentClassifier, IntentType } from './intentClassifier'
+import { responseComposer }          from './responseComposer'
+import { runOnboarding }             from './onboarding'
 
 class DialogueEngine {
 
@@ -33,31 +33,48 @@ class DialogueEngine {
     // 3. Save incoming message to memory
     const userMsg = conversationMemory.addMessage('user', userMessage)
 
-    // 4. Classify intent
-    const intent = await intentClassifier.classify(userMessage)
+    // 4. Classify intent — skip Ollama for simple/short messages
+    const wordCount = userMessage.trim().split(/\s+/).length
+    const isSimple  = wordCount <= 5
+      && !/^(create|make|build|write|generate|deploy|fix|debug|run|execute)/i.test(userMessage.trim())
+      && /^(hi|hello|hey|thanks|ok|okay|yes|no|sure|cool|great|good|bye|test|sup|yo|what|how|why|who|when|where)(\s|$)/i.test(userMessage.trim())
+    const intent = isSimple
+      ? { type: 'chat' as const, confidence: 1, raw: userMessage }
+      : await intentClassifier.classify(userMessage)
 
-    // 5. Pull recent context for the composer
-    const context = conversationMemory.getContext(10)
-
-    // 6. Stream response
+    // 5. Route based on intent
     const chunks: string[] = []
-    for await (const chunk of responseComposer.compose(userMessage, intent.type, context)) {
-      chunks.push(chunk)
-      yield chunk
+
+    if (intent.type === 'build' || intent.type === 'deploy') {
+      yield 'Got it — starting now. Watch the activity feed on the right for live progress.\n'
+      const { goalEngine } = await import('../goals/goalEngine')
+      goalEngine.run(userMessage.slice(0, 60), userMessage).catch(() => {})
+      chunks.push('Goal started.')
+      return  // STOP HERE — don't generate any more text
+
+    } else if (intent.type === 'status') {
+      const { goalStore } = await import('../goals/goalStore')
+      const active = goalStore.listGoals('active')
+      yield `Active goals: ${active.length}. Check the Goals tab for details.`
+      return
+
+    } else {
+      // Only for chitchat/explain — generate actual LLM response
+      // Don't pass conversation context — prevents hallucination chains
+      const safeContext = ''
+      for await (const chunk of responseComposer.compose(userMessage, intent.type, safeContext)) {
+        chunks.push(chunk)
+        yield chunk
+      }
     }
 
-    // 7. Save assistant response to memory
+    // 6. Save response to memory
     const fullResponse = chunks.join('').trim()
-    conversationMemory.addMessage('assistant', fullResponse, intent.type)
+    if (fullResponse) conversationMemory.addMessage('assistant', fullResponse, intent.type)
 
-    // 8. Background: extract facts from last 5 exchanges (fire-and-forget)
+    // 7. Background tasks
     const recent = conversationMemory.getRecentMessages(10)
-    conversationMemory.extractFacts(recent).catch(() => { /* silent */ })
-
-    // 9. Background: learn from build intents (fire-and-forget)
-    if (intent.type === 'build') {
-      userProfile.learnFromGoal(userMessage.slice(0, 80))
-    }
+    conversationMemory.extractFacts(recent).catch(() => {})
   }
 }
 

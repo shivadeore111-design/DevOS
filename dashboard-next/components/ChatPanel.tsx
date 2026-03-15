@@ -131,14 +131,33 @@ export function ChatPanel() {
         const lines = decoder.decode(value).split('\n').filter(l => l.startsWith('data: '))
         for (const line of lines) {
           try {
-            const data = JSON.parse(line.slice(6))
-            if (data.token) {
-              accumulated += data.token
-              setMessages(prev => prev.map(m => m.id === msgId ? { ...m, content: accumulated + '▌' } : m))
+            const raw = line.slice(6).trim()
+            if (raw === '[DONE]') {
+              setMessages(prev => prev.map(m =>
+                m.id === msgId ? { ...m, content: accumulated || 'Done.' } : m
+              ))
+              break
             }
-            if (data.done || data.error) {
-              setMessages(prev => prev.map(m => m.id === msgId
-                ? { ...m, content: accumulated || (data.error ? `Error: ${data.error}` : 'Done.') } : m))
+            const data = JSON.parse(raw)
+            // server sends { chunk } — support both chunk and token
+            const text = data.chunk || data.token || ''
+            if (text) {
+              accumulated += text
+              setMessages(prev => prev.map(m =>
+                m.id === msgId ? { ...m, content: accumulated + '▌' } : m
+              ))
+            }
+            if (data.error) {
+              setMessages(prev => prev.map(m =>
+                m.id === msgId ? { ...m, content: `Error: ${data.error}`, type: 'error' } : m
+              ))
+              break
+            }
+            if (data.done) {
+              setMessages(prev => prev.map(m =>
+                m.id === msgId ? { ...m, content: accumulated || 'Done.' } : m
+              ))
+              break
             }
           } catch { /* ignore */ }
         }

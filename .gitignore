@@ -6,3 +6,10 @@ projects/sandbox/
 core/core.zip
 *.zip
 *.docx
+
+logs/
+workspace/
+memory/execution-memory.json
+config/model-selection.json
+config/cron-jobs.json
+config/api-keys.json

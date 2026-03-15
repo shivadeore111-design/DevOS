@@ -6,6 +6,7 @@
 // core/osContext.ts — Runtime OS detection and capability discovery
 
 import os from "os"
+import * as path from "path"
 import { execSync } from "child_process"
 
 export interface OSContext {
@@ -18,6 +19,7 @@ export interface OSContext {
   hasNpm: boolean
   tempDir: string
   homeDir: string
+  desktopPath: string
 }
 
 function checkCommand(cmd: string): boolean {
@@ -36,9 +38,12 @@ export function detectOSContext(): OSContext {
     hasDocker: checkCommand("docker"),
     hasGit: checkCommand("git"),
     hasNpm: checkCommand("npm"),
-    tempDir: os.tmpdir(),
-    homeDir: os.homedir()
+    tempDir:     os.tmpdir(),
+    homeDir:     os.homedir(),
+    desktopPath: path.join(os.homedir(), 'Desktop'),
   }
 }
 
 export const osContext = detectOSContext()
+
+export const desktopPath = path.join(os.homedir(), 'Desktop')

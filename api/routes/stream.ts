@@ -16,11 +16,16 @@ const SSE_EVENTS = [
   "goal_started",
   "goal_completed",
   "goal_failed",
+  "task_completed",
+  "task_failed",
   "action_executed",
   "plan_generated",
   "session_created",
   "product_module_completed",
   "emergency_stop",
+  "agent_thinking",
+  "mission:complete",
+  "pilot_completed",
 ] as const;
 
 function sendSseHeaders(res: any): void {
@@ -32,8 +37,14 @@ function sendSseHeaders(res: any): void {
 }
 
 function writeSseEvent(res: any, event: string, data: unknown): void {
-  res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-  if (typeof res.flush === "function") res.flush();
+  // Write as UNNAMED event (data: only) so EventSource.onmessage catches it
+  // Include event type inside the payload so the client can filter
+  const payload = {
+    type: event,
+    ...(data && typeof data === 'object' ? data : { value: data })
+  }
+  res.write(`data: ${JSON.stringify(payload)}\n\n`)
+  if (typeof res.flush === 'function') res.flush()
 }
 
 // GET /api/stream — all DevOS runtime events

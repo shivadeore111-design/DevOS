@@ -5,7 +5,6 @@
 
 // personality/responseComposer.ts — Streaming response generation (AsyncGenerator)
 
-import { callOllama }      from '../llm/ollama'
 import { wrapWithPersona } from './devosPersonality'
 import { IntentType }      from './intentClassifier'
 import { getChatModel }    from '../core/autoModelSelector'
@@ -41,17 +40,65 @@ class ResponseComposer {
 
     const { system, user } = wrapWithPersona(userContent)
 
-    let fullResponse = ''
-    try {
-      fullResponse = await callOllama(user, system, getChatModel())
-    } catch {
-      fullResponse = 'Unable to reach language model. Check Ollama is running.'
+    // True streaming — yield tokens as they arrive from Ollama
+    const http  = require('http') as typeof import('http')
+    const model = getChatModel()
+
+    let streamedText = ''
+    let hadError     = false
+
+    await new Promise<void>((resolve) => {
+      const body = JSON.stringify({
+        model,
+        messages: [
+          ...(system ? [{ role: 'system', content: system }] : []),
+          { role: 'user', content: user }
+        ],
+        stream: true,
+        options: { temperature: 0.3, num_predict: 300 }
+      })
+
+      const req = http.request({
+        hostname: 'localhost',
+        port: 11434,
+        path: '/api/chat',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(body)
+        }
+      }, (res) => {
+        let buffer = ''
+        res.on('data', (chunk: Buffer) => {
+          buffer += chunk.toString()
+          const lines = buffer.split('\n')
+          buffer = lines.pop() || ''
+          for (const line of lines) {
+            if (!line.trim()) continue
+            try {
+              const data  = JSON.parse(line)
+              const token = data.message?.content || ''
+              if (token) streamedText += token
+            } catch {}
+          }
+        })
+        res.on('end', () => resolve())
+        res.on('error', () => { hadError = true; resolve() })
+      })
+
+      req.on('error', () => { hadError = true; resolve() })
+      req.setTimeout(45000, () => { req.destroy(); resolve() })
+      req.write(body)
+      req.end()
+    })
+
+    if (hadError || !streamedText.trim()) {
+      yield 'Unable to reach Ollama. Run: ollama serve'
+      return
     }
 
-    // Trim to max words
-    const words = fullResponse.trim().split(/\s+/).slice(0, MAX_WORDS)
-
-    // Yield word-by-word for SSE streaming effect
+    // Yield word by word so UI shows progress
+    const words = streamedText.trim().split(/\s+/).slice(0, MAX_WORDS)
     for (const word of words) {
       yield word + ' '
     }

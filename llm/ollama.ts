@@ -22,11 +22,8 @@ function getTimeout(model: string = MODEL): number {
   return 120000;
 }
 
-function getNumPredict(model: string = MODEL): number {
-  const m = model.toLowerCase();
-  if (m.includes("14b") || m.includes("70b"))  return 3000;
-  if (m.includes("12b") || m.includes("13b"))  return 2048;
-  return 1500;
+function getNumPredict(_model: string = MODEL): number {
+  return 300  // Fast chat responses — long outputs (code gen) override this per-call
 }
 
 /**

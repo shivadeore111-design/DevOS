@@ -39,34 +39,77 @@ export function AgentFeed() {
       es.onmessage = (e) => {
         try {
           const event = JSON.parse(e.data)
+          const type = event.type || 'info'
           let item: FeedItem | null = null
 
-          if (event.type === 'agent_thinking') {
+          if (type === 'agent_thinking') {
             item = {
-              id:        Date.now().toString(),
+              id:        crypto.randomUUID(),
               type:      event.thinkingType || 'thinking',
-              agent:     event.agent,
+              agent:     event.agent || 'DevOS',
               message:   event.message || '',
               timestamp: new Date().toISOString()
             }
-          } else if (event.type === 'goal_started' || event.type === 'goal_completed' || event.type === 'goal_failed') {
+          } else if (type === 'goal_started') {
             item = {
-              id:        Date.now().toString(),
-              type:      'goal',
-              message:   `${event.type === 'goal_completed' ? '✅' : event.type === 'goal_failed' ? '❌' : '🎯'} ${event.title || event.goalId || ''}`,
+              id:        crypto.randomUUID(),
+              type:      'acting',
+              agent:     'CEO',
+              message:   `🎯 Goal started: ${event.title || event.goalId || ''}`,
               timestamp: new Date().toISOString()
             }
-          } else if (event.type === 'mission:complete') {
+          } else if (type === 'goal_completed') {
             item = {
-              id:        Date.now().toString(),
-              type:      'mission',
+              id:        crypto.randomUUID(),
+              type:      'done',
+              agent:     'CEO',
+              message:   `✅ Goal completed: ${event.title || event.goalId || ''}`,
+              timestamp: new Date().toISOString()
+            }
+          } else if (type === 'goal_failed') {
+            item = {
+              id:        crypto.randomUUID(),
+              type:      'error',
+              agent:     'CEO',
+              message:   `❌ Goal failed: ${event.title || event.goalId || ''}`,
+              timestamp: new Date().toISOString()
+            }
+          } else if (type === 'task_completed') {
+            item = {
+              id:        crypto.randomUUID(),
+              type:      'done',
+              agent:     'Engineer',
+              message:   `✓ ${event.title || event.taskId || 'Task done'}`,
+              timestamp: new Date().toISOString()
+            }
+          } else if (type === 'task_failed') {
+            item = {
+              id:        crypto.randomUUID(),
+              type:      'error',
+              agent:     'Engineer',
+              message:   `✗ ${event.title || event.taskId || 'Task failed'}`,
+              timestamp: new Date().toISOString()
+            }
+          } else if (type === 'mission:complete') {
+            item = {
+              id:        crypto.randomUUID(),
+              type:      'done',
+              agent:     'CEO',
               message:   `🚀 Mission complete: ${event.goal || ''}`,
+              timestamp: new Date().toISOString()
+            }
+          } else if (type === 'pilot_completed') {
+            item = {
+              id:        crypto.randomUUID(),
+              type:      'done',
+              agent:     'Pilot',
+              message:   `🔍 Pilot run complete: ${event.pilotId || ''}`,
               timestamp: new Date().toISOString()
             }
           }
 
           if (item) setItems(prev => [item!, ...prev].slice(0, 100))
-        } catch { /* ignore */ }
+        } catch {}
       }
     }
 

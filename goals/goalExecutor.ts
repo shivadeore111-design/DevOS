@@ -11,6 +11,7 @@ import { DevOSEngine }   from '../executor/engine'
 import { eventBus }      from '../core/eventBus'
 import { goalStore }     from './goalStore'
 import { Task }          from './types'
+import { liveThinking }  from '../coordination/liveThinking'
 
 export class GoalExecutor {
   /** Goals currently paused (goalId set) */
@@ -55,6 +56,8 @@ Execute this specific task as part of the larger goal. Use file_write, shell_exe
     if (!goal) throw new Error(`[GoalExecutor] Goal not found: ${goalId}`)
 
     console.log(`[GoalExecutor] 🚀 Executing goal: ${goal.title}`)
+    liveThinking.act('CEO', `Goal started: ${goal.title}`, goalId)
+    eventBus.emit('goal_started' as any, { goalId, title: goal.title })
 
     const projects = goalStore.listProjects(goalId)
 
@@ -81,6 +84,7 @@ Execute this specific task as part of the larger goal. Use file_write, shell_exe
 
           goalStore.updateTask(task.id, { status: 'active' })
           console.log(`[GoalExecutor]   ▶ Task: ${task.title}`)
+          liveThinking.think('Engineer', `Starting: ${task.title}`, goalId)
 
           let attempt = await this.runTask(task, goal.title, goal.description, project.title)
 
@@ -97,6 +101,7 @@ Execute this specific task as part of the larger goal. Use file_write, shell_exe
               completedAt: new Date(),
             })
             eventBus.emit('task_completed', { taskId: task.id, goalId, title: task.title })
+            liveThinking.done('Engineer', `Done: ${task.title}`, goalId)
             console.log(`[GoalExecutor]   ✅ ${task.title}`)
           } else {
             goalStore.updateTask(task.id, {
@@ -104,6 +109,7 @@ Execute this specific task as part of the larger goal. Use file_write, shell_exe
               error:  attempt.error,
             })
             eventBus.emit('task_failed', { taskId: task.id, goalId, title: task.title, error: attempt.error })
+            liveThinking.error('Engineer', `Failed: ${task.title} — ${attempt.error}`, goalId)
             console.error(`[GoalExecutor]   ❌ ${task.title}: ${attempt.error}`)
           }
         }
