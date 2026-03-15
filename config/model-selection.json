@@ -3,7 +3,7 @@
   "coding": "llama3.2:latest",
   "planning": "qwen2.5-coder:7b",
   "embedding": "nomic-embed-text:latest",
-  "detectedAt": "2026-03-15T13:43:38.506Z",
+  "detectedAt": "2026-03-15T14:15:44.300Z",
   "gpuVramGB": 6,
   "gpuName": "GTX 1060",
   "reason": "Auto-selected for 6GB VRAM from 12 available models"

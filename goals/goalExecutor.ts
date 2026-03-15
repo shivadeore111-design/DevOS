@@ -57,7 +57,6 @@ Execute this specific task as part of the larger goal. Use file_write, shell_exe
     console.log(`[GoalExecutor] 🚀 Executing goal: ${goal.title}`)
 
     const projects = goalStore.listProjects(goalId)
-    let   goalFailed = false
 
     for (const project of projects) {
       if (this.paused.has(goalId)) {
@@ -106,33 +105,48 @@ Execute this specific task as part of the larger goal. Use file_write, shell_exe
             })
             eventBus.emit('task_failed', { taskId: task.id, goalId, title: task.title, error: attempt.error })
             console.error(`[GoalExecutor]   ❌ ${task.title}: ${attempt.error}`)
-            goalFailed = true
           }
         }
       }
 
-      // Determine project completion
-      const allTasks     = goalStore.listTasks(project.id)
-      const projectFailed = allTasks.some(t => t.status === 'failed')
+      // Determine project completion — only fail if majority of tasks failed
+      const allTasks        = goalStore.listTasks(project.id)
+      const projCompleted   = allTasks.filter(t => t.status === 'completed').length
+      const projFailed      = allTasks.filter(t => t.status === 'failed').length
+      const projTotal       = allTasks.length
+      const projFailRate    = projTotal > 0 ? projFailed / projTotal : 0
+      const projectFailed   = projFailRate > 0.5
       goalStore.updateProject(project.id, {
         status:      projectFailed ? 'failed' : 'completed',
         completedAt: projectFailed ? undefined : new Date(),
       })
+      if (projectFailed) {
+        console.warn(`[GoalExecutor] ⚠️  Project "${project.title}" failed (${projFailed}/${projTotal} tasks failed)`)
+      }
     }
 
-    if (goalFailed) {
-      goalStore.updateGoal(goalId, { status: 'failed', updatedAt: new Date() })
-      eventBus.emit('goal_failed', { goalId, title: goal.title })
-      console.error(`[GoalExecutor] ❌ Goal failed: ${goal.title}`)
-    } else {
-      goalStore.updateGoal(goalId, {
-        status:      'completed',
-        completedAt: new Date(),
-        updatedAt:   new Date(),
-      })
-      eventBus.emit('goal_completed', { goalId, title: goal.title })
-      console.log(`[GoalExecutor] ✅ Goal complete: ${goal.title}`)
-    }
+    // Recount across all projects for final status decision
+    const allProjects    = goalStore.listProjects(goalId)
+    const allTasks       = allProjects.flatMap(p => goalStore.listTasks(p.id))
+    const completedTasks = allTasks.filter(t => t.status === 'completed').length
+    const failedTasks    = allTasks.filter(t => t.status === 'failed').length
+    const totalTasks     = allTasks.length
+
+    const successRate  = totalTasks > 0 ? completedTasks / totalTasks : 1
+    const finalStatus  = successRate >= 0.5 ? 'completed' : 'failed'
+
+    goalStore.updateGoal(goalId, {
+      status:      finalStatus,
+      completedAt: new Date(),
+      updatedAt:   new Date(),
+      result:      `${completedTasks}/${totalTasks} tasks completed`,
+    })
+
+    eventBus.emit(finalStatus === 'completed' ? 'goal_completed' : 'goal_failed' as any, {
+      goalId, title: goal.title, result: `${completedTasks}/${totalTasks} tasks completed`
+    })
+
+    console.log(`[GoalExecutor] ${finalStatus === 'completed' ? '✅' : '❌'} Goal ${finalStatus}: ${goal.title} (${completedTasks}/${totalTasks} tasks)`)
   }
 
   pause(goalId: string): void {
