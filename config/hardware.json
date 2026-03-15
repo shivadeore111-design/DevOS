@@ -2,6 +2,7 @@
   "gpu": {
     "name": "GTX 1060",
     "vramGb": 6,
+    "vramGB": 6,
     "cuda": true
   },
   "cpu": {

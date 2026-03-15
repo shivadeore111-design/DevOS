@@ -5,9 +5,10 @@
 
 // goals/goalPlanner.ts — LLM-powered goal decomposition into projects + tasks
 
-import { callOllama } from '../llm/ollama'
-import { goalStore }  from './goalStore'
-import { Task }       from './types'
+import { callOllama }                        from '../llm/ollama'
+import { goalStore }                         from './goalStore'
+import { Task }                              from './types'
+import { getPlanningModel, getCodingModel }  from '../core/autoModelSelector'
 
 interface RawTask {
   title:        string
@@ -63,7 +64,7 @@ Return JSON only:
   ]
 }`
 
-    const raw  = await callOllama(prompt)
+    const raw  = await callOllama(prompt, undefined, getPlanningModel())
     const json = extractJSON(raw)
 
     let plan: PlanResponse

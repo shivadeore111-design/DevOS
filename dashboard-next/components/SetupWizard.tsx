@@ -23,26 +23,28 @@ export function SetupWizard() {
     selectedModel: ''
   })
 
-  // Fetch Ollama models
+  // Fetch Ollama models + auto-selection
   useEffect(() => {
     if (step === 'model') {
       setLoading(true)
-      fetch('http://localhost:11434/api/tags')
-        .then(r => r.json())
-        .then(data => {
-          const modelList = (data.models || []).map((m: any) => ({
-            name: m.name,
-            size: m.size,
-            recommended: m.name.includes('mistral-nemo') || m.name.includes('qwen2.5-coder')
-          }))
-          setModels(modelList)
-          if (modelList.length > 0) {
-            const rec = modelList.find((m: OllamaModel) => m.recommended) || modelList[0]
-            setForm(f => ({ ...f, selectedModel: rec.name }))
-          }
-        })
-        .catch(() => setModels([]))
-        .finally(() => setLoading(false))
+      Promise.all([
+        fetch('http://localhost:11434/api/tags').then(r => r.json()).catch(() => ({ models: [] })),
+        fetch(`${process.env.NEXT_PUBLIC_DEVOS_API || 'http://localhost:4200'}/api/system/status`)
+          .then(r => r.json()).catch(() => ({}))
+      ]).then(([ollamaData, _status]) => {
+        const modelList = (ollamaData.models || []).map((m: any) => ({
+          name: m.name,
+          size: m.size,
+          recommended: m.name.includes('llama3.2') ||
+                       m.name.includes('qwen2.5-coder:7b') ||
+                       m.name.includes('mistral-nemo')
+        }))
+        setModels(modelList)
+        if (modelList.length > 0) {
+          const rec = modelList.find((m: OllamaModel) => m.recommended) || modelList[0]
+          setForm(f => ({ ...f, selectedModel: rec.name }))
+        }
+      }).finally(() => setLoading(false))
     }
   }, [step])
 
@@ -168,6 +170,11 @@ export function SetupWizard() {
                 <p className="text-gray-400 text-sm">
                   {form.apiProvider === 'ollama' ? 'Models found on your machine:' : 'Choose a model to use:'}
                 </p>
+                {!loading && models.length > 0 && (
+                  <p className="text-green-400 text-xs mt-1">
+                    ✓ DevOS auto-selected the best model for your hardware
+                  </p>
+                )}
               </div>
               {loading && <p className="text-gray-500 text-center py-4">Scanning models...</p>}
               {!loading && form.apiProvider === 'ollama' && models.length === 0 && (

@@ -5,12 +5,13 @@
 
 // agents/agentExecutor.ts — Assigns tasks to agents and drives LLM execution
 
-import { callOllama }    from '../llm/ollama'
-import { toolRuntime }   from '../executor/toolRuntime'
-import { agentRegistry } from './agentRegistry'
-import { AgentRole }     from './types'
-import { Task }          from '../goals/types'
-import { liveThinking }  from '../coordination/liveThinking'
+import { callOllama }                        from '../llm/ollama'
+import { toolRuntime }                       from '../executor/toolRuntime'
+import { agentRegistry }                     from './agentRegistry'
+import { AgentRole }                         from './types'
+import { Task }                              from '../goals/types'
+import { liveThinking }                      from '../coordination/liveThinking'
+import { getCodingModel, getPlanningModel }  from '../core/autoModelSelector'
 
 interface ToolCall {
   tool:  string
@@ -71,8 +72,9 @@ Provide your response and any tool calls needed.
       // 3. Signal thinking before Ollama call
       liveThinking.think(role, `Processing: ${task.description.slice(0, 60)}`, missionId)
 
-      // 4. Call Ollama
-      const raw = await callOllama(prompt)
+      // 4. Call Ollama — engineer uses coding model, all others use planning model
+      const model = (role === 'engineer') ? getCodingModel() : getPlanningModel()
+      const raw = await callOllama(prompt, undefined, model)
 
       // 5. Execute any tool calls found in the response
       const toolCalls = parseToolCalls(raw)

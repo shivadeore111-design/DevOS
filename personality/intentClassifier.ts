@@ -5,7 +5,8 @@
 
 // personality/intentClassifier.ts — Classify user messages into intent types
 
-import { callOllama } from '../llm/ollama'
+import { callOllama }    from '../llm/ollama'
+import { getCodingModel } from '../core/autoModelSelector'
 
 export type IntentType =
   | 'build'       // "build me a", "create a", "make a", "generate"
@@ -60,7 +61,7 @@ Message: "${message}"
 Reply with ONLY the intent type word and nothing else.`
 
     try {
-      const raw    = await callOllama(prompt, undefined, 'qwen2.5-coder:7b')
+      const raw    = await callOllama(prompt, undefined, getCodingModel())
       const word   = raw.trim().toLowerCase().split(/\s+/)[0] ?? ''
       const valid: IntentType[] = ['build', 'deploy', 'debug', 'status', 'configure', 'explain', 'chat']
       const type   = valid.includes(word as IntentType) ? (word as IntentType) : 'chat'

@@ -32,7 +32,8 @@ import { lifeTimeline }        from "../personal/lifeTimeline";
 import { backgroundAgents }    from "../personal/backgroundAgents";
 import { telegramBot }         from "../integrations/telegram/telegramBot";
 import { telegramNotifier }    from "../integrations/telegram/telegramNotifier";
-import { sandboxManager }      from "../sandbox/sandboxManager";
+import { sandboxManager }         from "../sandbox/sandboxManager";
+import { detectAndSelectModels }  from "../core/autoModelSelector";
 
 export function createApiServer(): any {
   const app = express();
@@ -286,6 +287,7 @@ export function startApiServer(portArg?: number): any {
     console.log(`[API] 🚀 DevOS API running at http://${host}:${port}`);
     console.log(`[API] 🔒 Bound to ${host} — localhost only`);
     console.log(`[API] 📖 Docs at http://${host}:${port}/api/docs`);
+    detectAndSelectModels().catch((e: any) => console.error('[AutoModelSelector] Failed:', e?.message ?? String(e)));
     proactiveEngine.start();
     telegramBot.start().catch((e: any) => console.error('[Telegram] Start failed:', e?.message ?? String(e)));
     telegramNotifier.start();

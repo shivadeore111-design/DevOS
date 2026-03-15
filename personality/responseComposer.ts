@@ -8,9 +8,9 @@
 import { callOllama }      from '../llm/ollama'
 import { wrapWithPersona } from './devosPersonality'
 import { IntentType }      from './intentClassifier'
+import { getChatModel }    from '../core/autoModelSelector'
 
-const MAX_WORDS   = 300
-const STREAM_MODEL = 'mistral-nemo:12b'
+const MAX_WORDS = 300
 
 /** Build an intent-aware instruction suffix so DevOS stays on-brand */
 function intentHint(intent: IntentType): string {
@@ -43,7 +43,7 @@ class ResponseComposer {
 
     let fullResponse = ''
     try {
-      fullResponse = await callOllama(user, system, STREAM_MODEL)
+      fullResponse = await callOllama(user, system, getChatModel())
     } catch {
       fullResponse = 'Unable to reach language model. Check Ollama is running.'
     }

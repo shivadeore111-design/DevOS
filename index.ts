@@ -511,6 +511,30 @@ async function handleCLI(): Promise<void> {
       break;
     }
 
+    // ── devos models [refresh] ────────────────────────────────
+    case "models": {
+      const { detectAndSelectModels: detectModels, loadModelSelection } = require('./core/autoModelSelector')
+      const existing = loadModelSelection()
+      if (existing && rawArgs[0] !== 'refresh') {
+        console.log('\n[DevOS] Current model selection (run "devos models refresh" to re-detect):')
+        console.log(`  Chat:     ${existing.chat}`)
+        console.log(`  Coding:   ${existing.coding}`)
+        console.log(`  Planning: ${existing.planning}`)
+        console.log(`  VRAM:     ${existing.gpuVramGB ?? 0}GB`)
+        console.log(`  Reason:   ${existing.reason}`)
+        console.log(`  Updated:  ${existing.detectedAt}\n`)
+      } else {
+        console.log('[DevOS] Detecting hardware and selecting best models...')
+        const selection = await detectModels()
+        console.log('\n✅ Models selected:')
+        console.log(`  Chat:     ${selection.chat}`)
+        console.log(`  Coding:   ${selection.coding}`)
+        console.log(`  Planning: ${selection.planning}`)
+        console.log(`  Reason:   ${selection.reason}\n`)
+      }
+      break
+    }
+
     // ── devos doctor ──────────────────────────────────────────
     case "doctor": {
       const { runDoctor: runDoctorCheck } = require('./core/doctor')
