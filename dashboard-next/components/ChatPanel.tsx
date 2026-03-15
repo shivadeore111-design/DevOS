@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { Send, Sparkles } from 'lucide-react'
-import { api } from '../lib/api'
+import { useStore } from '../lib/store'
 
 interface Message {
   id: string
@@ -11,50 +11,63 @@ interface Message {
   type?: 'info' | 'success' | 'error' | 'progress'
 }
 
+const API = process.env.NEXT_PUBLIC_DEVOS_API || 'http://localhost:4200'
+
+const SUGGESTIONS = [
+  'Build a REST API with auth and CRUD endpoints',
+  'Research the top SaaS trends in 2025',
+  'Create a Node.js CLI tool for managing todos',
+  'Build a web scraper for Hacker News',
+  'Research competitors to CoachOS fitness app'
+]
+
 export function ChatPanel() {
-  const [messages, setMessages] = useState<Message[]>([
-    { id: '0', role: 'devos', content: '👋 DevOS ready. What do you want to build?', timestamp: new Date().toISOString(), type: 'info' }
-  ])
+  const { settings } = useStore()
+  const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [sseConnected, setSseConnected] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const esRef = useRef<EventSource | null>(null)
 
-  // Load chat history on mount
   useEffect(() => {
-    api.getChatHistory().then((history: any) => {
-      if (Array.isArray(history) && history.length > 0) {
-        setMessages(history.map((m: any) => ({
-          id: m.id || Date.now().toString(),
-          role: m.role === 'devos' ? 'devos' : 'user',
-          content: m.content,
-          timestamp: m.timestamp
-        })))
+    const name = settings.userName ? `, ${settings.userName}` : ''
+    setMessages([{
+      id: '0',
+      role: 'devos',
+      content: `Hey${name}! I'm DevOS — I build and ship software autonomously. What do you want to create today?`,
+      timestamp: new Date().toISOString(),
+      type: 'info'
+    }])
+  }, [settings.userName])
+
+  useEffect(() => {
+    const connect = () => {
+      const es = new EventSource(`${API}/api/stream`)
+      esRef.current = es
+      es.onopen = () => setSseConnected(true)
+      es.onerror = () => {
+        setSseConnected(false)
+        setTimeout(connect, 5000)
       }
-    }).catch(() => {})
-  }, [])
-
-  // SSE live updates
-  useEffect(() => {
-    const es = api.stream()
-    es.onopen = () => setSseConnected(true)
-    es.onerror = () => setSseConnected(false)
-    es.onmessage = (e: MessageEvent) => {
-      try {
-        const event = JSON.parse(e.data)
-        const content = formatEvent(event)
-        if (!content) return
-        setMessages(prev => [...prev, {
-          id: Date.now().toString(),
-          role: 'devos',
-          content,
-          timestamp: new Date().toISOString(),
-          type: event.type?.includes('failed') ? 'error' : 'progress'
-        }])
-      } catch {}
+      es.onmessage = (e) => {
+        try {
+          const event = JSON.parse(e.data)
+          const content = formatEvent(event)
+          if (!content) return
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'devos',
+            content,
+            timestamp: new Date().toISOString(),
+            type: event.type?.includes('failed') ? 'error' : 'progress'
+          }])
+        } catch { /* ignore */ }
+      }
     }
-    return () => es.close()
+    connect()
+    return () => { esRef.current?.close() }
   }, [])
 
   useEffect(() => {
@@ -62,12 +75,12 @@ export function ChatPanel() {
   }, [messages])
 
   const formatEvent = (event: any): string | null => {
-    if (event.type === 'goal_started') return `🎯 Goal started: ${event.title || ''}`
+    if (event.type === 'goal_started') return `🎯 Starting: ${event.title || ''}`
     if (event.type === 'goal_completed') return `✅ Done: ${event.title || ''}`
     if (event.type === 'goal_failed') return `❌ Failed: ${event.error || ''}`
     if (event.type === 'mission:complete') return `🚀 Mission complete: ${event.goal || ''}`
     if (event.type === 'agent_thinking') return `[${event.agent}] ${event.message}`
-    if (event.type === 'approval_required') return `⚠️ Approval needed: ${event.actionDescription}`
+    if (event.type === 'approval_required') return `⚠️ Needs approval: ${event.actionDescription}`
     return null
   }
 
@@ -76,138 +89,139 @@ export function ChatPanel() {
     const text = input.trim()
     setInput('')
     setLoading(true)
+    if (textareaRef.current) textareaRef.current.style.height = 'auto'
 
     setMessages(prev => [...prev, {
-      id: Date.now().toString(),
-      role: 'user',
-      content: text,
-      timestamp: new Date().toISOString()
+      id: Date.now().toString(), role: 'user', content: text, timestamp: new Date().toISOString()
     }])
 
-    // Stream from /api/chat
+    const msgId = (Date.now() + 1).toString()
+    setMessages(prev => [...prev, {
+      id: msgId, role: 'devos', content: '▌', timestamp: new Date().toISOString(), type: 'info'
+    }])
+
     try {
-      const res = await api.chatStream(text)
-      if (!res.body) throw new Error('No stream')
+      const res = await fetch(`${API}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text })
+      })
+
+      if (!res.ok || !res.body) {
+        const goal = await fetch(`${API}/api/goals/v2`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: text.slice(0, 60), description: text, async: true })
+        }).then(r => r.json())
+        setMessages(prev => prev.map(m => m.id === msgId ? {
+          ...m, content: `🚀 Goal created and running. I'll update you as it progresses.${goal?.id ? ` (ID: ${goal.id})` : ''}`
+        } : m))
+        setLoading(false)
+        return
+      }
+
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       let accumulated = ''
-      const msgId = Date.now().toString()
-
-      setMessages(prev => [...prev, {
-        id: msgId, role: 'devos', content: '▌',
-        timestamp: new Date().toISOString(), type: 'info'
-      }])
 
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-        const chunk = decoder.decode(value)
-        const lines = chunk.split('\n').filter((l: string) => l.startsWith('data: '))
+        const lines = decoder.decode(value).split('\n').filter(l => l.startsWith('data: '))
         for (const line of lines) {
           try {
             const data = JSON.parse(line.slice(6))
-            if (data === '[DONE]' || line.slice(6).trim() === '[DONE]') {
-              setMessages(prev => prev.map(m =>
-                m.id === msgId ? { ...m, content: accumulated } : m
-              ))
-              continue
+            if (data.token) {
+              accumulated += data.token
+              setMessages(prev => prev.map(m => m.id === msgId ? { ...m, content: accumulated + '▌' } : m))
             }
-            if (data.chunk) {
-              accumulated += data.chunk
-              setMessages(prev => prev.map(m =>
-                m.id === msgId ? { ...m, content: accumulated + '▌' } : m
-              ))
+            if (data.done || data.error) {
+              setMessages(prev => prev.map(m => m.id === msgId
+                ? { ...m, content: accumulated || (data.error ? `Error: ${data.error}` : 'Done.') } : m))
             }
-          } catch {}
+          } catch { /* ignore */ }
         }
       }
-      // Ensure cursor removed on completion
-      setMessages(prev => prev.map(m =>
-        m.id === msgId && m.content.endsWith('▌')
-          ? { ...m, content: m.content.slice(0, -1) }
-          : m
-      ))
+      setMessages(prev => prev.map(m => m.id === msgId ? { ...m, content: accumulated || 'Done.' } : m))
     } catch {
-      setMessages(prev => [...prev, {
-        id: Date.now().toString(), role: 'devos',
-        content: 'Connection error — is DevOS server running?',
-        timestamp: new Date().toISOString(), type: 'error'
-      }])
+      setMessages(prev => prev.map(m => m.id === msgId
+        ? { ...m, content: 'Could not reach DevOS API. Is the server running? (`npx ts-node index.ts serve`)', type: 'error' } : m))
     }
     setLoading(false)
   }
 
-  const surpriseMe = () => {
-    const prompts = [
-      'Build a REST API with auth and CRUD endpoints',
-      'Research the top SaaS trends in 2025',
-      'Create a simple web scraper for Hacker News',
-      'Build a CLI tool for managing todos',
-      'Research competitors to CoachOS'
-    ]
-    setInput(prompts[Math.floor(Math.random() * prompts.length)])
-    textareaRef.current?.focus()
-  }
-
   return (
-    <div className="flex flex-col h-full" style={{ background: 'var(--devos-bg)' }}>
-      {/* Header */}
-      <div className="px-4 py-3 border-b flex items-center space-x-2"
-        style={{ borderColor: 'var(--devos-border)' }}>
-        <span className="font-semibold" style={{ color: 'var(--devos-text)' }}>DevOS</span>
-        <div className={`w-2 h-2 rounded-full ${sseConnected ? 'bg-green-500 animate-pulse' : 'bg-gray-500'}`} />
+    <div className="flex flex-col h-full" style={{ background: 'transparent' }}>
+      <div className="px-6 py-4 flex items-center justify-between"
+        style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+        <div className="flex items-center space-x-3">
+          <span className="text-lg font-bold text-white">DevOS</span>
+          <div className={`w-2 h-2 rounded-full ${sseConnected ? 'bg-green-400' : 'bg-gray-600'}`}
+            style={sseConnected ? { boxShadow: '0 0 8px #4ade80' } : {}} />
+        </div>
+        {settings.userName && <span className="text-sm text-gray-500">Hey, {settings.userName} 👋</span>}
       </div>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
         {messages.map(m => (
-          <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+          <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} items-end space-x-2`}>
             {m.role === 'devos' && (
-              <span className="mr-2 text-lg">🤖</span>
+              <div className="w-8 h-8 rounded-2xl flex items-center justify-center text-sm shrink-0"
+                style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}>⚡</div>
             )}
-            <div className={`max-w-2xl rounded-xl px-4 py-2 text-sm ${
-              m.role === 'user'
-                ? 'text-white'
-                : m.type === 'error'
-                ? 'border'
-                : 'border'
-            }`} style={{
-              background: m.role === 'user'
-                ? 'var(--devos-accent)'
-                : m.type === 'error'
-                ? '#1a0a0a'
-                : 'var(--devos-surface)',
-              borderColor: m.type === 'error'
-                ? 'var(--devos-red)'
-                : 'var(--devos-border)',
-              color: m.role === 'user' ? 'white' : 'var(--devos-text)'
-            }}>
-              <p className="whitespace-pre-wrap">{m.content}</p>
-              <p className="text-xs mt-1 opacity-50">
-                {new Date(m.timestamp).toLocaleTimeString()}
-              </p>
+            <div className="max-w-xl rounded-3xl px-4 py-3 text-sm"
+              style={{
+                background: m.role === 'user' ? 'linear-gradient(135deg, #6366f1, #8b5cf6)'
+                  : m.type === 'error' ? 'rgba(239,68,68,0.15)' : 'rgba(255,255,255,0.07)',
+                border: m.role === 'user' ? 'none'
+                  : m.type === 'error' ? '1px solid rgba(239,68,68,0.3)' : '1px solid rgba(255,255,255,0.08)',
+                color: 'white', backdropFilter: 'blur(10px)'
+              }}>
+              <p className="whitespace-pre-wrap leading-relaxed">{m.content}</p>
             </div>
           </div>
         ))}
+        {loading && (
+          <div className="flex justify-start items-end space-x-2">
+            <div className="w-8 h-8 rounded-2xl flex items-center justify-center text-sm"
+              style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}>⚡</div>
+            <div className="px-4 py-3 rounded-3xl" style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <div className="flex space-x-1">
+                {[0,1,2].map(i => (
+                  <div key={i} className="w-2 h-2 rounded-full bg-indigo-400"
+                    style={{ animation: `bounce 1s ease-in-out ${i * 0.15}s infinite` }} />
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
         <div ref={bottomRef} />
       </div>
 
-      {/* Input */}
-      <div className="px-4 py-3 border-t" style={{ borderColor: 'var(--devos-border)' }}>
-        <div className="flex items-end space-x-2">
-          <button onClick={surpriseMe} className="p-2 rounded-lg transition-colors hover:opacity-80"
-            style={{ color: 'var(--devos-muted)' }} title="Surprise me">
+      {messages.length <= 1 && (
+        <div className="px-6 pb-3">
+          <div className="flex flex-wrap gap-2">
+            {SUGGESTIONS.slice(0, 3).map((s, i) => (
+              <button key={i} onClick={() => setInput(s)}
+                className="text-xs px-3 py-1.5 rounded-full text-gray-400 transition-all hover:text-white"
+                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                {s.slice(0, 40)}...
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="px-6 pb-6">
+        <div className="flex items-end space-x-3 p-3 rounded-3xl"
+          style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(20px)' }}>
+          <button onClick={() => setInput(SUGGESTIONS[Math.floor(Math.random() * SUGGESTIONS.length)])}
+            className="p-2 rounded-2xl transition-colors hover:text-indigo-400 shrink-0"
+            style={{ color: 'rgba(255,255,255,0.3)' }}>
             <Sparkles size={18} />
           </button>
-          <textarea
-            ref={textareaRef}
-            rows={1}
-            className="flex-1 rounded-xl px-4 py-2 text-sm resize-none focus:outline-none"
-            style={{
-              background: 'var(--devos-surface)',
-              border: '1px solid var(--devos-border)',
-              color: 'var(--devos-text)'
-            }}
+          <textarea ref={textareaRef} rows={1}
+            className="flex-1 bg-transparent text-white placeholder-gray-600 text-sm resize-none focus:outline-none"
             placeholder="What do you want to build?"
             value={input}
             onChange={e => {
@@ -215,13 +229,11 @@ export function ChatPanel() {
               e.target.style.height = 'auto'
               e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px'
             }}
-            onKeyDown={e => {
-              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
-            }}
+            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
           />
           <button onClick={send} disabled={!input.trim() || loading}
-            className="p-2 rounded-xl transition-colors disabled:opacity-40"
-            style={{ background: 'var(--devos-accent)', color: 'white' }}>
+            className="p-2 rounded-2xl transition-all hover:scale-110 disabled:opacity-30 shrink-0"
+            style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: 'white' }}>
             <Send size={18} />
           </button>
         </div>

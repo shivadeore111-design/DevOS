@@ -1,93 +1,140 @@
 'use client'
-import { useEffect, useState, useRef } from 'react'
-import { api } from '../lib/api'
+import { useEffect, useState } from 'react'
 
-interface FeedEvent {
+const API = process.env.NEXT_PUBLIC_DEVOS_API || 'http://localhost:4200'
+
+interface FeedItem {
   id: string
-  type: 'thinking' | 'acting' | 'done' | 'error'
-  agent: string
+  type: 'thinking' | 'acting' | 'done' | 'error' | 'goal' | 'mission'
+  agent?: string
   message: string
   timestamp: string
-  missionId?: string
 }
 
-const TYPE_COLOR: Record<string, string> = {
-  thinking: 'var(--devos-accent)',
-  acting: 'var(--devos-yellow)',
-  done: 'var(--devos-green)',
-  error: 'var(--devos-red)'
-}
-
-const AGENT_ABBR: Record<string, string> = {
-  CEO: 'CE', Engineer: 'EN', Designer: 'DS',
-  QA: 'QA', Research: 'RE', Marketing: 'MK', Deployment: 'DP', Operator: 'OP'
+const TYPE_CONFIG: Record<string, { color: string, glow: string, label: string }> = {
+  thinking: { color: '#6366f1', glow: 'rgba(99,102,241,0.3)',  label: 'Thinking' },
+  acting:   { color: '#eab308', glow: 'rgba(234,179,8,0.3)',   label: 'Acting'   },
+  done:     { color: '#22c55e', glow: 'rgba(34,197,94,0.3)',   label: 'Done'     },
+  error:    { color: '#ef4444', glow: 'rgba(239,68,68,0.3)',   label: 'Error'    },
+  goal:     { color: '#6366f1', glow: 'rgba(99,102,241,0.3)',  label: 'Goal'     },
+  mission:  { color: '#8b5cf6', glow: 'rgba(139,92,246,0.3)', label: 'Mission'  },
 }
 
 export function AgentFeed() {
-  const [events, setEvents] = useState<FeedEvent[]>([])
-  const [expanded, setExpanded] = useState<string | null>(null)
-  const topRef = useRef<HTMLDivElement>(null)
+  const [items, setItems] = useState<FeedItem[]>([])
+  const [connected, setConnected] = useState(false)
 
   useEffect(() => {
-    const es = api.stream()
-    es.onmessage = (e: MessageEvent) => {
-      try {
-        const event = JSON.parse(e.data)
-        if (event.type === 'agent_thinking') {
-          setEvents(prev => [{
-            id: Date.now().toString(),
-            type: event.thinkingType || 'thinking',
-            agent: event.agent || 'DevOS',
-            message: event.message || '',
-            timestamp: event.timestamp || new Date().toISOString(),
-            missionId: event.missionId
-          }, ...prev].slice(0, 100))
-        }
-      } catch {}
+    let es: EventSource
+    let retryTimer: ReturnType<typeof setTimeout>
+
+    const connect = () => {
+      es = new EventSource(`${API}/api/stream`)
+      es.onopen = () => setConnected(true)
+      es.onerror = () => {
+        setConnected(false)
+        es.close()
+        retryTimer = setTimeout(connect, 5000)
+      }
+      es.onmessage = (e) => {
+        try {
+          const event = JSON.parse(e.data)
+          let item: FeedItem | null = null
+
+          if (event.type === 'agent_thinking') {
+            item = {
+              id:        Date.now().toString(),
+              type:      event.thinkingType || 'thinking',
+              agent:     event.agent,
+              message:   event.message || '',
+              timestamp: new Date().toISOString()
+            }
+          } else if (event.type === 'goal_started' || event.type === 'goal_completed' || event.type === 'goal_failed') {
+            item = {
+              id:        Date.now().toString(),
+              type:      'goal',
+              message:   `${event.type === 'goal_completed' ? '✅' : event.type === 'goal_failed' ? '❌' : '🎯'} ${event.title || event.goalId || ''}`,
+              timestamp: new Date().toISOString()
+            }
+          } else if (event.type === 'mission:complete') {
+            item = {
+              id:        Date.now().toString(),
+              type:      'mission',
+              message:   `🚀 Mission complete: ${event.goal || ''}`,
+              timestamp: new Date().toISOString()
+            }
+          }
+
+          if (item) setItems(prev => [item!, ...prev].slice(0, 100))
+        } catch { /* ignore */ }
+      }
     }
-    return () => es.close()
+
+    connect()
+    return () => { es?.close(); clearTimeout(retryTimer) }
   }, [])
 
   return (
-    <div className="h-full flex flex-col border-l"
-      style={{ borderColor: 'var(--devos-border)', background: 'var(--devos-surface)' }}>
-      <div className="px-4 py-3 border-b flex items-center space-x-2"
-        style={{ borderColor: 'var(--devos-border)' }}>
-        <span className="text-sm font-semibold" style={{ color: 'var(--devos-text)' }}>AI Activity</span>
-        {events.length > 0 && (
-          <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-        )}
-        <span className="text-xs ml-auto" style={{ color: 'var(--devos-muted)' }}>{events.length}</span>
+    <div className="h-full flex flex-col"
+      style={{
+        background: 'rgba(255,255,255,0.02)',
+        borderLeft: '1px solid rgba(255,255,255,0.06)',
+        backdropFilter: 'blur(20px)'
+      }}>
+
+      <div className="px-4 py-4 flex items-center justify-between"
+        style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="flex items-center space-x-2">
+          <span className="text-sm font-semibold text-white">Activity</span>
+          <div className={`w-2 h-2 rounded-full ${connected ? 'bg-green-400' : 'bg-gray-600'}`}
+            style={connected ? { boxShadow: '0 0 6px #4ade80' } : {}} />
+        </div>
+        <span className="text-xs" style={{ color: 'rgba(255,255,255,0.2)' }}>{items.length}</span>
       </div>
-      <div ref={topRef} className="flex-1 overflow-y-auto p-3 space-y-2">
-        {events.length === 0 && (
-          <p className="text-xs text-center mt-8" style={{ color: 'var(--devos-muted)' }}>
-            Waiting for agent activity...
-          </p>
-        )}
-        {events.map(event => (
-          <div key={event.id}
-            className="rounded-lg p-2 border-l-2 cursor-pointer"
-            style={{
-              background: 'var(--devos-bg)',
-              borderLeftColor: TYPE_COLOR[event.type] || 'var(--devos-border)'
-            }}
-            onClick={() => setExpanded(expanded === event.id ? null : event.id)}>
-            <div className="flex items-center space-x-2 mb-1">
-              <div className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold"
-                style={{ background: TYPE_COLOR[event.type], color: 'white' }}>
-                {AGENT_ABBR[event.agent] || event.agent.slice(0,2).toUpperCase()}
-              </div>
-              <span className="text-xs font-medium" style={{ color: 'var(--devos-text)' }}>{event.agent}</span>
-              <span className="text-xs ml-auto" style={{ color: 'var(--devos-muted)' }}>
-                {new Date(event.timestamp).toLocaleTimeString()}
-              </span>
-            </div>
-            <p className="text-xs" style={{ color: 'var(--devos-muted)' }}>
-              {expanded === event.id ? event.message : event.message.slice(0, 80) + (event.message.length > 80 ? '...' : '')}
-            </p>
+
+      <div className="flex-1 overflow-y-auto p-3 space-y-2">
+        {!connected && items.length === 0 && (
+          <div className="text-center py-12">
+            <p className="text-4xl mb-3">🔌</p>
+            <p className="text-sm font-medium" style={{ color: 'rgba(255,255,255,0.3)' }}>Connecting...</p>
+            <p className="text-xs mt-1" style={{ color: 'rgba(255,255,255,0.15)' }}>Start DevOS server</p>
+            <code className="text-xs mt-2 block" style={{ color: 'rgba(99,102,241,0.7)' }}>npx ts-node index.ts serve</code>
           </div>
-        ))}
+        )}
+        {connected && items.length === 0 && (
+          <div className="text-center py-12">
+            <p className="text-4xl mb-3">⚡</p>
+            <p className="text-sm font-medium" style={{ color: 'rgba(255,255,255,0.3)' }}>Ready</p>
+            <p className="text-xs mt-1" style={{ color: 'rgba(255,255,255,0.15)' }}>Activity will appear here</p>
+          </div>
+        )}
+        {items.map(item => {
+          const cfg = TYPE_CONFIG[item.type] || TYPE_CONFIG.thinking
+          return (
+            <div key={item.id} className="p-3 rounded-2xl"
+              style={{
+                background: 'rgba(255,255,255,0.04)',
+                border: `1px solid ${cfg.glow}`,
+                borderLeft: `3px solid ${cfg.color}`
+              }}>
+              {item.agent && (
+                <div className="flex items-center space-x-1.5 mb-1">
+                  <div className="w-4 h-4 rounded-lg flex items-center justify-center"
+                    style={{ background: cfg.color, color: 'white', fontSize: '8px' }}>
+                    {item.agent.slice(0, 2).toUpperCase()}
+                  </div>
+                  <span className="text-xs font-medium" style={{ color: cfg.color }}>{item.agent}</span>
+                  <span className="text-xs ml-auto" style={{ color: 'rgba(255,255,255,0.2)' }}>
+                    {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+              )}
+              <p className="text-xs leading-relaxed" style={{ color: 'rgba(255,255,255,0.6)' }}>
+                {item.message.slice(0, 120)}
+              </p>
+            </div>
+          )
+        })}
       </div>
     </div>
   )
