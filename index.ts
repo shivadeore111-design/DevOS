@@ -1730,6 +1730,80 @@ Auth & Keys
       break
     }
 
+    // ── devos telegram setup|test|status ─────────────────────
+    case "telegram": {
+      const sub = rawArgs[0]?.toLowerCase()
+
+      if (!sub || sub === 'setup') {
+        console.log(`
+Telegram Bot Setup
+──────────────────
+1. Open Telegram and message @BotFather
+2. Send /newbot and follow the prompts to create your bot
+3. Copy the bot token
+4. Open config/integrations.json
+5. Set: "botToken": "<your-token>"
+6. Set: "allowedUserIds": [<your-telegram-user-id>]
+   (Get your ID by messaging @userinfobot on Telegram)
+7. Set: "enabled": true
+8. Restart DevOS
+
+When running devos serve, DevOS will:
+  • Poll for Telegram messages
+  • Notify you on goal/mission completions
+  • Route dangerous action approvals through inline buttons
+        `.trim())
+        break
+      }
+
+      if (sub === 'status') {
+        const cfgPath = path.join(process.cwd(), 'config/integrations.json')
+        const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')).telegram || {}
+        const maskedToken = cfg.botToken
+          ? '...' + String(cfg.botToken).slice(-6)
+          : '(not set)'
+        console.log('\n📱 Telegram Config\n')
+        console.log(`  Enabled:                 ${cfg.enabled ?? false}`)
+        console.log(`  Bot Token:               ${maskedToken}`)
+        console.log(`  Allowed User IDs:        ${cfg.allowedUserIds?.length ? cfg.allowedUserIds.join(', ') : '(none — open access)'}`)
+        console.log(`  Notify on Goal:          ${cfg.notifyOnGoalComplete ?? false}`)
+        console.log(`  Notify on Mission:       ${cfg.notifyOnMissionComplete ?? false}`)
+        console.log(`  Notify on Pilot:         ${cfg.notifyOnPilotComplete ?? false}`)
+        console.log(`  Approval for Dangerous:  ${cfg.requireApprovalForDangerous ?? false}`)
+        console.log('')
+        if (!cfg.enabled) {
+          console.log('  ⚠️  Telegram is disabled. Run: ts-node index.ts telegram setup')
+        }
+        break
+      }
+
+      if (sub === 'test') {
+        const cfgPath = path.join(process.cwd(), 'config/integrations.json')
+        const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')).telegram || {}
+        if (!cfg.enabled || !cfg.botToken) {
+          console.log('⚠️  Telegram is not enabled. Run: ts-node index.ts telegram setup')
+          break
+        }
+        console.log('📱 Starting Telegram bot to send test message...')
+        const { telegramBot: tb } = await import('./integrations/telegram/telegramBot')
+        await tb.start()
+        const chatId = tb.getPrimaryChatId()
+        if (!chatId) {
+          console.log('⚠️  No allowedUserIds set. Add your user ID to config/integrations.json')
+          tb.stop()
+          break
+        }
+        const bot = tb.getBot()
+        await bot.sendMessage(chatId, 'DevOS connected ✅')
+        console.log('✅ Test message sent!')
+        tb.stop()
+        break
+      }
+
+      console.error(`❌ Unknown telegram sub-command: ${sub}. Try: setup, status, test`)
+      break
+    }
+
     // ── devos ui ──────────────────────────────────────────────
     case "ui": {
       const { execSync } = require("child_process") as typeof import("child_process");
@@ -1823,6 +1897,11 @@ Personal Mode:
   stop                      Stop recording and save the workflow
   run workflow "<name>"     Replay a saved workflow
   agents personal           List all background agents with status + schedule
+
+Telegram:
+  telegram setup            Configure Telegram bot (print step-by-step instructions)
+  telegram status           Show current Telegram config (token masked)
+  telegram test             Send a test message via the configured bot
 
 Goal Engine:
   goal "<title>" "<desc>"   Create, plan, and execute a structured goal

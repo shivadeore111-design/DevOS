@@ -18,5 +18,14 @@
     "onGoalComplete": false,
     "onGoalFailed": true,
     "onEmergencyStop": true
+  },
+  "telegram": {
+    "enabled": false,
+    "botToken": "",
+    "allowedUserIds": [],
+    "notifyOnGoalComplete": true,
+    "notifyOnMissionComplete": true,
+    "notifyOnPilotComplete": false,
+    "requireApprovalForDangerous": true
   }
 }

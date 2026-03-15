@@ -30,6 +30,8 @@ import { proactiveEngine }     from "../personality/proactiveEngine";
 import { morningBriefing }     from "../personal/morningBriefing";
 import { lifeTimeline }        from "../personal/lifeTimeline";
 import { backgroundAgents }    from "../personal/backgroundAgents";
+import { telegramBot }         from "../integrations/telegram/telegramBot";
+import { telegramNotifier }    from "../integrations/telegram/telegramNotifier";
 
 export function createApiServer(): any {
   const app = express();
@@ -242,6 +244,8 @@ export function startApiServer(portArg?: number): any {
     console.log(`[API] 🔒 Bound to ${host} — localhost only`);
     console.log(`[API] 📖 Docs at http://${host}:${port}/api/docs`);
     proactiveEngine.start();
+    telegramBot.start().catch((e: any) => console.error('[Telegram] Start failed:', e?.message ?? String(e)));
+    telegramNotifier.start();
   });
   return app;
 }

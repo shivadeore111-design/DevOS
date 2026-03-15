@@ -22,6 +22,20 @@ class HumanInTheLoop {
     reason: string,
     taskId: string,
   ): Promise<boolean> {
+    // Check Telegram first — if enabled, route approval through the bot
+    try {
+      const fs   = require('fs')
+      const path = require('path')
+      const configPath = path.join(process.cwd(), 'config/integrations.json')
+      if (fs.existsSync(configPath)) {
+        const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'))
+        if (config.telegram?.enabled && config.telegram?.requireApprovalForDangerous) {
+          const { telegramApproval } = await import('../integrations/telegram/telegramApproval')
+          return telegramApproval.requestViaBot(actionDescription, taskId)
+        }
+      }
+    } catch { /* fall through to CLI/SSE path */ }
+
     // CLI mode: prompt interactively
     if (process.env.DEVOS_MODE !== 'api') {
       return new Promise<boolean>(resolve => {
