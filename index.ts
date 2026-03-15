@@ -536,8 +536,15 @@ async function handleCLI(): Promise<void> {
 
     // ── devos dashboard ───────────────────────────────────────
     case "dashboard": {
-      dashboard.display();
-      break;
+      const { execSync: execD } = require('child_process') as typeof import('child_process')
+      const dashPath = path.join(process.cwd(), 'dashboard-next')
+      console.log('[DevOS] 🖥️  Starting Next.js Mission Control at http://localhost:3000...')
+      try {
+        execD('npm run dev', { cwd: dashPath, stdio: 'inherit' })
+      } catch (e: any) {
+        console.error('[DevOS] Dashboard failed:', e.message ?? String(e))
+      }
+      break
     }
 
     // ── devos capabilities ────────────────────────────────────
@@ -1685,7 +1692,7 @@ Utilities:
   serve                Start DevOS server + API at http://localhost:4200
   ui                   Start Mission Control web dashboard at http://localhost:5173
   api                  Print all available API endpoints with descriptions
-  dashboard            Show agent scores, task stats, skill usage
+  dashboard            Start Mission Control UI at http://localhost:3000
   capabilities <goal>  Analyze what capabilities a goal needs
   company   <goal>     Launch multi-agent Company Mode
   evolve               Run Skill Evolution Engine (analyze + improve + deploy)
