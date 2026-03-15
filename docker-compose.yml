@@ -1,0 +1,81 @@
+# ============================================================
+# DevOS — Autonomous AI Execution System
+# Copyright (c) 2026 Shiva Deore. All rights reserved.
+# ============================================================
+
+version: "3.9"
+
+services:
+
+  # ── DevOS API + CLI ────────────────────────────────────────────────────────
+  devos:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: devos
+    restart: unless-stopped
+    ports:
+      - "4200:4200"
+    volumes:
+      # Mount source for live ts-node editing in dev
+      - .:/app
+      - /app/node_modules
+      # Mount Docker socket so DevOS can manage sandbox containers
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Persist workspace data
+      - devos-workspace:/app/workspace
+    environment:
+      - NODE_ENV=production
+      - DEVOS_MODE=api
+      - OLLAMA_HOST=http://ollama:11434
+      # Set DEVOS_SANDBOX=true to enable Docker-based skill isolation
+      - DEVOS_SANDBOX=${DEVOS_SANDBOX:-false}
+    depends_on:
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:4200/api/system/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - devos-net
+
+  # ── Ollama LLM backend ─────────────────────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: devos-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - devos-net
+    # Uncomment if you have an NVIDIA GPU:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+volumes:
+  devos-workspace:
+    driver: local
+  ollama-models:
+    driver: local
+
+networks:
+  devos-net:
+    driver: bridge

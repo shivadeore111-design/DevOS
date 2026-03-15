@@ -32,6 +32,7 @@ import { lifeTimeline }        from "../personal/lifeTimeline";
 import { backgroundAgents }    from "../personal/backgroundAgents";
 import { telegramBot }         from "../integrations/telegram/telegramBot";
 import { telegramNotifier }    from "../integrations/telegram/telegramNotifier";
+import { sandboxManager }      from "../sandbox/sandboxManager";
 
 export function createApiServer(): any {
   const app = express();
@@ -153,6 +154,48 @@ export function createApiServer(): any {
       res.status(400).json({ error: e.message });
     }
   });
+
+  // ── Sandbox routes ────────────────────────────────────────────────────────
+
+  // GET /api/sandbox/status — list all active sandboxes
+  app.get("/api/sandbox/status", (_req: any, res: any) => {
+    const sandboxes = sandboxManager.listActiveSandboxes()
+    res.json({
+      enabled:  process.env.DEVOS_SANDBOX === 'true',
+      count:    sandboxes.length,
+      sandboxes: sandboxes.map(s => ({
+        taskId:      s.taskId,
+        containerId: s.containerId.slice(0, 12),
+        status:      s.status,
+        createdAt:   s.createdAt,
+        uptimeSec:   Math.floor((Date.now() - s.createdAt) / 1000),
+      })),
+    })
+  })
+
+  // GET /api/sandbox/:taskId/status — status for a specific sandbox
+  app.get("/api/sandbox/:taskId/status", (req: any, res: any) => {
+    const sandbox = sandboxManager.getSandbox(req.params.taskId)
+    if (!sandbox) return res.status(404).json({ error: `No sandbox for task ${req.params.taskId}` })
+    res.json({
+      taskId:      sandbox.taskId,
+      containerId: sandbox.containerId.slice(0, 12),
+      status:      sandbox.status,
+      createdAt:   sandbox.createdAt,
+      uptimeSec:   Math.floor((Date.now() - sandbox.createdAt) / 1000),
+    })
+  })
+
+  // POST /api/sandbox/clean — destroy all active sandboxes
+  app.post("/api/sandbox/clean", async (_req: any, res: any) => {
+    try {
+      const before = sandboxManager.listActiveSandboxes().length
+      await sandboxManager.cleanupAll()
+      res.json({ destroyed: before, message: `Cleaned up ${before} sandbox(es)` })
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message ?? String(e) })
+    }
+  })
 
   return app;
 }

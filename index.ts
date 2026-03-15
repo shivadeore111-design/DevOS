@@ -1804,6 +1804,59 @@ When running devos serve, DevOS will:
       break
     }
 
+    // ── devos sandbox ─────────────────────────────────────────
+    case "sandbox": {
+      const sub = rawArgs[0]?.toLowerCase()
+      const { sandboxManager } = await import('./sandbox/sandboxManager')
+
+      if (sub === 'status' || !sub) {
+        const sandboxes = sandboxManager.listActiveSandboxes()
+        const enabled   = process.env.DEVOS_SANDBOX === 'true'
+        console.log(`\n🐳 Docker Sandbox\n`)
+        console.log(`  Mode:   ${enabled ? '✅ ENABLED (DEVOS_SANDBOX=true)' : '⚠️  DISABLED (set DEVOS_SANDBOX=true to enable)'}`)
+        console.log(`  Active: ${sandboxes.length} sandbox(es)\n`)
+        if (sandboxes.length > 0) {
+          console.log('  TaskID                   Container     Status       Uptime')
+          console.log('  ' + '─'.repeat(70))
+          for (const s of sandboxes) {
+            const uptime = Math.floor((Date.now() - s.createdAt) / 1000)
+            console.log(`  ${s.taskId.padEnd(25)}  ${s.containerId.slice(0, 12)}  ${s.status.padEnd(12)}  ${uptime}s`)
+          }
+        } else {
+          console.log('  No active sandboxes.')
+        }
+        break
+      }
+
+      if (sub === 'enable') {
+        console.log('✅ Docker sandbox mode enabled for this session.')
+        console.log('   To persist across restarts, add DEVOS_SANDBOX=true to your .env file.')
+        process.env.DEVOS_SANDBOX = 'true'
+        break
+      }
+
+      if (sub === 'disable') {
+        console.log('⚠️  Docker sandbox mode disabled for this session.')
+        process.env.DEVOS_SANDBOX = 'false'
+        break
+      }
+
+      if (sub === 'clean') {
+        const before = sandboxManager.listActiveSandboxes().length
+        if (before === 0) {
+          console.log('✅ No active sandboxes to clean.')
+        } else {
+          console.log(`🗑️  Destroying ${before} active sandbox(es)...`)
+          await sandboxManager.cleanupAll()
+          console.log(`✅ Cleaned up ${before} sandbox(es).`)
+        }
+        break
+      }
+
+      console.error(`❌ Unknown sandbox sub-command: ${sub}. Try: status, enable, disable, clean`)
+      break
+    }
+
     // ── devos ui ──────────────────────────────────────────────
     case "ui": {
       const { execSync } = require("child_process") as typeof import("child_process");
@@ -1902,6 +1955,12 @@ Telegram:
   telegram setup            Configure Telegram bot (print step-by-step instructions)
   telegram status           Show current Telegram config (token masked)
   telegram test             Send a test message via the configured bot
+
+Docker Sandbox:
+  sandbox                   Show sandbox status + active containers
+  sandbox enable            Enable sandboxed skill execution (DEVOS_SANDBOX=true)
+  sandbox disable           Disable sandboxed execution (back to in-process)
+  sandbox clean             Destroy all active sandbox containers
 
 Goal Engine:
   goal "<title>" "<desc>"   Create, plan, and execute a structured goal
