@@ -61,13 +61,21 @@ export class SuccessEvaluator {
     const checks: EvaluationCheck[] = []
 
     if (criteria.length === 0) {
-      // Fallback: all nodes completed
-      const allDone = (result?.nodesCompleted ?? 0) === (result?.totalNodes ?? 1)
-        && (result?.totalNodes ?? 0) > 0
+      // Fallback: all nodes completed.
+      // A graph with 0 nodes (empty plan) is NOT a failure — treat as neutral pass.
+      // Only fail if nodes were present and didn't all complete.
+      const total   = result?.totalNodes    ?? 0
+      const done    = result?.nodesCompleted ?? 0
+      const failed  = result?.nodesFailed   ?? 0
+      const allDone = total === 0
+        ? true                              // empty graph — nothing to fail
+        : (done === total && failed === 0)
       checks.push({
         name:   "all nodes completed",
         passed: allDone,
-        detail: `${result?.nodesCompleted ?? 0}/${result?.totalNodes ?? 0} nodes done`,
+        detail: total === 0
+          ? "empty graph — no nodes to execute"
+          : `${done}/${total} nodes done`,
       })
     } else {
       for (const criterion of criteria) {

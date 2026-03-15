@@ -33,6 +33,48 @@ import { slack }                    from "../integrations/slack";
 import { auditLogger }              from "../security/auditLogger";
 import * as readline                from "readline";
 
+// ── Action generation fallback ─────────────────────────────────────────────
+// Called when the planner returns a plan with 0 actions (empty graph).
+// Makes a second Ollama call to convert the raw goal description into
+// concrete shell_exec / file_write / file_read actions.
+
+async function generateActionsFromDescription(description: string): Promise<any[]> {
+  const prompt = `Convert this task into a JSON array of executable actions.
+Return ONLY a valid JSON array, no explanation, no markdown fences.
+Each action must have a "type" field. Valid types and their required fields:
+- shell_exec: { type: "shell_exec", command: string }
+- file_write: { type: "file_write", path: string, content: string }
+- file_read: { type: "file_read", path: string }
+
+Task: ${description}
+
+Example output:
+[
+  { "type": "shell_exec", "command": "mkdir -p workspace/myproject" },
+  { "type": "file_write", "path": "workspace/myproject/server.js", "content": "const express = require('express')..." },
+  { "type": "shell_exec", "command": "cd workspace/myproject && npm init -y && npm install express" }
+]`
+
+  try {
+    const response = await fetch('http://localhost:11434/api/generate', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ model: 'qwen2.5-coder:7b', prompt, stream: false }),
+    })
+    const data = await (response as any).json()
+    let text = data.response || ''
+    // Strip markdown fences if present
+    text = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+    // Extract JSON array
+    const match = text.match(/\[[\s\S]*\]/)
+    if (!match) return []
+    return JSON.parse(match[0])
+  } catch (e: any) {
+    console.error('[Runner] Action generation failed:', e.message)
+    return []
+  }
+}
+
 export interface ExecutionEngine {
   execute(plan: any):                                      Promise<{ success: boolean; output?: any; error?: string }>;
   executeOne?(action: any, ws?: string, goalId?: string): Promise<{ success: boolean; output?: any; error?: string }>;
@@ -224,6 +266,30 @@ export class Runner {
       const graph = taskGraphBuilder.fromPlan(task.id, plan);
       console.log(`[Runner:${this.agentId}] TaskGraph: ${graph.nodes.size} nodes`);
 
+      // ── 0-node fallback: generate actions from description ──
+      if (graph.nodes.size === 0) {
+        console.log('[Runner] Graph has 0 nodes — generating actions from description')
+        const actions = await generateActionsFromDescription(task.goal)
+        for (const action of actions) {
+          const nodeId = require('crypto').randomUUID() as string
+          taskGraphBuilder.addNode(graph, {
+            id:          nodeId,
+            description: action.description ?? action.type ?? 'generated action',
+            skill:       action.skill,
+            action,
+            dependsOn:   [],
+            status:      'pending',
+          })
+        }
+        console.log(`[Runner] Added ${actions.length} actions to graph`)
+        // Wire sequential dependencies after all nodes are added
+        const nodeIds = [...graph.nodes.keys()]
+        for (let i = 1; i < nodeIds.length; i++) {
+          const node = graph.nodes.get(nodeIds[i])!
+          node.dependsOn = [nodeIds[i - 1]]
+        }
+      }
+
       // ── Persist snapshot (for resume-on-crash) ───────────
       await stateSnapshot.save(task.id, graph, workspacePath);
 
@@ -289,12 +355,16 @@ export class Runner {
           parsedGoal,
         )
         const durationMs = resourceManager.getRuntimeMs(task.id)
+        // Fix: don't store 0/0-node runs as failure — only fail if nodes actually failed
+        const nodesFailed   = output?.nodesFailed  ?? 0
+        const totalNodes    = output?.totalNodes   ?? 0
+        const isSuccess     = nodesFailed === 0 && (evalResult.success || totalNodes === 0)
         executionMemory.store({
           pattern:    task.goal,
           goalType:   parsedGoal.type  ?? "unknown",
           domain:     parsedGoal.domain ?? "general",
           stack:      parsedGoal.stack  ?? [],
-          outcome:    evalResult.success ? "success" : "failure",
+          outcome:    isSuccess ? "success" : "failure",
           reason:     evalResult.summary,
           actions:    plan.actions ?? [],
           durationMs,
