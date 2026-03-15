@@ -23,10 +23,24 @@ export class GoalExecutor {
   }
 
   /** Execute a single task description via the Runner */
-  private async runTask(task: Task): Promise<{ success: boolean; result?: string; error?: string }> {
+  private async runTask(
+    task: Task,
+    goalTitle: string,
+    goalDescription: string,
+    projectTitle: string,
+  ): Promise<{ success: boolean; result?: string; error?: string }> {
     try {
-      const runner  = this.makeRunner(`goal-exec-${task.id}`)
-      const devTask = await runner.runOnce(task.description)
+      const runner = this.makeRunner(`goal-exec-${task.id}`)
+
+      const goalContext = `Goal: ${goalTitle}
+Description: ${goalDescription}
+Project: ${projectTitle}
+Task: ${task.title}
+Instructions: ${task.description}
+
+Execute this specific task as part of the larger goal. Use file_write, shell_exec, or other appropriate actions.`
+
+      const devTask = await runner.runOnce(goalContext)
       if (devTask.status === 'completed') {
         return { success: true, result: JSON.stringify((devTask as any).output ?? devTask.result ?? 'done') }
       }
@@ -69,12 +83,12 @@ export class GoalExecutor {
           goalStore.updateTask(task.id, { status: 'active' })
           console.log(`[GoalExecutor]   ▶ Task: ${task.title}`)
 
-          let attempt = await this.runTask(task)
+          let attempt = await this.runTask(task, goal.title, goal.description, project.title)
 
           if (!attempt.success && task.retryCount < task.maxRetries) {
             console.warn(`[GoalExecutor]   🔄 Retrying task: ${task.title}`)
             goalStore.updateTask(task.id, { retryCount: task.retryCount + 1 })
-            attempt = await this.runTask(task)
+            attempt = await this.runTask(task, goal.title, goal.description, project.title)
           }
 
           if (attempt.success) {

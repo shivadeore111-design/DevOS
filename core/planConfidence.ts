@@ -16,7 +16,12 @@ export class PlanConfidence {
 
   /** Score a plan 0.0–1.0 based on quality signals */
   score(plan: any, parsedGoal: any): number {
-    if (!plan?.actions?.length) return 0
+    // Goal-driven tasks always get baseline confidence
+    const summary = (plan?.summary ?? '') as string
+    const isGoalDrivenTask = summary.includes('Goal:') && summary.includes('Task:')
+    const baselineConfidence = isGoalDrivenTask ? 0.6 : 0
+
+    if (!plan?.actions?.length) return baselineConfidence
 
     const actions: any[] = plan.actions
     let   total = 0
@@ -67,13 +72,13 @@ export class PlanConfidence {
     }
     if (complexityMatch) total += 0.2
 
-    return Math.min(Math.max(total, 0), 1)
+    return Math.min(Math.max(total, baselineConfidence), 1)
   }
 
   /** Decide how to proceed given a confidence score */
   decide(score: number): ExecutionDecision {
     if (score >= 0.8)  return "auto"
-    if (score >= 0.5)  return "confirm"
+    if (score >= 0.4)  return "confirm"
     return "approve"
   }
 }

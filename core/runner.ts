@@ -204,7 +204,7 @@ export class Runner {
         }
       } else {
         // approve — block execution, require manual override
-        console.log(`[Runner] 🚫 Plan confidence too low (${confScore.toFixed(2)}) — blocked`)
+        console.log(`[Runner] 🚫 Plan confidence too low (${confScore.toFixed(2)}) for: "${task.goal.slice(0, 60)}..." — blocked`)
         taskQueue.fail(task.id, "Plan confidence below approval threshold", "Low confidence");
         goalGovernor.unregister(task.id);
         resourceManager.stopTracking(task.id);
