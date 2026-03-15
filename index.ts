@@ -513,8 +513,20 @@ async function handleCLI(): Promise<void> {
 
     // ── devos doctor ──────────────────────────────────────────
     case "doctor": {
-      await runDoctor();
-      break;
+      const { runDoctor: runDoctorCheck } = require('./core/doctor')
+      const { results, allPass } = await runDoctorCheck()
+      console.log('\n╔══════════════════════════════════╗')
+      console.log('║         DevOS Doctor             ║')
+      console.log('╚══════════════════════════════════╝\n')
+      for (const r of results) {
+        const icon = r.status === 'pass' ? '✅' : r.status === 'warn' ? '⚠️ ' : '❌'
+        console.log(`  ${icon} ${r.name.padEnd(15)} ${r.message}`)
+        if (r.fix && r.status !== 'pass') console.log(`     💡 Fix: ${r.fix}`)
+      }
+      console.log()
+      console.log(allPass ? '  ✅ All checks passed — DevOS is ready' : '  ⚠️  Some checks failed — see fixes above')
+      console.log()
+      break
     }
 
     // ── devos test ────────────────────────────────────────────
