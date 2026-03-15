@@ -1,5 +1,5 @@
 'use client'
-import { createContext, useContext, useState, ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 
 export type ActiveView = 'chat' | 'goals' | 'missions' | 'agents' | 'pilots' | 'memory'
 
@@ -11,6 +11,12 @@ export interface DevOSSettings {
   isSetupComplete: boolean
 }
 
+const DEFAULT_SETTINGS: DevOSSettings = {
+  selectedModel: '',
+  apiProvider: 'ollama',
+  isSetupComplete: false
+}
+
 interface StoreState {
   activeView: ActiveView
   setActiveView: (v: ActiveView) => void
@@ -18,6 +24,7 @@ interface StoreState {
   setSettings: (s: DevOSSettings) => void
   isSetupOpen: boolean
   setIsSetupOpen: (v: boolean) => void
+  mounted: boolean
 }
 
 const Store = createContext<StoreState | null>(null)
@@ -25,21 +32,29 @@ const Store = createContext<StoreState | null>(null)
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [activeView, setActiveView] = useState<ActiveView>('chat')
   const [isSetupOpen, setIsSetupOpen] = useState(false)
-  const [settings, setSettings] = useState<DevOSSettings>(() => {
-    if (typeof window === 'undefined') return { selectedModel: '', apiProvider: 'ollama', isSetupComplete: false }
+  const [mounted, setMounted] = useState(false)
+  const [settings, setSettingsState] = useState<DevOSSettings>(DEFAULT_SETTINGS)
+
+  useEffect(() => {
     try {
       const saved = localStorage.getItem('devos_settings')
-      return saved ? JSON.parse(saved) : { selectedModel: '', apiProvider: 'ollama', isSetupComplete: false }
-    } catch { return { selectedModel: '', apiProvider: 'ollama', isSetupComplete: false } }
-  })
+      if (saved) setSettingsState(JSON.parse(saved))
+    } catch {}
+    setMounted(true)
+  }, [])
 
-  const updateSettings = (s: DevOSSettings) => {
-    setSettings(s)
-    if (typeof window !== 'undefined') localStorage.setItem('devos_settings', JSON.stringify(s))
+  const setSettings = (s: DevOSSettings) => {
+    setSettingsState(s)
+    try { localStorage.setItem('devos_settings', JSON.stringify(s)) } catch {}
   }
 
   return (
-    <Store.Provider value={{ activeView, setActiveView, settings, setSettings: updateSettings, isSetupOpen, setIsSetupOpen }}>
+    <Store.Provider value={{
+      activeView, setActiveView,
+      settings, setSettings,
+      isSetupOpen, setIsSetupOpen,
+      mounted
+    }}>
       {children}
     </Store.Provider>
   )

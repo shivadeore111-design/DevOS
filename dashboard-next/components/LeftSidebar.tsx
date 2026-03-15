@@ -6,7 +6,7 @@ import { useStore, ActiveView } from '../lib/store'
 const API = process.env.NEXT_PUBLIC_DEVOS_API || 'http://localhost:4200'
 
 export function LeftSidebar() {
-  const { activeView, setActiveView, settings, setIsSetupOpen } = useStore()
+  const { activeView, setActiveView, settings, setIsSetupOpen, mounted } = useStore()
   const [counts, setCounts] = useState<Record<string, number>>({})
   const [health, setHealth] = useState<'ok' | 'error'>('error')
 
@@ -57,8 +57,8 @@ export function LeftSidebar() {
             style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}>D</div>
           <span className="text-white font-bold text-lg">DevOS</span>
         </div>
-        {settings.userName && (
-          <p className="text-gray-600 text-xs mt-1">Hey, {settings.userName}</p>
+        {mounted && settings.userName && (
+          <p className="text-gray-600 text-xs mt-1 px-0">Hey, {settings.userName}</p>
         )}
       </div>
 

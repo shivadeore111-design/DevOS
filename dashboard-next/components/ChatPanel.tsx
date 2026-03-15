@@ -22,7 +22,7 @@ const SUGGESTIONS = [
 ]
 
 export function ChatPanel() {
-  const { settings } = useStore()
+  const { settings, mounted } = useStore()
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -32,15 +32,16 @@ export function ChatPanel() {
   const esRef = useRef<EventSource | null>(null)
 
   useEffect(() => {
+    if (!mounted) return
     const name = settings.userName ? `, ${settings.userName}` : ''
     setMessages([{
-      id: '0',
+      id: crypto.randomUUID(),
       role: 'devos',
       content: `Hey${name}! I'm DevOS — I build and ship software autonomously. What do you want to create today?`,
       timestamp: new Date().toISOString(),
       type: 'info'
     }])
-  }, [settings.userName])
+  }, [mounted])
 
   useEffect(() => {
     const connect = () => {
@@ -57,7 +58,7 @@ export function ChatPanel() {
           const content = formatEvent(event)
           if (!content) return
           setMessages(prev => [...prev, {
-            id: Date.now().toString(),
+            id: crypto.randomUUID(),
             role: 'devos',
             content,
             timestamp: new Date().toISOString(),
@@ -92,10 +93,10 @@ export function ChatPanel() {
     if (textareaRef.current) textareaRef.current.style.height = 'auto'
 
     setMessages(prev => [...prev, {
-      id: Date.now().toString(), role: 'user', content: text, timestamp: new Date().toISOString()
+      id: `user-${Date.now()}-${Math.random().toString(36).slice(2)}`, role: 'user', content: text, timestamp: new Date().toISOString()
     }])
 
-    const msgId = (Date.now() + 1).toString()
+    const msgId = `devos-${Date.now()}-${Math.random().toString(36).slice(2)}`
     setMessages(prev => [...prev, {
       id: msgId, role: 'devos', content: '▌', timestamp: new Date().toISOString(), type: 'info'
     }])
@@ -159,7 +160,7 @@ export function ChatPanel() {
           <div className={`w-2 h-2 rounded-full ${sseConnected ? 'bg-green-400' : 'bg-gray-600'}`}
             style={sseConnected ? { boxShadow: '0 0 8px #4ade80' } : {}} />
         </div>
-        {settings.userName && <span className="text-sm text-gray-500">Hey, {settings.userName} 👋</span>}
+        {mounted && settings.userName && <span className="text-sm text-gray-500">Hey, {settings.userName} 👋</span>}
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">

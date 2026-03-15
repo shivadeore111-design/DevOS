@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Menu, X } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { LeftSidebar } from '../components/LeftSidebar'
@@ -97,14 +97,14 @@ function AgentsView() {
 }
 
 export default function Home() {
-  const { activeView, settings, isSetupOpen, setIsSetupOpen } = useStore()
+  const { activeView, settings, isSetupOpen, setIsSetupOpen, mounted } = useStore()
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
-  useState(() => {
-    if (typeof window !== 'undefined' && !settings.isSetupComplete) {
+  useEffect(() => {
+    if (mounted && !settings.isSetupComplete) {
       setIsSetupOpen(true)
     }
-  })
+  }, [mounted])
 
   return (
     <div className="h-screen flex overflow-hidden relative"
