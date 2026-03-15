@@ -10,6 +10,7 @@ import { toolRuntime }   from '../executor/toolRuntime'
 import { agentRegistry } from './agentRegistry'
 import { AgentRole }     from './types'
 import { Task }          from '../goals/types'
+import { liveThinking }  from '../coordination/liveThinking'
 
 interface ToolCall {
   tool:  string
@@ -32,7 +33,12 @@ function parseToolCalls(response: string): ToolCall[] {
 
 export class AgentExecutor {
 
-  async assign(role: AgentRole, task: Pick<Task, 'id' | 'title' | 'description'>, goalContext: string): Promise<string> {
+  async assign(
+    role: AgentRole,
+    task: Pick<Task, 'id' | 'title' | 'description'>,
+    goalContext: string,
+    missionId?: string,
+  ): Promise<string> {
     const agent = agentRegistry.get(role)
     if (!agent) throw new Error(`[AgentExecutor] Agent not found: ${role}`)
 
@@ -62,35 +68,41 @@ Provide your response and any tool calls needed.
     try {
       agentRegistry.updateStatus(role, 'thinking', task.id ?? undefined)
 
-      // 3. Call Ollama
+      // 3. Signal thinking before Ollama call
+      liveThinking.think(role, `Processing: ${task.description.slice(0, 60)}`, missionId)
+
+      // 4. Call Ollama
       const raw = await callOllama(prompt)
 
-      // 4. Execute any tool calls found in the response
+      // 5. Execute any tool calls found in the response
       const toolCalls = parseToolCalls(raw)
       const toolResults: string[] = []
 
       for (const tc of toolCalls) {
         agentRegistry.updateStatus(role, 'executing', task.id ?? undefined)
+        liveThinking.act(role, `Running ${tc.tool}`, missionId)
         const tr = await toolRuntime.execute(tc.tool, tc.input)
         toolResults.push(`[${tc.tool}]: ${tr.success ? JSON.stringify(tr.output ?? 'ok') : `ERROR: ${tr.error}`}`)
       }
 
-      // 5. Build final result
+      // 6. Build final result
       const cleanResponse = raw.replace(/TOOL_CALL:\s*\w+\s*\{[\s\S]*?\}/g, '').trim()
       result = [
         cleanResponse,
         ...(toolResults.length > 0 ? [`\nTool Results:\n${toolResults.join('\n')}`] : []),
       ].join('\n').trim() || 'Task acknowledged and completed.'
 
-      // 6. Mark idle + record success
+      // 7. Mark idle + record success
       agentRegistry.updateStatus(role, 'idle')
       agentRegistry.recordCompletion(role, true)
+      liveThinking.done(role, `Completed: ${task.description.slice(0, 60)}`, missionId)
       console.log(`[AgentExecutor] ✅ ${agent.name} completed: ${task.title}`)
 
     } catch (err: any) {
       result = `Error: ${err?.message ?? String(err)}`
       agentRegistry.updateStatus(role, 'error')
       agentRegistry.recordCompletion(role, false)
+      liveThinking.error(role, err?.message ?? String(err), missionId)
       console.error(`[AgentExecutor] ❌ ${agent.name} failed: ${task.title} — ${result}`)
     }
 

@@ -23,6 +23,7 @@ import memoryRouter         from "./routes/memory";
 import systemRouter         from "./routes/system";
 import streamRouter         from "./routes/stream";
 import deployRouter         from "./routes/deploy";
+import missionsRouter       from "./routes/missions";
 
 export function createApiServer(): any {
   const app = express();
@@ -66,6 +67,7 @@ export function createApiServer(): any {
   app.use(systemRouter);
   app.use(streamRouter);
   app.use(deployRouter);
+  app.use(missionsRouter);
 
   return app;
 }
@@ -125,6 +127,14 @@ function generateSwaggerSpec() {
       "/api/deploy/vercel/{name}":                           { post: { summary: "Deploy a directory to Vercel" } },
       "/api/deploy/railway/projects":                        { get:  { summary: "List all Railway projects" } },
       "/api/deploy/railway/{projectId}/deploy/{serviceId}":  { post: { summary: "Trigger Railway service deploy" } },
+      "/api/missions":                  { post: { summary: "Start an autonomous mission" }, get: { summary: "List all missions" } },
+      "/api/missions/{id}":             { get:  { summary: "Mission detail + task queue" } },
+      "/api/missions/{id}/todo":        { get:  { summary: "Mission TODO markdown" } },
+      "/api/missions/{id}/pause":       { post: { summary: "Pause a running mission" } },
+      "/api/missions/{id}/resume":      { post: { summary: "Resume a paused mission" } },
+      "/api/missions/{id}/cancel":      { post: { summary: "Cancel a mission" } },
+      "/api/coordination/approve":      { post: { summary: "Approve a human-in-the-loop task" } },
+      "/api/coordination/reject":       { post: { summary: "Reject a human-in-the-loop task" } },
     },
   };
 }

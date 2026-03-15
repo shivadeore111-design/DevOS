@@ -5,7 +5,7 @@
 // of this software is strictly prohibited.
 // ============================================================
 // index.ts — DevOS Entry Point
-// Commands: run, daemon, status, enqueue, plan, grow, agent, goal, goals, agents, coordinate, doctor, test
+// Commands: run, daemon, status, enqueue, plan, grow, agent, goal, goals, agents, coordinate, mission, missions, doctor, test
 // ============================================================
 
 import "dotenv/config";
@@ -1444,6 +1444,114 @@ Auth & Keys
       break;
     }
 
+    // ── devos mission "<goal>" | mission status|pause|resume|cancel <id> ─
+    case "mission": {
+      const { autonomousMission } = await import('./coordination/autonomousMission')
+      const { missionState: ms }  = await import('./coordination/missionState')
+      const { missionTodo: mt }   = await import('./coordination/missionTodo')
+      const { eventBus: eb }      = await import('./core/eventBus')
+
+      const sub = goalArgs[0]
+
+      // devos mission status <id>
+      if (sub === 'status') {
+        const mId = goalArgs[1]
+        if (!mId) { console.error('❌ Usage: ts-node index.ts mission status <id>'); process.exit(1) }
+        const m = ms.loadMission(mId)
+        if (!m) { console.error(`❌ Mission not found: ${mId}`); process.exit(1) }
+        console.log(`\n🚀 Mission: ${m.goal}`)
+        console.log(`   ID:      ${m.id}`)
+        console.log(`   Status:  ${m.status}`)
+        console.log(`   Type:    ${m.type}`)
+        console.log(`   Tasks:   ${m.tasksDone}/${m.tasksTotal} done  ${m.tasksFailed} failed`)
+        console.log(`   Loops:   ${m.loopCount}`)
+        console.log(`   Started: ${new Date(m.startedAt).toLocaleString()}`)
+        if (m.completedAt) console.log(`   Ended:   ${new Date(m.completedAt).toLocaleString()}`)
+        const todo = mt.readTodo(m.id)
+        if (todo) { console.log(`\n${todo}`) }
+        break
+      }
+
+      // devos mission pause <id>
+      if (sub === 'pause') {
+        const mId = goalArgs[1]
+        if (!mId) { console.error('❌ Usage: ts-node index.ts mission pause <id>'); process.exit(1) }
+        autonomousMission.pauseMission(mId)
+        console.log(`⏸  Mission paused: ${mId}`)
+        break
+      }
+
+      // devos mission resume <id>
+      if (sub === 'resume') {
+        const mId = goalArgs[1]
+        if (!mId) { console.error('❌ Usage: ts-node index.ts mission resume <id>'); process.exit(1) }
+        await assertOllamaReady()
+        autonomousMission.resumeMission(mId).catch(() => {})
+        console.log(`▶️  Mission resuming: ${mId}`)
+        break
+      }
+
+      // devos mission cancel <id>
+      if (sub === 'cancel') {
+        const mId = goalArgs[1]
+        if (!mId) { console.error('❌ Usage: ts-node index.ts mission cancel <id>'); process.exit(1) }
+        autonomousMission.cancelMission(mId)
+        console.log(`🚫 Mission cancelled: ${mId}`)
+        break
+      }
+
+      // devos mission "<goal>" — start new mission, stream liveThinking to terminal
+      const missionGoal = goalArgs.join(' ').trim()
+      if (!missionGoal) {
+        console.error('❌ Usage: ts-node index.ts mission "<goal>"')
+        console.error('         ts-node index.ts mission status|pause|resume|cancel <id>')
+        process.exit(1)
+      }
+      await assertOllamaReady()
+
+      // Stream liveThinking events to terminal
+      eb.on('agent_thinking', (evt: any) => {
+        const icon = evt.type === 'thinking' ? '🧠'
+          : evt.type === 'acting'   ? '⚙️ '
+          : evt.type === 'done'     ? '✅'
+          : '❌'
+        console.log(`  ${icon} [${String(evt.agent).toUpperCase()}] ${evt.message}`)
+      })
+
+      console.log(`\n🚀 Starting mission: "${missionGoal}"\n`)
+      const mResult = await autonomousMission.startMission(missionGoal, missionGoal)
+      const mIcon = mResult.status === 'complete' ? '✅' : mResult.status === 'failed' ? '❌' : '⏸ '
+      console.log(`\n${mIcon} Mission ${mResult.status}: ${mResult.goal}`)
+      console.log(`   ID:    ${mResult.id}`)
+      console.log(`   Tasks: ${mResult.tasksDone}/${mResult.tasksTotal} done`)
+      console.log(`   Run:   ts-node index.ts mission status ${mResult.id}\n`)
+      break
+    }
+
+    // ── devos missions — list all missions ─────────────────────
+    case "missions": {
+      const { missionState: ms2 } = await import('./coordination/missionState')
+      const all = ms2.listMissions()
+      if (!all.length) {
+        console.log('📭 No missions yet. Run: ts-node index.ts mission "<your goal>"')
+        break
+      }
+      console.log(`\n🚀 Missions (${all.length})\n`)
+      for (const m of all) {
+        const icon = m.status === 'complete'   ? '✅'
+          : m.status === 'failed'    ? '❌'
+          : m.status === 'active'    ? '🔵'
+          : m.status === 'paused'    ? '⏸ '
+          : m.status === 'cancelled' ? '🚫'
+          : '⏳'
+        const date = new Date(m.startedAt).toLocaleDateString()
+        console.log(`  ${icon} [${m.status.padEnd(9)}] ${m.id.slice(0, 12)}  ${date}  ${m.tasksDone}/${m.tasksTotal} tasks`)
+        console.log(`           "${m.goal}"`)
+      }
+      console.log('')
+      break
+    }
+
     // ── devos ui ──────────────────────────────────────────────
     case "ui": {
       const { execSync } = require("child_process") as typeof import("child_process");
@@ -1513,6 +1621,14 @@ Pilots:
   pilot enable <id>         Enable a pilot (auto-schedules on next serve)
   pilot disable <id>        Disable a pilot
   pilot history <id>        Show last 5 runs for a pilot
+
+Autonomous Missions:
+  mission "<goal>"          Start a full autonomous multi-agent mission
+  missions                  List all missions with status + task counts
+  mission status <id>       Show mission detail + live TODO file
+  mission pause <id>        Pause a running mission
+  mission resume <id>       Resume a paused mission
+  mission cancel <id>       Cancel a mission permanently
 
 Goal Engine:
   goal "<title>" "<desc>"   Create, plan, and execute a structured goal
