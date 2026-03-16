@@ -34,7 +34,11 @@ export class OpenClawAdapter {
         case "file_create":
           return this.handleFileCreate(action, workspace)
 
+        case "file_write":
+          return this.handleFileWrite(action)
+
         case "shell":
+        case "shell_exec":
           return this.executeShellCommand(action.command, workspace)
 
         case "shell_plan":
@@ -55,7 +59,7 @@ export class OpenClawAdapter {
   }
 
   // ================================
-  // FILE CREATE (Controlled)
+  // FILE CREATE (Controlled — workspace-sandboxed)
   // ================================
 
   private async handleFileCreate(action: any, workspace: string): Promise<OpenClawResult> {
@@ -70,6 +74,29 @@ export class OpenClawAdapter {
       success: true,
       output: "File created via OpenClaw",
       artifacts: [fullPath]
+    }
+  }
+
+  // ================================
+  // FILE WRITE (Absolute path — escaped sandbox, already vetted by DecisionLayer)
+  // ================================
+
+  private async handleFileWrite(action: any): Promise<OpenClawResult> {
+    // action.path may be absolute (desktop, home dir, etc.)
+    const targetPath = path.isAbsolute(action.path)
+      ? action.path
+      : path.resolve(action.path)
+
+    try {
+      fs.mkdirSync(path.dirname(targetPath), { recursive: true })
+      fs.writeFileSync(targetPath, action.content || "")
+      return {
+        success:   true,
+        output:    `File written: ${targetPath}`,
+        artifacts: [targetPath]
+      }
+    } catch (err: any) {
+      return { success: false, error: `file_write failed: ${err.message}` }
     }
   }
 

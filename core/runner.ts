@@ -39,21 +39,25 @@ import * as readline                from "readline";
 // concrete shell_exec / file_write / file_read actions.
 
 async function generateActionsFromDescription(description: string): Promise<any[]> {
-  const prompt = `Convert this task into a JSON array of executable actions.
+  const IS_WIN  = process.platform === 'win32'
+  const DESKTOP = require('path').join(require('os').homedir(), 'Desktop')
+
+  const prompt = `You are running on ${IS_WIN ? 'Windows' : 'Linux'}.
+Desktop path: ${DESKTOP}
+${IS_WIN ? 'Use Windows commands only (echo, mkdir, copy, del). Never use touch, ls, cat, cp.' : 'Use bash commands.'}
+
+Convert this task into a JSON array of executable actions.
 Return ONLY a valid JSON array, no explanation, no markdown fences.
 Each action must have a "type" field. Valid types and their required fields:
-- shell_exec: { type: "shell_exec", command: string }
-- file_write: { type: "file_write", path: string, content: string }
-- file_read: { type: "file_read", path: string }
+- shell_exec: { "type": "shell_exec", "command": "string" }
+- file_write: { "type": "file_write", "path": "string", "content": "string" }
+- file_read: { "type": "file_read", "path": "string" }
+${IS_WIN ? `
+Windows examples:
+{ "type": "shell_exec", "command": "mkdir \\"${DESKTOP}\\\\myfolder\\"" }
+{ "type": "file_write", "path": "${DESKTOP}\\\\file.txt", "content": "hello" }` : ''}
 
-Task: ${description}
-
-Example output:
-[
-  { "type": "shell_exec", "command": "mkdir -p workspace/myproject" },
-  { "type": "file_write", "path": "workspace/myproject/server.js", "content": "const express = require('express')..." },
-  { "type": "shell_exec", "command": "cd workspace/myproject && npm init -y && npm install express" }
-]`
+Task: ${description}`
 
   try {
     const response = await fetch('http://localhost:11434/api/generate', {

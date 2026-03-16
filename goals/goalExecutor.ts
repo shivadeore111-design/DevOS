@@ -6,6 +6,7 @@
 // goals/goalExecutor.ts — Executes Goal→Project→Task hierarchy via Runner
 
 import * as path         from 'path'
+import * as os           from 'os'
 import { Runner }        from '../core/runner'
 import { DevOSEngine }   from '../executor/engine'
 import { eventBus }      from '../core/eventBus'
@@ -33,13 +34,20 @@ export class GoalExecutor {
     try {
       const runner = this.makeRunner(`goal-exec-${task.id}`)
 
-      const goalContext = `Goal: ${goalTitle}
+      const IS_WIN  = process.platform === 'win32'
+      const DESKTOP = path.join(os.homedir(), 'Desktop')
+
+      const goalContext = `SYSTEM: ${IS_WIN ? 'Windows' : process.platform}
+Desktop: ${DESKTOP}
+Home: ${os.homedir()}
+${IS_WIN ? 'Use Windows cmd commands. NEVER use Linux commands.' : ''}
+Goal: ${goalTitle}
 Description: ${goalDescription}
 Project: ${projectTitle}
 Task: ${task.title}
 Instructions: ${task.description}
 
-Execute this specific task as part of the larger goal. Use file_write, shell_exec, or other appropriate actions.`
+Execute using file_write or shell_exec with correct ${IS_WIN ? 'Windows' : 'Linux'} commands.`
 
       const devTask = await runner.runOnce(goalContext)
       if (devTask.status === 'completed') {
