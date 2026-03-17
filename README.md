@@ -1,12 +1,36 @@
-# DevOS
+# DevOS — Personal AI OS
 
-**Autonomous AI Operating System** — describe what you want to build, DevOS researches, plans, writes code, and deploys it.
+> Free. Local. Private. Runs on your machine.
+
+## Install
 
 ```bash
-npx ts-node index.ts install
-npx ts-node index.ts serve
-npx ts-node index.ts dashboard
+npx devos
 ```
+
+Or install globally:
+
+```bash
+npm install -g devos
+devos serve
+```
+
+**Requirements:** Node.js 18+ · Ollama with any model pulled · Windows, macOS, or Linux
+
+## Providers
+
+DevOS runs free with Ollama by default. Optionally use any cloud provider:
+
+| Provider | Speed | Cost | Command |
+|---|---|---|---|
+| Ollama | Medium | Free | default |
+| Groq | Very Fast | Free tier | `devos provider set groq YOUR_KEY` |
+| DeepSeek | Fast | Very cheap | `devos provider set deepseek YOUR_KEY` |
+| OpenAI | Fast | Pay per use | `devos provider set openai YOUR_KEY` |
+| Anthropic | Best quality | Pay per use | `devos provider set anthropic YOUR_KEY` |
+| Gemini | Fast | Free tier | `devos provider set gemini YOUR_KEY` |
+| Together AI | Fast | Pay per use | `devos provider set together YOUR_KEY` |
+| OpenRouter | Any model | Pay per use | `devos provider set openrouter YOUR_KEY` |
 
 ## What DevOS Does
 

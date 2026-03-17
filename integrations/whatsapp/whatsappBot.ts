@@ -75,26 +75,65 @@ class WhatsAppBot {
 
     // ── Incoming messages ─────────────────────────────────────────
     this.client.on('message', async (msg: Message) => {
-      // Skip group messages and status broadcasts
+      console.log(`[WhatsApp] ← ${msg.from}: ${msg.body}`)
+
       if (msg.from.includes('@g.us'))      return
       if (msg.from === 'status@broadcast') return
-
-      const text = msg.body?.trim()
-      if (!text) return
-
-      console.log(`[WhatsApp] ← ${msg.from}: ${text}`)
+      if (!msg.body?.trim())               return
 
       // First message from any number → become the owner
       if (!this.ownerNumber) {
         this.ownerNumber = msg.from
         await persistentMemory.setFact('user', 'whatsapp_number', msg.from, 'whatsapp')
-        console.log(`[WhatsApp] Owner set: ${msg.from}`)
       }
 
-      // Only respond to owner
-      if (msg.from !== this.ownerNumber) return
+      const text  = msg.body.trim()
+      const lower = text.toLowerCase()
+      console.log(`[WhatsApp] Processing: "${lower}"`)
 
-      await this.handleMessage(msg)
+      try {
+        if (['status', 'ping', 's'].includes(lower)) {
+          const stats = await persistentMemory.getStats()
+          await this.client.sendMessage(msg.from, `⚡ DevOS online\n📊 ${stats.totalGoals} goals | ${stats.totalFacts} facts`)
+          console.log('[WhatsApp] status reply sent')
+          return
+        }
+
+        if (['hi', 'hello', 'hey'].includes(lower)) {
+          await this.client.sendMessage(msg.from, `Hey! DevOS here. Send a goal or type help.`)
+          return
+        }
+
+        if (['help', 'h'].includes(lower)) {
+          await this.client.sendMessage(msg.from, `Commands:\nstatus — system info\ngoals — recent history\nOr send any goal to execute it.`)
+          return
+        }
+
+        if (['goals', 'g'].includes(lower)) {
+          const goals = await persistentMemory.getRecentGoals(5)
+          const list  = goals.length
+            ? goals.map((g: any) => `${g.status === 'completed' ? '✅' : '❌'} ${g.title}`).join('\n')
+            : 'No goals yet.'
+          await this.client.sendMessage(msg.from, list)
+          return
+        }
+
+        const BUILD_KEYWORDS = ['build', 'create', 'make', 'generate', 'write', 'deploy', 'fix', 'run']
+        if (BUILD_KEYWORDS.some(k => lower.includes(k))) {
+          await this.client.sendMessage(msg.from, `⚡ Starting: "${text.slice(0, 50)}" — I'll notify you when done.`)
+          goalEngine.run(text.slice(0, 60), text).catch(() => {})
+          return
+        }
+
+        // Chat fallback
+        await this.client.sendMessage(msg.from, '⏳')
+        const chunks: string[] = []
+        for await (const chunk of dialogueEngine.chat(text)) chunks.push(chunk)
+        await this.client.sendMessage(msg.from, chunks.join('').trim().slice(0, 1500) || "I'm here.")
+
+      } catch (err: any) {
+        console.error('[WhatsApp] Error:', err?.message)
+      }
     })
 
     // ── Goal completion notifications ─────────────────────────────
@@ -112,77 +151,6 @@ class WhatsAppBot {
 
     console.log('[WhatsApp] Initializing...')
     await this.client.initialize()
-  }
-
-  // ── Message handling ────────────────────────────────────────────
-
-  private async handleMessage(msg: Message): Promise<void> {
-    try {
-      const text  = msg.body.trim()
-      const lower = text.toLowerCase().trim()
-      console.log(`[WhatsApp] Processing: "${lower}"`)
-
-      // ── Fast commands (no LLM, instant response) ──────────────────
-      if (['status', 'ping', 's'].includes(lower)) {
-        const stats = await persistentMemory.getStats()
-        const reply = `⚡ DevOS online\n📊 ${stats.totalGoals} goals | ${stats.totalFacts} facts`
-        console.log(`[WhatsApp] Sending reply: ${reply}`)
-        await this.client.sendMessage(msg.from, reply)
-        console.log(`[WhatsApp] Reply sent OK`)
-        return
-      }
-
-      if (['hi', 'hello', 'hey', 'yo', 'sup'].includes(lower)) {
-        const name = await persistentMemory.getFact('user', 'name') || 'there'
-        await this.client.sendMessage(msg.from, `Hey ${name}! Send a goal or type help.`)
-        return
-      }
-
-      if (['goals', 'history', 'g'].includes(lower)) {
-        const goals = await persistentMemory.getRecentGoals(5)
-        if (!goals.length) {
-          await this.client.sendMessage(msg.from, 'No goals yet.')
-          return
-        }
-        const list = goals
-          .map((g: any) => `${g.status === 'completed' ? '✅' : '❌'} ${g.title}`)
-          .join('\n')
-        await this.client.sendMessage(msg.from, `Recent goals:\n${list}`)
-        return
-      }
-
-      if (['help', 'h', '?'].includes(lower)) {
-        await this.client.sendMessage(
-          msg.from,
-          `DevOS commands:\nstatus — system status\ngoals — recent history\nhelp — this message\n\nOr send any goal:\n"build a todo API"\n"create file on desktop"`
-        )
-        return
-      }
-
-      // ── Build intent (fire goal, no LLM wait) ─────────────────────
-      const BUILD_KEYWORDS = ['build', 'create', 'make', 'generate', 'write', 'deploy', 'fix', 'run']
-      const isBuild = BUILD_KEYWORDS.some(k => lower.includes(k))
-      if (isBuild) {
-        await this.client.sendMessage(msg.from, `⚡ Starting: "${text.slice(0, 50)}"\nI'll notify you when done.`)
-        goalEngine.run(text.slice(0, 60), text).catch(async () => {
-          await this.send(`❌ Goal failed to start.`)
-        })
-        return
-      }
-
-      // ── Chat fallback (LLM — will be slow) ────────────────────────
-      await this.client.sendMessage(msg.from, '⏳ Thinking...')
-      const chunks: string[] = []
-      for await (const chunk of dialogueEngine.chat(text)) {
-        chunks.push(chunk)
-      }
-      const response = chunks.join('').trim().slice(0, 1500)
-      await this.client.sendMessage(msg.from, response || "I'm here.")
-
-    } catch (err: any) {
-      console.error('[WhatsApp] handleMessage error:', err?.message)
-      console.error(err)
-    }
   }
 
   // ── Outbound ────────────────────────────────────────────────────

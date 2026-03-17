@@ -1,28 +1,42 @@
 {
   "name": "devos",
   "version": "0.4.0",
-  "description": "Autonomous AI OS — runs locally, costs nothing to operate",
+  "description": "Personal AI OS — Free, Local, Private. Runs on your machine.",
   "author": "Shiva Deore <devosxprojects@gmail.com>",
   "license": "Apache-2.0",
   "keywords": [
     "ai",
     "autonomous",
-    "agents",
+    "agent",
+    "personal-ai",
+    "ollama",
+    "local-ai",
     "devos",
-    "llm",
-    "ollama"
+    "llm"
   ],
   "engines": {
     "node": ">=18"
   },
-  "main": "dist/index.js",
+  "bin": {
+    "devos": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "files": [
+    "dist/",
+    "dashboard-next/",
+    "README.md",
+    "LICENSE"
+  ],
+  "preferGlobal": true,
   "type": "commonjs",
   "scripts": {
     "dev": "ts-node index.ts",
     "run": "ts-node index.ts run",
     "daemon": "ts-node index.ts daemon",
     "status": "ts-node index.ts status",
-    "build": "tsc",
+    "build": "tsc --outDir dist",
+    "prepublishOnly": "npm run build",
+    "postinstall": "node scripts/postinstall.js",
     "start": "node dist/index.js",
     "test": "vitest run",
     "test:ui": "vitest --ui"

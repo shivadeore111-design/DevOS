@@ -68,6 +68,7 @@ import { morningBriefing }                     from "./personal/morningBriefing"
 import { teachMode }                           from "./personal/teachMode";
 import { backgroundAgents }                    from "./personal/backgroundAgents";
 import { isPersonalMode }                      from "./personal/personalMode";
+import { providerManager, Provider }           from "./core/providerManager";
 
 // ── Bootstrap ─────────────────────────────────────────────────
 
@@ -1934,6 +1935,47 @@ When running devos serve, DevOS will:
       break;
     }
 
+    // ── devos provider ────────────────────────────────────────
+    case 'provider': {
+      const sub = rawArgs[0]
+
+      if (!sub || sub === 'list') {
+        providerManager.listProviders()
+        console.log(`Current: ${providerManager.getLabel()} — ${providerManager.getModel()}`)
+        break
+      }
+
+      if (sub === 'set') {
+        const provider = rawArgs[1] as Provider
+        const apiKey   = rawArgs[2]
+        const model    = rawArgs[3]
+        if (!provider) {
+          console.log('Usage: devos provider set <provider> [apiKey] [model]')
+          console.log('Example: devos provider set openai sk-xxx gpt-4o-mini')
+          console.log('Example: devos provider set groq gsk-xxx')
+          console.log('Example: devos provider set ollama')
+          break
+        }
+        providerManager.setProvider(provider, apiKey, model)
+        console.log(`✅ Provider set to ${provider}`)
+        break
+      }
+
+      if (sub === 'test') {
+        console.log(`Testing ${providerManager.getLabel()}...`)
+        try {
+          const response = await providerManager.callLLM('Say "DevOS provider test OK" and nothing else.')
+          console.log(`✅ Response: ${response.trim()}`)
+        } catch (err: any) {
+          console.error(`❌ Failed: ${err?.message}`)
+        }
+        break
+      }
+
+      console.log('Usage: devos provider [list|set|test]')
+      break
+    }
+
     // ── devos help / default ──────────────────────────────────
     case "help":
     case "--help":
@@ -2040,6 +2082,11 @@ Knowledge:
   knowledge list            List all entries in the knowledge store
   knowledge ingest <file>   Ingest a file or URL into the knowledge store
   knowledge query "<q>"     Query the knowledge store with natural language
+
+Providers:
+  provider list             List all 10 supported AI providers
+  provider set <p> [k] [m] Switch provider e.g. provider set groq gsk-xxx
+  provider test             Test the current provider with a ping prompt
 
 Integrations:
   install                   Run setup wizard — checks Node, workspace, deps, Ollama

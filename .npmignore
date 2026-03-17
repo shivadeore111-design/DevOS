@@ -1,0 +1,10 @@
+workspace/
+memory/
+logs/
+config/api-keys.json
+config/model-selection.json
+config/cron-jobs.json
+config/whatsapp-auth/
+node_modules/
+.git/
+*.log

@@ -75,8 +75,10 @@ export class PilotExecutor {
     console.log(`\n[PilotExecutor] 🚀 Starting pilot: ${manifest.name}`);
 
     try {
-      // 2. Build goal string
-      const goal = `[Pilot: ${manifest.name}] ${manifest.description}`;
+      // 2. Build goal string — include the expert system prompt so planner gets full context
+      const goal = manifest.systemPrompt
+        ? `[Pilot: ${manifest.name}]\n\n${manifest.systemPrompt}`
+        : `[Pilot: ${manifest.name}] ${manifest.description}`;
 
       // 3. Run via DevOS pipeline
       const workspacePath = path.join(process.cwd(), "workspace", "sandbox");
@@ -89,10 +91,16 @@ export class PilotExecutor {
       try {
         plan = await generatePlan(goal);
       } catch {
+        // Fallback: single llm_task using the pilot's expert systemPrompt
         plan = {
           summary:    goal,
           complexity: "low",
-          actions:    [{ type: "llm_task", query: goal, description: manifest.description }],
+          actions:    [{
+            type:         "llm_task",
+            query:        manifest.description,
+            description:  manifest.description,
+            systemPrompt: manifest.systemPrompt,
+          }],
         };
       }
 
