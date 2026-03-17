@@ -573,6 +573,18 @@ async function handleCLI(): Promise<void> {
       console.log(`   REST API            at http://localhost:${apiConfig.port}`);
       console.log(`   API Docs            at http://localhost:${apiConfig.port}/api/docs`);
       console.log("   Press Ctrl+C to stop");
+      // Auto-start WhatsApp bot if credentials already exist on disk
+      {
+        const waAuthDir  = path.join(process.cwd(), 'config', 'whatsapp-auth')
+        const waHasAuth  = fs.existsSync(waAuthDir) && fs.readdirSync(waAuthDir).length > 0
+        if (waHasAuth) {
+          console.log('[DevOS] WhatsApp auth found — starting bot...')
+          const { whatsappBot: waBot } = await import('./integrations/whatsapp/whatsappBot')
+          waBot.start().catch((e: any) =>
+            console.warn('[WhatsApp] Auto-start failed:', e?.message ?? String(e))
+          )
+        }
+      }
       const onServeSig = () => {
         dashboardServer.stop();
         stopAllTriggers();
@@ -582,6 +594,17 @@ async function handleCLI(): Promise<void> {
       process.on("SIGINT",  onServeSig);
       process.on("SIGTERM", onServeSig);
       break;
+    }
+
+    // ── devos whatsapp ────────────────────────────────────────
+    case "whatsapp": {
+      console.log('🔌 Starting WhatsApp integration...')
+      console.log('📱 Scan the QR code with your phone to connect.')
+      console.log('   WhatsApp → Settings → Linked Devices → Link a Device\n')
+      const { whatsappBot: waBot } = await import('./integrations/whatsapp/whatsappBot')
+      await waBot.start()
+      await new Promise(() => {}) // keep process alive
+      break
     }
 
     // ── devos dashboard ───────────────────────────────────────

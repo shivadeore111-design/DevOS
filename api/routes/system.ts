@@ -43,8 +43,15 @@ function checkOllama(): Promise<boolean> {
 // GET /api/system/health
 router.get("/api/system/health", async (_req: any, res: any) => {
   const ollamaConnected = await checkOllama();
-  res.json({ status: "ok", uptime: Math.floor((Date.now() - START_TIME) / 1000),
-    version: readVersion(), ollamaConnected });
+  const waAuthDir = path.join(process.cwd(), 'config', 'whatsapp-auth');
+  const waEnabled = fs.existsSync(waAuthDir) && fs.readdirSync(waAuthDir).length > 0;
+  res.json({
+    status: "ok",
+    uptime: Math.floor((Date.now() - START_TIME) / 1000),
+    version: readVersion(),
+    ollamaConnected,
+    whatsapp: { enabled: waEnabled },
+  });
 });
 
 // GET /api/system/status
