@@ -34,13 +34,29 @@ export function ChatPanel() {
   useEffect(() => {
     if (!mounted) return
     const name = settings.userName ? `, ${settings.userName}` : ''
-    setMessages([{
-      id: crypto.randomUUID(),
-      role: 'devos',
-      content: `Hey${name}! I'm DevOS — I build and ship software autonomously. What do you want to create today?`,
-      timestamp: new Date().toISOString(),
-      type: 'info'
-    }])
+    const fallback = `Hey${name}! I'm DevOS — I build and ship software autonomously. What do you want to create today?`
+
+    // Try to fetch a personalised morning briefing from persistent memory
+    fetch(`${API}/api/personal/briefing`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        setMessages([{
+          id: crypto.randomUUID(),
+          role: 'devos',
+          content: data?.briefing || fallback,
+          timestamp: new Date().toISOString(),
+          type: 'info'
+        }])
+      })
+      .catch(() => {
+        setMessages([{
+          id: crypto.randomUUID(),
+          role: 'devos',
+          content: fallback,
+          timestamp: new Date().toISOString(),
+          type: 'info'
+        }])
+      })
   }, [mounted])
 
   useEffect(() => {

@@ -4,8 +4,17 @@
   "description": "Autonomous AI OS — runs locally, costs nothing to operate",
   "author": "Shiva Deore <devosxprojects@gmail.com>",
   "license": "Apache-2.0",
-  "keywords": ["ai", "autonomous", "agents", "devos", "llm", "ollama"],
-  "engines": { "node": ">=18" },
+  "keywords": [
+    "ai",
+    "autonomous",
+    "agents",
+    "devos",
+    "llm",
+    "ollama"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "main": "dist/index.js",
   "type": "commonjs",
   "scripts": {
@@ -19,6 +28,7 @@
     "test:ui": "vitest --ui"
   },
   "dependencies": {
+    "@types/sql.js": "^1.4.9",
     "axios": "^1.13.5",
     "chalk": "^5.6.2",
     "cors": "^2.8.5",
@@ -30,6 +40,7 @@
     "open": "^11.0.0",
     "ora": "^9.3.0",
     "playwright": "^1.58.2",
+    "sql.js": "^1.14.1",
     "tar-stream": "^3.1.8",
     "uuid": "^9.0.0",
     "ws": "^8.16.0"

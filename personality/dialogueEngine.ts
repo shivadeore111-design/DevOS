@@ -10,6 +10,7 @@ import { userProfile }               from './userProfile'
 import { intentClassifier, IntentType } from './intentClassifier'
 import { responseComposer }          from './responseComposer'
 import { runOnboarding }             from './onboarding'
+import { persistentMemory }          from '../memory/persistentMemory'
 
 class DialogueEngine {
 
@@ -31,7 +32,8 @@ class DialogueEngine {
     userProfile.updateLastSeen()
 
     // 3. Save incoming message to memory
-    const userMsg = conversationMemory.addMessage('user', userMessage)
+    conversationMemory.addMessage('user', userMessage)
+    await persistentMemory.addMessage('user', userMessage)
 
     // 4. Classify intent — skip Ollama for simple/short messages
     const wordCount = userMessage.trim().split(/\s+/).length
@@ -60,8 +62,11 @@ class DialogueEngine {
 
     } else {
       // Only for chitchat/explain — generate actual LLM response
-      // Don't pass conversation context — prevents hallucination chains
-      const safeContext = ''
+      // Use persistent memory context (stable facts) instead of raw conversation (prevents hallucination)
+      const persistentContext = await persistentMemory.buildContext()
+      const shortContext      = conversationMemory.getRecentMessages(3)
+        .map(m => `${m.role}: ${m.content}`).join('\n')
+      const safeContext = [persistentContext, shortContext].filter(Boolean).join('\n\n')
       for await (const chunk of responseComposer.compose(userMessage, intent.type, safeContext)) {
         chunks.push(chunk)
         yield chunk
@@ -70,11 +75,15 @@ class DialogueEngine {
 
     // 6. Save response to memory
     const fullResponse = chunks.join('').trim()
-    if (fullResponse) conversationMemory.addMessage('assistant', fullResponse, intent.type)
+    if (fullResponse) {
+      conversationMemory.addMessage('assistant', fullResponse, intent.type)
+      await persistentMemory.addMessage('assistant', fullResponse, intent.type)
+    }
 
-    // 7. Background tasks
+    // 7. Background tasks — extract facts and learn from conversation
     const recent = conversationMemory.getRecentMessages(10)
     conversationMemory.extractFacts(recent).catch(() => {})
+    persistentMemory.learnFromConversation([{ role: 'user', content: userMessage }]).catch(() => {})
   }
 }
 

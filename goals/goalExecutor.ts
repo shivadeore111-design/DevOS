@@ -5,14 +5,15 @@
 
 // goals/goalExecutor.ts — Executes Goal→Project→Task hierarchy via Runner
 
-import * as path         from 'path'
-import * as os           from 'os'
-import { Runner }        from '../core/runner'
-import { DevOSEngine }   from '../executor/engine'
-import { eventBus }      from '../core/eventBus'
-import { goalStore }     from './goalStore'
-import { Task }          from './types'
-import { liveThinking }  from '../coordination/liveThinking'
+import * as path              from 'path'
+import * as os                from 'os'
+import { Runner }             from '../core/runner'
+import { DevOSEngine }        from '../executor/engine'
+import { eventBus }           from '../core/eventBus'
+import { goalStore }          from './goalStore'
+import { Task }               from './types'
+import { liveThinking }       from '../coordination/liveThinking'
+import { persistentMemory }   from '../memory/persistentMemory'
 
 export class GoalExecutor {
   /** Goals currently paused (goalId set) */
@@ -159,6 +160,9 @@ Execute using file_write or shell_exec with correct ${IS_WIN ? 'Windows' : 'Linu
     eventBus.emit(finalStatus === 'completed' ? 'goal_completed' : 'goal_failed' as any, {
       goalId, title: goal.title, result: `${completedTasks}/${totalTasks} tasks completed`
     })
+
+    // Record to persistent memory for cross-session history
+    await persistentMemory.recordGoal(goalId, goal.title, goal.description, finalStatus, totalTasks, completedTasks)
 
     console.log(`[GoalExecutor] ${finalStatus === 'completed' ? '✅' : '❌'} Goal ${finalStatus}: ${goal.title} (${completedTasks}/${totalTasks} tasks)`)
   }

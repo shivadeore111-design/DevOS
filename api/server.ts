@@ -28,6 +28,7 @@ import { dialogueEngine }     from "../personality/dialogueEngine";
 import { conversationMemory }  from "../personality/conversationMemory";
 import { proactiveEngine }     from "../personality/proactiveEngine";
 import { morningBriefing }     from "../personal/morningBriefing";
+import { morningBriefingV2 }   from "../personal/morningBriefingV2";
 import { lifeTimeline }        from "../personal/lifeTimeline";
 import { backgroundAgents }    from "../personal/backgroundAgents";
 import { telegramBot }         from "../integrations/telegram/telegramBot";
@@ -120,9 +121,9 @@ export function createApiServer(): any {
 
   // ── Personal Mode routes ───────────────────────────────────────────────────
 
-  // GET /api/personal/briefing — LLM-generated morning briefing
+  // GET /api/personal/briefing — LLM-generated morning briefing (v2 uses persistent memory)
   app.get("/api/personal/briefing", async (_req: any, res: any) => {
-    const briefing = await morningBriefing.generate();
+    const briefing = await morningBriefingV2.generate();
     res.json({ briefing });
   });
 
