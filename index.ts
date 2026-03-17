@@ -38,6 +38,7 @@ import { dashboard }                           from "./dashboard/metrics";
 import { skillSanitizer }                      from "./executor/skillSanitizer";
 import { skillWarmup }                         from "./executor/skillWarmup";
 import { skillIndex }                          from "./skills/skillIndex";
+import { skillLoader }                         from "./skills/skillLoader";
 import { cronTrigger, webhookTrigger,
          startAllTriggers, stopAllTriggers }   from "./core/triggers";
 import { ingestionEngine }                    from "./knowledge/ingestionEngine";
@@ -586,6 +587,13 @@ async function handleCLI(): Promise<void> {
           )
         }
       }
+      // Connect MCP servers if any are enabled
+      {
+        const { mcpClient: mcp } = await import('./integrations/mcp/mcpClient')
+        mcp.connectAll().catch((e: any) =>
+          console.warn('[MCP] Auto-connect failed:', e?.message)
+        )
+      }
       const onServeSig = () => {
         dashboardServer.stop();
         stopAllTriggers();
@@ -860,6 +868,32 @@ async function handleCLI(): Promise<void> {
 
     // ── devos skills ──────────────────────────────────────────
     case "skills": {
+      const skillSub = rawArgs[0]
+
+      // ── devos skills list — SKILL.md-based pluggable skills ──
+      if (skillSub === 'list') {
+        const all = skillLoader.getAll()
+        if (!all.length) {
+          console.log('No skills installed. Add SKILL.md folders to ./skills/')
+          break
+        }
+        for (const s of all) {
+          const status = s.enabled ? '✅' : '⚠️ '
+          console.log(`${status} ${s.meta.name.padEnd(20)} ${s.meta.description}`)
+        }
+        const stats = skillLoader.getStats()
+        console.log(`\n${stats.enabled}/${stats.total} skills enabled`)
+        break
+      }
+
+      // ── devos skills reload — hot-reload SKILL.md files ──────
+      if (skillSub === 'reload') {
+        skillLoader.load()
+        console.log('✅ Skills reloaded')
+        break
+      }
+
+      // ── default: show skillIndex (built-in runtime skills) ───
       const all = skillIndex.getAll();
       if (!all.length) {
         console.log("📭 No skills indexed yet.");
@@ -1935,6 +1969,38 @@ When running devos serve, DevOS will:
       break;
     }
 
+    // ── devos mcp ─────────────────────────────────────────────
+    case 'mcp': {
+      const sub = rawArgs[0]
+      const { mcpClient } = await import('./integrations/mcp/mcpClient')
+
+      if (!sub || sub === 'list') {
+        mcpClient.listServers()
+        break
+      }
+
+      if (sub === 'connect') {
+        await mcpClient.connectAll()
+        console.log(`✅ MCP connected. ${mcpClient.getTools().length} tools available.`)
+        break
+      }
+
+      if (sub === 'tools') {
+        const tools = mcpClient.getTools()
+        if (!tools.length) {
+          console.log('No MCP tools available. Run: devos mcp connect')
+          break
+        }
+        for (const t of tools) {
+          console.log(`  [${t.server}] ${t.name.padEnd(30)} ${t.description}`)
+        }
+        break
+      }
+
+      console.log('Usage: devos mcp [list|connect|tools]')
+      break
+    }
+
     // ── devos provider ────────────────────────────────────────
     case 'provider': {
       const sub = rawArgs[0]
@@ -2082,6 +2148,11 @@ Knowledge:
   knowledge list            List all entries in the knowledge store
   knowledge ingest <file>   Ingest a file or URL into the knowledge store
   knowledge query "<q>"     Query the knowledge store with natural language
+
+MCP (Model Context Protocol):
+  mcp list                  List configured MCP servers and connection status
+  mcp connect               Connect all enabled MCP servers
+  mcp tools                 Show all available MCP tools from connected servers
 
 Providers:
   provider list             List all 10 supported AI providers

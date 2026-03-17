@@ -101,6 +101,50 @@ export class DevOSEngine {
         };
       }
 
+      // ── Browser / HTTP ─────────────────────────────────────────
+      case 'open_browser': {
+        const { openBrowser } = await import('./actions/browserActions')
+        const result = await openBrowser(action.url)
+        return { success: true, output: result }
+      }
+
+      case 'fetch_url': {
+        const { fetchUrl } = await import('./actions/browserActions')
+        const result = await fetchUrl(action.url)
+        return { success: true, output: result }
+      }
+
+      // ── Code runners ────────────────────────────────────────────
+      case 'run_python': {
+        const { runPython } = await import('./actions/codeActions')
+        const result = await runPython(action.code)
+        return { success: !result.startsWith('Error:'), output: result }
+      }
+
+      case 'run_node': {
+        const { runNode } = await import('./actions/codeActions')
+        const result = await runNode(action.code)
+        return { success: !result.startsWith('Error:'), output: result }
+      }
+
+      case 'run_powershell': {
+        const { runPowerShell } = await import('./actions/codeActions')
+        const result = await runPowerShell(action.code)
+        return { success: !result.startsWith('Error:'), output: result }
+      }
+
+      // ── System ──────────────────────────────────────────────────
+      case 'notify': {
+        const { sendNotification } = await import('./actions/systemActions')
+        const result = await sendNotification(action.title || 'DevOS', action.message || '')
+        return { success: true, output: result }
+      }
+
+      case 'system_info': {
+        const { getSystemInfo } = await import('./actions/systemActions')
+        return { success: true, output: JSON.stringify(getSystemInfo(), null, 2) }
+      }
+
       default:
         return { success: false, error: `Unknown action type: ${action.type}` };
     }

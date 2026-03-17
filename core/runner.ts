@@ -49,9 +49,16 @@ ${IS_WIN ? 'Use Windows commands only (echo, mkdir, copy, del). Never use touch,
 Convert this task into a JSON array of executable actions.
 Return ONLY a valid JSON array, no explanation, no markdown fences.
 Each action must have a "type" field. Valid types and their required fields:
-- shell_exec: { "type": "shell_exec", "command": "string" }
-- file_write: { "type": "file_write", "path": "string", "content": "string" }
-- file_read: { "type": "file_read", "path": "string" }
+- shell_exec:    { "type": "shell_exec", "command": "string" }
+- file_write:    { "type": "file_write", "path": "string", "content": "string" }
+- file_read:     { "type": "file_read", "path": "string" }
+- fetch_url:     { "type": "fetch_url", "url": "string" }
+- open_browser:  { "type": "open_browser", "url": "string" }
+- run_python:    { "type": "run_python", "code": "string" }
+- run_node:      { "type": "run_node", "code": "string" }
+- run_powershell:{ "type": "run_powershell", "code": "string" }
+- notify:        { "type": "notify", "title": "string", "message": "string" }
+- system_info:   { "type": "system_info" }
 ${IS_WIN ? `
 Windows examples:
 { "type": "shell_exec", "command": "mkdir \\"${DESKTOP}\\\\myfolder\\"" }

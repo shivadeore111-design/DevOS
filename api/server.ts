@@ -80,6 +80,44 @@ export function createApiServer(): any {
   app.use(deployRouter);
   app.use(missionsRouter);
 
+  // ── MCP (Model Context Protocol) ──────────────────────────────────────────
+
+  // GET /api/mcp/tools — list all tools from connected MCP servers
+  app.get('/api/mcp/tools', (_req: any, res: any) => {
+    const { mcpClient: mcp } = require('../integrations/mcp/mcpClient')
+    res.json(mcp.getTools())
+  })
+
+  // POST /api/mcp/call — call a tool on a connected MCP server
+  app.post('/api/mcp/call', async (req: any, res: any) => {
+    const { server, tool, args } = req.body ?? {}
+    if (!server || !tool) {
+      return res.status(400).json({ error: 'server and tool are required' })
+    }
+    const { mcpClient: mcp } = require('../integrations/mcp/mcpClient')
+    try {
+      const result = await mcp.callTool(server, tool, args ?? {})
+      res.json({ result })
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message })
+    }
+  })
+
+  // ── Skills (SKILL.md pluggable skills) ────────────────────────────────────
+
+  // GET /api/skills — list all SKILL.md skills with enabled status and tags
+  app.get('/api/skills', (_req: any, res: any) => {
+    const { skillLoader: loader } = require('../skills/skillLoader')
+    res.json((loader.getAll() as any[]).map((s: any) => ({
+      name:        s.meta.name,
+      description: s.meta.description,
+      enabled:     s.enabled,
+      tags:        s.meta.tags ?? [],
+      version:     s.meta.version,
+      author:      s.meta.author,
+    })))
+  })
+
   // ── Personality / Chat routes ──────────────────────────────────────────────
 
   // POST /api/chat — SSE streaming chat response

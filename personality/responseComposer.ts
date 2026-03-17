@@ -8,6 +8,7 @@
 import { wrapWithPersona } from './devosPersonality'
 import { IntentType }      from './intentClassifier'
 import { getChatModel }    from '../core/autoModelSelector'
+import { skillLoader }     from '../skills/skillLoader'
 
 const MAX_WORDS = 300
 
@@ -38,7 +39,13 @@ class ResponseComposer {
 
     const userContent = `${contextBlock}User: ${userMessage}\n\n${intentHint(intent)}`
 
-    const { system, user } = wrapWithPersona(userContent)
+    // Inject enabled SKILL.md instructions so the LLM knows available tools
+    const skillsBlock          = skillLoader.buildPromptBlock()
+    const userContentWithSkills = skillsBlock
+      ? `${userContent}\n\n${skillsBlock}`
+      : userContent
+
+    const { system, user } = wrapWithPersona(userContentWithSkills)
 
     // True streaming — yield tokens as they arrive from Ollama
     const http  = require('http') as typeof import('http')
