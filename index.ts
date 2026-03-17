@@ -594,6 +594,18 @@ async function handleCLI(): Promise<void> {
           console.warn('[MCP] Auto-connect failed:', e?.message)
         )
       }
+      // Auto-start Discord bot if token exists
+      {
+        const discordTokenPath = path.join(process.cwd(), 'config', 'discord-token.txt')
+        const discordToken     = process.env.DISCORD_BOT_TOKEN
+          || (fs.existsSync(discordTokenPath) ? fs.readFileSync(discordTokenPath, 'utf-8').trim() : '')
+        if (discordToken) {
+          const { discordBot } = await import('./integrations/discord/discordBot')
+          discordBot.start(discordToken).catch((e: any) =>
+            console.warn('[Discord] Auto-start failed:', e?.message)
+          )
+        }
+      }
       const onServeSig = () => {
         dashboardServer.stop();
         stopAllTriggers();
@@ -1969,6 +1981,32 @@ When running devos serve, DevOS will:
       break;
     }
 
+    // ── devos discord ─────────────────────────────────────────
+    case 'discord': {
+      let token: string | undefined = process.env.DISCORD_BOT_TOKEN
+      if (!token) {
+        const tokenPath = path.join(process.cwd(), 'config', 'discord-token.txt')
+        if (fs.existsSync(tokenPath)) {
+          token = fs.readFileSync(tokenPath, 'utf-8').trim() || undefined
+        }
+      }
+
+      if (!token) {
+        console.log('Discord bot token required.')
+        console.log('1. Go to https://discord.com/developers/applications')
+        console.log('2. Create a bot, enable Message Content Intent, and copy the token')
+        console.log('3. Save to config/discord-token.txt  or  set DISCORD_BOT_TOKEN env var')
+        break
+      }
+
+      const channelId = rawArgs[1] || undefined
+      console.log('[DevOS] Starting Discord bot...')
+      const { discordBot } = await import('./integrations/discord/discordBot')
+      await discordBot.start(token, channelId)
+      await new Promise(() => {}) // keep process alive
+      break
+    }
+
     // ── devos mcp ─────────────────────────────────────────────
     case 'mcp': {
       const sub = rawArgs[0]
@@ -2148,6 +2186,9 @@ Knowledge:
   knowledge list            List all entries in the knowledge store
   knowledge ingest <file>   Ingest a file or URL into the knowledge store
   knowledge query "<q>"     Query the knowledge store with natural language
+
+Discord:
+  discord [channelId]       Start Discord bot (token from config/discord-token.txt or DISCORD_BOT_TOKEN)
 
 MCP (Model Context Protocol):
   mcp list                  List configured MCP servers and connection status
