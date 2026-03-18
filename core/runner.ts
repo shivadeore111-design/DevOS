@@ -32,6 +32,8 @@ import { researchEngine }           from "../research/researchEngine";
 import { slack }                    from "../integrations/slack";
 import { auditLogger }              from "../security/auditLogger";
 import * as readline                from "readline";
+import * as os                     from "os";
+import * as path                   from "path";
 
 // ── Action generation fallback ─────────────────────────────────────────────
 // Called when the planner returns a plan with 0 actions (empty graph).
@@ -39,13 +41,27 @@ import * as readline                from "readline";
 // concrete shell_exec / file_write / file_read actions.
 
 async function generateActionsFromDescription(description: string): Promise<any[]> {
+  const WIN_CONTEXT = process.platform === 'win32' ? `
+CRITICAL SYSTEM RULES - READ FIRST:
+Platform: Windows
+Desktop: ${path.join(os.homedir(), 'Desktop')}
+Home: ${os.homedir()}
+Temp: ${os.tmpdir()}
+
+WINDOWS COMMANDS ONLY. NEVER USE LINUX COMMANDS.
+Allowed: echo, mkdir, copy, move, del, dir, type, cd, powershell
+Forbidden: touch, mkdir -p, ls, cat, cp, mv, rm, chmod
+
+File paths use backslashes: C:\\Users\\shiva\\Desktop\\file.txt
+Create file: echo content > "C:\\path\\file.txt"
+Create folder: mkdir "C:\\path\\folder"
+Desktop path: ${path.join(os.homedir(), 'Desktop')}
+` : `Platform: ${process.platform}\nHome: ${os.homedir()}\n`
+
   const IS_WIN  = process.platform === 'win32'
-  const DESKTOP = require('path').join(require('os').homedir(), 'Desktop')
+  const DESKTOP = path.join(os.homedir(), 'Desktop')
 
-  const prompt = `You are running on ${IS_WIN ? 'Windows' : 'Linux'}.
-Desktop path: ${DESKTOP}
-${IS_WIN ? 'Use Windows commands only (echo, mkdir, copy, del). Never use touch, ls, cat, cp.' : 'Use bash commands.'}
-
+  const prompt = `${WIN_CONTEXT}
 Convert this task into a JSON array of executable actions.
 Return ONLY a valid JSON array, no explanation, no markdown fences.
 Each action must have a "type" field. Valid types and their required fields:

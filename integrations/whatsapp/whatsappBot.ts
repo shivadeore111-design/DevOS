@@ -7,7 +7,7 @@
 // Connects via QR code (no Meta API key required).
 // First message from any number sets the owner; all other numbers are ignored.
 
-import { Client, LocalAuth, Message } from 'whatsapp-web.js'
+import { Client, LocalAuth } from 'whatsapp-web.js'
 import * as qrcode from 'qrcode-terminal'
 import * as path   from 'path'
 import * as fs     from 'fs'
@@ -74,65 +74,59 @@ class WhatsAppBot {
     })
 
     // ── Incoming messages ─────────────────────────────────────────
-    this.client.on('message', async (msg: Message) => {
-      console.log(`[WhatsApp] ← ${msg.from}: ${msg.body}`)
-
-      if (msg.from.includes('@g.us'))      return
+    this.client.on('message_create', async (msg: any) => {
+      if (msg.fromMe) return
+      if (!msg.body?.trim()) return
+      if (msg.from?.includes('@g.us')) return
       if (msg.from === 'status@broadcast') return
-      if (!msg.body?.trim())               return
 
-      // First message from any number → become the owner
+      const text = msg.body.trim()
+      const lower = text.toLowerCase()
+      console.log(`[WhatsApp] ← ${msg.from}: ${text}`)
+
       if (!this.ownerNumber) {
         this.ownerNumber = msg.from
         await persistentMemory.setFact('user', 'whatsapp_number', msg.from, 'whatsapp')
+        console.log(`[WhatsApp] Owner set: ${msg.from}`)
       }
 
-      const text  = msg.body.trim()
-      const lower = text.toLowerCase()
-      console.log(`[WhatsApp] Processing: "${lower}"`)
-
       try {
+        let reply = ''
+
         if (['status', 'ping', 's'].includes(lower)) {
           const stats = await persistentMemory.getStats()
-          await this.client.sendMessage(msg.from, `⚡ DevOS online\n📊 ${stats.totalGoals} goals | ${stats.totalFacts} facts`)
-          console.log('[WhatsApp] status reply sent')
-          return
-        }
-
-        if (['hi', 'hello', 'hey'].includes(lower)) {
-          await this.client.sendMessage(msg.from, `Hey! DevOS here. Send a goal or type help.`)
-          return
-        }
-
-        if (['help', 'h'].includes(lower)) {
-          await this.client.sendMessage(msg.from, `Commands:\nstatus — system info\ngoals — recent history\nOr send any goal to execute it.`)
-          return
-        }
-
-        if (['goals', 'g'].includes(lower)) {
+          reply = `⚡ DevOS online\n📊 ${stats.totalGoals} goals | ${stats.totalFacts} facts`
+        } else if (['hi', 'hello', 'hey'].includes(lower)) {
+          const name = await persistentMemory.getFact('user', 'name') || 'there'
+          reply = `Hey ${name}! DevOS here. Send a goal or type help.`
+        } else if (['goals', 'g'].includes(lower)) {
           const goals = await persistentMemory.getRecentGoals(5)
-          const list  = goals.length
+          reply = goals.length
             ? goals.map((g: any) => `${g.status === 'completed' ? '✅' : '❌'} ${g.title}`).join('\n')
             : 'No goals yet.'
-          await this.client.sendMessage(msg.from, list)
-          return
+        } else if (['help', 'h'].includes(lower)) {
+          reply = `Commands:\nstatus — system info\ngoals — history\nhelp — this\n\nOr send any goal to execute.`
+        } else {
+          const BUILD_KEYWORDS = ['build', 'create', 'make', 'generate', 'write', 'deploy', 'fix', 'run']
+          if (BUILD_KEYWORDS.some(k => lower.includes(k))) {
+            reply = `⚡ Starting: "${text.slice(0, 50)}"\nI'll notify you when done.`
+            goalEngine.run(text.slice(0, 60), text).catch(() => {})
+          } else {
+            reply = '⏳'
+            await this.client.sendMessage(msg.from, reply)
+            const chunks: string[] = []
+            for await (const chunk of dialogueEngine.chat(text)) chunks.push(chunk)
+            reply = chunks.join('').trim().slice(0, 1500) || "I'm here."
+          }
         }
 
-        const BUILD_KEYWORDS = ['build', 'create', 'make', 'generate', 'write', 'deploy', 'fix', 'run']
-        if (BUILD_KEYWORDS.some(k => lower.includes(k))) {
-          await this.client.sendMessage(msg.from, `⚡ Starting: "${text.slice(0, 50)}" — I'll notify you when done.`)
-          goalEngine.run(text.slice(0, 60), text).catch(() => {})
-          return
-        }
-
-        // Chat fallback
-        await this.client.sendMessage(msg.from, '⏳')
-        const chunks: string[] = []
-        for await (const chunk of dialogueEngine.chat(text)) chunks.push(chunk)
-        await this.client.sendMessage(msg.from, chunks.join('').trim().slice(0, 1500) || "I'm here.")
+        console.log(`[WhatsApp] Sending: ${reply.slice(0, 60)}`)
+        await this.client.sendMessage(msg.from, reply)
+        console.log(`[WhatsApp] ✅ Sent`)
 
       } catch (err: any) {
         console.error('[WhatsApp] Error:', err?.message)
+        console.error('[WhatsApp] Stack:', err?.stack)
       }
     })
 

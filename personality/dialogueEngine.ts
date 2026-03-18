@@ -62,12 +62,22 @@ class DialogueEngine {
 
     } else {
       // Only for chitchat/explain — generate actual LLM response
-      // Use persistent memory context (stable facts) instead of raw conversation (prevents hallucination)
-      const persistentContext = await persistentMemory.buildContext()
-      const shortContext      = conversationMemory.getRecentMessages(3)
-        .map(m => `${m.role}: ${m.content}`).join('\n')
-      const safeContext = [persistentContext, shortContext].filter(Boolean).join('\n\n')
-      for await (const chunk of responseComposer.compose(userMessage, intent.type, safeContext)) {
+      // Strip goal-related context to prevent hallucination
+      const safeContext = conversationMemory.getContext(4) // only last 4 messages
+
+      // Add anti-hallucination instruction
+      const antiHallucinationNote = `
+IMPORTANT: You are a chat assistant. Do NOT:
+- Make up results of goals or file operations
+- Claim files were created if you did not create them
+- Invent success messages
+Only report what you actually know. If unsure, say so.
+`
+      for await (const chunk of responseComposer.compose(
+        userMessage,
+        intent.type,
+        safeContext + antiHallucinationNote
+      )) {
         chunks.push(chunk)
         yield chunk
       }

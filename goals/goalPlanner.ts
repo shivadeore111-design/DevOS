@@ -49,27 +49,24 @@ export class GoalPlanner {
 
     goalStore.updateGoal(goalId, { status: 'planning' })
 
-    const HOME    = os.homedir()
-    const DESKTOP = path.join(HOME, 'Desktop')
-    const IS_WIN  = process.platform === 'win32'
+    const WIN_CONTEXT = process.platform === 'win32' ? `
+CRITICAL SYSTEM RULES - READ FIRST:
+Platform: Windows
+Desktop: ${path.join(os.homedir(), 'Desktop')}
+Home: ${os.homedir()}
+Temp: ${os.tmpdir()}
 
-    const SYSTEM_RULES = `SYSTEM RULES (MUST FOLLOW):
-Platform: ${IS_WIN ? 'Windows' : 'Linux'}
-Home: ${HOME}
-Desktop: ${DESKTOP}
-Working dir: ${process.cwd()}
+WINDOWS COMMANDS ONLY. NEVER USE LINUX COMMANDS.
+Allowed: echo, mkdir, copy, move, del, dir, type, cd, powershell
+Forbidden: touch, mkdir -p, ls, cat, cp, mv, rm, chmod
 
-${IS_WIN ? `WINDOWS ONLY - Use these commands:
-- Create file: echo content > C:\\path\\file.txt
-- Create dir: mkdir "C:\\path\\folder"
-- Delete: del "C:\\path\\file"
-- List: dir "C:\\path"
-- NEVER use: touch, mkdir -p, ls, cat, cp, rm, /home/user
-- Desktop is always: ${DESKTOP}
-- When user says "desktop" use: ${DESKTOP}` : ''}
-`
+File paths use backslashes: C:\\Users\\shiva\\Desktop\\file.txt
+Create file: echo content > "C:\\path\\file.txt"
+Create folder: mkdir "C:\\path\\folder"
+Desktop path: ${path.join(os.homedir(), 'Desktop')}
+` : `Platform: ${process.platform}\nHome: ${os.homedir()}\n`
 
-    const prompt = `${SYSTEM_RULES}
+    const prompt = `${WIN_CONTEXT}
 
 You are a project planner. Break this goal into projects and tasks.
 Goal: ${goal.title} — ${goal.description}

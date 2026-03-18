@@ -10,6 +10,7 @@
 import { spawn } from "child_process"
 import * as fs from "fs"
 import * as path from "path"
+import { approveEscalation } from "../core/escalation"
 
 export interface OpenClawResult {
   success: boolean
@@ -28,7 +29,13 @@ export class OpenClawAdapter {
     workspace: string
   ): Promise<OpenClawResult> {
     try {
-      console.log("⚡ OpenClaw Escalation Triggered")
+      // Check if this action type should bypass OpenClaw escalation entirely
+      const approval = approveEscalation(action)
+      if (approval.approved && ['file_write', 'shell_exec', 'file_read'].includes(action.type)) {
+        console.log(`[OpenClaw] Bypassing escalation for standard action: ${action.type}`)
+      } else {
+        console.log("⚡ OpenClaw Escalation Triggered")
+      }
 
       switch (action.type) {
         case "file_create":
@@ -36,6 +43,19 @@ export class OpenClawAdapter {
 
         case "file_write":
           return this.handleFileWrite(action)
+
+        case "file_read": {
+          // Standard action — read and return file content
+          try {
+            const targetPath = path.isAbsolute(action.path)
+              ? action.path
+              : path.resolve(workspace, action.path)
+            const content = fs.readFileSync(targetPath, 'utf8')
+            return { success: true, output: content }
+          } catch (err: any) {
+            return { success: false, error: `file_read failed: ${err.message}` }
+          }
+        }
 
         case "shell":
         case "shell_exec":
