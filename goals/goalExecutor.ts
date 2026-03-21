@@ -12,8 +12,9 @@ import { DevOSEngine }        from '../executor/engine'
 import { eventBus }           from '../core/eventBus'
 import { goalStore }          from './goalStore'
 import { Task }               from './types'
-import { liveThinking }       from '../coordination/liveThinking'
-import { persistentMemory }   from '../memory/persistentMemory'
+import { liveThinking }             from '../coordination/liveThinking'
+import { persistentMemory }         from '../memory/persistentMemory'
+import { analyzeFailureAndRetry }   from '../core/smartRetry'
 
 export class GoalExecutor {
   /** Goals currently paused (goalId set) */
@@ -88,7 +89,7 @@ Execute using file_write or shell_exec with correct ${IS_WIN ? 'Windows' : 'Linu
         if (readyTasks.length === 0) break
         if (iterations++ > 1000) { console.warn('[GoalExecutor] ⚠️  Max iterations reached'); break }
 
-        for (const task of readyTasks) {
+        for (let task of readyTasks) {
           if (this.paused.has(goalId)) break
 
           goalStore.updateTask(task.id, { status: 'active' })
@@ -97,9 +98,35 @@ Execute using file_write or shell_exec with correct ${IS_WIN ? 'Windows' : 'Linu
 
           let attempt = await this.runTask(task, goal.title, goal.description, project.title)
 
-          if (!attempt.success && task.retryCount < task.maxRetries) {
-            console.warn(`[GoalExecutor]   🔄 Retrying task: ${task.title}`)
+          // Smart retry: on failure, ask the LLM what went wrong and try a
+          // different approach — rather than blindly re-running the same action.
+          while (!attempt.success && task.retryCount < task.maxRetries) {
+            console.log(`[GoalExecutor] 🧠 Analyzing failure for smart retry...`)
+
+            const retryResult = await analyzeFailureAndRetry({
+              taskTitle:       task.title,
+              taskDescription: task.description,
+              goalTitle:       goal.title,
+              previousError:   attempt.error ?? 'unknown error',
+              previousAction:  JSON.stringify((attempt as any).actions ?? []),
+              attemptNumber:   task.retryCount + 1,
+            })
+
+            // Build an augmented task with the smart retry hint injected into
+            // the description so runner.ts can extract and use it directly.
+            const updatedDescription =
+              `${task.description}\n\nPREVIOUS ATTEMPT FAILED: ${attempt.error}\n` +
+              `NEW APPROACH: Use ${retryResult.newAction} with: ${retryResult.newCommand}`
+
+            task = {
+              ...task,
+              description:          updatedDescription,
+              _smartRetryCommand:   retryResult.newCommand,
+              _smartRetryAction:    retryResult.newAction,
+            } as typeof task
+
             goalStore.updateTask(task.id, { retryCount: task.retryCount + 1 })
+            console.log(`[GoalExecutor] 🔄 Smart retry ${task.retryCount}: ${retryResult.reasoning}`)
             attempt = await this.runTask(task, goal.title, goal.description, project.title)
           }
 

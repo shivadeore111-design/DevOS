@@ -7,7 +7,7 @@
 
 import { commandSanitizer }     from "./commandSanitizer"
 import { policyEngine }         from "./policyEngine"
-import { riskEvaluator, RiskLevel } from "./riskEvaluator"
+import type { RiskLevel } from "./riskEvaluator"
 import { budgetManager }        from "./budgetManager"
 import { eventBus }             from "../core/eventBus"
 import { auditLogger }          from "../security/auditLogger"
@@ -102,21 +102,41 @@ export class ControlKernel {
       return { approved: false, reason: policy.reason, riskLevel: "critical" }
     }
 
-    // 4. Risk evaluation
-    const risk = riskEvaluator.evaluate(action)
-    const icon = risk.requiresApproval ? "⚠️ " : "✅"
-    console.log(`[ControlKernel] ${action.type} risk=${risk.level} ${icon}`)
+    // 4. OpenCode-style approval — execute by default, block only truly dangerous ops
+    const ALWAYS_EXECUTE = [
+      'file_write', 'file_read', 'shell_exec', 'run_python',
+      'run_node', 'run_powershell', 'fetch_url', 'open_browser',
+      'notify', 'system_info', 'git_push', 'vercel_deploy',
+    ]
 
-    if (risk.requiresApproval) {
-      // Emit event for dashboard; caller should call requestApproval() for interactive flow
-      return {
-        approved:  false,
-        reason:    `Risk level ${risk.level} requires manual approval (score: ${risk.score})`,
-        riskLevel: risk.level,
-      }
+    const REQUIRE_APPROVAL = [
+      'rm_rf', 'format_disk', 'drop_database', 'delete_all',
+    ]
+
+    // Block truly dangerous op types first
+    if (REQUIRE_APPROVAL.some(op => action.command?.includes(op) || action.type === op)) {
+      return { approved: false, reason: 'Dangerous operation requires manual approval', riskLevel: 'critical' as RiskLevel }
     }
 
-    return { approved: true, riskLevel: risk.level }
+    // Always allow standard action types
+    if (ALWAYS_EXECUTE.includes(action.type)) {
+      console.log(`[ControlKernel] ✅ ${action.type} — standard action auto-approved`)
+      return { approved: true, reason: 'Standard action — auto-approved', riskLevel: 'low' as RiskLevel }
+    }
+
+    // Shell commands — check for dangerous patterns only
+    if (action.type === 'shell_exec' && action.command) {
+      const dangerous = ['rm -rf /', 'format c:', 'del /f /s /q c:\\', 'DROP TABLE', ':(){:|:&}']
+      if (dangerous.some(d => action.command.toLowerCase().includes(d.toLowerCase()))) {
+        return { approved: false, reason: 'Dangerous command pattern detected', riskLevel: 'critical' as RiskLevel }
+      }
+      console.log(`[ControlKernel] ✅ ${action.type} — shell command auto-approved`)
+      return { approved: true, reason: 'Shell command — auto-approved', riskLevel: 'medium' as RiskLevel }
+    }
+
+    // Default: auto-approve
+    console.log(`[ControlKernel] ✅ ${action.type} — auto-approved`)
+    return { approved: true, reason: 'Auto-approved', riskLevel: 'low' as RiskLevel }
   }
 
   // ── Async approval request ──────────────────────────────

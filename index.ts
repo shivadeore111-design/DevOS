@@ -451,7 +451,14 @@ async function handleCLI(): Promise<void> {
     // Otherwise → launch legacy multi-agent pipeline (Sprint 12)
     case "agent": {
       const agentArg = goalArgs[0];
-      const knownRoles: AgentRole[] = ["ceo", "engineer", "researcher", "operator"];
+      const knownRoles: AgentRole[] = [
+        'ceo', 'cto', 'software-engineer', 'frontend-developer', 'backend-developer',
+        'devops-engineer', 'qa-engineer', 'security-engineer', 'data-scientist', 'ml-engineer',
+        'product-manager', 'project-manager', 'ux-designer', 'technical-writer', 'researcher',
+        'legal-advisor', 'finance-analyst', 'marketing-strategist', 'sales-agent', 'customer-support',
+        'hr-manager', 'database-admin', 'api-specialist', 'cloud-architect', 'mobile-developer',
+        'content-creator', 'seo-specialist', 'business-analyst', 'blockchain-developer', 'system-architect',
+      ];
 
       if (knownRoles.includes(agentArg as AgentRole)) {
         // ── Sprint 14: devos agent <role> — show detail
@@ -604,6 +611,30 @@ async function handleCLI(): Promise<void> {
           discordBot.start(discordToken).catch((e: any) =>
             console.warn('[Discord] Auto-start failed:', e?.message)
           )
+        }
+      }
+      // Auto-start Slack bot if configured
+      {
+        const slackConfigPath = path.join(process.cwd(), 'config', 'slack-config.json')
+        if (fs.existsSync(slackConfigPath)) {
+          const slackCfg = JSON.parse(fs.readFileSync(slackConfigPath, 'utf-8'))
+          if (slackCfg.botToken && slackCfg.botToken !== 'xoxb-your-bot-token') {
+            process.env.SLACK_APP_TOKEN = slackCfg.appToken || ''
+            const { slackBot } = await import('./integrations/slack/slackBot')
+            slackBot.start(slackCfg.botToken, slackCfg.signingSecret, slackCfg.notifyChannel)
+              .catch((e: any) => console.warn('[Slack] Auto-start failed:', e?.message))
+          }
+        }
+      }
+      // Auto-start Email agent if configured
+      {
+        const emailConfigPath = path.join(process.cwd(), 'config', 'email-config.json')
+        if (fs.existsSync(emailConfigPath)) {
+          const emailCfg = JSON.parse(fs.readFileSync(emailConfigPath, 'utf-8'))
+          if (emailCfg.smtp?.user !== 'your@gmail.com') {
+            const { emailAgent } = await import('./integrations/email/emailAgent')
+            emailAgent.start().catch((e: any) => console.warn('[Email] Auto-start failed:', e?.message))
+          }
         }
       }
       const onServeSig = () => {
@@ -2004,6 +2035,46 @@ When running devos serve, DevOS will:
       const { discordBot } = await import('./integrations/discord/discordBot')
       await discordBot.start(token, channelId)
       await new Promise(() => {}) // keep process alive
+      break
+    }
+
+    // ── devos slack ───────────────────────────────────────────
+    case 'slack': {
+      const slackCfgPath = path.join(process.cwd(), 'config', 'slack-config.json')
+      if (!fs.existsSync(slackCfgPath)) {
+        const template = {
+          botToken:      'xoxb-your-bot-token',
+          signingSecret: 'your-signing-secret',
+          appToken:      'xapp-your-app-token',
+          notifyChannel: 'C1234567890',
+        }
+        fs.mkdirSync(path.dirname(slackCfgPath), { recursive: true })
+        fs.writeFileSync(slackCfgPath, JSON.stringify(template, null, 2))
+        console.log('Slack config created at config/slack-config.json')
+        console.log('1. Go to api.slack.com/apps')
+        console.log('2. Create app → Enable Socket Mode → Get App Token (xapp-...)')
+        console.log('3. Add Bot Token Scopes: chat:write, im:history, im:read, im:write')
+        console.log('4. Install app to workspace → copy Bot Token (xoxb-...)')
+        console.log('5. Fill in config/slack-config.json then re-run: npx ts-node index.ts slack')
+        break
+      }
+      const slackCfg = JSON.parse(fs.readFileSync(slackCfgPath, 'utf-8'))
+      process.env.SLACK_APP_TOKEN = slackCfg.appToken || ''
+      const { slackBot } = await import('./integrations/slack/slackBot')
+      await slackBot.start(slackCfg.botToken, slackCfg.signingSecret, slackCfg.notifyChannel)
+      await new Promise(() => {}) // keep process alive
+      break
+    }
+
+    // ── devos email ───────────────────────────────────────────
+    case 'email': {
+      console.log('[DevOS] Starting email agent...')
+      const { emailAgent } = await import('./integrations/email/emailAgent')
+      await emailAgent.start()
+      if (emailAgent.getStatus().running) {
+        console.log('[DevOS] Email agent running. Checking inbox every 60 seconds.')
+        await new Promise(() => {}) // keep process alive
+      }
       break
     }
 

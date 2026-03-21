@@ -41,6 +41,26 @@ import * as path                   from "path";
 // concrete shell_exec / file_write / file_read actions.
 
 async function generateActionsFromDescription(description: string): Promise<any[]> {
+  // ── Smart retry fast-path: use the pre-computed command directly ───────────
+  // When goalExecutor injects a "NEW APPROACH" hint after an LLM failure
+  // analysis, skip re-asking the LLM and use the suggested command directly.
+  if (description.includes('NEW APPROACH: Use shell_exec with:')) {
+    const match = description.match(/NEW APPROACH: Use shell_exec with: (.+)/)
+    if (match) {
+      const command = match[1].trim()
+      console.log(`[Runner] Using smart retry command: ${command}`)
+      return [{ type: 'shell_exec', command }]
+    }
+  }
+
+  if (description.includes('NEW APPROACH: Use file_write with:')) {
+    const match = description.match(/NEW APPROACH: Use file_write with: (.+)/)
+    if (match) {
+      console.log(`[Runner] Using smart retry file_write`)
+      return [{ type: 'shell_exec', command: match[1].trim() }]
+    }
+  }
+
   const WIN_CONTEXT = process.platform === 'win32' ? `
 CRITICAL SYSTEM RULES - READ FIRST:
 Platform: Windows

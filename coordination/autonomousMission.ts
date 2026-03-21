@@ -17,11 +17,18 @@ import { guardrails }                         from './guardrails'
 import { humanInTheLoop }                     from './humanInTheLoop'
 import { liveThinking }                       from './liveThinking'
 
-const VALID_ROLES: AgentRole[] = ['ceo', 'engineer', 'researcher', 'operator']
+const VALID_ROLES: AgentRole[] = [
+  'ceo', 'cto', 'software-engineer', 'frontend-developer', 'backend-developer',
+  'devops-engineer', 'qa-engineer', 'security-engineer', 'data-scientist', 'ml-engineer',
+  'product-manager', 'project-manager', 'ux-designer', 'technical-writer', 'researcher',
+  'legal-advisor', 'finance-analyst', 'marketing-strategist', 'sales-agent', 'customer-support',
+  'hr-manager', 'database-admin', 'api-specialist', 'cloud-architect', 'mobile-developer',
+  'content-creator', 'seo-specialist', 'business-analyst', 'blockchain-developer', 'system-architect',
+]
 
 function toRole(raw: string): AgentRole {
   const lower = raw.toLowerCase() as AgentRole
-  return VALID_ROLES.includes(lower) ? lower : 'engineer'
+  return VALID_ROLES.includes(lower) ? lower : 'software-engineer'
 }
 
 function detectMissionType(goal: string): MissionType {

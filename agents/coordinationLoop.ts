@@ -80,10 +80,10 @@ export class CoordinationLoop {
   private pickAgent(projectTitle: string): AgentRole {
     const t = projectTitle.toLowerCase()
     if (t.includes('research') || t.includes('analyz') || t.includes('market'))    return 'researcher'
-    if (t.includes('deploy')   || t.includes('infra')  || t.includes('server'))    return 'operator'
+    if (t.includes('deploy')   || t.includes('infra')  || t.includes('server'))    return 'devops-engineer'
     if (t.includes('build')    || t.includes('code')   || t.includes('implement') ||
-        t.includes('test'))                                                          return 'engineer'
-    return 'engineer'  // default
+        t.includes('test'))                                                          return 'software-engineer'
+    return 'software-engineer'  // default
   }
 }
 

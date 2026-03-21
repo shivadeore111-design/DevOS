@@ -1,3 +1,3 @@
-2026/03/17-12:04:13.827 2398 Reusing MANIFEST C:\Users\shiva\DevOS\config\whatsapp-auth\session\Default\Sync Data\LevelDB/MANIFEST-000001
-2026/03/17-12:04:13.831 2398 Recovering log #3
-2026/03/17-12:04:13.832 2398 Reusing old log C:\Users\shiva\DevOS\config\whatsapp-auth\session\Default\Sync Data\LevelDB/000003.log 
+2026/03/17-14:24:19.456 2c1c Reusing MANIFEST C:\Users\shiva\DevOS\config\whatsapp-auth\session\Default\Sync Data\LevelDB/MANIFEST-000001
+2026/03/17-14:24:19.460 2c1c Recovering log #3
+2026/03/17-14:24:19.461 2c1c Reusing old log C:\Users\shiva\DevOS\config\whatsapp-auth\session\Default\Sync Data\LevelDB/000003.log 

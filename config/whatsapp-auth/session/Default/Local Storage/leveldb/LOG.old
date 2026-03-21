@@ -1,2 +1,3 @@
-2026/03/17-11:52:36.373 3a84 Creating DB C:\Users\shiva\DevOS\config\whatsapp-auth\session\Default\Local Storage\leveldb since it was missing.
-2026/03/17-11:52:36.395 3a84 Reusing MANIFEST C:\Users\shiva\DevOS\config\whatsapp-auth\session\Default\Local Storage\leveldb/MANIFEST-000001
+2026/03/17-14:24:03.993 724 Reusing MANIFEST C:\Users\shiva\DevOS\config\whatsapp-auth\session\Default\Local Storage\leveldb/MANIFEST-000001
+2026/03/17-14:24:04.008 724 Recovering log #3
+2026/03/17-14:24:04.011 724 Reusing old log C:\Users\shiva\DevOS\config\whatsapp-auth\session\Default\Local Storage\leveldb/000003.log 

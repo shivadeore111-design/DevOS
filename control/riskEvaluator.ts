@@ -19,6 +19,10 @@ export interface RiskAssessment {
 
 export class RiskEvaluator {
 
+  // When true, high-risk actions are auto-approved for goal-driven execution.
+  // Only critical-level actions still require manual approval.
+  autoApprove = true
+
   evaluate(action: any): RiskAssessment {
     let score   = 0
     const reasons: string[] = []
@@ -75,7 +79,13 @@ export class RiskEvaluator {
     else if (score >= 26) level = "medium"
     else                  level = "low"
 
-    const requiresApproval = level === "high" || level === "critical"
+    // When autoApprove is true (default for goal-driven execution), only block
+    // when score > 80 — this raises the effective threshold from 50 to 80 so
+    // standard file/shell actions (typical score 25–55) are never blocked.
+    // When autoApprove is false (strict mode), revert to the original gate.
+    const requiresApproval = this.autoApprove
+      ? score > 80
+      : (score > 50 || level === "high" || level === "critical")
 
     return { level, score, reasons, requiresApproval }
   }

@@ -278,5 +278,21 @@
     "description": "",
     "usageCount": 0,
     "successRate": 1
+  },
+  {
+    "name": "skillLoader",
+    "path": "C:\\Users\\shiva\\DevOS\\skills\\skillLoader.ts",
+    "tier": "core",
+    "description": "",
+    "usageCount": 0,
+    "successRate": 1
+  },
+  {
+    "name": "types",
+    "path": "C:\\Users\\shiva\\DevOS\\skills\\types.ts",
+    "tier": "core",
+    "description": "",
+    "usageCount": 0,
+    "successRate": 1
   }
 ]

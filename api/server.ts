@@ -11,9 +11,13 @@ const express = require("express") as any;
 
 import * as fs    from "fs";
 import * as path  from "path";
-import { apiKeyAuth }       from "./middleware/auth";
-import { rateLimiter }      from "./middleware/rateLimit";
-import { permissionCheck }  from "./middleware/permissions";
+import { apiKeyAuth }              from "./middleware/auth";
+import { rateLimiter }             from "./middleware/rateLimit";
+import { permissionCheck }         from "./middleware/permissions";
+import { securityHeaders }         from "./middleware/securityHeaders";
+import { requestLimits }           from "./middleware/requestLimits";
+import { pathTraversalProtection } from "./middleware/pathTraversal";
+import { ssrfProtection }          from "./middleware/ssrfProtection";
 import goalsRouter          from "./routes/goals";
 import goalsV2Router        from "./routes/goals_v2";
 import agentsRouter         from "./routes/agents";
@@ -42,7 +46,10 @@ export function createApiServer(): any {
   // 1. JSON body parsing
   app.use(express.json());
 
-  // 2. CORS
+  // 2. Security headers (Layer 10) — applied first so every response is hardened
+  app.use(securityHeaders);
+
+  // 3. CORS
   app.use((req: any, res: any, next: any) => {
     res.setHeader("Access-Control-Allow-Origin",  "*");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
@@ -51,17 +58,27 @@ export function createApiServer(): any {
     next();
   });
 
-  // 3. Rate limiter
+  // 4. Rate limiter (Layer 2)
   app.use(rateLimiter);
 
-  // 4. Auth (skip only /api/system/health — public health check)
+  // 5. Request size limiting (Layer 9) — before auth to avoid expensive auth on oversized payloads
+  app.use(requestLimits);
+
+  // 6. Path traversal prevention (Layer 8)
+  app.use(pathTraversalProtection);
+
+  // 7. Auth (skip only /api/system/health — public health check) (Layer 3)
   app.use((req: any, res: any, next: any) => {
     if (req.path === "/api/system/health") return next();
     return apiKeyAuth(req, res, next);
   });
 
-  // 5. Permission check (role-based)
+  // 8. Permission check — role-based (Layer 1)
   app.use(permissionCheck);
+
+  // 9. SSRF protection on routes that accept user-supplied URLs (Layer 7)
+  app.use('/api/web',    ssrfProtection);
+  app.use('/api/skills', ssrfProtection);
 
   // Swagger docs
   app.get("/api/docs", (_req: any, res: any) => {

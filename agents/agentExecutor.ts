@@ -72,8 +72,9 @@ Provide your response and any tool calls needed.
       // 3. Signal thinking before Ollama call
       liveThinking.think(role, `Processing: ${task.description.slice(0, 60)}`, missionId)
 
-      // 4. Call Ollama — engineer uses coding model, all others use planning model
-      const model = (role === 'engineer') ? getCodingModel() : getPlanningModel()
+      // 4. Call Ollama — coding agents use coding model, all others use planning model
+      const CODING_ROLES = ['software-engineer', 'frontend-developer', 'backend-developer', 'mobile-developer', 'blockchain-developer']
+      const model = CODING_ROLES.includes(role) ? getCodingModel() : getPlanningModel()
       const raw = await callOllama(prompt, undefined, model)
 
       // 5. Execute any tool calls found in the response

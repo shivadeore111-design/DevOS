@@ -9,11 +9,11 @@ import * as fs   from 'fs'
 import * as path from 'path'
 import crypto    from 'crypto'
 import { Agent, AgentRole, AgentStatus } from './types'
-import { BUILT_IN_AGENTS }              from './agentDefinitions'
+import { AGENT_DEFINITIONS }            from './agentDefinitions'
 
 export class AgentRegistry {
   private filePath: string
-  private agents: Map<AgentRole, Agent> = new Map()
+  private agents: Map<string, Agent> = new Map()
 
   constructor() {
     const ws       = path.join(process.cwd(), 'workspace')
@@ -34,7 +34,7 @@ export class AgentRegistry {
     } catch { /* start fresh */ }
 
     // Seed built-in agents if not yet persisted
-    for (const def of BUILT_IN_AGENTS) {
+    for (const def of AGENT_DEFINITIONS) {
       if (!this.agents.has(def.role)) {
         const agent: Agent = {
           ...def,
@@ -58,7 +58,7 @@ export class AgentRegistry {
 
   // ── Public API ────────────────────────────────────────────
 
-  get(role: AgentRole): Agent | null {
+  get(role: AgentRole | string): Agent | null {
     return this.agents.get(role) ?? null
   }
 
@@ -66,7 +66,7 @@ export class AgentRegistry {
     return Array.from(this.agents.values())
   }
 
-  updateStatus(role: AgentRole, status: AgentStatus, taskId?: string): void {
+  updateStatus(role: AgentRole | string, status: AgentStatus, taskId?: string): void {
     const agent = this.agents.get(role)
     if (!agent) return
     agent.status        = status
@@ -77,7 +77,7 @@ export class AgentRegistry {
     this.save()
   }
 
-  recordCompletion(role: AgentRole, success: boolean): void {
+  recordCompletion(role: AgentRole | string, success: boolean): void {
     const agent = this.agents.get(role)
     if (!agent) return
     if (success) agent.completedTasks++

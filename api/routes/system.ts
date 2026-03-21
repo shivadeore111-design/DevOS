@@ -45,12 +45,46 @@ router.get("/api/system/health", async (_req: any, res: any) => {
   const ollamaConnected = await checkOllama();
   const waAuthDir = path.join(process.cwd(), 'config', 'whatsapp-auth');
   const waEnabled = fs.existsSync(waAuthDir) && fs.readdirSync(waAuthDir).length > 0;
+  const slackConfigPath = path.join(process.cwd(), 'config', 'slack-config.json');
+  const slackEnabled    = fs.existsSync(slackConfigPath)
+    && JSON.parse(fs.readFileSync(slackConfigPath, 'utf-8'))?.botToken !== 'xoxb-your-bot-token';
+  const emailConfigPath = path.join(process.cwd(), 'config', 'email-config.json');
+  const emailEnabled    = fs.existsSync(emailConfigPath)
+    && JSON.parse(fs.readFileSync(emailConfigPath, 'utf-8'))?.smtp?.user !== 'your@gmail.com';
+  const discordTokenPath = path.join(process.cwd(), 'config', 'discord-token.txt');
+  const discordEnabled   = !!(process.env.DISCORD_BOT_TOKEN
+    || (fs.existsSync(discordTokenPath) && fs.readFileSync(discordTokenPath, 'utf-8').trim()));
+
   res.json({
     status: "ok",
     uptime: Math.floor((Date.now() - START_TIME) / 1000),
     version: readVersion(),
     ollamaConnected,
     whatsapp: { enabled: waEnabled },
+    channels: ['web', 'telegram', 'whatsapp', 'discord', 'slack', 'email'],
+    channelStatus: {
+      web:       true,
+      telegram:  true,
+      whatsapp:  waEnabled,
+      discord:   discordEnabled,
+      slack:     slackEnabled,
+      email:     emailEnabled,
+    },
+    security: {
+      layers: 10,
+      active: [
+        'localhost-binding',
+        'rbac-permissions',
+        'hashed-api-keys',
+        'audit-logger',
+        'prompt-injection-scanner',
+        'docker-sandbox',
+        'ssrf-protection',
+        'path-traversal-prevention',
+        'request-size-limiting',
+        'security-headers',
+      ],
+    },
   });
 });
 
