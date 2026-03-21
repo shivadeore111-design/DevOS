@@ -5,6 +5,7 @@
 // of this software is strictly prohibited.
 // ============================================================
 import axios from "axios";
+import { kvCacheMetrics } from "../core/kvCacheMetrics";
 
 const BASE_URL = process.env.OLLAMA_BASE_URL ?? "http://localhost:11434";
 const MODEL    = process.env.OLLAMA_MODEL    ?? "llama3";
@@ -40,6 +41,10 @@ export async function callOllama(
   const timeout     = getTimeout(activeModel);
   const numPredict  = getNumPredict(activeModel);
   const maxRetries  = 2;
+
+  // ── KV-cache tracking ──────────────────────────────────
+  // Record the system prompt hash on every call. Identical hashes = cache hit.
+  kvCacheMetrics.record(systemPrompt ?? "")
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const finalPrompt = attempt === 0

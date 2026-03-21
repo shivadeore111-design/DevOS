@@ -7,6 +7,7 @@
 
 import { TaskGraph, TaskNode, taskGraphBuilder } from "./taskGraph"
 import { eventBus }                              from "./eventBus"
+import { contextLens }                           from "./contextLens"
 
 export interface GraphExecutionResult {
   goalId:         string
@@ -116,11 +117,15 @@ export class GraphExecutor {
       node.result   = result.output
       node.status   = result.success ? "done" : "failed"
 
+      // Compress tool result before storing — keeps context window bounded
+      const toolType     = node.action?.type ?? "unknown"
+      const compressed   = contextLens.compress(result.output ?? result, toolType)
+
       if (result.success) {
         node.completedAt = new Date()
-        results.set(node.id, result.output)
-        console.log(`[GraphExecutor] ✅ ${node.id} done`)
-        eventBus.emit("task_completed", { goalId: graph.goalId, nodeId: node.id, output: result.output })
+        results.set(node.id, result.output)  // raw result stored for TruthCheck
+        console.log(`[GraphExecutor] ✅ ${node.id} done — ${compressed.slice(0, 120)}`)
+        eventBus.emit("task_completed", { goalId: graph.goalId, nodeId: node.id, output: compressed })
       } else {
         node.error = result.error ?? "Action returned failure"
         errors.set(node.id, node.error)

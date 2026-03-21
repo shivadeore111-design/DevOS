@@ -1,0 +1,1 @@
+Available tools: shell_exec, file_write, file_read, file_delete, npm_install, http_check, folder_create, taskpulse_add. Always respond with JSON tool calls only when executing tasks. No prose during execution.

@@ -11,6 +11,7 @@ import { callOllama }                        from '../llm/ollama'
 import { goalStore }                         from './goalStore'
 import { Task }                              from './types'
 import { getPlanningModel, getCodingModel }  from '../core/autoModelSelector'
+import { coreBoot }                          from '../core/coreBoot'
 
 interface RawTask {
   title:        string
@@ -85,7 +86,7 @@ Return JSON only:
   ]
 }`
 
-    const raw  = await callOllama(prompt, undefined, getPlanningModel())
+    const raw  = await callOllama(prompt, coreBoot.getSystemPrompt(), getPlanningModel())
     const json = extractJSON(raw)
 
     let plan: PlanResponse

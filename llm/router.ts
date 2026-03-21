@@ -6,6 +6,7 @@
 // ============================================================
 import { callOllama, checkOllamaHealth, listOllamaModels } from "./ollama";
 import { resolveModel } from "./modelRouter";
+import { coreBoot }    from "../core/coreBoot";
 
 export interface LLMResponse {
   content:         string;
@@ -57,12 +58,16 @@ function extractJSON<T>(text: string): T | null {
 export async function llmCall(prompt: string, systemPrompt?: string): Promise<LLMResponse> {
   await ensureOllamaReady();
 
+  // Always use the static coreBoot prompt when caller doesn't supply one.
+  // This keeps system-prompt bytes identical across calls → Ollama KV-cache hit.
+  const resolvedSystem = systemPrompt ?? coreBoot.getSystemPrompt();
+
   const model = AUTO_MODEL
-    ? await resolveModel(prompt, systemPrompt)
+    ? await resolveModel(prompt, resolvedSystem)
     : (process.env.OLLAMA_MODEL ?? "llama3");
 
   console.log(`[LLMRouter] Calling Ollama (${model})...`);
-  const content = await callOllama(prompt, systemPrompt, model);
+  const content = await callOllama(prompt, resolvedSystem, model);
 
   return {
     content,
@@ -76,20 +81,22 @@ export async function llmCallJSON<T>(prompt: string, systemPrompt: string, fallb
   try {
     await ensureOllamaReady();
 
+    const resolvedSystem = systemPrompt ?? coreBoot.getSystemPrompt();
+
     const model = AUTO_MODEL
-      ? await resolveModel(prompt, systemPrompt)
+      ? await resolveModel(prompt, resolvedSystem)
       : (process.env.OLLAMA_MODEL ?? "llama3");
 
     console.log(`[LLMRouter] Calling Ollama JSON (${model})...`);
 
-    const first  = await callOllama(prompt, systemPrompt, model);
+    const first  = await callOllama(prompt, resolvedSystem, model);
     const parsed = extractJSON<T>(first);
     if (parsed !== null) return parsed;
 
     console.log("[LLMRouter] JSON parse failed, retrying with stronger instruction...");
     const retryPrompt = prompt +
       "\n\nCRITICAL: Your response MUST be valid JSON only. No text. No markdown. Just raw JSON.";
-    const second  = await callOllama(retryPrompt, systemPrompt, model);
+    const second  = await callOllama(retryPrompt, resolvedSystem, model);
     const parsed2 = extractJSON<T>(second);
     if (parsed2 !== null) return parsed2;
 

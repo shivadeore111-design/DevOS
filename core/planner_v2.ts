@@ -25,14 +25,13 @@ import { validatePlan }        from "./planValidator";
 import { patternDetector }     from "./patternDetector";
 import { getMicroPlanner }     from "./microPlanners/index";
 import { blueprintRegistry }   from "../devos/product/blueprintRegistry";
+import { coreBoot }            from "./coreBoot";
 
-function buildSystemPrompt(parsedGoal: ParsedGoal): string {
-  return `You are DevOS, an autonomous AI operating system planner.
-Your job is to convert a user's goal into a structured JSON execution plan.
-
-Respond ONLY with valid JSON. No markdown, no explanation, no code fences.
-
-EXECUTION ENVIRONMENT:
+/** Build the dynamic execution-context block that goes into the USER message.
+ *  This was previously the system prompt — moved here so system prompt bytes
+ *  stay identical every call (KV-cache). */
+function buildExecutionContext(parsedGoal: ParsedGoal): string {
+  return `EXECUTION ENVIRONMENT:
 - OS: ${osContext.platform === "win32" ? "Windows" : "Linux/Mac"}
 - Shell: ${osContext.shell}
 - Node.js: ${osContext.nodeVersion}
@@ -46,7 +45,8 @@ GOAL CONTEXT:
 - Features: ${parsedGoal.features.join(", ") || "none detected"}
 - Database: ${parsedGoal.database || "none"}
 
-STRICT RULES:
+PLANNER RULES:
+- Respond ONLY with valid JSON. No markdown, no explanation, no code fences.
 - Use only ${osContext.platform === "win32" ? "Windows cmd.exe" : "bash"} commands
 - Node.js, npm, and git are already installed. NEVER install them.
 - NEVER use choco, winget, apt-get, brew, or any package manager for runtimes
@@ -60,7 +60,7 @@ STRICT RULES:
 - Keep actions minimal — 4 to 6 steps for simple goals
 - If past experience or patterns are provided, USE THEM as a template
 
-Schema:
+OUTPUT SCHEMA:
 {
   "summary": "Short description",
   "complexity": "low | medium | high",
@@ -193,13 +193,14 @@ export async function generatePlan(goal: string, extraContext?: string): Promise
     }
   }
 
-  // ── 4. Build dynamic system prompt using parsed goal + OS context
-  const systemPrompt = buildSystemPrompt(parsedGoal);
+  // ── 4. Static system prompt (KV-cache: bytes MUST be identical every call)
+  const systemPrompt = coreBoot.getSystemPrompt();
 
-  // ── 5. Build user prompt ──────────────────────────────────────
+  // ── 5. Build user prompt: dynamic execution context + context block + goal
+  const executionContext = buildExecutionContext(parsedGoal);
   const fullPrompt = contextBlock
-    ? `${contextBlock}\nGoal to plan: ${goal}`
-    : goal;
+    ? `${executionContext}\n\n${contextBlock}\nGoal to plan: ${goal}`
+    : `${executionContext}\n\nGoal to plan: ${goal}`;
 
   // ── 6. Call LLM ───────────────────────────────────────────────
   console.log(`[Planner] 🧠 Calling LLM for plan...`);

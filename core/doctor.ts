@@ -9,6 +9,7 @@ import * as fs   from 'fs'
 import * as path from 'path'
 import * as http from 'http'
 import { execSync } from 'child_process'
+import { kvCacheMetrics } from './kvCacheMetrics'
 
 export interface CheckResult {
   name:    string
@@ -89,6 +90,37 @@ async function checkWorkspace(): Promise<CheckResult> {
   }
 }
 
+async function checkKVCache(): Promise<CheckResult> {
+  const m       = kvCacheMetrics.get()
+  const total   = m.ollamaCalls
+  const hits    = m.cacheHits
+  const rate    = total > 0 ? Math.round((hits / total) * 100) : 0
+
+  if (total === 0) {
+    return {
+      name:    'KV-cache',
+      status:  'warn',
+      message: 'No Ollama calls recorded yet — run a goal first',
+      fix:     'npx ts-node index.ts goal "your goal here"',
+    }
+  }
+
+  if (rate >= 80) {
+    return {
+      name:    'KV-cache',
+      status:  'pass',
+      message: `Hit rate: ${rate}% (${hits}/${total} calls) — good`,
+    }
+  }
+
+  return {
+    name:    'KV-cache',
+    status:  'warn',
+    message: `Hit rate: ${rate}% (${hits}/${total} calls) — system prompts varying`,
+    fix:     'All LLM calls must use coreBoot.getSystemPrompt() — check for dynamic system prompts',
+  }
+}
+
 async function checkApiConfig(): Promise<CheckResult> {
   const configPath = path.join(process.cwd(), 'config/api.json')
   if (!fs.existsSync(configPath))
@@ -144,7 +176,7 @@ async function checkModels(): Promise<CheckResult> {
 }
 
 export async function runDoctor(): Promise<{ allPass: boolean; results: CheckResult[] }> {
-  const checks  = [checkNode, checkOllama, checkModels, checkDocker, checkWorkspace, checkApiConfig]
+  const checks  = [checkNode, checkOllama, checkModels, checkDocker, checkWorkspace, checkApiConfig, checkKVCache]
   const results: CheckResult[] = []
   for (const check of checks) {
     results.push(await check())

@@ -7,6 +7,7 @@
 
 import { callOllama }      from '../llm/ollama'
 import { getChatModel }    from './autoModelSelector'
+import { coreBoot }        from './coreBoot'
 import * as os             from 'os'
 import * as path           from 'path'
 
@@ -90,7 +91,7 @@ Respond with ONLY a JSON object:
 }`
 
   try {
-    const raw     = await callOllama(prompt, undefined, getChatModel())
+    const raw     = await callOllama(prompt, coreBoot.getSystemPrompt(), getChatModel())
     const cleaned = raw.replace(/```json|```/g, '').trim()
     // Extract the JSON object in case the model adds extra text
     const jsonMatch = cleaned.match(/\{[\s\S]*\}/)

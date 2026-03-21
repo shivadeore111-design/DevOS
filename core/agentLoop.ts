@@ -6,6 +6,8 @@
 // core/agentLoop.ts — Observe → Plan → Act → Reflect execution loop
 
 import crypto                           from "crypto"
+import * as fs                         from "fs"
+import * as path                       from "path"
 import { AgentSession, sessionManager } from "./sessionManager"
 import { eventBus }                     from "./eventBus"
 import { goalGovernor }                 from "../control/goalGovernor"
@@ -14,6 +16,31 @@ import { generatePlan }                 from "./planner_v2"
 import { taskGraphBuilder }             from "./taskGraph"
 import { createGraphExecutor }          from "./graphExecutor"
 import { DevOSEngine }                  from "../executor/engine"
+
+// ── Conversation history persistence ─────────────────────
+const HISTORY_FILE = path.join(process.cwd(), "workspace", "conversation-history.json")
+const ACTIVE_WINDOW = 5  // hard limit: last N exchanges in active context
+
+function loadHistory(): any[] {
+  try {
+    if (fs.existsSync(HISTORY_FILE)) {
+      return JSON.parse(fs.readFileSync(HISTORY_FILE, "utf-8"))
+    }
+  } catch { /* ignore corrupt file */ }
+  return []
+}
+
+function appendToHistory(entry: { sessionId: string; role: string; content: string; timestamp: string }): void {
+  try {
+    const dir = path.dirname(HISTORY_FILE)
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+    const all = loadHistory()
+    all.push(entry)
+    // Keep at most 2000 entries in the file to prevent unbounded growth
+    const trimmed = all.length > 2000 ? all.slice(-2000) : all
+    fs.writeFileSync(HISTORY_FILE, JSON.stringify(trimmed, null, 2), "utf-8")
+  } catch { /* non-fatal — history is best-effort */ }
+}
 
 export interface LoopContext {
   session:        AgentSession
@@ -176,10 +203,25 @@ export class AgentLoop {
 
   private observe(ctx: LoopContext): { enrichedGoal: string } {
     const { session, lastResult, iteration } = ctx
-    const recentHistory = session.history
-      .slice(-5)
+
+    // ── HARD WINDOW: last ACTIVE_WINDOW exchanges only ─────
+    // Older history is persisted to disk but never loaded back
+    // into active context — prevents unbounded growth.
+    const activeHistory = session.history
+      .slice(-ACTIVE_WINDOW)  // hard cap at 5 most recent entries
       .map(h => `${h.role}: ${h.content}`)
       .join("\n")
+
+    // Persist full history to workspace/conversation-history.json
+    if (session.history.length > 0) {
+      const latest = session.history[session.history.length - 1]
+      appendToHistory({
+        sessionId: session.id,
+        role:      latest.role,
+        content:   latest.content.slice(0, 500),  // cap individual entries
+        timestamp: new Date().toISOString(),
+      })
+    }
 
     let enrichedGoal = session.goal
 
@@ -190,8 +232,8 @@ export class AgentLoop {
       enrichedGoal = `${session.goal} ${resultNote}`
     }
 
-    if (recentHistory) {
-      enrichedGoal += `\n\nContext:\n${recentHistory}`
+    if (activeHistory) {
+      enrichedGoal += `\n\nRecent context (last ${ACTIVE_WINDOW} exchanges):\n${activeHistory}`
     }
 
     return { enrichedGoal }
