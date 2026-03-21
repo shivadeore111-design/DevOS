@@ -9,17 +9,21 @@ import { resourceManager } from "../devos/runtime/resourceManager"
 import { budgetManager }   from "../control/budgetManager"
 import { emergencyStop }   from "../control/emergencyStop"
 import { eventBus }        from "./eventBus"
+import { taskPulse }       from "./taskPulse"
 
 const DEFAULT_INTERVAL_MS = 5_000
+const TASKPULSE_EVERY     = 60    // ticks: 60 × 5s = 5 minutes
 
 export class Heartbeat {
-  private timers = new Map<string, ReturnType<typeof setInterval>>()
+  private timers    = new Map<string, ReturnType<typeof setInterval>>()
+  private tickCount = new Map<string, number>()   // per-goal tick counter
 
   // ── Start / stop ─────────────────────────────────────────
 
   start(goalId: string, intervalMs = DEFAULT_INTERVAL_MS): void {
     if (this.timers.has(goalId)) return   // already running
 
+    this.tickCount.set(goalId, 0)
     const timer = setInterval(() => this.tick(goalId), intervalMs)
     // Allow Node to exit even if heartbeat is still running
     if (timer.unref) timer.unref()
@@ -32,6 +36,7 @@ export class Heartbeat {
     if (!timer) return
     clearInterval(timer)
     this.timers.delete(goalId)
+    this.tickCount.delete(goalId)
     console.log(`[Heartbeat] Stopped for ${goalId}`)
   }
 
@@ -65,6 +70,15 @@ export class Heartbeat {
         this.stop(goalId)
         stopped = true
       }
+    }
+
+    // ── TaskPulse: check every TASKPULSE_EVERY ticks (5 minutes) ──
+    const count = (this.tickCount.get(goalId) ?? 0) + 1
+    this.tickCount.set(goalId, count)
+    if (count % TASKPULSE_EVERY === 0) {
+      taskPulse.processTasks().catch((err: Error) => {
+        console.error(`[Heartbeat] TaskPulse error: ${err.message}`)
+      })
     }
 
     // Emit heartbeat event

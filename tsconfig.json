@@ -13,5 +13,5 @@
     "forceConsistentCasingInFileNames": true
   },
   "include": ["**/*.ts"],
-  "exclude": ["node_modules", "dist", "tests", "ui", "dashboard-next"]
+  "exclude": ["node_modules", "dist", "tests", "ui", "dashboard-next", "blueprints/templates"]
 }

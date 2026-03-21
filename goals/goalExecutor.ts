@@ -16,6 +16,29 @@ import { liveThinking }             from '../coordination/liveThinking'
 import { persistentMemory }         from '../memory/persistentMemory'
 import { analyzeFailureAndRetry }   from '../core/smartRetry'
 
+// ── DevOS Report helper ───────────────────────────────────────
+function fireReport(goalId: string, goalTitle: string, finalStatus: string,
+                    completedTasks: number, totalTasks: number, startMs: number): void {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const reportSkill = require('../skills/devos-report/index.js') as { run: (o: any) => { htmlPath: string; summary: string } }
+    const result = reportSkill.run({
+      goalId,
+      type:           'goal',
+      goalTitle,
+      tasksCompleted: completedTasks,
+      totalTasks,
+      filesCreated:   [],        // best-effort — could wire file tracking later
+      actions:        [],
+      duration:       Date.now() - startMs,
+      status:         finalStatus,
+    })
+    console.log(`[DevOSReport] Report: ${result.htmlPath}`)
+    // Open in browser (fire-and-forget, ignore errors on headless envs)
+    import('open').then(({ default: open }) => open(result.htmlPath)).catch(() => {})
+  } catch { /* non-fatal */ }
+}
+
 export class GoalExecutor {
   /** Goals currently paused (goalId set) */
   private paused = new Set<string>()
@@ -62,8 +85,9 @@ Execute using file_write or shell_exec with correct ${IS_WIN ? 'Windows' : 'Linu
   }
 
   async execute(goalId: string): Promise<void> {
-    const goal = goalStore.getGoal(goalId)
+    const goal    = goalStore.getGoal(goalId)
     if (!goal) throw new Error(`[GoalExecutor] Goal not found: ${goalId}`)
+    const startMs = Date.now()
 
     console.log(`[GoalExecutor] 🚀 Executing goal: ${goal.title}`)
     liveThinking.act('CEO', `Goal started: ${goal.title}`, goalId)
@@ -192,6 +216,9 @@ Execute using file_write or shell_exec with correct ${IS_WIN ? 'Windows' : 'Linu
     await persistentMemory.recordGoal(goalId, goal.title, goal.description, finalStatus, totalTasks, completedTasks)
 
     console.log(`[GoalExecutor] ${finalStatus === 'completed' ? '✅' : '❌'} Goal ${finalStatus}: ${goal.title} (${completedTasks}/${totalTasks} tasks)`)
+
+    // ── Generate HTML report (fire-and-forget) ─────────────
+    fireReport(goalId, goal.title, finalStatus, completedTasks, totalTasks, startMs)
   }
 
   pause(goalId: string): void {

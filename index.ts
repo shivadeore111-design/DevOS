@@ -562,6 +562,70 @@ async function handleCLI(): Promise<void> {
       break
     }
 
+    // ── devos templates ───────────────────────────────────────
+    case "templates": {
+      const { blueprintStore: bpStore } = require('./blueprints/blueprintStore') as typeof import('./blueprints/blueprintStore')
+      const list = bpStore.listTemplates()
+      console.log('\n╔══════════════════════════════════════════════════╗')
+      console.log('║        DevOS Project Templates                   ║')
+      console.log('╚══════════════════════════════════════════════════╝\n')
+      for (const t of list) {
+        const port = t.port ? ` → http://localhost:${t.port}` : ''
+        console.log(`  📦 ${t.name.padEnd(20)} ${t.displayName}`)
+        console.log(`     ${t.description}`)
+        console.log(`     Install: ${t.installCmd || 'n/a'}  |  Run: ${t.runCmd}${port}`)
+        console.log()
+      }
+      break
+    }
+
+    // ── devos build "<description>" ───────────────────────────
+    case "build": {
+      if (!goal) {
+        console.error('❌ Usage: ts-node index.ts build "<project description>"')
+        console.error('   Example: ts-node index.ts build "simple todo REST API"')
+        process.exit(1)
+      }
+
+      console.log(`\n🏗️  Building: "${goal}"\n`)
+      const { blueprintStore: bps } = require('./blueprints/blueprintStore') as typeof import('./blueprints/blueprintStore')
+      const { execa }               = await import('execa')
+
+      // 1. Match template
+      const tmpl = await bps.matchTemplate(goal)
+      console.log(`✅ Template matched: ${tmpl.displayName}`)
+
+      // 2. Create destination in workspace/
+      const safeName = goal.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'devos-project'
+      const dest     = path.join(process.cwd(), 'workspace', safeName)
+      console.log(`📁 Destination: ${dest}\n`)
+
+      // 3. Copy template
+      bps.copyTemplate(tmpl.name, dest)
+
+      // 4. Install dependencies
+      if (tmpl.installCmd) {
+        console.log(`📦 Running: ${tmpl.installCmd}...`)
+        const [cmd, ...args] = tmpl.installCmd.split(' ')
+        try {
+          const proc = await execa(cmd, args, { cwd: dest, stdio: 'inherit' })
+          if ((proc.exitCode ?? 0) !== 0) throw new Error('Install failed')
+        } catch (err: any) {
+          console.error(`❌ Install failed: ${err.message}`)
+          console.log(`   Run manually: cd "${dest}" && ${tmpl.installCmd}`)
+        }
+      }
+
+      console.log(`\n🚀 Ready!`)
+      console.log(`   cd "${dest}"`)
+      if (tmpl.installCmd) console.log(`   ${tmpl.installCmd}   (already done)`)
+      console.log(`   ${tmpl.runCmd}`)
+      if (tmpl.port) console.log(`   Open: http://localhost:${tmpl.port}`)
+      if (!tmpl.port) console.log(`   Open: ${path.join(dest, 'index.html')}`)
+      console.log()
+      break
+    }
+
     // ── devos test ────────────────────────────────────────────
     case "test": {
       await runTest();
