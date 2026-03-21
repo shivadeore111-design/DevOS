@@ -31,6 +31,8 @@ import { successEvaluator }         from "./successEvaluator";
 import { researchEngine }           from "../research/researchEngine";
 import { slack }                    from "../integrations/slack";
 import { auditLogger }              from "../security/auditLogger";
+import { truthChecker }             from "./truthCheck";
+import { faultEngine, FaultContext } from "./faultEngine";
 import * as readline                from "readline";
 import * as os                     from "os";
 import * as path                   from "path";
@@ -438,7 +440,44 @@ export class Runner {
           (action: any, wp: string) => (this.engine as DevOSEngine).executeOne(action, wp, task.id)
         );
         const graphResult = await graphExecutor.execute(graph, workspacePath);
-        success  = graphResult.success;
+
+        // ── TruthCheck: postcondition verification ─────
+        let tcPassed = true
+        let tcSummary = ""
+        if (graphResult.nodesCompleted > 0) {
+          const tcResult = truthChecker.verify(graph, workspacePath ?? "")
+          tcPassed  = tcResult.passed
+          tcSummary = tcResult.summary
+
+          // ── FaultEngine: classify + repair failures ──
+          if (!tcPassed) {
+            for (const v of tcResult.verifications) {
+              if (v.passed) continue
+              const faultCtx: FaultContext = {
+                actionType:    v.actionType,
+                workspacePath: workspacePath ?? "",
+                goalId:        task.id,
+              }
+              const classification = faultEngine.classify(v.detail, faultCtx)
+              console.log(
+                `[FaultEngine] ${v.nodeId} → ${classification.type} ` +
+                `(${(classification.confidence * 100).toFixed(0)}% confidence)`
+              )
+              console.log(`[FaultEngine] Strategy: ${classification.repairStrategy}`)
+
+              // Attempt repair (max 1 auto-repair per failed node)
+              const repaired = await faultEngine.repair(classification, faultCtx)
+              if (!repaired) {
+                console.warn(`[FaultEngine] ❌ Auto-repair failed for ${v.nodeId}`)
+                console.warn(`[FaultEngine] Manual fix: ${classification.manualFix}`)
+              } else {
+                console.log(`[FaultEngine] ✅ Repair applied for ${v.nodeId}`)
+              }
+            }
+          }
+        }
+
+        success  = graphResult.success && tcPassed;
         output   = {
           nodesCompleted: graphResult.nodesCompleted,
           nodesFailed:    graphResult.nodesFailed,
@@ -446,8 +485,43 @@ export class Runner {
           durationMs:     graphResult.durationMs,
           results:        Object.fromEntries(graphResult.results),
           errors:         Object.fromEntries(graphResult.errors),
+          truthCheck:     tcSummary,
         };
-        errorMsg = graphResult.success ? undefined : `${graphResult.nodesFailed} node(s) failed`;
+        errorMsg = success ? undefined : (
+          tcPassed
+            ? `${graphResult.nodesFailed} node(s) failed`
+            : tcSummary.replace("[TruthCheck] ", "")
+        );
+
+        // ── Clean execution summary ────────────────────
+        const durationSec = (graphResult.durationMs / 1000).toFixed(1)
+        if (success) {
+          console.log(
+            `\n[Goal Complete] ✅ "${task.goal.slice(0, 60)}" — ` +
+            `Tasks: ${graphResult.nodesCompleted}/${graphResult.totalNodes}, ` +
+            `Actions: ${graphResult.nodesCompleted}/${graphResult.totalNodes} verified, ` +
+            `Duration: ${durationSec}s, ` +
+            `Workspace: ${workspacePath ?? "n/a"}`
+          )
+        } else {
+          // Collect fault details for the failure summary
+          const failedNodes  = Array.from(graph.nodes.values()).filter(n => n.status === "failed")
+          const faultDetails = failedNodes.map(n => {
+            const err  = n.error ?? "unknown error"
+            const ctx2: FaultContext = { actionType: n.action?.type ?? "?", workspacePath: workspacePath ?? "" }
+            const cls  = faultEngine.classify(err, ctx2)
+            return `${n.description.slice(0, 40)} — ${cls.type}: Fix this: ${cls.manualFix}`
+          })
+          console.log(
+            `\n[Goal Failed] ❌ "${task.goal.slice(0, 60)}" — ` +
+            `Tasks: ${graphResult.nodesCompleted}/${graphResult.totalNodes} completed, ` +
+            `${graphResult.nodesFailed} failed, ` +
+            `Duration: ${durationSec}s`
+          )
+          for (const detail of faultDetails) {
+            console.log(`  └─ ${detail}`)
+          }
+        }
       } else {
         // Fallback: linear execution through engine interface
         const result = await this.engine.execute(plan);
