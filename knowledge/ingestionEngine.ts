@@ -13,6 +13,7 @@ import { documentParser }     from "./documentParser"
 import { knowledgeExtractor } from "./knowledgeExtractor"
 import { knowledgeStore }     from "./knowledgeStore"
 import { knowledgeGraph }     from "./knowledgeGraph"
+import { memoryLayers }       from "../memory/memoryLayers"
 import { fetchPage }          from "../web/pageFetcher"
 
 const SUPPORTED_EXTENSIONS = new Set([
@@ -48,6 +49,10 @@ export class IngestionEngine {
       source:  absPath,
       tags:    allTags,
     })
+    memoryLayers.write(
+      `ingested: ${extraction.title || doc.title} — ${(extraction.summary || doc.content).slice(0, 300)}`,
+      ['ingestion', ...allTags.slice(0, 5)],
+    )
 
     // 4. Add graph edges for related topics
     //    Link to any existing entries whose title appears in relatedTopics

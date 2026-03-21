@@ -16,6 +16,7 @@ import { generatePlan }                 from "./planner_v2"
 import { taskGraphBuilder }             from "./taskGraph"
 import { createGraphExecutor }          from "./graphExecutor"
 import { DevOSEngine }                  from "../executor/engine"
+import { memoryLayers }                 from "../memory/memoryLayers"
 
 // ── Conversation history persistence ─────────────────────
 const HISTORY_FILE = path.join(process.cwd(), "workspace", "conversation-history.json")
@@ -100,7 +101,7 @@ export class AgentLoop {
       eventBus.emit("loop_iteration", { sessionId, iteration: ctx.iteration, goal })
 
       // ── OBSERVE ────────────────────────────────────────
-      const observedContext = this.observe(ctx)
+      const observedContext = await this.observe(ctx)
 
       // ── PLAN ───────────────────────────────────────────
       let plan: any
@@ -201,7 +202,7 @@ export class AgentLoop {
 
   // ── Private: Observe ──────────────────────────────────────
 
-  private observe(ctx: LoopContext): { enrichedGoal: string } {
+  private async observe(ctx: LoopContext): Promise<{ enrichedGoal: string }> {
     const { session, lastResult, iteration } = ctx
 
     // ── HARD WINDOW: last ACTIVE_WINDOW exchanges only ─────
@@ -235,6 +236,14 @@ export class AgentLoop {
     if (activeHistory) {
       enrichedGoal += `\n\nRecent context (last ${ACTIVE_WINDOW} exchanges):\n${activeHistory}`
     }
+
+    // MemoryLayers: inject HOT+WARM context (max 500 tokens, user turn only)
+    try {
+      const memCtx = await memoryLayers.getContextForPrompt(500)
+      if (memCtx) {
+        enrichedGoal += `\n\n${memCtx}`
+      }
+    } catch { /* non-fatal — memory unavailable */ }
 
     return { enrichedGoal }
   }

@@ -27,6 +27,7 @@ import { budgetManager }            from "../control/budgetManager";
 import { sessionManager }           from "./sessionManager";
 import { heartbeat }                from "./heartbeat";
 import { executionMemory }          from "../memory/executionMemory";
+import { memoryLayers }             from "../memory/memoryLayers";
 import { successEvaluator }         from "./successEvaluator";
 import { researchEngine }           from "../research/researchEngine";
 import { slack }                    from "../integrations/slack";
@@ -578,6 +579,10 @@ export class Runner {
           durationMs,
           retryCount: 0,
         })
+        memoryLayers.write(
+          `goal ${isSuccess ? 'success' : 'failure'}: ${task.goal.slice(0, 200)} — ${evalResult.summary.slice(0, 200)}`,
+          ['goal', isSuccess ? 'success' : 'failure', parsedGoal.type ?? 'unknown'],
+        )
         if (memEntry) executionMemory.recordUse(memEntry.id, evalResult.success)
 
         // ── Slack notification ────────────────────────────
@@ -624,6 +629,10 @@ export class Runner {
           durationMs: failDurationMs,
           retryCount: 0,
         })
+        memoryLayers.write(
+          `goal failure: ${task.goal.slice(0, 200)} — ${(errorMsg ?? 'unknown failure').slice(0, 200)}`,
+          ['goal', 'failure', parsedGoal.type ?? 'unknown'],
+        )
         if (memEntry) executionMemory.recordUse(memEntry.id, false)
 
         // ── Slack notification ────────────────────────────

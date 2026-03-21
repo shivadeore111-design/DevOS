@@ -9,6 +9,7 @@ import path from "path";
 import { pilotRegistry }  from "./pilotRegistry";
 import { PilotRun }       from "./types";
 import { knowledgeStore } from "../../knowledge/knowledgeStore";
+import { memoryLayers }   from "../../memory/memoryLayers";
 import { slack }          from "../../integrations/slack";
 import { Runner }         from "../../core/runner";
 import { DevOSEngine }    from "../../executor/engine";
@@ -134,6 +135,10 @@ export class PilotExecutor {
           tags:    [manifest.memoryKey, "pilot", pilotId, todayStr()],
         });
       }
+      memoryLayers.write(
+        `pilot result [${manifest.name}]: ${output.slice(0, 300)}`,
+        [manifest.memoryKey, 'pilot', pilotId],
+      );
 
       // 6. Output routing
       if (manifest.outputFormat === "slack") {

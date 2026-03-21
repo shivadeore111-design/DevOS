@@ -15,6 +15,7 @@ import { getCodingModel, getPlanningModel }  from '../core/autoModelSelector'
 import { missionCanvas }                     from '../coordination/missionCanvas'
 import { agentDen }                          from './agentDen'
 import { impactMap }                         from '../intelligence/impactMap'
+import { pluginBus }                         from '../integrations/pluginBus'
 
 interface ToolCall {
   tool:  string
@@ -106,6 +107,21 @@ Provide your response and any tool calls needed.
               console.warn(`[AgentExecutor] ⚠️  HIGH IMPACT edit by ${role}: ${report.warning}`)
             }
           } catch { /* non-fatal */ }
+        }
+
+        // plugin_call: route to PluginBus instead of toolRuntime
+        if (tc.tool === 'plugin_call') {
+          try {
+            const pluginResult = await pluginBus.callTool(
+              tc.input?.plugin  as string,
+              tc.input?.toolName as string,
+              tc.input?.inputs  ?? {},
+            )
+            toolResults.push(`[plugin_call:${tc.input?.plugin}/${tc.input?.toolName}]: ${JSON.stringify(pluginResult ?? 'ok')}`)
+          } catch (pErr: any) {
+            toolResults.push(`[plugin_call]: ERROR: ${pErr?.message ?? String(pErr)}`)
+          }
+          continue
         }
 
         const tr = await toolRuntime.execute(tc.tool, tc.input)

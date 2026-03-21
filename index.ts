@@ -2215,6 +2215,94 @@ When running devos serve, DevOS will:
       break
     }
 
+    // ── devos plugins / plugin add|remove|test ───────────────
+    case "plugins":
+    case "plugin": {
+      const { pluginBus } = await import('./integrations/pluginBus')
+      const sub = goalArgs[0]
+
+      // devos plugins — list all registered plugins + their tools
+      if (!sub || sub === 'list' || command === 'plugins') {
+        const plugins = pluginBus.listPlugins()
+        if (plugins.length === 0) {
+          console.log('No plugins registered. Add one: devos plugin add <name> <command> [args...]')
+          break
+        }
+        console.log(`\n🔌 Registered Plugins (${plugins.length})\n`)
+        for (const p of plugins) {
+          console.log(`  ${p.name} — ${p.description}`)
+          console.log(`  Command: ${p.command} ${p.args.join(' ')}`)
+          if (p.tools.length > 0) {
+            console.log(`  Tools:   ${p.tools.map(t => t.name).join(', ')}`)
+          } else {
+            console.log(`  Tools:   (none discovered — run: devos plugin test ${p.name})`)
+          }
+          console.log()
+        }
+        break
+      }
+
+      // devos plugin add <name> <command> [args...]
+      if (sub === 'add') {
+        const pName    = goalArgs[1]
+        const pCommand = goalArgs[2]
+        const pArgs    = goalArgs.slice(3)
+        if (!pName || !pCommand) {
+          console.error('❌ Usage: devos plugin add <name> <command> [args...]')
+          console.error('   Example: devos plugin add filesystem npx @modelcontextprotocol/server-filesystem .')
+          process.exit(1)
+        }
+        pluginBus.register({
+          name:        pName,
+          command:     pCommand,
+          args:        pArgs,
+          description: `Plugin: ${pName}`,
+          tools:       [],
+        })
+        console.log(`✅ Plugin registered: ${pName}`)
+        console.log(`   Run: devos plugin test ${pName}  to discover its tools`)
+        break
+      }
+
+      // devos plugin remove <name>
+      if (sub === 'remove') {
+        const pName = goalArgs[1]
+        if (!pName) { console.error('❌ Usage: devos plugin remove <name>'); process.exit(1) }
+        pluginBus.unregister(pName)
+        console.log(`✅ Plugin removed: ${pName}`)
+        break
+      }
+
+      // devos plugin test <name>
+      if (sub === 'test') {
+        const pName = goalArgs[1]
+        if (!pName) { console.error('❌ Usage: devos plugin test <name>'); process.exit(1) }
+        console.log(`🔍 Testing plugin: ${pName}...`)
+        const result = await pluginBus.testPlugin(pName)
+        if (result.ok) {
+          console.log(`✅ Plugin OK — ${result.tools.length} tools discovered:`)
+          result.tools.forEach(t => console.log(`   • ${t}`))
+        } else {
+          console.error(`❌ Plugin test failed: ${result.error}`)
+        }
+        break
+      }
+
+      console.log('Usage: devos plugin add <name> <command> [args...] | remove <name> | test <name>')
+      break
+    }
+
+    // ── devos memory ──────────────────────────────────────────
+    case "memory-layers": {
+      const { memoryLayers } = await import('./memory/memoryLayers')
+      const stats = await memoryLayers.getStats()
+      console.log(`\n🧠 MemoryLayers Stats`)
+      console.log(`   HOT  (RAM):     ${stats.hot} entries`)
+      console.log(`   WARM (SQLite):  ${stats.warm} entries`)
+      console.log(`   COLD (JSON):    ${stats.cold} entries`)
+      break
+    }
+
     // ── devos help / default ──────────────────────────────────
     case "help":
     case "--help":

@@ -8,6 +8,7 @@
 import { ToolResult }    from "./toolRuntime"
 import { eventBus }      from "../core/eventBus"
 import { executionMemory } from "../memory/executionMemory"
+import { memoryLayers }    from "../memory/memoryLayers"
 
 type BeforeHook = (input: any) => any
 type AfterHook  = (result: ToolResult) => ToolResult
@@ -109,6 +110,7 @@ export class ToolHooks {
             durationMs: 0,
             retryCount: 0,
           })
+          memoryLayers.write(`tool failure: ${result.error}`, ['tool_failure', 'error'])
         } catch {
           // never let memory write break the tool result
         }
