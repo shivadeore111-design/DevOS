@@ -6,6 +6,8 @@
 // coordination/autonomousMission.ts — Main mission orchestrator
 
 import * as crypto       from 'crypto'
+import * as fs           from 'fs'
+import * as path         from 'path'
 import { agentExecutor } from '../agents/agentExecutor'
 import { AgentRole }     from '../agents/types'
 import { eventBus }      from '../core/eventBus'
@@ -16,6 +18,8 @@ import { contextCompressor }                  from './contextCompressor'
 import { guardrails }                         from './guardrails'
 import { humanInTheLoop }                     from './humanInTheLoop'
 import { liveThinking }                       from './liveThinking'
+import { missionCanvas }                      from './missionCanvas'
+import { agentDen }                           from '../agents/agentDen'
 
 const VALID_ROLES: AgentRole[] = [
   'ceo', 'cto', 'software-engineer', 'frontend-developer', 'backend-developer',
@@ -39,6 +43,56 @@ function detectMissionType(goal: string): MissionType {
   if (g.includes('monitor') || g.includes('watch') || g.includes('alert')) return 'monitor'
   return 'personal'
 }
+
+// ── MissionLog helpers ─────────────────────────────────────────
+
+function missionLogPath(missionId: string): string {
+  return path.join(agentDen.getCEOMissionDir(missionId), 'missionlog.md')
+}
+
+function createMissionLog(
+  missionId: string,
+  goal:      string,
+  tasks:     Array<{ title: string; agent: string }>,
+): void {
+  const lines = [
+    `# Mission Log: ${goal}`,
+    `**ID:** ${missionId}`,
+    `**Started:** ${new Date().toISOString()}`,
+    '',
+    '## Tasks',
+    ...tasks.map(t => `- [ ] [${t.agent}] ${t.title}`),
+    '',
+    '## Notes',
+  ]
+  fs.writeFileSync(missionLogPath(missionId), lines.join('\n'), 'utf-8')
+  console.log(`[MissionLog] 📝 Created for mission ${missionId.slice(0, 8)}`)
+}
+
+function tickMissionLog(missionId: string, taskTitle: string, success: boolean): void {
+  const logPath = missionLogPath(missionId)
+  if (!fs.existsSync(logPath)) return
+  try {
+    const lines   = fs.readFileSync(logPath, 'utf-8').split('\n')
+    const updated = lines.map(line => {
+      if (line.includes(`] ${taskTitle}`) && line.includes('- [ ]')) {
+        return success
+          ? line.replace('- [ ]', '- [x]') + ' ✅'
+          : line.replace('- [ ]', '- [~]') + ' ❌'
+      }
+      return line
+    })
+    fs.writeFileSync(logPath, updated.join('\n'), 'utf-8')
+  } catch { /* non-fatal */ }
+}
+
+function readMissionLog(missionId: string): string {
+  const logPath = missionLogPath(missionId)
+  if (!fs.existsSync(logPath)) return ''
+  try { return fs.readFileSync(logPath, 'utf-8') } catch { return '' }
+}
+
+// ── AutonomousMission class ────────────────────────────────────
 
 class AutonomousMission {
   private paused   = new Set<string>()
@@ -112,6 +166,21 @@ Description: ${description}`,
 
     // ── Step 3: Create TODO file ─────────────────────────────
     missionTodo.createTodo(missionId, goal, todoItems)
+
+    // ── Step 3a: Create MissionCanvas and MissionLog ──────────
+    missionCanvas.create(missionId, goal)
+
+    // CEO writes the initial plan to canvas
+    try {
+      missionCanvas.write(missionId, {
+        author:  'ceo',
+        type:    'plan',
+        content: `Tasks: ${parsedTasks.map(t => t.title).join(' | ')}`,
+        tags:    ['decompose'],
+      })
+    } catch { /* non-fatal */ }
+
+    createMissionLog(missionId, goal, parsedTasks)
 
     // ── Step 4: Persist initial mission state ────────────────
     const mission: Mission = {
@@ -196,9 +265,17 @@ Description: ${description}`,
       // Signal acting
       liveThinking.act(task.assignedTo, `Starting: ${task.title}`, missionId)
 
-      // Build context with current TODO
-      const todoContext = missionTodo.readTodo(missionId)
-      const taskContext = `Current todo:\n${todoContext}\n\nNext task: ${task.description}`
+      // Build context with current TODO + MissionCanvas + MissionLog (for CEO)
+      const todoContext   = missionTodo.readTodo(missionId)
+      const canvasContext = missionCanvas.getFullContext(missionId)
+      const logContext    = task.assignedTo === 'ceo' ? readMissionLog(missionId) : ''
+
+      const taskContext = [
+        canvasContext ? canvasContext : '',
+        logContext    ? `\n=== MISSION LOG ===\n${logContext}\n=== END LOG ===` : '',
+        `\nCurrent todo:\n${todoContext}`,
+        `\nNext task: ${task.description}`,
+      ].filter(Boolean).join('\n').trim()
 
       // Execute task via assigned agent
       const execTask = {
@@ -222,6 +299,21 @@ Description: ${description}`,
 
       // Tick TODO file
       missionTodo.tickTask(missionId, task.title)
+
+      // Tick MissionLog
+      tickMissionLog(missionId, task.title, taskSuccess)
+
+      // MissionCanvas: CEO writes a decision after each task round
+      if (task.assignedTo === 'ceo' && taskSuccess) {
+        try {
+          missionCanvas.write(missionId, {
+            author:  'ceo',
+            type:    'decision',
+            content: taskResult.slice(0, 400),
+            tags:    [task.id],
+          })
+        } catch { /* non-fatal */ }
+      }
 
       // Update task in bus
       if (taskSuccess) {

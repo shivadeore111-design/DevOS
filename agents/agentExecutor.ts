@@ -12,6 +12,9 @@ import { AgentRole }                         from './types'
 import { Task }                              from '../goals/types'
 import { liveThinking }                      from '../coordination/liveThinking'
 import { getCodingModel, getPlanningModel }  from '../core/autoModelSelector'
+import { missionCanvas }                     from '../coordination/missionCanvas'
+import { agentDen }                          from './agentDen'
+import { impactMap }                         from '../intelligence/impactMap'
 
 interface ToolCall {
   tool:  string
@@ -72,10 +75,19 @@ Provide your response and any tool calls needed.
       // 3. Signal thinking before Ollama call
       liveThinking.think(role, `Processing: ${task.description.slice(0, 60)}`, missionId)
 
+      // 3a. Inject MissionCanvas context into the prompt (if mission is set)
+      let fullPrompt = prompt
+      if (missionId) {
+        const canvasCtx = missionCanvas.getFullContext(missionId)
+        if (canvasCtx) {
+          fullPrompt = `${canvasCtx}\n\n${prompt}`
+        }
+      }
+
       // 4. Call Ollama — coding agents use coding model, all others use planning model
       const CODING_ROLES = ['software-engineer', 'frontend-developer', 'backend-developer', 'mobile-developer', 'blockchain-developer']
       const model = CODING_ROLES.includes(role) ? getCodingModel() : getPlanningModel()
-      const raw = await callOllama(prompt, undefined, model)
+      const raw = await callOllama(fullPrompt, undefined, model)
 
       // 5. Execute any tool calls found in the response
       const toolCalls = parseToolCalls(raw)
@@ -84,8 +96,38 @@ Provide your response and any tool calls needed.
       for (const tc of toolCalls) {
         agentRegistry.updateStatus(role, 'executing', task.id ?? undefined)
         liveThinking.act(role, `Running ${tc.tool}`, missionId)
+
+        // ImpactMap: analyse blast radius before writing to existing files
+        if (tc.tool === 'file_write' && tc.input?.path) {
+          try {
+            const report = impactMap.analyze(tc.input.path as string)
+            toolResults.push(`[ImpactMap] ${report.warning}`)
+            if (report.riskLevel === 'high') {
+              console.warn(`[AgentExecutor] ⚠️  HIGH IMPACT edit by ${role}: ${report.warning}`)
+            }
+          } catch { /* non-fatal */ }
+        }
+
         const tr = await toolRuntime.execute(tc.tool, tc.input)
         toolResults.push(`[${tc.tool}]: ${tr.success ? JSON.stringify(tr.output ?? 'ok') : `ERROR: ${tr.error}`}`)
+
+        // AgentDen: stage Engineer code output
+        if (tc.tool === 'file_write' && tc.input?.path && tc.input?.content) {
+          const ENGINEER_ROLES = ['software-engineer', 'frontend-developer', 'backend-developer', 'mobile-developer', 'blockchain-developer']
+          if (ENGINEER_ROLES.includes(role)) {
+            try {
+              const filename = require('path').basename(tc.input.path as string)
+              agentDen.stageCode(role, filename, tc.input.content as string)
+            } catch { /* non-fatal */ }
+          }
+        }
+
+        // AgentDen: save Research findings
+        if (tc.tool === 'file_write' && role === 'researcher') {
+          try {
+            agentDen.writeFinding(task.title, tc.input?.content as string ?? '')
+          } catch { /* non-fatal */ }
+        }
       }
 
       // 6. Build final result
@@ -101,12 +143,34 @@ Provide your response and any tool calls needed.
       liveThinking.done(role, `Completed: ${task.description.slice(0, 60)}`, missionId)
       console.log(`[AgentExecutor] ✅ ${agent.name} completed: ${task.title}`)
 
+      // 8. AgentDen: log task completion
+      try {
+        agentDen.writeLog(role, `✅ DONE  [${task.id ?? 'no-id'}] ${task.title}`)
+      } catch { /* non-fatal */ }
+
+      // 9. MissionCanvas: write result entry
+      if (missionId) {
+        try {
+          missionCanvas.write(missionId, {
+            author:  role,
+            type:    'result',
+            content: result.slice(0, 500),
+            tags:    [task.id ?? 'no-id'],
+          })
+        } catch { /* non-fatal */ }
+      }
+
     } catch (err: any) {
       result = `Error: ${err?.message ?? String(err)}`
       agentRegistry.updateStatus(role, 'error')
       agentRegistry.recordCompletion(role, false)
       liveThinking.error(role, err?.message ?? String(err), missionId)
       console.error(`[AgentExecutor] ❌ ${agent.name} failed: ${task.title} — ${result}`)
+
+      // AgentDen: log failure
+      try {
+        agentDen.writeLog(role, `❌ FAIL  [${task.id ?? 'no-id'}] ${task.title} — ${result.slice(0, 200)}`)
+      } catch { /* non-fatal */ }
     }
 
     return result
