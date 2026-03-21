@@ -52,9 +52,36 @@ export async function executeFileAction(action: any, workspace: string): Promise
         return { success: true, output: { path: safePath, content } };
       }
 
+      case "file_delete": {
+        if (!fs.existsSync(safePath)) {
+          return { success: false, error: `File not found: ${safePath}` };
+        }
+        fs.unlinkSync(safePath);
+        console.log(`[FileActions] Deleted: ${safePath}`);
+        return { success: true, output: { path: safePath, deleted: true } };
+      }
+
       default:
         return { success: false, error: `Unknown file action type: ${action.type}` };
     }
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+/** Create a directory (with all parents). Safe to call if it already exists. */
+export async function executeFolderCreate(action: any, workspace: string): Promise<FileActionResult> {
+  if (!action.path) return { success: false, error: 'folder_create: path is required' };
+
+  // Allow absolute paths for folder_create (the LLM will supply full paths)
+  const targetPath = path.isAbsolute(action.path)
+    ? action.path
+    : path.join(workspace, action.path);
+
+  try {
+    fs.mkdirSync(targetPath, { recursive: true });
+    console.log(`[FileActions] Created folder: ${targetPath}`);
+    return { success: true, output: { path: targetPath, created: true } };
   } catch (err: any) {
     return { success: false, error: err.message };
   }

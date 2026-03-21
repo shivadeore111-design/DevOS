@@ -51,7 +51,11 @@ export class ExecutionMemory {
     }
     this.entries.set(id, rec)
     this.persist()
-    console.log(`[ExecutionMemory] Stored ${entry.outcome} entry for "${entry.pattern.slice(0, 50)}"`)
+    if (entry.outcome === 'success') {
+      console.log(`[ExecutionMemory] ✅ Stored success for "${entry.pattern.slice(0, 50)}"`)
+    } else {
+      console.log(`[ExecutionMemory] ❌ Stored failure — ${(entry.reason ?? 'unknown').slice(0, 80)}`)
+    }
   }
 
   // ── Lookup ────────────────────────────────────────────────

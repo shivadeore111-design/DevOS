@@ -37,89 +37,151 @@ import * as path                   from "path";
 
 // ── Action generation fallback ─────────────────────────────────────────────
 // Called when the planner returns a plan with 0 actions (empty graph).
-// Makes a second Ollama call to convert the raw goal description into
-// concrete shell_exec / file_write / file_read actions.
+// Makes a dedicated call to qwen2.5-coder:7b to convert the raw task
+// description into a concrete JSON array of executable actions.
 
-async function generateActionsFromDescription(description: string): Promise<any[]> {
-  // ── Smart retry fast-path: use the pre-computed command directly ───────────
-  // When goalExecutor injects a "NEW APPROACH" hint after an LLM failure
-  // analysis, skip re-asking the LLM and use the suggested command directly.
+const WORKSPACE_PATH_FOR_PROMPT = path.join(process.cwd(), 'workspace')
+
+function buildActionPrompt(description: string, attempt: number): string {
+  const isWin    = process.platform === 'win32'
+  const desktop  = path.join(os.homedir(), 'Desktop')
+  const ws       = WORKSPACE_PATH_FOR_PROMPT
+
+  const stricterNote = attempt > 1
+    ? 'STRICT: Your previous response could not be parsed as JSON. Output ONLY [ ... ] — nothing else.'
+    : ''
+
+  return `You are a task executor for DevOS running on ${isWin ? 'Windows' : 'Linux/Mac'}.
+Convert this task into a JSON array of executable actions.
+Respond with ONLY valid JSON. No explanation, no markdown, no prose.
+Your entire response must start with [ and end with ].
+${stricterNote}
+
+Available tools:
+{ "tool": "shell_exec", "command": "string" }
+{ "tool": "file_write", "path": "string", "content": "string" }
+{ "tool": "file_read", "path": "string" }
+{ "tool": "file_delete", "path": "string" }
+{ "tool": "npm_install", "packages": ["string"] }
+{ "tool": "http_check", "url": "string" }
+{ "tool": "folder_create", "path": "string" }
+
+${isWin ? `WINDOWS RULES:
+- Desktop: ${desktop}
+- Use: echo, mkdir, copy, del, dir, type
+- NEVER use: touch, ls, cat, cp, rm, mkdir -p
+- Always use full absolute paths` : `LINUX RULES:
+- Use: mkdir -p, touch, cat, cp, rm, ls
+- Always use full absolute paths`}
+
+Task: ${description}
+Working directory: ${ws}
+
+Example output:
+[
+  { "tool": "folder_create", "path": "${ws}\\\\myapp" },
+  { "tool": "file_write", "path": "${ws}\\\\myapp\\\\server.js", "content": "console.log('hello')" },
+  { "tool": "shell_exec", "command": "node ${ws}\\\\myapp\\\\server.js" }
+]`
+}
+
+/** Normalize LLM-returned action: map "tool" → "type" for engine compatibility */
+function normalizeAction(raw: any): any {
+  const action = { ...raw }
+  if (action.tool && !action.type) {
+    action.type = action.tool
+  }
+  delete action.tool
+  return action
+}
+
+async function callOllamaForActions(prompt: string): Promise<string> {
+  const response = await fetch('http://localhost:11434/api/generate', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({
+      model:  'qwen2.5-coder:7b',
+      prompt,
+      stream: false,
+      options: { temperature: 0.1, top_p: 0.9 },
+    }),
+    signal: AbortSignal.timeout(60_000),
+  })
+  const data = await (response as any).json()
+  return (data.response ?? '') as string
+}
+
+function extractJsonArray(text: string): any[] | null {
+  // Strip markdown fences
+  let cleaned = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
+  // Find first [ to last ]
+  const start = cleaned.indexOf('[')
+  const end   = cleaned.lastIndexOf(']')
+  if (start === -1 || end === -1 || end <= start) return null
+  try {
+    const parsed = JSON.parse(cleaned.slice(start, end + 1))
+    return Array.isArray(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+async function generateActionsFromDescription(
+  description: string,
+): Promise<{ actions: any[]; rawOutput?: string; parseError?: string }> {
+
+  // ── Smart retry fast-path ──────────────────────────────────────────────────
   if (description.includes('NEW APPROACH: Use shell_exec with:')) {
     const match = description.match(/NEW APPROACH: Use shell_exec with: (.+)/)
     if (match) {
       const command = match[1].trim()
-      console.log(`[Runner] Using smart retry command: ${command}`)
-      return [{ type: 'shell_exec', command }]
+      console.log(`[Runner] Smart retry fast-path → shell_exec: ${command}`)
+      return { actions: [{ type: 'shell_exec', command }] }
     }
   }
-
   if (description.includes('NEW APPROACH: Use file_write with:')) {
     const match = description.match(/NEW APPROACH: Use file_write with: (.+)/)
     if (match) {
-      console.log(`[Runner] Using smart retry file_write`)
-      return [{ type: 'shell_exec', command: match[1].trim() }]
+      console.log(`[Runner] Smart retry fast-path → file_write`)
+      return { actions: [{ type: 'shell_exec', command: match[1].trim() }] }
     }
   }
 
-  const WIN_CONTEXT = process.platform === 'win32' ? `
-CRITICAL SYSTEM RULES - READ FIRST:
-Platform: Windows
-Desktop: ${path.join(os.homedir(), 'Desktop')}
-Home: ${os.homedir()}
-Temp: ${os.tmpdir()}
+  console.log('[Runner] Translating task to actions via qwen2.5-coder:7b...')
 
-WINDOWS COMMANDS ONLY. NEVER USE LINUX COMMANDS.
-Allowed: echo, mkdir, copy, move, del, dir, type, cd, powershell
-Forbidden: touch, mkdir -p, ls, cat, cp, mv, rm, chmod
+  let rawOutput = ''
 
-File paths use backslashes: C:\\Users\\shiva\\Desktop\\file.txt
-Create file: echo content > "C:\\path\\file.txt"
-Create folder: mkdir "C:\\path\\folder"
-Desktop path: ${path.join(os.homedir(), 'Desktop')}
-` : `Platform: ${process.platform}\nHome: ${os.homedir()}\n`
-
-  const IS_WIN  = process.platform === 'win32'
-  const DESKTOP = path.join(os.homedir(), 'Desktop')
-
-  const prompt = `${WIN_CONTEXT}
-Convert this task into a JSON array of executable actions.
-Return ONLY a valid JSON array, no explanation, no markdown fences.
-Each action must have a "type" field. Valid types and their required fields:
-- shell_exec:    { "type": "shell_exec", "command": "string" }
-- file_write:    { "type": "file_write", "path": "string", "content": "string" }
-- file_read:     { "type": "file_read", "path": "string" }
-- fetch_url:     { "type": "fetch_url", "url": "string" }
-- open_browser:  { "type": "open_browser", "url": "string" }
-- run_python:    { "type": "run_python", "code": "string" }
-- run_node:      { "type": "run_node", "code": "string" }
-- run_powershell:{ "type": "run_powershell", "code": "string" }
-- notify:        { "type": "notify", "title": "string", "message": "string" }
-- system_info:   { "type": "system_info" }
-${IS_WIN ? `
-Windows examples:
-{ "type": "shell_exec", "command": "mkdir \\"${DESKTOP}\\\\myfolder\\"" }
-{ "type": "file_write", "path": "${DESKTOP}\\\\file.txt", "content": "hello" }` : ''}
-
-Task: ${description}`
-
+  // Attempt 1
   try {
-    const response = await fetch('http://localhost:11434/api/generate', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ model: 'qwen2.5-coder:7b', prompt, stream: false }),
-    })
-    const data = await (response as any).json()
-    let text = data.response || ''
-    // Strip markdown fences if present
-    text = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
-    // Extract JSON array
-    const match = text.match(/\[[\s\S]*\]/)
-    if (!match) return []
-    return JSON.parse(match[0])
+    rawOutput = await callOllamaForActions(buildActionPrompt(description, 1))
+    const parsed = extractJsonArray(rawOutput)
+    if (parsed && parsed.length > 0) {
+      const actions = parsed.map(normalizeAction)
+      console.log(`[Runner] Added ${actions.length} actions to TaskGraph`)
+      return { actions, rawOutput }
+    }
   } catch (e: any) {
-    console.error('[Runner] Action generation failed:', e.message)
-    return []
+    console.warn(`[Runner] Action generation attempt 1 error: ${e.message}`)
   }
+
+  // Attempt 2 (stricter prompt)
+  console.warn('[Runner] Attempt 1 parse failed — retrying with stricter prompt')
+  try {
+    rawOutput = await callOllamaForActions(buildActionPrompt(description, 2))
+    const parsed = extractJsonArray(rawOutput)
+    if (parsed && parsed.length > 0) {
+      const actions = parsed.map(normalizeAction)
+      console.log(`[Runner] Added ${actions.length} actions to TaskGraph (attempt 2)`)
+      return { actions, rawOutput }
+    }
+  } catch (e: any) {
+    console.warn(`[Runner] Action generation attempt 2 error: ${e.message}`)
+  }
+
+  // Both attempts failed — return structured error with raw output attached
+  const parseError = `Action translation failed after 2 attempts. Raw LLM output: ${rawOutput.slice(0, 500)}`
+  console.error(`[Runner] ❌ ${parseError}`)
+  return { actions: [], rawOutput, parseError }
 }
 
 export interface ExecutionEngine {
@@ -321,25 +383,45 @@ export class Runner {
       // ── 0-node fallback: generate actions from description ──
       if (graph.nodes.size === 0) {
         console.log('[Runner] Graph has 0 nodes — generating actions from description')
-        const actions = await generateActionsFromDescription(task.goal)
-        for (const action of actions) {
+        const genResult = await generateActionsFromDescription(task.goal)
+
+        if (genResult.actions.length === 0) {
+          // Translation failed — fail fast with debug info attached
+          taskQueue.fail(
+            task.id,
+            genResult.parseError ?? 'Action translation produced no actions',
+            'Translation failure',
+          )
+          goalGovernor.unregister(task.id)
+          resourceManager.stopTracking(task.id)
+          sessionManager.fail(sessionId)
+          heartbeat.stop(task.id)
+          auditLogger.log({
+            timestamp: new Date().toISOString(),
+            type:      'goal_executed',
+            actor:     this.agentId,
+            action:    `translation-failed:${task.id}`,
+            detail:    (genResult.parseError ?? '').slice(0, 200),
+            success:   false,
+          })
+          return
+        }
+
+        // Build sequential TaskGraph nodes from generated actions
+        const prevIds: string[] = []
+        for (const action of genResult.actions) {
           const nodeId = require('crypto').randomUUID() as string
           taskGraphBuilder.addNode(graph, {
             id:          nodeId,
             description: action.description ?? action.type ?? 'generated action',
-            skill:       action.skill,
-            action,
-            dependsOn:   [],
+            skill:       action.type,               // type is the skill name
+            action,                                  // full action passed to engine
+            dependsOn:   prevIds.length > 0 ? [prevIds[prevIds.length - 1]] : [],
             status:      'pending',
           })
+          prevIds.push(nodeId)
         }
-        console.log(`[Runner] Added ${actions.length} actions to graph`)
-        // Wire sequential dependencies after all nodes are added
-        const nodeIds = [...graph.nodes.keys()]
-        for (let i = 1; i < nodeIds.length; i++) {
-          const node = graph.nodes.get(nodeIds[i])!
-          node.dependsOn = [nodeIds[i - 1]]
-        }
+        console.log(`[Runner] Added ${genResult.actions.length} actions to TaskGraph`)
       }
 
       // ── Persist snapshot (for resume-on-crash) ───────────

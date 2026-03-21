@@ -35,6 +35,23 @@ export class GraphExecutor {
 
     console.log(`\n[GraphExecutor] Executing graph for goal "${graph.goalId}" (${graph.nodes.size} nodes)`)
 
+    // ── 0-node guard: never mark an empty graph as success ─────────────────
+    if (graph.nodes.size === 0) {
+      const msg = 'Empty graph — task translation failed'
+      console.error(`[GraphExecutor] ❌ ${msg}`)
+      errors.set('__empty__', msg)
+      return {
+        goalId:         graph.goalId,
+        success:        false,
+        nodesCompleted: 0,
+        nodesFailed:    0,
+        totalNodes:     0,
+        results,
+        errors,
+        durationMs:     Date.now() - startMs,
+      }
+    }
+
     // ── Main execution loop ────────────────────────────────────
     let iterations = 0
     const MAX_ITER  = graph.nodes.size * 4  // safety guard against infinite loops

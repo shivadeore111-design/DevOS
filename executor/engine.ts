@@ -10,8 +10,8 @@
 // Orchestrates action dispatch, decision layer, LLM tasks
 // ============================================================
 import { DecisionLayer }       from "../decision";
-import { executeFileAction }   from "./actions/fileActions";
-import { executeShellAction }  from "./actions/shellActions";
+import { executeFileAction, executeFolderCreate } from "./actions/fileActions";
+import { executeShellAction }                     from "./actions/shellActions";
 import { executeWebAction }    from "./actions/webActions";
 import { llmCall }             from "../llm/router";
 import { OpenClawAdapter }     from "../openclaw/openclaw-adapter";
@@ -70,10 +70,40 @@ export class DevOSEngine {
       case "file_write":
       case "file_append":
       case "file_read":
+      case "file_delete":
         return executeFileAction(action, ws);
 
+      case "folder_create":
+        return executeFolderCreate(action, ws);
+
+      case "npm_install": {
+        const packages: string[] = Array.isArray(action.packages) ? action.packages : [];
+        const cmd = packages.length > 0
+          ? `npm install ${packages.join(' ')}`
+          : 'npm install';
+        return executeShellAction({ type: 'shell_exec', command: cmd }, ws, goalId);
+      }
+
+      case "http_check": {
+        const url = action.url as string;
+        if (!url) return { success: false, error: 'http_check: url is required' };
+        const startTs = Date.now();
+        try {
+          const resp = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+          const ms   = Date.now() - startTs;
+          console.log(`[Engine] http_check ${url} → ${resp.status} (${ms}ms)`);
+          return {
+            success: resp.status < 400,
+            output:  { url, statusCode: resp.status, responseTimeMs: ms },
+            error:   resp.status >= 400 ? `HTTP ${resp.status}` : undefined,
+          };
+        } catch (err: any) {
+          return { success: false, error: `http_check failed: ${err.message}` };
+        }
+      }
+
       case "shell_exec":
-        return executeShellAction(action, ws);
+        return executeShellAction(action, ws, goalId);
 
       case "web_fetch":
       case "web_search":
