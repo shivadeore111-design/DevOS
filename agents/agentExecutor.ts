@@ -8,7 +8,7 @@
 import { callOllama }                        from '../llm/ollama'
 import { toolRuntime }                       from '../executor/toolRuntime'
 import { agentRegistry }                     from './agentRegistry'
-import { AgentRole }                         from './types'
+import { AgentRole, AgentResult }            from './types'
 import { Task }                              from '../goals/types'
 import { liveThinking }                      from '../coordination/liveThinking'
 import { getCodingModel, getPlanningModel }  from '../core/autoModelSelector'
@@ -16,6 +16,10 @@ import { missionCanvas }                     from '../coordination/missionCanvas
 import { agentDen }                          from './agentDen'
 import { impactMap }                         from '../intelligence/impactMap'
 import { pluginBus }                         from '../integrations/pluginBus'
+import { coreBoot }                          from '../core/coreBoot'
+import { memoryLayers }                      from '../memory/memoryLayers'
+import { contextLens }                       from '../core/contextLens'
+import crypto                                from 'crypto'
 
 interface ToolCall {
   tool:  string
@@ -190,6 +194,109 @@ Provide your response and any tool calls needed.
     }
 
     return result
+  }
+
+  // ── execute() — Sprint 14 canonical entry point ───────────────
+  //
+  // Differs from assign() in three ways:
+  //   1. Always prepends coreBoot.getSystemPrompt() as the system context
+  //   2. Builds rich user-context from memoryLayers + missionCanvas + agentDen
+  //   3. Returns a structured AgentResult (not a raw string)
+  //   4. Applies role-specific model routing (coder roles → coding model)
+  //   5. Compresses the final output via contextLens
+
+  async execute(
+    role:      AgentRole,
+    task:      string,
+    missionId: string,
+  ): Promise<AgentResult> {
+    const agent  = agentRegistry.get(role)
+    const taskId = `task_${crypto.randomBytes(4).toString('hex')}`
+
+    // ── 1. Build context ──────────────────────────────────────
+    const system      = coreBoot.getSystemPrompt()
+    const memCtx      = await memoryLayers.getContextForPrompt(500)
+    const canvasCtx   = missionCanvas.getFullContext(missionId) ?? ''
+    const agentMemory = agentDen.readMemory(role)
+
+    const userContext = [
+      memCtx      ? `[Memory Context]\n${memCtx}`       : '',
+      canvasCtx   ? `[Mission Canvas]\n${canvasCtx}`    : '',
+      agentMemory ? `[Agent Memory]\n${agentMemory}`    : '',
+      `[Role]\n${role}`,
+      `[Task]\n${task}`,
+    ].filter(Boolean).join('\n\n')
+
+    // ── 2. Select model ───────────────────────────────────────
+    const CODING_ROLES = new Set<string>([
+      'software-engineer', 'frontend-developer', 'backend-developer',
+      'mobile-developer', 'blockchain-developer', 'qa-engineer', 'devops-engineer',
+      // Sprint-14 simplified roles
+      'Engineer', 'QA', 'Deployment',
+    ])
+    const model = CODING_ROLES.has(role) ? getCodingModel() : getPlanningModel()
+
+    // ── 3. Call LLM — one prompt, one response ────────────────
+    const agentSystemPrompt = agent
+      ? `${system}\n\n${agent.systemPrompt}`
+      : system
+
+    agentRegistry.updateStatus(role, 'thinking', taskId)
+    liveThinking.think(role, `Executing: ${task.slice(0, 60)}`, missionId)
+
+    let rawOutput = ''
+    let success   = true
+    let errorMsg  = ''
+
+    try {
+      rawOutput = await callOllama(userContext, agentSystemPrompt, model)
+    } catch (err: any) {
+      success  = false
+      errorMsg = err?.message ?? String(err)
+      rawOutput = `Error: ${errorMsg}`
+    }
+
+    // ── 4. Compress result via contextLens ────────────────────
+    const compressed = contextLens.compress(
+      { success, output: rawOutput, error: errorMsg || undefined },
+      'llm_response',
+    )
+
+    // ── 5. Write result to MissionCanvas ──────────────────────
+    try {
+      missionCanvas.write(missionId, {
+        author:  role,
+        type:    'result',
+        content: compressed.slice(0, 800),
+        tags:    [taskId],
+      })
+    } catch { /* non-fatal */ }
+
+    // ── 6. TruthCheck — extract reasoning and nextAction hints ─
+    const reasoningMatch  = rawOutput.match(/(?:reasoning|rationale|because)[:\s]+(.{20,200})/i)
+    const nextActionMatch = rawOutput.match(/(?:next[:\s]+|then[:\s]+|follow[- ]up[:\s]+)(.{10,120})/i)
+
+    const reasoning  = reasoningMatch?.[1]?.trim()  ?? (success ? 'Task completed.' : errorMsg)
+    const nextAction = nextActionMatch?.[1]?.trim()
+
+    // Update registry
+    agentRegistry.updateStatus(role, success ? 'idle' : 'error')
+    agentRegistry.recordCompletion(role, success)
+    liveThinking.done(role, `Done: ${task.slice(0, 60)}`, missionId)
+
+    // Log to AgentDen
+    try {
+      agentDen.writeLog(role, `${success ? '✅' : '❌'} [${taskId}] ${task.slice(0, 80)}`)
+    } catch { /* non-fatal */ }
+
+    return {
+      agentId:    agent?.id ?? role,
+      taskId,
+      output:     compressed,
+      success,
+      reasoning,
+      nextAction,
+    }
   }
 }
 

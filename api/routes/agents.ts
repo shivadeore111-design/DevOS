@@ -84,13 +84,29 @@ router.get('/api/agents/:role', (req: any, res: any) => {
   }
 })
 
-// POST /api/agents/coordinate — { goalId } → start coordination loop
+// POST /api/agents/coordinate — two modes:
+//   { goalId }             → fire-and-forget start() on an existing stored goal
+//   { goal, description }  → blocking run() — returns CoordinationResult when done
 router.post('/api/agents/coordinate', async (req: any, res: any) => {
-  const { goalId } = req.body ?? {}
-  if (!goalId || typeof goalId !== 'string') {
-    res.status(400).json({ error: 'Missing required field: goalId' }); return
+  const { goalId, goal, description } = req.body ?? {}
+
+  // ── Mode 1: direct mission run ────────────────────────────────
+  if (goal && typeof goal === 'string') {
+    const desc = (description && typeof description === 'string') ? description : goal
+    try {
+      const result = await coordinationLoop.run(goal, desc)
+      res.json(result)
+    } catch (err: any) {
+      console.error(`[CoordinationLoop] run() error: ${err?.message}`)
+      res.status(500).json({ error: err?.message ?? String(err) })
+    }
+    return
   }
-  // Fire-and-forget — respond immediately, loop runs async
+
+  // ── Mode 2: goal-store coordination loop (fire-and-forget) ────
+  if (!goalId || typeof goalId !== 'string') {
+    res.status(400).json({ error: 'Provide either { goal, description } or { goalId }' }); return
+  }
   coordinationLoop.start(goalId).catch((err: any) => {
     console.error(`[CoordinationLoop] Error for goal ${goalId}: ${err?.message}`)
   })

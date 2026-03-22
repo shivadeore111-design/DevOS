@@ -47,12 +47,28 @@ export interface Agent {
   systemPrompt: string
   tools: string[]
   budget: number            // max tokens per task
+  /** Namespace key used when reading/writing to memoryLayers */
+  memoryNamespace?: string
   status: AgentStatus
   currentTaskId?: string
   completedTasks: number
   failedTasks: number
   createdAt: Date
   lastActiveAt?: Date
+}
+
+/**
+ * Structured result returned by AgentExecutor.execute().
+ * Carries the agent's output, success flag, reasoning chain, and an
+ * optional suggestion for the next action the CEO should assign.
+ */
+export interface AgentResult {
+  agentId:     string
+  taskId:      string
+  output:      string
+  success:     boolean
+  reasoning:   string
+  nextAction?: string
 }
 
 export interface AgentMessage {
