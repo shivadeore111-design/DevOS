@@ -30,6 +30,23 @@ export async function executeFileAction(action: any, workspace: string): Promise
       case "file_write": {
         const dir = path.dirname(safePath);
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+        // ── PrecisionEdit: existing file + changeRequest → surgical edit ──
+        if (action.changeRequest && fs.existsSync(safePath)) {
+          try {
+            const { precisionEdit } = await import("../../core/precisionEdit");
+            const plan   = await precisionEdit.planEdit(safePath, action.changeRequest);
+            const result = precisionEdit.applyEdit(safePath, plan);
+            console.log(
+              `[PrecisionEdit] Changed ${result.linesChanged} lines, preserved ${result.linesPreserved} lines in ${safePath}`
+            );
+            return { success: true, output: { path: safePath, ...result, precisionEdit: true } };
+          } catch (peErr: any) {
+            console.warn(`[PrecisionEdit] Fell back to full write: ${peErr.message}`);
+          }
+        }
+
+        // ── Standard write: new file or explicit full-content replacement ──
         fs.writeFileSync(safePath, action.content ?? "", "utf-8");
         console.log(`[FileActions] Written: ${safePath}`);
         return { success: true, output: { path: safePath, bytes: (action.content ?? "").length } };

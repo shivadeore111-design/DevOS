@@ -2303,6 +2303,44 @@ When running devos serve, DevOS will:
       break
     }
 
+    // ── devos clone "<url>" "<name>" ──────────────────────────
+    case "clone": {
+      const url  = rawArgs[0]
+      const name = rawArgs[1] || "my-clone"
+      if (!url) {
+        console.log('Usage: devos clone "<url>" "<name>"')
+        break
+      }
+      console.log(`[WebCraft] Cloning ${url} as ${name}...`)
+      const { skillLoader: sl } = await import('./skills/loader')
+      await sl.run('webcraft', { url, projectName: name })
+      break
+    }
+
+    // ── devos vault status ────────────────────────────────────
+    case "vault": {
+      const sub = rawArgs[0]
+      const { skillVault } = await import('./security/skillVault')
+      if (sub === 'status') {
+        const available = skillVault.isAvailable()
+        console.log('[SkillVault] Available:', available)
+        if (available) {
+          const active = skillVault.listActive()
+          console.log(`[SkillVault] Active vaults: ${active.length}`)
+          for (const v of active) {
+            const age = Math.round((Date.now() - v.createdAt) / 1000)
+            console.log(`  • ${v.containerName}  (task: ${v.taskId}, age: ${age}s)`)
+          }
+        } else {
+          console.log('[SkillVault] Docker daemon is not running or not installed.')
+          console.log('   Install: https://docs.docker.com/get-docker/')
+        }
+      } else {
+        console.log('Usage: devos vault status')
+      }
+      break
+    }
+
     // ── devos help / default ──────────────────────────────────
     case "help":
     case "--help":
@@ -2383,6 +2421,12 @@ Telegram:
   telegram setup            Configure Telegram bot (print step-by-step instructions)
   telegram status           Show current Telegram config (token masked)
   telegram test             Send a test message via the configured bot
+
+WebCraft (Site Cloner):
+  clone "<url>" "<name>"    Clone any website as a React + Tailwind app
+
+SkillVault (Docker Sandbox):
+  vault status              Check Docker availability + list active skill vaults
 
 Docker Sandbox:
   sandbox                   Show sandbox status + active containers
