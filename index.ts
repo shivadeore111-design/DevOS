@@ -636,6 +636,16 @@ async function handleCLI(): Promise<void> {
     // ── devos serve ───────────────────────────────────────────
     case "serve": {
       await skillWarmup.preloadOnServe();
+      // ── SkillVault availability check ────────────────────────
+      {
+        const { skillVault: sv } = await import('./security/skillVault')
+        if (sv.isAvailable()) {
+          console.log('🐳 SkillVault ready — Docker daemon reachable')
+        } else {
+          console.warn('⚠️  SkillVault unavailable — Docker daemon not running (community skills will be disabled)')
+          console.warn('    Fix: docker info')
+        }
+      }
       const { dashboardServer } = await import("./dashboard/server");
       await dashboardServer.start();
       startAllTriggers();
@@ -702,14 +712,20 @@ async function handleCLI(): Promise<void> {
           }
         }
       }
-      const onServeSig = () => {
+      const onServeSig = async () => {
         dashboardServer.stop();
         stopAllTriggers();
         pilotScheduler.stop();
+        // Gracefully destroy all active vaults on shutdown
+        try {
+          const { skillVault: sv }   = await import('./security/skillVault')
+          const { browserVault: bv } = await import('./security/browserVault')
+          await Promise.all([sv.destroyAll(), bv.destroyAll()])
+        } catch { /* non-fatal */ }
         process.exit(0);
       };
-      process.on("SIGINT",  onServeSig);
-      process.on("SIGTERM", onServeSig);
+      process.on("SIGINT",  () => { void onServeSig() });
+      process.on("SIGTERM", () => { void onServeSig() });
       break;
     }
 
@@ -2332,26 +2348,39 @@ When running devos serve, DevOS will:
       break
     }
 
-    // ── devos vault status ────────────────────────────────────
+    // ── devos vault status | clean ────────────────────────────
     case "vault": {
       const sub = rawArgs[0]
-      const { skillVault } = await import('./security/skillVault')
+      const { skillVault }   = await import('./security/skillVault')
+      const { browserVault } = await import('./security/browserVault')
+
       if (sub === 'status') {
         const available = skillVault.isAvailable()
-        console.log('[SkillVault] Available:', available)
+        console.log('[SkillVault] Docker available:', available)
         if (available) {
-          const active = skillVault.listActive()
-          console.log(`[SkillVault] Active vaults: ${active.length}`)
+          const active = skillVault.listVaults()
+          console.log(`[SkillVault] Active skill vaults: ${active.length}`)
           for (const v of active) {
             const age = Math.round((Date.now() - v.createdAt) / 1000)
-            console.log(`  • ${v.containerName}  (task: ${v.taskId}, age: ${age}s)`)
+            console.log(`  • ${v.containerName}  (task: ${v.taskId}, age: ${age}s, id: ${v.containerId.slice(0, 12)})`)
+          }
+          const bvaults = browserVault.listBrowserVaults()
+          console.log(`[BrowserVault] Active browser vaults: ${bvaults.length}`)
+          for (const b of bvaults) {
+            const age = Math.round((Date.now() - b.createdAt) / 1000)
+            console.log(`  • ${b.containerName}  (task: ${b.taskId}, port: ${b.hostPort}, age: ${age}s)`)
           }
         } else {
           console.log('[SkillVault] Docker daemon is not running or not installed.')
           console.log('   Install: https://docs.docker.com/get-docker/')
         }
+      } else if (sub === 'clean') {
+        console.log('[SkillVault] Destroying all active vaults…')
+        await skillVault.destroyAll()
+        await browserVault.destroyAll()
+        console.log('[SkillVault] Clean complete.')
       } else {
-        console.log('Usage: devos vault status')
+        console.log('Usage: devos vault <status|clean>')
       }
       break
     }
