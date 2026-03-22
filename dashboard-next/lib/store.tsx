@@ -1,7 +1,14 @@
 'use client'
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 
-export type ActiveView = 'chat' | 'goals' | 'missions' | 'agents' | 'pilots' | 'memory'
+export type ActiveView =
+  | 'chat'
+  | 'goals'
+  | 'missions'
+  | 'agents'
+  | 'skills'
+  | 'memory'
+  | 'knowledge'
 
 export interface DevOSSettings {
   selectedModel: string

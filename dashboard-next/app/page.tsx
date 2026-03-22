@@ -1,13 +1,16 @@
 'use client'
-import { useState, useEffect } from 'react'
-import { Menu, X } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Menu, X, PanelRightClose, PanelRightOpen } from 'lucide-react'
 import { useStore } from '../lib/store'
 import { LeftSidebar } from '../components/LeftSidebar'
 import { ChatPanel } from '../components/ChatPanel'
-import { AgentFeed } from '../components/AgentFeed'
+import { LivePulsePanel } from '../components/LivePulsePanel'
 import { SetupWizard } from '../components/SetupWizard'
+import { QuickLaunch } from '../components/QuickLaunch'
 
 const API = process.env.NEXT_PUBLIC_DEVOS_API || 'http://localhost:4200'
+
+// ── View-specific sub-panels rendered in the center when navigated ───────────
 
 function GoalsView() {
   const [goals, setGoals] = useState<any[]>([])
@@ -29,22 +32,16 @@ function GoalsView() {
       )}
       <div className="space-y-3">
         {goals.map((g, i) => (
-          <div key={`goal-${i}-${g.id || ""}`}
+          <div key={`goal-${i}-${g.id || ''}`}
             className="p-4 rounded-2xl"
             style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
             <div className="flex items-center justify-between mb-1">
               <p className="text-white font-medium text-sm">{g.title}</p>
               <span className="text-xs px-2 py-0.5 rounded-full" style={{
-                background: g.status === 'completed'
-                  ? 'rgba(34,197,94,0.2)'
-                  : g.status === 'failed'
-                  ? 'rgba(239,68,68,0.2)'
-                  : 'rgba(99,102,241,0.2)',
-                color: g.status === 'completed'
-                  ? '#4ade80'
-                  : g.status === 'failed'
-                  ? '#f87171'
-                  : '#a5b4fc'
+                background: g.status === 'completed' ? 'rgba(34,197,94,0.2)'
+                  : g.status === 'failed' ? 'rgba(239,68,68,0.2)' : 'rgba(99,102,241,0.2)',
+                color: g.status === 'completed' ? '#4ade80'
+                  : g.status === 'failed' ? '#f87171' : '#a5b4fc'
               }}>{g.status}</span>
             </div>
             <p className="text-xs" style={{ color: 'rgba(255,255,255,0.3)' }}>{g.id}</p>
@@ -103,10 +100,7 @@ function AgentsView() {
   }, [])
 
   const STATUS_COLOR: Record<string, string> = {
-    idle: '#4ade80',
-    thinking: '#6366f1',
-    executing: '#eab308',
-    error: '#ef4444'
+    idle: '#4ade80', thinking: '#6366f1', executing: '#eab308', error: '#ef4444'
   }
 
   return (
@@ -119,16 +113,11 @@ function AgentsView() {
             style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
             <div className="flex items-center space-x-2 mb-2">
               <div className="w-2 h-2 rounded-full"
-                style={{
-                  background: STATUS_COLOR[a.status] || '#4ade80',
-                  boxShadow: `0 0 6px ${STATUS_COLOR[a.status] || '#4ade80'}`
-                }} />
+                style={{ background: STATUS_COLOR[a.status] || '#4ade80', boxShadow: `0 0 6px ${STATUS_COLOR[a.status] || '#4ade80'}` }} />
               <p className="text-white font-medium text-sm">{a.name}</p>
             </div>
             <p className="text-xs" style={{ color: 'rgba(255,255,255,0.3)' }}>{a.status}</p>
-            <p className="text-xs mt-1" style={{ color: 'rgba(255,255,255,0.2)' }}>
-              {a.completedTasks} completed
-            </p>
+            <p className="text-xs mt-1" style={{ color: 'rgba(255,255,255,0.2)' }}>{a.completedTasks} completed</p>
           </div>
         ))}
       </div>
@@ -136,70 +125,31 @@ function AgentsView() {
   )
 }
 
-function PilotsView() {
-  const [pilots, setPilots] = useState<any[]>([])
+function SkillsView() {
+  const [skills, setSkills] = useState<any[]>([])
   const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
-    fetch(`${API}/api/pilots`)
+    fetch(`${API}/api/skills`)
       .then(r => r.json())
-      .then(d => { setPilots(Array.isArray(d) ? d : []); setLoaded(true) })
+      .then(d => { setSkills(Array.isArray(d) ? d : []); setLoaded(true) })
       .catch(() => setLoaded(true))
   }, [])
 
-  const runPilot = async (id: string) => {
-    await fetch(`${API}/api/pilots/${id}/run`, { method: 'POST' })
-    alert('Pilot started!')
-  }
-
-  const togglePilot = async (id: string, enabled: boolean) => {
-    await fetch(`${API}/api/pilots/${id}/${enabled ? 'disable' : 'enable'}`, { method: 'POST' })
-    setPilots(prev => prev.map(p => p.id === id ? { ...p, enabled: !enabled } : p))
-  }
-
   return (
     <div className="p-6 overflow-y-auto h-full">
-      <h2 className="text-xl font-bold text-white mb-2">Pilots</h2>
-      <p className="text-sm mb-6" style={{ color: 'rgba(255,255,255,0.3)' }}>
-        Autonomous scheduled agents that run in the background
-      </p>
+      <h2 className="text-xl font-bold text-white mb-4">Skills</h2>
       {!loaded && <p style={{ color: 'rgba(255,255,255,0.3)' }}>Loading...</p>}
-      <div className="grid grid-cols-1 gap-3">
-        {pilots.map((p, i) => (
-          <div key={p.id || i} className="p-4 rounded-2xl"
+      {loaded && skills.length === 0 && (
+        <p style={{ color: 'rgba(255,255,255,0.3)' }}>No skills registered yet.</p>
+      )}
+      <div className="grid grid-cols-2 gap-3">
+        {skills.map((s, i) => (
+          <div key={s.id || s.name || i}
+            className="p-4 rounded-2xl"
             style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center space-x-2">
-                <div className={`w-2 h-2 rounded-full ${p.enabled ? 'bg-green-400' : 'bg-gray-600'}`}
-                  style={p.enabled ? { boxShadow: '0 0 6px #4ade80' } : {}} />
-                <p className="text-white font-medium text-sm">{p.name}</p>
-              </div>
-              <div className="flex space-x-2">
-                <button onClick={() => runPilot(p.id)}
-                  className="text-xs px-3 py-1 rounded-xl text-white transition-all hover:opacity-80"
-                  style={{ background: 'rgba(99,102,241,0.4)' }}>
-                  Run Now
-                </button>
-                <button onClick={() => togglePilot(p.id, p.enabled)}
-                  className="text-xs px-3 py-1 rounded-xl transition-all hover:opacity-80"
-                  style={{
-                    background: p.enabled ? 'rgba(239,68,68,0.2)' : 'rgba(34,197,94,0.2)',
-                    color: p.enabled ? '#f87171' : '#4ade80'
-                  }}>
-                  {p.enabled ? 'Disable' : 'Enable'}
-                </button>
-              </div>
-            </div>
-            <p className="text-xs mb-2" style={{ color: 'rgba(255,255,255,0.4)' }}>{p.description}</p>
-            <div className="flex items-center space-x-3">
-              {p.schedule && (
-                <span className="text-xs px-2 py-0.5 rounded-full"
-                  style={{ background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.4)' }}>
-                  ⏱ {p.schedule}
-                </span>
-              )}
-              <span className="text-xs" style={{ color: 'rgba(255,255,255,0.25)' }}>{p.id}</span>
-            </div>
+            <p className="text-white font-medium text-sm">{s.name}</p>
+            <p className="text-xs mt-1" style={{ color: 'rgba(255,255,255,0.3)' }}>{s.description || s.type}</p>
           </div>
         ))}
       </div>
@@ -243,9 +193,9 @@ function MemoryView() {
       {stats && (
         <div className="grid grid-cols-3 gap-3 mb-6">
           {[
-            { label: 'Entries',     value: stats.totalEntries ?? entries.length ?? 0 },
+            { label: 'Entries',      value: stats.totalEntries ?? entries.length ?? 0 },
             { label: 'Success Rate', value: `${Math.round((stats.successRate ?? 0) * 100)}%` },
-            { label: 'Patterns',    value: stats.topPatterns?.length ?? 0 }
+            { label: 'Patterns',     value: stats.topPatterns?.length ?? 0 }
           ].map(s => (
             <div key={s.label} className="p-3 rounded-2xl text-center"
               style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
@@ -302,21 +252,116 @@ function MemoryView() {
   )
 }
 
+function KnowledgeView() {
+  const [entries, setEntries] = useState<any[]>([])
+  const [loaded, setLoaded] = useState(false)
+  const [query, setQuery] = useState('')
+  const [answer, setAnswer] = useState('')
+  const [searching, setSearching] = useState(false)
+
+  useEffect(() => {
+    fetch(`${API}/api/knowledge`)
+      .then(r => r.json())
+      .then(d => { setEntries(Array.isArray(d) ? d : []); setLoaded(true) })
+      .catch(() => setLoaded(true))
+  }, [])
+
+  const search = async () => {
+    if (!query.trim()) return
+    setSearching(true)
+    fetch(`${API}/api/knowledge/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: query })
+    }).then(r => r.json())
+      .then(d => setAnswer(d.answer || 'No answer found.'))
+      .catch(() => setAnswer('Query failed.'))
+      .finally(() => setSearching(false))
+  }
+
+  return (
+    <div className="p-6 overflow-y-auto h-full">
+      <h2 className="text-xl font-bold text-white mb-4">Knowledge</h2>
+      <div className="flex space-x-2 mb-6">
+        <input
+          className="flex-1 px-4 py-2 rounded-2xl text-white text-sm focus:outline-none"
+          style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)' }}
+          placeholder="Query the knowledge base..."
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && search()}
+        />
+        <button onClick={search} disabled={searching}
+          className="px-4 py-2 rounded-2xl text-white text-sm disabled:opacity-40"
+          style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}>
+          {searching ? '...' : 'Search'}
+        </button>
+      </div>
+      {answer && (
+        <div className="p-4 rounded-2xl mb-6 text-sm text-white"
+          style={{ background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.3)' }}>
+          {answer}
+        </div>
+      )}
+      {!loaded && <p style={{ color: 'rgba(255,255,255,0.3)' }}>Loading...</p>}
+      <div className="space-y-2">
+        {loaded && entries.length === 0 && (
+          <p className="text-sm" style={{ color: 'rgba(255,255,255,0.3)' }}>
+            No knowledge entries yet.
+          </p>
+        )}
+        {entries.map((e: any, i: number) => (
+          <div key={e.id || i} className="p-3 rounded-2xl"
+            style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}>
+            <p className="text-sm font-medium text-white">{e.title}</p>
+            <p className="text-xs mt-1" style={{ color: 'rgba(255,255,255,0.3)' }}>
+              {(e.content || '').slice(0, 120)}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Main layout ──────────────────────────────────────────────────────────────
+
 export default function Home() {
   const { activeView, settings, isSetupOpen, setIsSetupOpen, mounted } = useStore()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [pulseOpen, setPulseOpen] = useState(true)
+  const [quickLaunchOpen, setQuickLaunchOpen] = useState(false)
 
+  // Setup wizard auto-open
   useEffect(() => {
     if (mounted && !settings.isSetupComplete) {
       setIsSetupOpen(true)
     }
   }, [mounted])
 
+  // Cmd+K / Ctrl+K → QuickLaunch
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        setQuickLaunchOpen(prev => !prev)
+      }
+      if (e.key === 'Escape') setQuickLaunchOpen(false)
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
+
+  const handleQuickSelect = useCallback((text: string) => {
+    window.dispatchEvent(new CustomEvent('devos:quicklaunch', { detail: { query: text } }))
+    setQuickLaunchOpen(false)
+  }, [])
+
   return (
     <div className="h-screen flex overflow-hidden relative"
       style={{ background: 'linear-gradient(135deg, #0a0a1a 0%, #0f0a1f 50%, #0a0f1a 100%)' }}>
 
-      {/* Background glow effects */}
+      {/* Background glow */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
         <div className="absolute -top-40 -left-40 w-96 h-96 rounded-full opacity-20"
           style={{ background: 'radial-gradient(circle, #6366f1, transparent)', filter: 'blur(60px)' }} />
@@ -324,43 +369,64 @@ export default function Home() {
           style={{ background: 'radial-gradient(circle, #8b5cf6, transparent)', filter: 'blur(60px)' }} />
       </div>
 
+      {/* Modals */}
       {isSetupOpen && <SetupWizard />}
+      {quickLaunchOpen && (
+        <QuickLaunch
+          onClose={() => setQuickLaunchOpen(false)}
+          onSelect={handleQuickSelect}
+        />
+      )}
 
+      {/* Mobile backdrop */}
       {sidebarOpen && (
         <div className="fixed inset-0 z-40 md:hidden"
           onClick={() => setSidebarOpen(false)}
           style={{ background: 'rgba(0,0,0,0.5)' }} />
       )}
 
-      {/* Left sidebar */}
-      <div className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:relative z-40 md:z-auto w-56 h-full transition-transform duration-300`}>
+      {/* ── Left sidebar  w-64 ── */}
+      <div className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:relative z-40 md:z-auto w-64 h-full transition-transform duration-300 shrink-0`}>
         <LeftSidebar />
       </div>
 
-      {/* Main content */}
+      {/* ── Center panel  flex-1 ── */}
       <div className="flex-1 flex flex-col min-w-0 relative">
         {/* Mobile header */}
-        <div className="md:hidden px-4 py-3 flex items-center"
+        <div className="md:hidden px-4 py-3 flex items-center justify-between"
           style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-          <button onClick={() => setSidebarOpen(!sidebarOpen)} className="mr-3 text-white">
+          <button onClick={() => setSidebarOpen(!sidebarOpen)} className="text-white">
             {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
           </button>
           <span className="font-bold text-white">DevOS</span>
+          <button onClick={() => setPulseOpen(p => !p)} className="text-white opacity-50 hover:opacity-100">
+            {pulseOpen ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />}
+          </button>
         </div>
 
         <div className="flex-1 overflow-hidden">
-          {activeView === 'chat'     && <ChatPanel />}
-          {activeView === 'goals'    && <GoalsView />}
-          {activeView === 'missions' && <MissionsView />}
-          {activeView === 'agents'   && <AgentsView />}
-          {activeView === 'pilots' && <PilotsView />}
-          {activeView === 'memory' && <MemoryView />}
+          {/* Chat is always the main center — other views slide in */}
+          {activeView === 'chat'      && <ChatPanel />}
+          {activeView === 'goals'     && <GoalsView />}
+          {activeView === 'missions'  && <MissionsView />}
+          {activeView === 'agents'    && <AgentsView />}
+          {activeView === 'skills'    && <SkillsView />}
+          {activeView === 'memory'    && <MemoryView />}
+          {activeView === 'knowledge' && <KnowledgeView />}
         </div>
       </div>
 
-      {/* Right agent feed */}
-      <div className="hidden lg:block w-72 shrink-0">
-        <AgentFeed />
+      {/* ── Right LivePulse panel  w-80 collapsible ── */}
+      <div className={`hidden md:flex flex-col shrink-0 transition-all duration-300 overflow-hidden ${pulseOpen ? 'w-80' : 'w-10'}`}>
+        {/* Collapse toggle */}
+        <button
+          onClick={() => setPulseOpen(p => !p)}
+          className="absolute right-0 mt-3 mr-1 z-10 p-1.5 rounded-xl transition-all hover:opacity-80"
+          style={{ color: 'rgba(255,255,255,0.3)' }}
+          title={pulseOpen ? 'Collapse LivePulse' : 'Expand LivePulse'}>
+          {pulseOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}
+        </button>
+        {pulseOpen && <LivePulsePanel />}
       </div>
     </div>
   )
