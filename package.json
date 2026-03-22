@@ -1,31 +1,41 @@
 {
-  "name": "devos",
-  "version": "0.4.0",
-  "description": "Personal AI OS — Free, Local, Private. Runs on your machine.",
+  "name": "devos-ai",
+  "version": "1.0.0",
+  "description": "Autonomous AI Operating System — Local, Private, Free. Runs on your machine with Ollama.",
   "author": "Shiva Deore <devosxprojects@gmail.com>",
   "license": "Apache-2.0",
   "keywords": [
     "ai",
-    "autonomous",
+    "autonomous-agent",
     "agent",
     "personal-ai",
     "ollama",
     "local-ai",
     "devos",
-    "llm"
+    "llm",
+    "ai-os",
+    "self-hosted-ai",
+    "open-source-ai",
+    "mistral",
+    "qwen",
+    "builder"
   ],
   "engines": {
     "node": ">=18"
   },
   "bin": {
-    "devos": "./dist/index.js"
+    "devos-ai": "./dist/bin/npx-init.js",
+    "devos":    "./dist/index.js"
   },
   "main": "./dist/index.js",
   "files": [
     "dist/",
     "dashboard-next/",
+    "context/",
+    "config/",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "docker-compose.yml"
   ],
   "preferGlobal": true,
   "type": "commonjs",
