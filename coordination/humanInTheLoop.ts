@@ -30,8 +30,8 @@ class HumanInTheLoop {
       if (fs.existsSync(configPath)) {
         const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'))
         if (config.telegram?.enabled && config.telegram?.requireApprovalForDangerous) {
-          const { telegramApproval } = await import('../integrations/telegram/telegramApproval')
-          return telegramApproval.requestViaBot(actionDescription, taskId)
+          const { botGate } = await import('../integrations/telegram/botGate')
+          return botGate.requestViaBot(actionDescription, taskId)
         }
       }
     } catch { /* fall through to CLI/SSE path */ }

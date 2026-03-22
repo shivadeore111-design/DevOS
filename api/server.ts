@@ -38,8 +38,11 @@ import { backgroundAgents }    from "../personal/backgroundAgents";
 import { dawnReport }          from "../personal/dawnReport";
 import { lifeCanvas }          from "../personal/lifeCanvas";
 import { alwaysOn }            from "../personal/alwaysOn";
-import { telegramBot }         from "../integrations/telegram/telegramBot";
-import { telegramNotifier }    from "../integrations/telegram/telegramNotifier";
+import { devosBot }            from "../integrations/telegram/devosBot";
+import { botNotifier }         from "../integrations/telegram/botNotifier";
+// Legacy aliases — kept so any remaining references still compile
+const telegramBot      = devosBot;
+const telegramNotifier = botNotifier;
 import { sandboxManager }         from "../sandbox/sandboxManager";
 import { detectAndSelectModels }  from "../core/autoModelSelector";
 
