@@ -1,0 +1,10 @@
+{
+  "chat": "llama3.2:latest",
+  "coding": "qwen2.5-coder:7b",
+  "planning": "qwen2.5-coder:7b",
+  "embedding": "nomic-embed-text:latest",
+  "detectedAt": "2026-03-15T19:04:47.732Z",
+  "gpuVramGB": 6,
+  "gpuName": "GTX 1060",
+  "reason": "Auto-selected for 6GB VRAM from 12 available models"
+}

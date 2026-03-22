@@ -1,0 +1,43 @@
+2026/03/17-14:24:08.986 33e4 Reusing MANIFEST C:\Users\shiva\DevOS\config\whatsapp-auth\session\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/03/17-14:24:09.001 33e4 Recovering log #560
+2026/03/17-14:24:09.039 33e4 Reusing old log C:\Users\shiva\DevOS\config\whatsapp-auth\session\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/000560.log 
+2026/03/17-14:24:09.732 37e4 Compacting 1@1 + 7@2 files
+2026/03/17-14:24:09.736 37e4 Level-0 table #567: started
+2026/03/17-14:24:09.753 37e4 Level-0 table #567: 1040801 bytes OK
+2026/03/17-14:24:09.755 37e4 Delete type=0 #560
+2026/03/17-14:24:09.809 37e4 Generated table #565@1: 56392 keys, 2217210 bytes
+2026/03/17-14:24:09.843 37e4 Generated table #568@1: 18255 keys, 2160843 bytes
+2026/03/17-14:24:09.861 37e4 Generated table #569@1: 584 keys, 2130869 bytes
+2026/03/17-14:24:09.881 37e4 Generated table #570@1: 1382 keys, 2133205 bytes
+2026/03/17-14:24:09.903 37e4 Generated table #571@1: 1825 keys, 2134070 bytes
+2026/03/17-14:24:09.962 37e4 Generated table #572@1: 30903 keys, 2233577 bytes
+2026/03/17-14:24:10.002 37e4 Generated table #573@1: 16753 keys, 2171522 bytes
+2026/03/17-14:24:10.002 37e4 Compacted 1@1 + 7@2 files => 15181296 bytes
+2026/03/17-14:24:10.003 37e4 compacted to: files[ 1 1 15 0 0 0 0 ]
+2026/03/17-14:24:10.003 37e4 Delete type=2 #549
+2026/03/17-14:24:10.003 37e4 Delete type=2 #550
+2026/03/17-14:24:10.003 37e4 Delete type=2 #551
+2026/03/17-14:24:10.003 37e4 Delete type=2 #552
+2026/03/17-14:24:10.003 37e4 Delete type=2 #553
+2026/03/17-14:24:10.003 37e4 Delete type=2 #554
+2026/03/17-14:24:10.003 37e4 Delete type=2 #555
+2026/03/17-14:24:10.004 37e4 Delete type=2 #562
+2026/03/17-14:24:10.468 37e4 Moved #567 to level-1 1040801 bytes OK: files[ 0 2 15 0 0 0 0 ]
+2026/03/17-14:24:10.469 37e4 Compacting 1@1 + 7@2 files
+2026/03/17-14:24:10.549 37e4 Generated table #574@1: 58169 keys, 2221299 bytes
+2026/03/17-14:24:10.600 37e4 Generated table #575@1: 15172 keys, 2156975 bytes
+2026/03/17-14:24:10.628 37e4 Generated table #576@1: 578 keys, 2132817 bytes
+2026/03/17-14:24:10.654 37e4 Generated table #577@1: 1513 keys, 2133794 bytes
+2026/03/17-14:24:10.681 37e4 Generated table #578@1: 3444 keys, 2136255 bytes
+2026/03/17-14:24:10.746 37e4 Generated table #579@1: 30775 keys, 2230804 bytes
+2026/03/17-14:24:10.781 37e4 Generated table #580@1: 15102 keys, 2062604 bytes
+2026/03/17-14:24:10.782 37e4 Compacted 1@1 + 7@2 files => 15074548 bytes
+2026/03/17-14:24:10.782 37e4 compacted to: files[ 0 1 15 0 0 0 0 ]
+2026/03/17-14:24:10.782 37e4 Delete type=2 #565
+2026/03/17-14:24:10.782 37e4 Delete type=2 #567
+2026/03/17-14:24:10.782 37e4 Delete type=2 #568
+2026/03/17-14:24:10.783 37e4 Delete type=2 #569
+2026/03/17-14:24:10.783 37e4 Delete type=2 #570
+2026/03/17-14:24:10.783 37e4 Delete type=2 #571
+2026/03/17-14:24:10.783 37e4 Delete type=2 #572
+2026/03/17-14:24:10.783 37e4 Delete type=2 #573

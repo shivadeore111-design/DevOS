@@ -1,0 +1,31 @@
+{
+  "github": {
+    "token": "",
+    "defaultRepo": "shivadeore111-design/DevOS"
+  },
+  "slack": {
+    "webhookUrl": "",
+    "defaultChannel": "#devos-alerts"
+  },
+  "vercel": {
+    "token": "",
+    "teamId": ""
+  },
+  "railway": {
+    "token": ""
+  },
+  "notifications": {
+    "onGoalComplete": false,
+    "onGoalFailed": true,
+    "onEmergencyStop": true
+  },
+  "telegram": {
+    "enabled": false,
+    "botToken": "",
+    "allowedUserIds": [],
+    "notifyOnGoalComplete": true,
+    "notifyOnMissionComplete": true,
+    "notifyOnPilotComplete": false,
+    "requireApprovalForDangerous": true
+  }
+}

@@ -1,0 +1,104 @@
+[
+  {
+    "schedule": "0 9 * * *",
+    "goal": "check for new github issues and triage them",
+    "enabled": true,
+    "id": "cron_mmizzp2p_387u"
+  },
+  {
+    "schedule": "0 9 * * *",
+    "goal": "check for new github issues and triage them",
+    "enabled": true,
+    "id": "cron_mmj04s44_x7t5"
+  },
+  {
+    "schedule": "0 8 * * *",
+    "goal": "[Pilot: researcher] Deep autonomous research agent. Given a topic, searches the web, cross-references multiple sources, evaluates credibility, synthesizes findings into a cited markdown report, and stores insights in the knowledge base.",
+    "enabled": true,
+    "id": "cron_mmqmmulq_68sl"
+  },
+  {
+    "schedule": "0 8 * * *",
+    "goal": "[Pilot: researcher] Deep autonomous research agent. Given a topic, searches the web, cross-references multiple sources, evaluates credibility, synthesizes findings into a cited markdown report, and stores insights in the knowledge base.",
+    "enabled": true,
+    "id": "cron_mmrakk2b_idua"
+  },
+  {
+    "schedule": "0 8 * * *",
+    "goal": "[Pilot: researcher] Deep autonomous research agent. Given a topic, searches the web, cross-references multiple sources, evaluates credibility, synthesizes findings into a cited markdown report, and stores insights in the knowledge base.",
+    "enabled": true,
+    "id": "cron_mmrancnq_qvah"
+  },
+  {
+    "schedule": "0 8 * * *",
+    "goal": "[Pilot: researcher] Deep autonomous research agent. Given a topic, searches the web, cross-references multiple sources, evaluates credibility, synthesizes findings into a cited markdown report, and stores insights in the knowledge base.",
+    "enabled": true,
+    "id": "cron_mmrao088_01ha"
+  },
+  {
+    "schedule": "0 8 * * *",
+    "goal": "[Pilot: researcher] Deep autonomous research agent. Given a topic, searches the web, cross-references multiple sources, evaluates credibility, synthesizes findings into a cited markdown report, and stores insights in the knowledge base.",
+    "enabled": true,
+    "id": "cron_mmrn04mm_yznf"
+  },
+  {
+    "schedule": "0 8 * * *",
+    "goal": "[Pilot: researcher] Deep autonomous research agent. Given a topic, searches the web, cross-references multiple sources, evaluates credibility, synthesizes findings into a cited markdown report, and stores insights in the knowledge base.",
+    "enabled": true,
+    "id": "cron_mmrpa1ox_ifup"
+  },
+  {
+    "schedule": "0 8 * * *",
+    "goal": "[Pilot: researcher] Deep autonomous research agent. Given a topic, searches the web, cross-references multiple sources, evaluates credibility, synthesizes findings into a cited markdown report, and stores insights in the knowledge base.",
+    "enabled": true,
+    "id": "cron_mmru7g5c_28re"
+  },
+  {
+    "schedule": "0 8 * * *",
+    "goal": "[Pilot: researcher] Deep autonomous research agent. Given a topic, searches the web, cross-references multiple sources, evaluates credibility, synthesizes findings into a cited markdown report, and stores insights in the knowledge base.",
+    "enabled": true,
+    "id": "cron_mms14w5a_i5ek"
+  },
+  {
+    "schedule": "0 8 * * *",
+    "goal": "[Pilot: researcher] Deep autonomous research agent. Given a topic, searches the web, cross-references multiple sources, evaluates credibility, synthesizes findings into a cited markdown report, and stores insights in the knowledge base.",
+    "enabled": true,
+    "id": "cron_mms2qwa4_wcc1"
+  },
+  {
+    "schedule": "0 8 * * *",
+    "goal": "[Pilot: researcher] Deep autonomous research agent. Given a topic, searches the web, cross-references multiple sources, evaluates credibility, synthesizes findings into a cited markdown report, and stores insights in the knowledge base.",
+    "enabled": true,
+    "id": "cron_mms3j8qm_cvqc"
+  },
+  {
+    "schedule": "0 8 * * *",
+    "goal": "[Pilot: researcher] Deep autonomous research agent. Given a topic, searches the web, cross-references multiple sources, evaluates credibility, synthesizes findings into a cited markdown report, and stores insights in the knowledge base.",
+    "enabled": true,
+    "id": "cron_mms45vs6_7zpn"
+  },
+  {
+    "schedule": "0 8 * * *",
+    "goal": "[Pilot: researcher] Deep autonomous research agent. Given a topic, searches the web, cross-references multiple sources, evaluates credibility, synthesizes findings into a cited markdown report, and stores insights in the knowledge base.",
+    "enabled": true,
+    "id": "cron_mmwdlw5n_2dkd"
+  },
+  {
+    "schedule": "0 8 * * *",
+    "goal": "[Pilot: researcher] Deep autonomous research agent. Given a topic, searches the web, cross-references multiple sources, evaluates credibility, synthesizes findings into a cited markdown report, and stores insights in the knowledge base.",
+    "enabled": true,
+    "id": "cron_mmwdnuxy_5btm"
+  },
+  {
+    "schedule": "0 8 * * *",
+    "goal": "[Pilot: researcher] Deep autonomous research agent. Given a topic, searches the web, cross-references multiple sources, evaluates credibility, synthesizes findings into a cited markdown report, and stores insights in the knowledge base.",
+    "enabled": true,
+    "id": "cron_mmwdqxgn_rqii"
+  },
+  {
+    "schedule": "0 8 * * *",
+    "goal": "[Pilot: researcher] Deep autonomous research agent. Given a topic, searches the web, cross-references multiple sources, evaluates credibility, synthesizes findings into a cited markdown report, and stores insights in the knowledge base.",
+    "enabled": true,
+    "id": "cron_mmwdsl38_b90n"
+  }
+]

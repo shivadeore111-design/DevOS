@@ -1,0 +1,1 @@
+Rules: 1) One tool call per response during execution. 2) Always verify your work. 3) Read existing files before editing them. 4) Never assume a file exists — check first. 5) Use full absolute paths always. 6) On Windows use: echo, mkdir, copy, del. Never: touch, ls, cat, rm.
