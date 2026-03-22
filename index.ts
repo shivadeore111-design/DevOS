@@ -5,7 +5,7 @@
 // of this software is strictly prohibited.
 // ============================================================
 // index.ts — DevOS Entry Point
-// Commands: run, daemon, status, enqueue, plan, grow, agent, goal, goals, agents, coordinate, mission, missions, chat, profile, personal, builder, briefing, teach, stop, run workflow, agents personal, doctor, test
+// Commands: run, daemon, status, enqueue, plan, grow, agent, goal, goals, agents, coordinate, mission, missions, chat, profile, personal, builder, dawn, briefing, teach, stop, run workflow, agents personal, doctor, test
 // ============================================================
 
 import "dotenv/config";
@@ -66,6 +66,7 @@ import { dialogueEngine }                      from "./personality/dialogueEngin
 import { userProfile }                         from "./personality/userProfile";
 import { conversationMemory }                  from "./personality/conversationMemory";
 import { morningBriefing }                     from "./personal/morningBriefing";
+import { dawnReport }                          from "./personal/dawnReport";
 import { teachMode }                           from "./personal/teachMode";
 import { backgroundAgents }                    from "./personal/backgroundAgents";
 import { isPersonalMode }                      from "./personal/personalMode";
@@ -1908,6 +1909,20 @@ Auth & Keys
       }
       fs.writeFileSync(envFile2, envContent2)
       console.log('🔨 Switched to Builder mode.')
+      break
+    }
+
+    // ── devos dawn [--force] — generate dawn report ────────────
+    case "dawn": {
+      const force = rawArgs.includes('--force') || rawArgs.includes('-f')
+      console.log('\n🌅 Generating your Dawn Report...\n')
+      try {
+        const briefing = await dawnReport.generate(force)
+        console.log(briefing)
+      } catch (err: any) {
+        console.error(`❌ Dawn report failed: ${err?.message || err}`)
+      }
+      console.log('')
       break
     }
 

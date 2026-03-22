@@ -7,8 +7,10 @@ import { ChatPanel } from '../components/ChatPanel'
 import { LivePulsePanel } from '../components/LivePulsePanel'
 import { SetupWizard } from '../components/SetupWizard'
 import { QuickLaunch } from '../components/QuickLaunch'
+import { DawnReportCard } from '../components/DawnReportCard'
 
 const API = process.env.NEXT_PUBLIC_DEVOS_API || 'http://localhost:4200'
+const DAWN_KEY = 'devos_dawn_dismissed'
 
 // ── View-specific sub-panels rendered in the center when navigated ───────────
 
@@ -324,13 +326,169 @@ function KnowledgeView() {
   )
 }
 
+// ── Personal mode views ───────────────────────────────────────────────────────
+
+function TasksView() {
+  const [tasks, setTasks] = useState<any[]>([])
+  const [loaded, setLoaded] = useState(false)
+  const [newTask, setNewTask] = useState('')
+
+  const reload = () => {
+    fetch(`${API}/api/personal/tasks`).then(r => r.json())
+      .then(d => { setTasks(Array.isArray(d) ? d : []); setLoaded(true) })
+      .catch(() => setLoaded(true))
+  }
+  useEffect(() => { reload() }, [])
+
+  const add = () => {
+    if (!newTask.trim()) return
+    fetch(`${API}/api/personal/tasks`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: newTask.trim() })
+    }).then(() => { setNewTask(''); reload() }).catch(() => {})
+  }
+
+  const complete = (id: string) => {
+    fetch(`${API}/api/personal/tasks/${id}/complete`, { method: 'POST' })
+      .then(() => reload()).catch(() => {})
+  }
+
+  return (
+    <div className="p-6 overflow-y-auto h-full">
+      <h2 className="text-xl font-bold text-white mb-4">Tasks</h2>
+      <div className="flex space-x-2 mb-6">
+        <input
+          className="flex-1 px-4 py-2 rounded-2xl text-white text-sm focus:outline-none"
+          style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)' }}
+          placeholder="Add a task…"
+          value={newTask}
+          onChange={e => setNewTask(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && add()}
+        />
+        <button onClick={add} className="px-4 py-2 rounded-2xl text-white text-sm"
+          style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}>Add</button>
+      </div>
+      {!loaded && <p style={{ color: 'rgba(255,255,255,0.3)' }}>Loading…</p>}
+      <div className="space-y-2">
+        {loaded && tasks.length === 0 && (
+          <p style={{ color: 'rgba(255,255,255,0.3)' }} className="text-sm">No tasks yet.</p>
+        )}
+        {tasks.filter(t => t.status !== 'done').map((t: any) => (
+          <div key={t.id} className="p-3 rounded-2xl flex items-center justify-between"
+            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
+            <span className="text-sm text-white">{t.title}</span>
+            <button onClick={() => complete(t.id)}
+              className="text-xs px-2 py-1 rounded-lg transition-all hover:opacity-80"
+              style={{ background: 'rgba(34,197,94,0.2)', color: '#4ade80' }}>Done</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function LifeCanvasView() {
+  const [entries, setEntries] = useState<any[]>([])
+  const [loaded, setLoaded] = useState(false)
+
+  useEffect(() => {
+    fetch(`${API}/api/personal/canvas`).then(r => r.json())
+      .then(d => { setEntries(Array.isArray(d) ? d.slice(-30).reverse() : []); setLoaded(true) })
+      .catch(() => setLoaded(true))
+  }, [])
+
+  const TYPE_COLOR: Record<string, string> = {
+    note: '#6366f1', milestone: '#22c55e', insight: '#8b5cf6',
+    reflection: '#f59e0b', achievement: '#4ade80', blocker: '#ef4444'
+  }
+
+  return (
+    <div className="p-6 overflow-y-auto h-full">
+      <h2 className="text-xl font-bold text-white mb-4">Life Canvas</h2>
+      {!loaded && <p style={{ color: 'rgba(255,255,255,0.3)' }}>Loading…</p>}
+      {loaded && entries.length === 0 && (
+        <p style={{ color: 'rgba(255,255,255,0.3)' }} className="text-sm">
+          No canvas entries yet. They appear here as you build.
+        </p>
+      )}
+      <div className="space-y-3">
+        {entries.map((e: any) => (
+          <div key={e.id} className="p-4 rounded-2xl"
+            style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)',
+              borderLeft: `3px solid ${TYPE_COLOR[e.type] || '#6366f1'}` }}>
+            <div className="flex items-center space-x-2 mb-1">
+              <span className="text-xs px-1.5 py-0.5 rounded-full"
+                style={{ background: `${TYPE_COLOR[e.type] || '#6366f1'}25`, color: TYPE_COLOR[e.type] || '#a5b4fc' }}>
+                {e.type}
+              </span>
+              <span className="text-xs" style={{ color: 'rgba(255,255,255,0.2)' }}>
+                {new Date(e.createdAt).toLocaleDateString()}
+              </span>
+            </div>
+            <p className="text-sm font-medium text-white">{e.title}</p>
+            <p className="text-xs mt-1" style={{ color: 'rgba(255,255,255,0.4)' }}>
+              {(e.content || '').slice(0, 120)}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function ResearchView() {
+  const [query, setQuery] = useState('')
+  const [result, setResult] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  const research = async () => {
+    if (!query.trim()) return
+    setLoading(true)
+    fetch(`${API}/api/knowledge/query`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: query })
+    }).then(r => r.json())
+      .then(d => setResult(d.answer || 'No results.'))
+      .catch(() => setResult('Query failed.'))
+      .finally(() => setLoading(false))
+  }
+
+  return (
+    <div className="p-6 overflow-y-auto h-full">
+      <h2 className="text-xl font-bold text-white mb-4">Research</h2>
+      <div className="flex space-x-2 mb-6">
+        <input
+          className="flex-1 px-4 py-2 rounded-2xl text-white text-sm focus:outline-none"
+          style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)' }}
+          placeholder="Ask DevOS anything…"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && research()}
+        />
+        <button onClick={research} disabled={loading}
+          className="px-4 py-2 rounded-2xl text-white text-sm disabled:opacity-40"
+          style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}>
+          {loading ? '…' : 'Ask'}
+        </button>
+      </div>
+      {result && (
+        <div className="p-4 rounded-2xl text-sm text-white leading-relaxed"
+          style={{ background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.2)' }}>
+          {result}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Main layout ──────────────────────────────────────────────────────────────
 
 export default function Home() {
-  const { activeView, settings, isSetupOpen, setIsSetupOpen, mounted } = useStore()
+  const { activeView, settings, isSetupOpen, setIsSetupOpen, mounted, devosMode } = useStore()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [pulseOpen, setPulseOpen] = useState(true)
   const [quickLaunchOpen, setQuickLaunchOpen] = useState(false)
+  const [showDawn, setShowDawn] = useState(false)
 
   // Setup wizard auto-open
   useEffect(() => {
@@ -338,6 +496,14 @@ export default function Home() {
       setIsSetupOpen(true)
     }
   }, [mounted])
+
+  // DawnReport: show once per day in personal mode
+  useEffect(() => {
+    if (!mounted || devosMode !== 'personal') return
+    const today = new Date().toISOString().slice(0, 10)
+    const dismissed = localStorage.getItem(DAWN_KEY)
+    if (dismissed !== today) setShowDawn(true)
+  }, [mounted, devosMode])
 
   // Cmd+K / Ctrl+K → QuickLaunch
   useEffect(() => {
@@ -404,15 +570,28 @@ export default function Home() {
           </button>
         </div>
 
-        <div className="flex-1 overflow-hidden">
-          {/* Chat is always the main center — other views slide in */}
-          {activeView === 'chat'      && <ChatPanel />}
-          {activeView === 'goals'     && <GoalsView />}
-          {activeView === 'missions'  && <MissionsView />}
-          {activeView === 'agents'    && <AgentsView />}
-          {activeView === 'skills'    && <SkillsView />}
-          {activeView === 'memory'    && <MemoryView />}
-          {activeView === 'knowledge' && <KnowledgeView />}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* DawnReport: personal mode only, once per calendar day, above chat */}
+          {showDawn && devosMode === 'personal' && activeView === 'chat' && (
+            <DawnReportCard onDismiss={() => {
+              setShowDawn(false)
+              try { localStorage.setItem(DAWN_KEY, new Date().toISOString().slice(0, 10)) } catch {}
+            }} />
+          )}
+          <div className="flex-1 overflow-hidden">
+            {/* Builder views */}
+            {activeView === 'chat'        && <ChatPanel />}
+            {activeView === 'goals'       && <GoalsView />}
+            {activeView === 'missions'    && <MissionsView />}
+            {activeView === 'agents'      && <AgentsView />}
+            {activeView === 'skills'      && <SkillsView />}
+            {activeView === 'memory'      && <MemoryView />}
+            {activeView === 'knowledge'   && <KnowledgeView />}
+            {/* Personal views */}
+            {activeView === 'tasks'       && <TasksView />}
+            {activeView === 'life-canvas' && <LifeCanvasView />}
+            {activeView === 'research'    && <ResearchView />}
+          </div>
         </div>
       </div>
 

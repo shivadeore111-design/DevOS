@@ -24,7 +24,7 @@ const SUGGESTIONS = [
 ]
 
 export function ChatPanel() {
-  const { settings, mounted } = useStore()
+  const { settings, mounted, devosMode } = useStore()
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -351,7 +351,7 @@ export function ChatPanel() {
             ref={textareaRef}
             rows={1}
             className="flex-1 bg-transparent text-white placeholder-gray-600 text-sm resize-none focus:outline-none"
-            placeholder="What do you want to build? (Enter to send, Shift+Enter for newline)"
+            placeholder={devosMode === 'personal' ? 'What do you want to do today?' : 'What do you want to build? (Enter to send, Shift+Enter for newline)'}
             value={input}
             onChange={e => {
               setInput(e.target.value)
