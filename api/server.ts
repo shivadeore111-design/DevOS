@@ -45,6 +45,9 @@ const telegramBot      = devosBot;
 const telegramNotifier = botNotifier;
 import { sandboxManager }         from "../sandbox/sandboxManager";
 import { detectAndSelectModels }  from "../core/autoModelSelector";
+import { devosAuth }              from "../auth/devosAuth";
+import { billingEngine }          from "../billing/billingEngine";
+import { enforceAccessGuard, getUsageSummary } from "../billing/accessGuard";
 
 export function createApiServer(): any {
   const app = express();
@@ -319,6 +322,94 @@ app.get("/api/sandbox/status", (_req: any, res: any) => {
       res.status(500).json({ error: e?.message ?? String(e) })
     }
   })
+
+  // ── Auth routes (/api/auth/*) — no apiKeyAuth, own JWT auth ──────────────
+
+  // POST /api/auth/register
+  app.post("/api/auth/register", async (req: any, res: any) => {
+    const { email, password } = req.body ?? {}
+    if (!email || !password) return res.status(400).json({ error: "email and password are required" })
+    try {
+      const result = await devosAuth.register(email, password)
+      res.status(201).json(result)
+    } catch (e: any) {
+      res.status(400).json({ error: e?.message ?? "Registration failed" })
+    }
+  })
+
+  // POST /api/auth/login
+  app.post("/api/auth/login", async (req: any, res: any) => {
+    const { email, password } = req.body ?? {}
+    if (!email || !password) return res.status(400).json({ error: "email and password are required" })
+    try {
+      const result = await devosAuth.login(email, password)
+      res.json(result)
+    } catch (e: any) {
+      res.status(401).json({ error: e?.message ?? "Login failed" })
+    }
+  })
+
+  // POST /api/auth/logout
+  app.post("/api/auth/logout", (req: any, res: any) => {
+    const header = (req.headers["authorization"] as string) ?? ""
+    const token  = header.startsWith("Bearer ") ? header.slice(7) : (req.body?.token as string) ?? ""
+    if (token) devosAuth.logout(token)
+    res.json({ success: true })
+  })
+
+  // GET /api/auth/me — return current user from JWT
+  app.get("/api/auth/me", devosAuth.requireAuth(), (req: any, res: any) => {
+    res.json({ user: req.devosUser })
+  })
+
+  // ── Billing routes (/api/billing/*) ──────────────────────────────────────
+
+  // GET /api/billing/plans — public plan list
+  app.get("/api/billing/plans", (_req: any, res: any) => {
+    res.json(billingEngine.getPlans())
+  })
+
+  // GET /api/billing/usage — usage summary for authenticated user
+  app.get("/api/billing/usage", devosAuth.requireAuth(), getUsageSummary)
+
+  // POST /api/billing/subscribe { priceId } — create Stripe checkout session
+  app.post("/api/billing/subscribe", devosAuth.requireAuth(), async (req: any, res: any) => {
+    const { priceId, successUrl, cancelUrl } = req.body ?? {}
+    if (!priceId) return res.status(400).json({ error: "priceId is required" })
+    try {
+      const user   = req.devosUser
+      const result = await billingEngine.createCheckoutSession(user.id, priceId, successUrl, cancelUrl)
+      res.json(result)
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message ?? "Failed to create checkout session" })
+    }
+  })
+
+  // POST /api/billing/portal — create Stripe customer portal session
+  app.post("/api/billing/portal", devosAuth.requireAuth(), async (req: any, res: any) => {
+    try {
+      const result = await billingEngine.createPortalSession(req.devosUser.id, req.body?.returnUrl)
+      res.json(result)
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message ?? "Failed to create portal session" })
+    }
+  })
+
+  // POST /api/billing/webhook — Stripe webhook (raw body required)
+  // Must be registered BEFORE express.json() body parser modifies the body.
+  // We handle raw parsing inline here.
+  app.post("/api/billing/webhook",
+    express.raw({ type: "application/json" }),
+    async (req: any, res: any) => {
+      const sig = (req.headers["stripe-signature"] as string) ?? ""
+      try {
+        const result = await billingEngine.handleWebhook(req.body as Buffer, sig)
+        res.json(result)
+      } catch (e: any) {
+        res.status(400).json({ error: e?.message ?? "Webhook error" })
+      }
+    }
+  )
 
   return app;
 }

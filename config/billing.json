@@ -1,0 +1,97 @@
+{
+  "stripe": {
+    "publishableKey": "",
+    "webhookSecret": "",
+    "currency": "usd"
+  },
+  "plans": [
+    {
+      "id":          "free",
+      "name":        "Free",
+      "price":       0,
+      "priceId":     "",
+      "description": "For solo builders getting started",
+      "limits": {
+        "workspaces":    1,
+        "goalsPerMonth": 3,
+        "pilotsPerMonth": 5,
+        "cloudDeploy":   false,
+        "marketplace":   false,
+        "apiAccess":     false
+      },
+      "features": [
+        "1 workspace",
+        "3 goals / month",
+        "5 pilot runs / month",
+        "Local LLM only",
+        "Community support"
+      ]
+    },
+    {
+      "id":          "starter",
+      "name":        "Starter",
+      "price":       29,
+      "priceId":     "price_starter_monthly",
+      "description": "For active builders with recurring workflows",
+      "limits": {
+        "workspaces":    5,
+        "goalsPerMonth": -1,
+        "pilotsPerMonth": 30,
+        "cloudDeploy":   false,
+        "marketplace":   false,
+        "apiAccess":     false
+      },
+      "features": [
+        "5 workspaces",
+        "Unlimited goals",
+        "30 pilot runs / month",
+        "Echo mode (workflow replay)",
+        "Email support"
+      ]
+    },
+    {
+      "id":          "builder",
+      "name":        "Builder",
+      "price":       79,
+      "priceId":     "price_builder_monthly",
+      "description": "For teams shipping products with DevOS",
+      "limits": {
+        "workspaces":    10,
+        "goalsPerMonth": -1,
+        "pilotsPerMonth": -1,
+        "cloudDeploy":   true,
+        "marketplace":   true,
+        "apiAccess":     false
+      },
+      "features": [
+        "10 workspaces",
+        "Unlimited goals + pilots",
+        "Cloud deploy (Vercel / Railway)",
+        "Skill marketplace access",
+        "Priority support"
+      ]
+    },
+    {
+      "id":          "pro",
+      "name":        "Pro",
+      "price":       199,
+      "priceId":     "price_pro_monthly",
+      "description": "For power users and teams needing full API access",
+      "limits": {
+        "workspaces":    -1,
+        "goalsPerMonth": -1,
+        "pilotsPerMonth": -1,
+        "cloudDeploy":   true,
+        "marketplace":   true,
+        "apiAccess":     true
+      },
+      "features": [
+        "Unlimited everything",
+        "REST API access",
+        "Cloud deploy + CI/CD hooks",
+        "Skill marketplace (publish + sell)",
+        "Dedicated support"
+      ]
+    }
+  ]
+}

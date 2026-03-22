@@ -3,14 +3,17 @@ import { useEffect, useState } from 'react'
 import { Target, Flag, Users, Cpu, Brain, BookOpen, Settings, Zap,
          CheckSquare, Layout, Search, ToggleLeft, ToggleRight } from 'lucide-react'
 import { useStore, ActiveView, DevOSMode } from '../lib/store'
+import { UsageLensPanel } from './UsageLensPanel'
+import { UpgradePrompt } from './UpgradePrompt'
 
 const API = process.env.NEXT_PUBLIC_DEVOS_API || 'http://localhost:4200'
 
 export function LeftSidebar() {
   const { activeView, setActiveView, devosMode, setDevosMode,
           settings, setIsSetupOpen, mounted } = useStore()
-  const [counts, setCounts] = useState<Record<string, number>>({})
-  const [health, setHealth] = useState<'ok' | 'error'>('error')
+  const [counts, setCounts]       = useState<Record<string, number>>({})
+  const [health, setHealth]       = useState<'ok' | 'error'>('error')
+  const [upgradeOpen, setUpgradeOpen] = useState(false)
 
   useEffect(() => {
     const load = async () => {
@@ -181,6 +184,16 @@ export function LeftSidebar() {
 
         <p className="text-xs px-3" style={{ color: 'rgba(255,255,255,0.15)' }}>v1.0.0</p>
       </div>
+
+      {/* Usage lens — shown at bottom of sidebar */}
+      <UsageLensPanel onUpgradeClick={() => setUpgradeOpen(true)} />
+
+      {upgradeOpen && (
+        <UpgradePrompt
+          limitData={{ error: 'Upgrade plan', upgradeUrl: '/pricing' }}
+          onDismiss={() => setUpgradeOpen(false)}
+        />
+      )}
     </aside>
   )
 }
