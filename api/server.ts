@@ -35,6 +35,9 @@ import { morningBriefing }     from "../personal/morningBriefing";
 import { morningBriefingV2 }   from "../personal/morningBriefingV2";
 import { lifeTimeline }        from "../personal/lifeTimeline";
 import { backgroundAgents }    from "../personal/backgroundAgents";
+import { dawnReport }          from "../personal/dawnReport";
+import { lifeCanvas }          from "../personal/lifeCanvas";
+import { alwaysOn }            from "../personal/alwaysOn";
 import { telegramBot }         from "../integrations/telegram/telegramBot";
 import { telegramNotifier }    from "../integrations/telegram/telegramNotifier";
 import { sandboxManager }         from "../sandbox/sandboxManager";
@@ -210,6 +213,50 @@ export function createApiServer(): any {
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }
+  });
+
+  // GET /api/personal/dawn — daily morning briefing (cached per day)
+  app.get("/api/personal/dawn", async (req: any, res: any) => {
+    const force = req.query?.force === "true";
+    const briefing = await dawnReport.generate(force);
+    res.json({ briefing, generatedAt: new Date().toISOString() });
+  });
+
+  // GET /api/personal/canvas — all life canvas entries
+  app.get("/api/personal/canvas", (_req: any, res: any) => {
+    res.json(lifeCanvas.getAll());
+  });
+
+  // GET /api/personal/canvas/:goalId — canvas entries for a specific goal
+  app.get("/api/personal/canvas/:goalId", (req: any, res: any) => {
+    res.json(lifeCanvas.getCanvas(req.params.goalId));
+  });
+
+  // POST /api/personal/canvas — add a canvas entry
+  app.post("/api/personal/canvas", (req: any, res: any) => {
+    const { goalId, type, title, content, tags } = req.body || {};
+    if (!type || !title || !content) {
+      return res.status(400).json({ error: "type, title, content are required" });
+    }
+    const entry = lifeCanvas.addEntry({ goalId, type, title, content, tags });
+    res.status(201).json(entry);
+  });
+
+  // GET /api/personal/always-on — status of permanent background pilots
+  app.get("/api/personal/always-on", (_req: any, res: any) => {
+    res.json(alwaysOn.summary());
+  });
+
+  // POST /api/personal/always-on/:name/enable
+  app.post("/api/personal/always-on/:name/enable", (req: any, res: any) => {
+    alwaysOn.enableAgent(req.params.name);
+    res.json({ success: true });
+  });
+
+  // POST /api/personal/always-on/:name/disable
+  app.post("/api/personal/always-on/:name/disable", (req: any, res: any) => {
+    alwaysOn.disableAgent(req.params.name);
+    res.json({ success: true });
   });
 
   // ── Sandbox routes ────────────────────────────────────────────────────────

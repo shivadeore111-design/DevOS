@@ -1,38 +1,54 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { Target, Flag, Users, Cpu, Brain, BookOpen, Settings, Zap } from 'lucide-react'
-import { useStore, ActiveView } from '../lib/store'
+import { Target, Flag, Users, Cpu, Brain, BookOpen, Settings, Zap,
+         CheckSquare, Layout, Search, ToggleLeft, ToggleRight } from 'lucide-react'
+import { useStore, ActiveView, DevOSMode } from '../lib/store'
 
 const API = process.env.NEXT_PUBLIC_DEVOS_API || 'http://localhost:4200'
 
 export function LeftSidebar() {
-  const { activeView, setActiveView, settings, setIsSetupOpen, mounted } = useStore()
+  const { activeView, setActiveView, devosMode, setDevosMode,
+          settings, setIsSetupOpen, mounted } = useStore()
   const [counts, setCounts] = useState<Record<string, number>>({})
   const [health, setHealth] = useState<'ok' | 'error'>('error')
 
   useEffect(() => {
     const load = async () => {
       try {
-        const [missions, goals, agents, skills, h] = await Promise.all([
-          fetch(`${API}/api/missions`).then(r => r.json()).catch(() => []),
-          fetch(`${API}/api/goals/v2`).then(r => r.json()).catch(() => []),
-          fetch(`${API}/api/agents`).then(r => r.json()).catch(() => []),
-          fetch(`${API}/api/skills`).then(r => r.json()).catch(() => []),
-          fetch(`${API}/api/system/health`).then(r => r.json()).catch(() => ({}))
-        ])
-        setCounts({
-          missions: Array.isArray(missions) ? missions.length : 0,
-          goals:    Array.isArray(goals)    ? goals.length    : 0,
-          agents:   Array.isArray(agents)   ? agents.length   : 0,
-          skills:   Array.isArray(skills)   ? skills.length   : 0,
-        })
-        setHealth(h?.status === 'ok' ? 'ok' : 'error')
+        if (devosMode === 'builder') {
+          const [missions, goals, agents, skills, h] = await Promise.all([
+            fetch(`${API}/api/missions`).then(r => r.json()).catch(() => []),
+            fetch(`${API}/api/goals/v2`).then(r => r.json()).catch(() => []),
+            fetch(`${API}/api/agents`).then(r => r.json()).catch(() => []),
+            fetch(`${API}/api/skills`).then(r => r.json()).catch(() => []),
+            fetch(`${API}/api/system/health`).then(r => r.json()).catch(() => ({}))
+          ])
+          setCounts({
+            missions: Array.isArray(missions) ? missions.length : 0,
+            goals:    Array.isArray(goals)    ? goals.length    : 0,
+            agents:   Array.isArray(agents)   ? agents.length   : 0,
+            skills:   Array.isArray(skills)   ? skills.length   : 0,
+          })
+          setHealth(h?.status === 'ok' ? 'ok' : 'error')
+        } else {
+          // Personal mode counts
+          const [tasks, agents, h] = await Promise.all([
+            fetch(`${API}/api/personal/tasks`).then(r => r.json()).catch(() => []),
+            fetch(`${API}/api/agents`).then(r => r.json()).catch(() => []),
+            fetch(`${API}/api/system/health`).then(r => r.json()).catch(() => ({}))
+          ])
+          setCounts({
+            tasks:  Array.isArray(tasks)  ? tasks.filter((t: any) => t.status !== 'done').length : 0,
+            agents: Array.isArray(agents) ? agents.length : 0,
+          })
+          setHealth(h?.status === 'ok' ? 'ok' : 'error')
+        }
       } catch { /* ignore */ }
     }
     load()
-    const interval = setInterval(load, 10000)  // poll every 10s
+    const interval = setInterval(load, 10000)
     return () => clearInterval(interval)
-  }, [])
+  }, [devosMode])
 
   type NavItem = {
     icon: React.ComponentType<{ size?: number }>
@@ -42,14 +58,23 @@ export function LeftSidebar() {
     badge?: boolean
   }
 
-  const navItems: NavItem[] = [
-    { icon: Target,   label: 'Missions',   view: 'missions',  key: 'missions', badge: true },
-    { icon: Flag,     label: 'Goals',      view: 'goals',     key: 'goals',    badge: true },
-    { icon: Users,    label: 'Agents',     view: 'agents',    key: 'agents',   badge: true },
-    { icon: Cpu,      label: 'Skills',     view: 'skills',    key: 'skills',   badge: true },
-    { icon: Brain,    label: 'Memory',     view: 'memory',    key: 'memory',   badge: false },
-    { icon: BookOpen, label: 'Knowledge',  view: 'knowledge', key: 'knowledge',badge: false },
+  const builderItems: NavItem[] = [
+    { icon: Target,   label: 'Missions',   view: 'missions',    key: 'missions', badge: true },
+    { icon: Flag,     label: 'Goals',      view: 'goals',       key: 'goals',    badge: true },
+    { icon: Users,    label: 'Agents',     view: 'agents',      key: 'agents',   badge: true },
+    { icon: Cpu,      label: 'Skills',     view: 'skills',      key: 'skills',   badge: true },
+    { icon: Brain,    label: 'Memory',     view: 'memory',      key: 'memory',   badge: false },
+    { icon: BookOpen, label: 'Knowledge',  view: 'knowledge',   key: 'knowledge',badge: false },
   ]
+
+  const personalItems: NavItem[] = [
+    { icon: CheckSquare, label: 'Tasks',       view: 'tasks',       key: 'tasks',   badge: true  },
+    { icon: Layout,      label: 'Life Canvas', view: 'life-canvas', key: 'canvas',  badge: false },
+    { icon: Users,       label: 'Agents',      view: 'agents',      key: 'agents',  badge: true  },
+    { icon: Search,      label: 'Research',    view: 'research',    key: 'research',badge: false },
+  ]
+
+  const navItems = devosMode === 'personal' ? personalItems : builderItems
 
   return (
     <aside className="h-full flex flex-col p-4"
@@ -65,6 +90,14 @@ export function LeftSidebar() {
           <div className="w-8 h-8 rounded-xl flex items-center justify-center text-sm font-bold"
             style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}>D</div>
           <span className="text-white font-bold text-lg">DevOS</span>
+          {/* Mode badge */}
+          <span className="text-xs px-1.5 py-0.5 rounded-lg"
+            style={{
+              background: devosMode === 'personal' ? 'rgba(234,179,8,0.2)' : 'rgba(99,102,241,0.2)',
+              color:      devosMode === 'personal' ? '#fbbf24' : '#a5b4fc',
+            }}>
+            {devosMode}
+          </span>
         </div>
         {mounted && settings.userName && (
           <p className="text-gray-600 text-xs mt-1">Hey, {settings.userName}</p>
@@ -92,7 +125,7 @@ export function LeftSidebar() {
       {/* Nav items */}
       <nav className="flex-1 space-y-1">
         {navItems.map(item => {
-          const count = counts[item.key] ?? 0
+          const count   = counts[item.key] ?? 0
           const isActive = activeView === item.view
           return (
             <button key={item.view} onClick={() => setActiveView(item.view)}
@@ -116,8 +149,18 @@ export function LeftSidebar() {
         })}
       </nav>
 
-      {/* Bottom: settings + API status */}
+      {/* Bottom: mode toggle + settings + API status */}
       <div className="space-y-3 pt-4" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+        {/* Mode toggle */}
+        <button
+          onClick={() => setDevosMode(devosMode === 'builder' ? 'personal' : 'builder')}
+          className="w-full flex items-center space-x-2 px-3 py-2 rounded-2xl text-sm transition-all hover:text-white"
+          style={{ color: 'rgba(255,255,255,0.3)' }}
+          title={`Switch to ${devosMode === 'builder' ? 'personal' : 'builder'} mode`}>
+          {devosMode === 'builder' ? <ToggleLeft size={14} /> : <ToggleRight size={14} />}
+          <span>{devosMode === 'builder' ? 'Switch to Personal' : 'Switch to Builder'}</span>
+        </button>
+
         <button onClick={() => setIsSetupOpen(true)}
           className="w-full flex items-center space-x-2 px-3 py-2 rounded-2xl text-sm transition-all hover:text-white"
           style={{ color: 'rgba(255,255,255,0.3)' }}>
@@ -136,7 +179,7 @@ export function LeftSidebar() {
           </span>
         </div>
 
-        <p className="text-xs px-3" style={{ color: 'rgba(255,255,255,0.15)' }}>v0.5.0</p>
+        <p className="text-xs px-3" style={{ color: 'rgba(255,255,255,0.15)' }}>v1.0.0</p>
       </div>
     </aside>
   )
