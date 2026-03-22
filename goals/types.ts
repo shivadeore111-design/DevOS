@@ -9,16 +9,29 @@ export type GoalStatus = 'pending' | 'planning' | 'active' | 'completed' | 'fail
 export type ProjectStatus = 'pending' | 'active' | 'completed' | 'failed'
 export type TaskStatus = 'pending' | 'active' | 'completed' | 'failed' | 'skipped'
 
+/** High-level goal category — used for routing, reporting, and skill selection */
+export type GoalType =
+  | 'build'
+  | 'research'
+  | 'fix'
+  | 'deploy'
+  | 'automate'
+  | 'monitor'
+  | 'personal'
+
 export interface Goal {
   id: string
   title: string
   description: string
+  type?: GoalType
   status: GoalStatus
   projects: string[]        // project ids
   createdAt: Date
   updatedAt: Date
   completedAt?: Date
   result?: string
+  /** Set when planner confidence < 0.7 — a clarifying question to ask the user */
+  clarification?: string
   metadata: Record<string, any>
 }
 

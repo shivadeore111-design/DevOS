@@ -11,10 +11,11 @@ import { Runner }             from '../core/runner'
 import { DevOSEngine }        from '../executor/engine'
 import { eventBus }           from '../core/eventBus'
 import { goalStore }          from './goalStore'
-import { Task }               from './types'
+import { Task, Goal }         from './types'
 import { liveThinking }             from '../coordination/liveThinking'
 import { persistentMemory }         from '../memory/persistentMemory'
 import { analyzeFailureAndRetry }   from '../core/smartRetry'
+import { asyncExecutor }            from '../executor/asyncExecutor'
 
 // ── DevOS Report helper ───────────────────────────────────────
 function fireReport(goalId: string, goalTitle: string, finalStatus: string,
@@ -84,6 +85,73 @@ Execute using file_write or shell_exec with correct ${IS_WIN ? 'Windows' : 'Linu
     }
   }
 
+  /**
+   * Execute a single task with smart retry logic.
+   * Extracted so it can be called in parallel from runParallelLimited.
+   */
+  private async executeOneTask(
+    initialTask: Task,
+    goal:        Goal,
+    projectTitle: string,
+  ): Promise<void> {
+    let task = initialTask
+
+    goalStore.updateTask(task.id, { status: 'active' })
+    console.log(`[GoalExecutor]   ▶ Task: ${task.title}`)
+    liveThinking.think('Engineer', `Starting: ${task.title}`, task.goalId)
+
+    let attempt = await this.runTask(task, goal.title, goal.description, projectTitle)
+
+    // Smart retry: on failure, ask the LLM what went wrong and try a
+    // different approach — rather than blindly re-running the same action.
+    while (!attempt.success && task.retryCount < task.maxRetries) {
+      console.log(`[GoalExecutor] 🧠 Analyzing failure for smart retry...`)
+
+      const retryResult = await analyzeFailureAndRetry({
+        taskTitle:       task.title,
+        taskDescription: task.description,
+        goalTitle:       goal.title,
+        previousError:   attempt.error ?? 'unknown error',
+        previousAction:  JSON.stringify((attempt as any).actions ?? []),
+        attemptNumber:   task.retryCount + 1,
+      })
+
+      const updatedDescription =
+        `${task.description}\n\nPREVIOUS ATTEMPT FAILED: ${attempt.error}\n` +
+        `NEW APPROACH: Use ${retryResult.newAction} with: ${retryResult.newCommand}`
+
+      task = {
+        ...task,
+        description:        updatedDescription,
+        _smartRetryCommand: retryResult.newCommand,
+        _smartRetryAction:  retryResult.newAction,
+      } as typeof task
+
+      goalStore.updateTask(task.id, { retryCount: task.retryCount + 1 })
+      console.log(`[GoalExecutor] 🔄 Smart retry ${task.retryCount}: ${retryResult.reasoning}`)
+      attempt = await this.runTask(task, goal.title, goal.description, projectTitle)
+    }
+
+    if (attempt.success) {
+      goalStore.updateTask(task.id, {
+        status:      'completed',
+        result:      attempt.result,
+        completedAt: new Date(),
+      })
+      eventBus.emit('task_completed', { taskId: task.id, goalId: task.goalId, title: task.title })
+      liveThinking.done('Engineer', `Done: ${task.title}`, task.goalId)
+      console.log(`[GoalExecutor]   ✅ ${task.title}`)
+    } else {
+      goalStore.updateTask(task.id, {
+        status: 'failed',
+        error:  attempt.error,
+      })
+      eventBus.emit('task_failed', { taskId: task.id, goalId: task.goalId, title: task.title, error: attempt.error })
+      liveThinking.error('Engineer', `Failed: ${task.title} — ${attempt.error}`, task.goalId)
+      console.error(`[GoalExecutor]   ❌ ${task.title}: ${attempt.error}`)
+    }
+  }
+
   async execute(goalId: string): Promise<void> {
     const goal    = goalStore.getGoal(goalId)
     if (!goal) throw new Error(`[GoalExecutor] Goal not found: ${goalId}`)
@@ -104,7 +172,8 @@ Execute using file_write or shell_exec with correct ${IS_WIN ? 'Windows' : 'Linu
 
       goalStore.updateProject(project.id, { status: 'active' })
 
-      // Execute all ready tasks in the project (loop until none left)
+      // Execute all ready tasks in waves; each wave runs up to 3 in parallel.
+      // After each wave, newly unblocked tasks (dependencies satisfied) are re-checked.
       let iterations = 0
       while (true) {
         if (this.paused.has(goalId)) break
@@ -113,66 +182,15 @@ Execute using file_write or shell_exec with correct ${IS_WIN ? 'Windows' : 'Linu
         if (readyTasks.length === 0) break
         if (iterations++ > 1000) { console.warn('[GoalExecutor] ⚠️  Max iterations reached'); break }
 
-        for (let task of readyTasks) {
-          if (this.paused.has(goalId)) break
+        console.log(`[GoalExecutor] ⚡ Running ${readyTasks.length} task(s) in parallel (max 3) — project: ${project.title}`)
 
-          goalStore.updateTask(task.id, { status: 'active' })
-          console.log(`[GoalExecutor]   ▶ Task: ${task.title}`)
-          liveThinking.think('Engineer', `Starting: ${task.title}`, goalId)
-
-          let attempt = await this.runTask(task, goal.title, goal.description, project.title)
-
-          // Smart retry: on failure, ask the LLM what went wrong and try a
-          // different approach — rather than blindly re-running the same action.
-          while (!attempt.success && task.retryCount < task.maxRetries) {
-            console.log(`[GoalExecutor] 🧠 Analyzing failure for smart retry...`)
-
-            const retryResult = await analyzeFailureAndRetry({
-              taskTitle:       task.title,
-              taskDescription: task.description,
-              goalTitle:       goal.title,
-              previousError:   attempt.error ?? 'unknown error',
-              previousAction:  JSON.stringify((attempt as any).actions ?? []),
-              attemptNumber:   task.retryCount + 1,
-            })
-
-            // Build an augmented task with the smart retry hint injected into
-            // the description so runner.ts can extract and use it directly.
-            const updatedDescription =
-              `${task.description}\n\nPREVIOUS ATTEMPT FAILED: ${attempt.error}\n` +
-              `NEW APPROACH: Use ${retryResult.newAction} with: ${retryResult.newCommand}`
-
-            task = {
-              ...task,
-              description:          updatedDescription,
-              _smartRetryCommand:   retryResult.newCommand,
-              _smartRetryAction:    retryResult.newAction,
-            } as typeof task
-
-            goalStore.updateTask(task.id, { retryCount: task.retryCount + 1 })
-            console.log(`[GoalExecutor] 🔄 Smart retry ${task.retryCount}: ${retryResult.reasoning}`)
-            attempt = await this.runTask(task, goal.title, goal.description, project.title)
-          }
-
-          if (attempt.success) {
-            goalStore.updateTask(task.id, {
-              status:      'completed',
-              result:      attempt.result,
-              completedAt: new Date(),
-            })
-            eventBus.emit('task_completed', { taskId: task.id, goalId, title: task.title })
-            liveThinking.done('Engineer', `Done: ${task.title}`, goalId)
-            console.log(`[GoalExecutor]   ✅ ${task.title}`)
-          } else {
-            goalStore.updateTask(task.id, {
-              status: 'failed',
-              error:  attempt.error,
-            })
-            eventBus.emit('task_failed', { taskId: task.id, goalId, title: task.title, error: attempt.error })
-            liveThinking.error('Engineer', `Failed: ${task.title} — ${attempt.error}`, goalId)
-            console.error(`[GoalExecutor]   ❌ ${task.title}: ${attempt.error}`)
-          }
-        }
+        // Run ready tasks in parallel — limit 3 concurrent via asyncExecutor
+        await asyncExecutor.runParallelLimited(
+          readyTasks
+            .filter(() => !this.paused.has(goalId))
+            .map(task => () => this.executeOneTask(task, goal, project.title)),
+          3,
+        )
       }
 
       // Determine project completion — only fail if majority of tasks failed

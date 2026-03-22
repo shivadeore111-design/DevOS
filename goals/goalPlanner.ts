@@ -5,6 +5,7 @@
 
 // goals/goalPlanner.ts — LLM-powered goal decomposition into projects + tasks
 
+import * as fs   from 'fs'
 import * as os   from 'os'
 import * as path from 'path'
 import { callOllama }                        from '../llm/ollama'
@@ -28,7 +29,28 @@ interface RawProject {
 }
 
 interface PlanResponse {
-  projects: RawProject[]
+  confidence?:     number     // 0.0 – 1.0 — planner's self-assessed certainty
+  clarification?:  string     // question to ask user when confidence < 0.7
+  projects:        RawProject[]
+}
+
+// ── User-profile loader ────────────────────────────────────────
+
+function loadUserProfile(): string {
+  try {
+    const profilePath = path.join(process.cwd(), 'workspace', 'user-profile.json')
+    if (!fs.existsSync(profilePath)) return ''
+    const profile = JSON.parse(fs.readFileSync(profilePath, 'utf-8'))
+    const lines: string[] = []
+    if (profile.name)        lines.push(`User name: ${profile.name}`)
+    if (profile.preferences) lines.push(`Preferences: ${JSON.stringify(profile.preferences)}`)
+    if (profile.techStack)   lines.push(`Tech stack: ${Array.isArray(profile.techStack) ? profile.techStack.join(', ') : profile.techStack}`)
+    if (profile.workingDir)  lines.push(`Working dir: ${profile.workingDir}`)
+    if (profile.goals)       lines.push(`User goals: ${profile.goals}`)
+    return lines.length ? `\nUser Profile:\n${lines.join('\n')}\n` : ''
+  } catch {
+    return ''
+  }
 }
 
 function extractJSON(raw: string): string {
@@ -67,13 +89,16 @@ Create folder: mkdir "C:\\path\\folder"
 Desktop path: ${path.join(os.homedir(), 'Desktop')}
 ` : `Platform: ${process.platform}\nHome: ${os.homedir()}\n`
 
-    const prompt = `${WIN_CONTEXT}
+    const userProfile = loadUserProfile()
 
-You are a project planner. Break this goal into projects and tasks.
+    const prompt = `${WIN_CONTEXT}${userProfile}
+You are a project planner. Break this goal into 2-4 projects, each with 2-5 tasks.
 Goal: ${goal.title} — ${goal.description}
 
 Return JSON only:
 {
+  "confidence": 0.85,
+  "clarification": "",
   "projects": [
     {
       "title": "Research",
@@ -84,7 +109,13 @@ Return JSON only:
       ]
     }
   ]
-}`
+}
+
+Rules:
+- Set confidence (0.0-1.0) based on how clearly you understand the goal
+- If confidence < 0.7, set clarification to ONE specific question that would resolve the ambiguity
+- Use Windows commands only (if on Windows)
+- Return only valid JSON, no other text`
 
     const raw  = await callOllama(prompt, coreBoot.getSystemPrompt(), getPlanningModel())
     const json = extractJSON(raw)
@@ -95,6 +126,24 @@ Return JSON only:
     } catch (err) {
       console.error(`[GoalPlanner] Failed to parse LLM response: ${json.slice(0, 200)}`)
       throw new Error(`[GoalPlanner] Invalid JSON from LLM: ${String(err)}`)
+    }
+
+    // ── Confidence check ──────────────────────────────────────
+    const confidence = typeof plan.confidence === 'number' ? plan.confidence : 1.0
+    if (confidence < 0.7 && plan.clarification) {
+      console.log(`[GoalPlanner] ⚠️  Low confidence (${confidence.toFixed(2)}) — clarification needed:`)
+      console.log(`[GoalPlanner]    "${plan.clarification}"`)
+
+      // Store the clarifying question on the goal and pause it
+      goalStore.updateGoal(goalId, {
+        status:        'paused',
+        clarification: plan.clarification,
+        metadata:      { ...goalStore.getGoal(goalId)?.metadata, plannerConfidence: confidence },
+      })
+
+      console.log(`[GoalPlanner] 🔔 Goal paused pending clarification. Answer with:`)
+      console.log(`[GoalPlanner]    devos goal "<same title>" "<clarified description>"`)
+      return
     }
 
     if (!Array.isArray(plan.projects) || plan.projects.length === 0) {
