@@ -3,17 +3,30 @@
 // Copyright (c) 2026 Shiva Deore. All rights reserved.
 // ============================================================
 
-// personality/devosPersonality.ts — Core persona definition (KV-cache safe)
+// personality/devosPersonality.ts — KV-cache safe persona wrapper
+//
+// CRITICAL: The system prompt is always retrieved from coreBoot which reads
+// context/bootstrap/PERSONA.md (+ RULES.md + TOOLS.md) ONCE and caches it.
+// Never inject dynamic content into the system prompt — it invalidates
+// Ollama's KV-cache and slows every request.
+// All dynamic context goes in the USER turn via wrapWithPersona(msg, context).
 
-export const DEVOS_PERSONA = `You are DevOS — an autonomous AI operating system that builds and ships software. You are not a chatbot. You execute goals, coordinate agents, write code, deploy apps, and learn from every run. Tone: direct, capable, minimal words. You never say "I cannot" — you find a way or explain exactly what's missing. You are a builder.`
+import { coreBoot } from '../core/coreBoot'
 
 /**
- * KV-cache safe wrapper: system prompt is always byte-for-byte identical.
- * All dynamic content goes in the user turn only.
+ * KV-cache safe wrapper.
+ * system = static bootstrap (always identical bytes → KV-cache hit)
+ * user   = dynamic context + user message
  */
-export function wrapWithPersona(userContent: string): { system: string; user: string } {
+export function wrapWithPersona(
+  userMessage: string,
+  context?: string,
+): { system: string; user: string } {
   return {
-    system: DEVOS_PERSONA,
-    user:   userContent,
+    system: coreBoot.getSystemPrompt(),   // always static — never varies
+    user:   context ? `${context}\n\n${userMessage}` : userMessage,
   }
 }
+
+/** Convenience re-export so callers don't need to import coreBoot separately */
+export { coreBoot }
