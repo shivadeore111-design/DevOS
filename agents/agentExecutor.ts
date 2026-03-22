@@ -11,6 +11,7 @@ import { agentRegistry }                     from './agentRegistry'
 import { AgentRole, AgentResult }            from './types'
 import { Task }                              from '../goals/types'
 import { liveThinking }                      from '../coordination/liveThinking'
+import { livePulse }                         from '../coordination/livePulse'
 import { getCodingModel, getPlanningModel }  from '../core/autoModelSelector'
 import { missionCanvas }                     from '../coordination/missionCanvas'
 import { agentDen }                          from './agentDen'
@@ -79,6 +80,7 @@ Provide your response and any tool calls needed.
 
       // 3. Signal thinking before Ollama call
       liveThinking.think(role, `Processing: ${task.description.slice(0, 60)}`, missionId)
+      livePulse.think(role, `Processing: ${task.description.slice(0, 60)}`, missionId)
 
       // 3a. Inject MissionCanvas context into the prompt (if mission is set)
       let fullPrompt = prompt
@@ -101,6 +103,7 @@ Provide your response and any tool calls needed.
       for (const tc of toolCalls) {
         agentRegistry.updateStatus(role, 'executing', task.id ?? undefined)
         liveThinking.act(role, `Running ${tc.tool}`, missionId)
+        livePulse.act(role, `Running ${tc.tool}`, missionId)
 
         // ImpactMap: analyse blast radius before writing to existing files
         if (tc.tool === 'file_write' && tc.input?.path) {
@@ -161,6 +164,7 @@ Provide your response and any tool calls needed.
       agentRegistry.updateStatus(role, 'idle')
       agentRegistry.recordCompletion(role, true)
       liveThinking.done(role, `Completed: ${task.description.slice(0, 60)}`, missionId)
+      livePulse.done(role, `Completed: ${task.description.slice(0, 60)}`, missionId)
       console.log(`[AgentExecutor] ✅ ${agent.name} completed: ${task.title}`)
 
       // 8. AgentDen: log task completion
@@ -243,6 +247,7 @@ Provide your response and any tool calls needed.
 
     agentRegistry.updateStatus(role, 'thinking', taskId)
     liveThinking.think(role, `Executing: ${task.slice(0, 60)}`, missionId)
+    livePulse.think(role, `Executing: ${task.slice(0, 60)}`, missionId)
 
     let rawOutput = ''
     let success   = true
@@ -283,6 +288,8 @@ Provide your response and any tool calls needed.
     agentRegistry.updateStatus(role, success ? 'idle' : 'error')
     agentRegistry.recordCompletion(role, success)
     liveThinking.done(role, `Done: ${task.slice(0, 60)}`, missionId)
+    if (success) livePulse.done(role, `Done: ${task.slice(0, 60)}`, missionId)
+    else         livePulse.error(role, errorMsg || 'Task failed', missionId)
 
     // Log to AgentDen
     try {

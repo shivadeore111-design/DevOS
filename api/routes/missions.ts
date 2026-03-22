@@ -13,6 +13,7 @@ import { missionState }      from '../../coordination/missionState'
 import { missionTodo }       from '../../coordination/missionTodo'
 import { taskBus }           from '../../coordination/taskBus'
 import { humanInTheLoop }    from '../../coordination/humanInTheLoop'
+import { agentDen }          from '../../agents/agentDen'
 
 const router = express.Router()
 
@@ -58,6 +59,24 @@ router.get('/api/missions/:id', (req: any, res: any) => {
     if (!mission) { res.status(404).json({ error: `Mission not found: ${req.params.id}` }); return }
     const tasks = taskBus.getQueue(req.params.id)
     res.json({ ...mission, tasks })
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? String(err) })
+  }
+})
+
+// GET /api/missions/:id/log — raw missionlog.md
+router.get('/api/missions/:id/log', (req: any, res: any) => {
+  try {
+    const fs   = require('fs')
+    const path = require('path')
+    const logPath = path.join(agentDen.getCEOMissionDir(req.params.id), 'missionlog.md')
+    if (!fs.existsSync(logPath)) {
+      res.setHeader('Content-Type', 'text/plain')
+      res.send(`(no mission log yet for ${req.params.id})`)
+      return
+    }
+    res.setHeader('Content-Type', 'text/plain')
+    res.send(fs.readFileSync(logPath, 'utf-8'))
   } catch (err: any) {
     res.status(500).json({ error: err?.message ?? String(err) })
   }

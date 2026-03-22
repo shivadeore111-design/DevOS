@@ -13,6 +13,7 @@ import { eventBus }           from '../core/eventBus'
 import { goalStore }          from './goalStore'
 import { Task, Goal }         from './types'
 import { liveThinking }             from '../coordination/liveThinking'
+import { livePulse }               from '../coordination/livePulse'
 import { persistentMemory }         from '../memory/persistentMemory'
 import { analyzeFailureAndRetry }   from '../core/smartRetry'
 import { asyncExecutor }            from '../executor/asyncExecutor'
@@ -159,6 +160,7 @@ Execute using file_write or shell_exec with correct ${IS_WIN ? 'Windows' : 'Linu
 
     console.log(`[GoalExecutor] 🚀 Executing goal: ${goal.title}`)
     liveThinking.act('CEO', `Goal started: ${goal.title}`, goalId)
+    livePulse.act('ceo', `Goal started: ${goal.title}`, goalId)
     eventBus.emit('goal_started' as any, { goalId, title: goal.title })
 
     const projects = goalStore.listProjects(goalId)

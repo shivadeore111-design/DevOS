@@ -20,6 +20,8 @@ import { humanInTheLoop }                     from './humanInTheLoop'
 import { liveThinking }                       from './liveThinking'
 import { missionCanvas }                      from './missionCanvas'
 import { agentDen }                           from '../agents/agentDen'
+import { livePulse }                          from './livePulse'
+import { missionMemory }                      from './missionMemory'
 
 const VALID_ROLES: AgentRole[] = [
   'ceo', 'cto', 'software-engineer', 'frontend-developer', 'backend-developer',
@@ -109,9 +111,11 @@ class AutonomousMission {
 
     console.log(`[Mission] 🚀 Starting mission: "${goal}"`)
     console.log(`[Mission]    ID: ${missionId}`)
+    livePulse.act('ceo', `Mission started: ${goal.slice(0, 60)}`, missionId)
 
     // ── Step 1: CEO decomposes goal ─────────────────────────
     liveThinking.think('ceo', `Decomposing: ${goal.slice(0, 60)}`, missionId)
+    livePulse.think('ceo', `Decomposing: ${goal.slice(0, 60)}`, missionId)
 
     const ceoDecomposeTask = {
       id:          `ceo-decompose-${missionId}`,
@@ -199,6 +203,11 @@ Description: ${description}`,
     }
     missionState.saveMission(mission)
 
+    // Also persist to per-mission missionMemory (checkpoint-aware)
+    const logPath = missionLogPath(missionId)
+    const memRecord = missionMemory.create(missionId, goal, description, logPath)
+    missionMemory.saveMission(memRecord)
+
     // ── Step 5: Execution loop ───────────────────────────────
     let loopCount  = 0
     let tasksDone  = 0
@@ -219,19 +228,38 @@ Description: ${description}`,
         break
       }
 
-      // Guardrail: loop limit
+      // Guardrail: loop limit (max 20)
       const loopCheck = guardrails.checkLoopLimit(missionId, loopCount)
       if (!loopCheck.ok) {
         console.warn(`[Mission] ⚠️  Loop limit: ${loopCheck.reason}`)
-        missionState.updateMission(missionId, { status: 'failed', loopCount })
+        missionState.updateMission(missionId, { status: 'paused', loopCount })
+        missionMemory.updateMission(missionId, { status: 'paused' })
+        livePulse.error('ceo', `Mission paused: ${loopCheck.reason}`, missionId)
+        eventBus.emit('mission_limit_reached', { missionId, reason: loopCheck.reason })
+        break
+      }
+
+      // Guardrail: token budget (max 50,000)
+      const tokenCheck = guardrails.checkTokenBudget(missionId, missionMemory.loadMission(missionId)?.tokensUsed ?? 0)
+      if (!tokenCheck.ok) {
+        const reason = `Token budget exhausted (${missionMemory.loadMission(missionId)?.tokensUsed ?? 0}/50000 tokens)`
+        console.warn(`[Mission] ⚠️  ${reason}`)
+        missionState.updateMission(missionId, { status: 'paused', loopCount })
+        missionMemory.updateMission(missionId, { status: 'paused' })
+        livePulse.error('ceo', `Mission paused: ${reason}`, missionId)
+        eventBus.emit('mission_limit_reached', { missionId, reason })
         break
       }
 
       // Guardrail: mission timeout
       const timeoutCheck = guardrails.checkMissionTimeout(startedAt)
       if (!timeoutCheck.ok) {
-        console.warn(`[Mission] ⚠️  Mission timed out`)
-        missionState.updateMission(missionId, { status: 'failed', loopCount })
+        const reason = 'Mission timeout exceeded'
+        console.warn(`[Mission] ⚠️  ${reason}`)
+        missionState.updateMission(missionId, { status: 'paused', loopCount })
+        missionMemory.updateMission(missionId, { status: 'paused' })
+        livePulse.error('ceo', `Mission paused: ${reason}`, missionId)
+        eventBus.emit('mission_limit_reached', { missionId, reason })
         break
       }
 
@@ -264,6 +292,8 @@ Description: ${description}`,
 
       // Signal acting
       liveThinking.act(task.assignedTo, `Starting: ${task.title}`, missionId)
+      livePulse.act(toRole(task.assignedTo), `Starting: ${task.title}`, missionId)
+      const taskStartedAt = new Date().toISOString()
 
       // Build context with current TODO + MissionCanvas + MissionLog (for CEO)
       const todoContext   = missionTodo.readTodo(missionId)
@@ -294,6 +324,17 @@ Description: ${description}`,
         taskSuccess = false
       }
 
+      // Guardrail: per-task timeout (5 minutes)
+      const taskTimeCheck = guardrails.checkTaskTimeout(taskStartedAt)
+      if (!taskTimeCheck.ok) {
+        console.warn(`[Mission] ⚠️  Task timed out: ${task.title} (${Math.round(taskTimeCheck.elapsedMs / 1000)}s)`)
+        livePulse.error(toRole(task.assignedTo), `Task timeout: ${task.title}`, missionId)
+      }
+
+      // Token accounting: rough estimate (chars / 4)
+      const tokenEstimate = Math.ceil((taskResult.length) / 4)
+      missionMemory.addTokens(missionId, tokenEstimate)
+
       // Compress context if long
       await contextCompressor.compress([taskResult])
 
@@ -320,10 +361,12 @@ Description: ${description}`,
         taskBus.complete(task.id, taskResult)
         tasksDone++
         liveThinking.done(task.assignedTo, `Completed: ${task.title}`, missionId)
+        livePulse.done(toRole(task.assignedTo), `Completed: ${task.title}`, missionId)
       } else {
         taskBus.fail(task.id, taskResult)
         tasksFailed++
         liveThinking.error(task.assignedTo, taskResult, missionId)
+        livePulse.error(toRole(task.assignedTo), taskResult.slice(0, 120), missionId)
       }
 
       loopCount++
@@ -346,18 +389,25 @@ Description: ${description}`,
       tasksFailed,
       loopCount,
     })
+    missionMemory.updateMission(missionId, {
+      status:      finalStatus,
+      completedAt: new Date().toISOString(),
+    })
 
     if (finalStatus === 'complete') {
       eventBus.emit('mission:complete', { missionId, goal })
+      livePulse.done('ceo', `Mission complete: ${goal.slice(0, 60)}`, missionId)
       console.log(`[Mission] 🎉 Mission complete: "${goal}" (${tasksDone} tasks)`)
     }
 
     return missionState.loadMission(missionId)!
   }
 
-  pauseMission(id: string): void {
+  async pauseMission(id: string): Promise<void> {
     this.paused.add(id)
     missionState.updateMission(id, { status: 'paused' })
+    missionMemory.updateMission(id, { status: 'paused' })
+    livePulse.act('ceo', `Mission paused: ${id.slice(0, 8)}`, id)
     console.log(`[Mission] ⏸  Paused: ${id}`)
   }
 
@@ -373,9 +423,11 @@ Description: ${description}`,
     await this.startMission(mission.goal, mission.description, mission.options)
   }
 
-  cancelMission(id: string): void {
+  async cancelMission(id: string): Promise<void> {
     this.cancelled.add(id)
     missionState.updateMission(id, { status: 'cancelled' })
+    missionMemory.updateMission(id, { status: 'cancelled' })
+    livePulse.act('ceo', `Mission cancelled: ${id.slice(0, 8)}`, id)
     console.log(`[Mission] 🚫 Cancelled: ${id}`)
   }
 }
