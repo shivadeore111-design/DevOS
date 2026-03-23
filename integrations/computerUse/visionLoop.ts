@@ -15,12 +15,13 @@
 
 import axios from 'axios'
 import { ComputerUseAction, VisionLoopResult } from '../../types/computerUse'
-import { screenAgent }  from './screenAgent'
-import { apiRegistry }  from './apiRegistry'
-import { commandGate }  from '../../coordination/commandGate'
-import { memoryLayers } from '../../memory/memoryLayers'
-import { dataGuard }    from '../../security/dataGuard'
-import { executor }     from '../../core/executor'
+import { screenAgent }    from './screenAgent'
+import { apiRegistry }    from './apiRegistry'
+import { commandGate }    from '../../coordination/commandGate'
+import { memoryLayers }   from '../../memory/memoryLayers'
+import { dataGuard }      from '../../security/dataGuard'
+import { executor }       from '../../core/executor'
+import { memoryStrategy } from '../../core/memoryStrategy'
 
 // ── Constants ──────────────────────────────────────────────────
 
@@ -114,6 +115,37 @@ class VisionLoop {
     const start          = Date.now()
     this.aborted         = false
 
+    // Memory lookup — replay known-good action sequence if available
+    const knownActions = memoryStrategy.retrieveActions(goal)
+    if (knownActions) {
+      console.log(`[VisionLoop] Memory hit for goal: "${goal}" — replaying ${knownActions.length} known action(s)`)
+      executor.startSession(goal)
+      for (const action of knownActions) {
+        if (this.aborted) break
+        await executor.execute(action)
+        actionsExecuted.push(action)
+      }
+      // Take a final screenshot to verify goal completion
+      const verifyScreenshot = await screenAgent.takeScreenshot()
+      const useLocalForVerify = options.visionModel === 'local'
+        ? true
+        : options.visionModel === 'claude'
+          ? false
+          : await dataGuard.isSensitive(verifyScreenshot.slice(0, 200))
+      const done = await this.checkGoalComplete(goal, verifyScreenshot, useLocalForVerify)
+      if (done) {
+        await memoryStrategy.storeSuccess(goal, actionsExecuted)
+        memoryLayers.write(`ComputerUse success (memory replay): ${goal}`, ['computer_use', 'success'])
+        const session = executor.endSession()
+        if (session) memoryLayers.write(JSON.stringify(session), ['computer_use', 'session'])
+        return { success: true, iterations: 1, actionsExecuted }
+      }
+      // Memory replay didn't complete goal — fall through to full vision loop
+      executor.endSession()
+      actionsExecuted.length = 0
+      this.aborted = false
+    }
+
     // CommandGate approval before taking control of the computer
     if (options.requireApproval !== false) {
       const approved = await commandGate.requestApproval(
@@ -122,6 +154,7 @@ class VisionLoop {
       )
       if (!approved) {
         executor.endSession()
+        await memoryStrategy.storeFailure(goal)
         return {
           success:         false,
           iterations:      0,
@@ -137,6 +170,7 @@ class VisionLoop {
       if (this.aborted) break
 
       if (Date.now() - start > timeoutMs) {
+        await memoryStrategy.storeFailure(goal)
         return { success: false, iterations: i, actionsExecuted, failureReason: 'Timeout' }
       }
 
@@ -158,6 +192,7 @@ class VisionLoop {
       const action = await this.callVisionLLM(goal, screenshotB64, useLocal, actionsExecuted)
 
       if (!action) {
+        await memoryStrategy.storeSuccess(goal, actionsExecuted)
         memoryLayers.write(`ComputerUse success: ${goal}`, ['computer_use', 'success'])
         const session = executor.endSession()
         if (session) memoryLayers.write(JSON.stringify(session), ['computer_use', 'session'])
@@ -185,6 +220,7 @@ class VisionLoop {
         actionsExecuted.push(action)
 
         if (r.usedAPI) {
+          await memoryStrategy.storeSuccess(goal, actionsExecuted)
           memoryLayers.write(`ComputerUse success: ${goal}`, ['computer_use', 'success'])
           const session = executor.endSession()
           if (session) memoryLayers.write(JSON.stringify(session), ['computer_use', 'session'])
@@ -206,6 +242,7 @@ class VisionLoop {
       const newScreenshot = await screenAgent.takeScreenshot()
       const done = await this.checkGoalComplete(goal, newScreenshot, useLocal)
       if (done) {
+        await memoryStrategy.storeSuccess(goal, actionsExecuted)
         memoryLayers.write(`ComputerUse success: ${goal}`, ['computer_use', 'success'])
         const session = executor.endSession()
         if (session) memoryLayers.write(JSON.stringify(session), ['computer_use', 'session'])
@@ -213,6 +250,7 @@ class VisionLoop {
       }
     }
 
+    await memoryStrategy.storeFailure(goal)
     const session = executor.endSession()
     if (session) memoryLayers.write(JSON.stringify(session), ['computer_use', 'session'])
 

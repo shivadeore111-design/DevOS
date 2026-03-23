@@ -20,6 +20,8 @@
     "core/faultEngine.ts",
     "core/truthCheck.ts",
     "core/executor.ts",
+    "core/memoryStrategy.ts",
+    "core/doctor.ts",
     "coordination/commandGate.ts",
     "memory/memoryLayers.ts",
     "security/dataGuard.ts",
