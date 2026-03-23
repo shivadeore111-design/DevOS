@@ -156,10 +156,35 @@ export function startApiServer(portArg?: number): Express {
     ws.send('Type "devos help" for available commands\r\n')
     ws.send('$ ')
 
+    let inputBuffer = ''
+
     ws.on('message', (data) => {
       const input = data.toString()
-      // Echo the input back and return a fresh prompt
-      ws.send(input + '\r\n$ ')
+
+      // Handle special keys
+      if (input === '\r' || input === '\n') {
+        // Enter pressed — process the buffered command
+        ws.send('\r\n')
+        if (inputBuffer.trim()) {
+          ws.send(`command received: ${inputBuffer}\r\n`)
+        }
+        inputBuffer = ''
+        ws.send('$ ')
+      } else if (input === '\x7f' || input === '\b') {
+        // Backspace
+        if (inputBuffer.length > 0) {
+          inputBuffer = inputBuffer.slice(0, -1)
+          ws.send('\b \b') // erase character on screen
+        }
+      } else if (input === '\x03') {
+        // Ctrl+C
+        ws.send('^C\r\n$ ')
+        inputBuffer = ''
+      } else {
+        // Regular character — echo it and add to buffer
+        inputBuffer += input
+        ws.send(input) // echo the character without newline
+      }
     })
 
     ws.on('close', () => {})
