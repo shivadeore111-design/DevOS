@@ -36,6 +36,7 @@ export type AgentRole =
   | 'business-analyst'
   | 'blockchain-developer'
   | 'system-architect'
+  | 'desktop-automator'
 
 export type AgentStatus = 'idle' | 'thinking' | 'executing' | 'waiting' | 'error'
 

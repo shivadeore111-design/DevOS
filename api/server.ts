@@ -411,6 +411,10 @@ app.get("/api/sandbox/status", (_req: any, res: any) => {
     }
   )
 
+  // ── Computer-use routes ──────────────────────────────────────
+  const { registerComputerUseRoutes } = require('./routes/computerUse')
+  registerComputerUseRoutes(app)
+
   return app;
 }
 

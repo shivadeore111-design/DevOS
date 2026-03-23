@@ -2348,6 +2348,33 @@ When running devos serve, DevOS will:
       break
     }
 
+    // ── devos automate "<task>" ───────────────────────────────
+    case "automate": {
+      const task = goalArgs.join(" ").trim()
+      if (!task) {
+        console.log('Usage: devos automate "<task description>"')
+        break
+      }
+      console.log(`[DesktopAutomator] Starting: ${task}`)
+      const { visionLoop } = await import('./integrations/computerUse/visionLoop')
+      const result = await visionLoop.run(task, { requireApproval: true, visionModel: 'auto' })
+      if (result.success) {
+        console.log(`✅ Done in ${result.iterations} iteration(s)`)
+      } else {
+        console.log(`❌ Failed: ${result.failureReason}`)
+        console.log(`   Actions executed: ${result.actionsExecuted.length}`)
+      }
+      break
+    }
+
+    // ── devos automate:stop ───────────────────────────────────
+    case "automate:stop": {
+      const { visionLoop: vlStop } = await import('./integrations/computerUse/visionLoop')
+      vlStop.abort()
+      console.log('[DesktopAutomator] Aborted')
+      break
+    }
+
     // ── devos vault status | clean ────────────────────────────
     case "vault": {
       const sub = rawArgs[0]
