@@ -23,7 +23,9 @@
 
 import * as fs   from 'fs'
 import * as path from 'path'
+import * as http from 'http'
 import express, { Express, Request, Response, NextFunction } from 'express'
+import { WebSocketServer } from 'ws'
 
 // ── Real imports only ─────────────────────────────────────────
 import { memoryLayers }   from '../memory/memoryLayers'
@@ -138,15 +140,36 @@ export function startApiServer(portArg?: number): Express {
     const cfgPath = path.join(process.cwd(), 'config', 'api.json')
     if (fs.existsSync(cfgPath)) {
       const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'))
-      host = (cfg.host as string)  || host
-      port = (cfg.port as number)  || port
+      host = (cfg.host as string) || host
+      port = (cfg.port as number) || port
     }
   } catch { /* use defaults */ }
 
-  const app = createApiServer()
-  app.listen(port, host, () => {
+  const app    = createApiServer()
+  const server = http.createServer(app)
+
+  // ── WebSocket terminal ────────────────────────────────────────
+  const wss = new WebSocketServer({ server })
+
+  wss.on('connection', (ws) => {
+    ws.send('DevOS v1.0 — Terminal connected\r\n')
+    ws.send('Type "devos help" for available commands\r\n')
+    ws.send('$ ')
+
+    ws.on('message', (data) => {
+      const input = data.toString()
+      // Echo the input back and return a fresh prompt
+      ws.send(input + '\r\n$ ')
+    })
+
+    ws.on('close', () => {})
+  })
+
+  server.listen(port, host, () => {
     console.log(`[API] DevOS API running at http://${host}:${port}`)
     console.log(`[API] Health: http://${host}:${port}/api/health`)
+    console.log(`[API] Terminal: ws://${host}:${port}/terminal`)
   })
+
   return app
 }
