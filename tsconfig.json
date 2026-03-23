@@ -1,0 +1,39 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "commonjs",
+    "lib": ["ES2020"],
+    "strict": false,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "moduleResolution": "node",
+    "outDir": "./dist",
+    "rootDir": ".",
+    "typeRoots": ["./node_modules/@types", "./types"]
+  },
+  "files": [
+    "types/computerUse.ts",
+    "types/executor.ts",
+    "types/screenshot-desktop.d.ts",
+    "core/faultEngine.ts",
+    "core/truthCheck.ts",
+    "core/executor.ts",
+    "coordination/commandGate.ts",
+    "memory/memoryLayers.ts",
+    "security/dataGuard.ts",
+    "security/browserVault.ts",
+    "agents/types.ts",
+    "agents/desktopAutomator.ts",
+    "integrations/computerUse/screenAgent.ts",
+    "integrations/computerUse/apiRegistry.ts",
+    "integrations/computerUse/visionLoop.ts",
+    "api/routes/computerUse.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "dashboard-next"
+  ]
+}

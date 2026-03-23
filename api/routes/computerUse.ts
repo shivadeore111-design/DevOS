@@ -8,6 +8,7 @@
 //   POST /api/automate           Start a VisionLoop session
 //   POST /api/automate/stop      Abort the running session
 //   GET  /api/automate/log       Return the screenAgent action log
+//   GET  /api/automate/session   Return live executor session progress
 
 import type { Express, Request, Response } from 'express'
 
@@ -66,6 +67,33 @@ export function registerComputerUseRoutes(app: Express): void {
       res.json({ log: screenAgent.getLog() })
     } catch (err: any) {
       res.status(500).json({ error: err?.message ?? 'log unavailable' })
+    }
+  })
+
+  // ── GET /api/automate/session ────────────────────────────────
+  // Returns the live executor session (in-progress or null).
+  // Useful for polling live progress from the dashboard.
+  app.get('/api/automate/session', async (_req: Request, res: Response) => {
+    try {
+      const { executor } = await import('../../core/executor')
+      const session = executor.currentSession
+      if (!session) {
+        return res.json({ session: null, status: 'idle' })
+      }
+      // Attach live stats
+      const completed  = session.results.length
+      const successes  = session.results.filter(
+        r => r.status === 'success' || r.status === 'fallback' || r.status === 'retried',
+      ).length
+      res.json({
+        session,
+        status:          'running',
+        actionsCompleted: completed,
+        successRate:      completed ? successes / completed : 0,
+        elapsedMs:        Date.now() - new Date(session.startedAt).getTime(),
+      })
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message ?? 'session unavailable' })
     }
   })
 }

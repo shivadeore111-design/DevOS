@@ -20,6 +20,7 @@ import { apiRegistry }  from './apiRegistry'
 import { commandGate }  from '../../coordination/commandGate'
 import { memoryLayers } from '../../memory/memoryLayers'
 import { dataGuard }    from '../../security/dataGuard'
+import { executor }     from '../../core/executor'
 
 // ── Constants ──────────────────────────────────────────────────
 
@@ -120,6 +121,7 @@ class VisionLoop {
         'VisionLoop will take screenshots and control mouse/keyboard',
       )
       if (!approved) {
+        executor.endSession()
         return {
           success:         false,
           iterations:      0,
@@ -128,6 +130,8 @@ class VisionLoop {
         }
       }
     }
+
+    executor.startSession(goal)
 
     for (let i = 0; i < maxIterations; i++) {
       if (this.aborted) break
@@ -155,6 +159,8 @@ class VisionLoop {
 
       if (!action) {
         memoryLayers.write(`ComputerUse success: ${goal}`, ['computer_use', 'success'])
+        const session = executor.endSession()
+        if (session) memoryLayers.write(JSON.stringify(session), ['computer_use', 'session'])
         return { success: true, iterations: i + 1, actionsExecuted }
       }
 
@@ -180,17 +186,20 @@ class VisionLoop {
 
         if (r.usedAPI) {
           memoryLayers.write(`ComputerUse success: ${goal}`, ['computer_use', 'success'])
+          const session = executor.endSession()
+          if (session) memoryLayers.write(JSON.stringify(session), ['computer_use', 'session'])
           return { success: true, iterations: i + 1, actionsExecuted }
         }
         continue
       }
 
-      // 6. Mouse/keyboard execution via screenAgent
-      const result = await screenAgent.execute(action)
+      // 6. Execute via unified Executor (handles retry, fallback, TruthCheck)
+      const result = await executor.execute(action)
       actionsExecuted.push(action)
 
-      if (!result.success && action.fallback) {
-        await screenAgent.execute(action.fallback)
+      if (result.status === 'failed' && action.fallback) {
+        // Executor already tried the fallback internally; log the outcome
+        console.warn(`[VisionLoop] Action ${action.id} and its fallback both failed`)
       }
 
       // 7. Goal-complete check on fresh screenshot
@@ -198,9 +207,14 @@ class VisionLoop {
       const done = await this.checkGoalComplete(goal, newScreenshot, useLocal)
       if (done) {
         memoryLayers.write(`ComputerUse success: ${goal}`, ['computer_use', 'success'])
+        const session = executor.endSession()
+        if (session) memoryLayers.write(JSON.stringify(session), ['computer_use', 'session'])
         return { success: true, iterations: i + 1, actionsExecuted }
       }
     }
+
+    const session = executor.endSession()
+    if (session) memoryLayers.write(JSON.stringify(session), ['computer_use', 'session'])
 
     return {
       success:         false,
