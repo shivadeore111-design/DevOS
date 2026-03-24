@@ -24,6 +24,8 @@
     "core/hardwareDetector.ts",
     "core/modelRouter.ts",
     "core/setupWizard.ts",
+    "core/evolutionAnalyzer.ts",
+    "core/executionLoop.ts",
     "core/doctor.ts",
     "coordination/commandGate.ts",
     "coordination/livePulse.ts",

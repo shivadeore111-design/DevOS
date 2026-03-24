@@ -25,6 +25,7 @@ export default function Home() {
     { id:'3', agent:'Memory Agent', message:'Warm layer near capacity', type:'thinking', time:'3m ago' },
   ])
   const [apiStatus, setApiStatus] = useState<'online'|'offline'>('offline')
+  const [searchMode, setSearchMode] = useState<'speed'|'balanced'|'deep'>('balanced')
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -74,7 +75,7 @@ export default function Home() {
       const r = await fetch('http://localhost:4200/api/chat', {
         method:'POST',
         headers:{ 'Content-Type':'application/json' },
-        body: JSON.stringify({ message: msg })
+        body: JSON.stringify({ message: msg, mode: searchMode })
       })
       const data = await r.json()
       setMessages(prev => [...prev, { role:'devos', content: data.reply || 'Done.', time:'just now' }])
@@ -269,6 +270,21 @@ export default function Home() {
                   resize:'none', fontFamily:'inherit',
                 }}
               />
+              {/* Mode selector */}
+              <div style={{ display:'flex', gap:'4px', marginBottom:'8px' }}>
+                {(['speed','balanced','deep'] as const).map(m => (
+                  <button key={m} onClick={() => setSearchMode(m)}
+                    style={{
+                      padding:'3px 10px', borderRadius:'12px', fontSize:'11px',
+                      fontFamily:'JetBrains Mono, monospace', cursor:'pointer', border:'none',
+                      background: searchMode === m ? 'rgba(99,179,237,0.25)' : 'rgba(255,255,255,0.05)',
+                      color: searchMode === m ? '#63b3ed' : 'rgba(255,255,255,0.35)',
+                      transition:'all .15s',
+                    }}
+                  >{m === 'speed' ? '⚡ speed' : m === 'balanced' ? '⚖ balanced' : '🔬 deep'}</button>
+                ))}
+              </div>
+
               <div style={{ display:'flex', alignItems:'center', marginTop:'12px', gap:'8px' }}>
                 {[
                   { label:'⊙ new goal', val:'' },

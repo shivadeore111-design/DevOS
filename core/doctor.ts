@@ -15,6 +15,7 @@
 import { memoryStrategy }              from './memoryStrategy'
 import { detectHardware }              from './hardwareDetector'
 import { isSetupComplete }             from './setupWizard'
+import { evolutionAnalyzer }           from './evolutionAnalyzer'
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -87,6 +88,14 @@ export async function runDoctor(): Promise<DoctorReport> {
     status:  setupDone ? 'ok' : 'warn',
     message: setupDone ? 'Setup complete' : 'Run: devos setup',
     detail:  setupDone ? 'Setup complete' : 'Run: devos setup',
+  })
+
+  // Sprint 27 — Self-Evolution Analyzer
+  checks.push({
+    name:    'Evolution Analyzer',
+    status:  'ok',
+    message: evolutionAnalyzer.getSummary(),
+    detail:  evolutionAnalyzer.getSummary(),
   })
 
   // Additional checks (LLM, Docker, DB, etc.) live in the full host implementation.

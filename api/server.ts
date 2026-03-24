@@ -80,60 +80,178 @@ export function createApiServer(): Express {
     res.json({ status: 'ok', version: '1.0.0', timestamp: new Date().toISOString() })
   })
 
-  // POST /api/chat
+  // POST /api/chat — Speed / Balanced / Deep modes
   app.post('/api/chat', async (req: Request, res: Response) => {
-    const { message } = req.body as { message?: string }
+    const { message, mode = 'balanced' } = req.body as { message?: string; mode?: string }
     if (!message) return res.status(400).json({ error: 'message required' })
 
+    let model = getChatModel()
+
+    const systemPrompt = `You are DevOS — a personal AI OS running 100% locally. You are calm, direct, and slightly witty. You help users build things, automate tasks, run goals, and control their computer. Keep responses concise and actionable. If asked to do something, confirm you'll do it and describe the plan briefly.`
+
     try {
-      const model = getChatModel()
-      const ollamaRes = await fetch('http://localhost:11434/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model,
-          stream: false,
-          messages: [
-            {
-              role: 'system',
-              content: `You are DevOS — a personal AI OS running locally on the user's machine. You are calm, direct, and slightly witty. You help users build things, automate tasks, run goals, and control their computer. Keep responses concise. If the user wants to build something or run a task, confirm you'll start it and describe what you'll do. You run 100% locally — no data leaves their machine.`
-            },
-            {
-              role: 'user',
-              content: message
-            }
-          ]
+      // ── SPEED MODE — just LLM, no research ──────────────────
+      if (mode === 'speed') {
+        const r = await fetch('http://localhost:11434/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model, stream: false,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user',   content: message },
+            ],
+          }),
         })
-      })
+        const data  = await r.json() as any
+        const reply: string = data?.message?.content || 'Done.'
+        memoryLayers.write(`[speed] User: ${message} | DevOS: ${reply}`, ['chat'])
+        return res.json({ reply, mode: 'speed' })
+      }
 
-      const data = await ollamaRes.json() as any
-      const reply: string = data?.message?.content
-        || data?.choices?.[0]?.message?.content
-        || 'Done.'
+      // ── BALANCED MODE — LLM + optional web hint ──────────────
+      if (mode === 'balanced') {
+        let context = ''
+        const needsWeb = /latest|current|news|today|price|weather|who is|what is/.test(message.toLowerCase())
+        if (needsWeb) {
+          context = '\n[Web context available — use deep mode for full research]'
+        }
 
-      // Save to memory (synchronous)
-      memoryLayers.write(`User: ${message} | DevOS: ${reply}`, ['chat'])
+        const r = await fetch('http://localhost:11434/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model, stream: false,
+            messages: [
+              { role: 'system', content: systemPrompt + context },
+              { role: 'user',   content: message },
+            ],
+          }),
+        })
+        const data  = await r.json() as any
+        const reply: string = data?.message?.content || 'Done.'
+        memoryLayers.write(`[balanced] User: ${message} | DevOS: ${reply}`, ['chat'])
+        return res.json({ reply, mode: 'balanced' })
+      }
 
-      res.json({ reply })
-    } catch (err: any) {
-      res.json({
-        reply: `I can't reach Ollama right now. Make sure it's running with: ollama serve\n\nThen pull a model: ollama pull mistral:7b`
+      // ── DEEP MODE — iterative research loop ──────────────────
+      if (mode === 'deep') {
+        let iterations       = 0
+        let collectedContext = ''
+        let confident        = false
+        const MAX_ITERATIONS = 3
+
+        while (!confident && iterations < MAX_ITERATIONS) {
+          iterations++
+
+          const planRes = await fetch('http://localhost:11434/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model, stream: false,
+              messages: [
+                {
+                  role: 'system',
+                  content: 'You are a research planner. Given a question and collected context, decide if you have enough info or what to search for next. Respond in JSON only: { "confident": boolean, "searchQuery": string | null, "reason": string }',
+                },
+                {
+                  role: 'user',
+                  content: `Question: ${message}\nCollected so far: ${collectedContext || 'nothing yet'}\nDo you have enough info to answer comprehensively?`,
+                },
+              ],
+            }),
+          })
+          const planData = await planRes.json() as any
+          const planText: string = planData?.message?.content || ''
+
+          try {
+            const plan = JSON.parse(planText.replace(/```json|```/g, '').trim())
+            confident = plan.confident
+            if (!confident && plan.searchQuery) {
+              try {
+                const webRes = await fetch(`https://r.jina.ai/${encodeURIComponent(plan.searchQuery)}`, {
+                  headers: { 'Accept': 'text/plain' },
+                })
+                const text = await webRes.text()
+                collectedContext += `\n\n[Research ${iterations}]: ${text.slice(0, 800)}`
+              } catch {
+                collectedContext += `\n[Could not fetch: ${plan.searchQuery}]`
+                confident = true
+              }
+            }
+          } catch {
+            confident = true
+          }
+        }
+
+        const finalRes = await fetch('http://localhost:11434/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model, stream: false,
+            messages: [
+              {
+                role: 'system',
+                content: systemPrompt + '\n\nYou have done deep research. Provide a comprehensive, well-structured answer with your findings.',
+              },
+              {
+                role: 'user',
+                content: `Question: ${message}\n\nResearch collected:\n${collectedContext}`,
+              },
+            ],
+          }),
+        })
+        const finalData = await finalRes.json() as any
+        const reply: string = finalData?.message?.content || 'Research complete.'
+        memoryLayers.write(`[deep] User: ${message} | DevOS: ${reply}`, ['chat'])
+        return res.json({ reply, mode: 'deep', iterations })
+      }
+
+    } catch {
+      return res.json({
+        reply: "I can't reach Ollama. Make sure it's running: ollama serve\nThen pull a model: ollama pull mistral:7b",
       })
     }
+
+    // Fallback if unknown mode
+    return res.status(400).json({ error: `Unknown mode: ${mode}` })
   })
 
-  // POST /api/goals
+  // POST /api/goals — start execution loop async
   app.post('/api/goals', async (req: Request, res: Response) => {
     const { title, description } = req.body as { title?: string; description?: string }
     if (!title) return res.status(400).json({ error: 'title required' })
-    memoryLayers.write(`Goal: ${title} — ${description ?? ''}`, ['goal', 'queued'])
-    livePulse.act('CEO', `Goal queued: ${title}`)
-    res.json({ id: `goal_${Date.now()}`, title, status: 'queued' })
+    const goal = description ? `${title}: ${description}` : title
+    // Run async — don't await so UI gets immediate response
+    import('../core/executionLoop').then(({ runGoalLoop }) => {
+      runGoalLoop(goal).catch(console.error)
+    })
+    res.json({
+      id:      `goal_${Date.now()}`,
+      title,
+      status:  'running',
+      message: 'Goal started — watch LivePulse for progress',
+    })
   })
 
   // GET /api/goals
   app.get('/api/goals', (_req: Request, res: Response) => {
     res.json({ goals: [], message: 'Goal history coming soon' })
+  })
+
+  // GET /api/evolution — self-evolution stats
+  app.get('/api/evolution', async (_req: Request, res: Response) => {
+    try {
+      const { evolutionAnalyzer } = await import('../core/evolutionAnalyzer')
+      res.json({
+        stats:     evolutionAnalyzer.getStats(),
+        decisions: evolutionAnalyzer.getDecisions(),
+        history:   evolutionAnalyzer.getHistory(),
+        summary:   evolutionAnalyzer.getSummary(),
+      })
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message ?? 'evolution stats unavailable' })
+    }
   })
 
   // GET /api/doctor
