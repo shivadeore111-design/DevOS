@@ -80,20 +80,20 @@ export function createApiServer(): Express {
     res.json({ status: 'ok', version: '1.0.0', timestamp: new Date().toISOString() })
   })
 
-  // POST /api/chat — Speed / Balanced / Deep modes
+  // POST /api/chat — SSE streaming with Speed / Balanced / Deep modes
   app.post('/api/chat', async (req: Request, res: Response) => {
     const { message, mode = 'balanced', history = [] } = req.body as {
       message?: string; mode?: string; history?: { role: string; content: string }[]
     }
-    if (!message) return res.status(400).json({ error: 'message required' })
+    if (!message) { res.status(400).json({ error: 'message required' }); return }
 
-    let model = getChatModel()
+    const model = getChatModel()
 
-    const systemPrompt = `You are DevOS — a living AI operating system running 100% locally. You are calm, sharp, and loyal. You speak like a trusted co-founder, not a chatbot. Be concise and natural. Use markdown only when it genuinely helps — code blocks for code, short bullet lists only for 3+ distinct items. Never dump feature lists when greeted. When someone says hi, respond warmly in 1-2 sentences max. Current date: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}. You run on Ollama — no data leaves this machine.`
+    const systemPrompt = `You are DevOS — a sovereign AI OS running 100% locally on this machine. You are calm, sharp, and loyal. Speak like a trusted co-founder, not a chatbot. Be concise and natural. Use markdown only when it genuinely helps — code blocks for code, bullet lists only for 3+ distinct items. Never dump feature lists when greeted. When someone says hi, respond warmly in 1–2 sentences max. Current date: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}. All inference runs on Ollama — no data leaves this machine.`
 
-    // Build messages with conversation history
-    const buildMessages = (systemContent: string, userContent: string) => [
-      { role: 'system', content: systemContent },
+    // Build messages array with conversation history
+    const buildMessages = (sysContent: string, userContent: string) => [
+      { role: 'system', content: sysContent },
       ...history.slice(-8).map((h: any) => ({
         role: h.role === 'user' ? 'user' : 'assistant',
         content: h.content,
@@ -101,121 +101,142 @@ export function createApiServer(): Express {
       { role: 'user', content: userContent },
     ]
 
-    try {
-      // ── SPEED MODE — just LLM, no research ──────────────────
-      if (mode === 'speed') {
-        const r = await fetch('http://localhost:11434/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model, stream: false,
-            messages: buildMessages(systemPrompt, message),
-          }),
-        })
-        const data  = await r.json() as any
-        const reply: string = data?.message?.content || 'Done.'
-        memoryLayers.write(`[speed] User: ${message} | DevOS: ${reply}`, ['chat'])
-        return res.json({ reply, mode: 'speed' })
+    // ── SSE headers ────────────────────────────────────────────
+    res.setHeader('Content-Type',  'text/event-stream')
+    res.setHeader('Cache-Control', 'no-cache')
+    res.setHeader('Connection',    'keep-alive')
+    res.setHeader('Access-Control-Allow-Origin', '*')
+    res.flushHeaders()
+
+    const sendToken = (token: string, done = false) => {
+      res.write(`data: ${JSON.stringify({ token, done })}\n\n`)
+    }
+    const sendError = (msg: string) => {
+      res.write(`data: ${JSON.stringify({ error: msg, done: true })}\n\n`)
+      res.end()
+    }
+
+    // ── Helper: stream Ollama and pipe tokens to client ───────
+    const streamOllama = async (messages: object[]): Promise<string> => {
+      const ollamaRes = await fetch('http://localhost:11434/api/chat', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ model, stream: true, messages }),
+      })
+      if (!ollamaRes.ok || !ollamaRes.body) {
+        throw new Error(`Ollama returned ${ollamaRes.status}`)
       }
 
-      // ── BALANCED MODE — LLM + optional web hint ──────────────
-      if (mode === 'balanced') {
-        let context = ''
-        const needsWeb = /latest|current|news|today|price|weather|who is|what is/.test(message.toLowerCase())
-        if (needsWeb) {
-          context = '\n[Web context available — use deep mode for full research]'
+      const reader  = (ollamaRes.body as any).getReader()
+      const decoder = new TextDecoder()
+      let fullReply = ''
+      let buf       = ''
+
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+        buf += decoder.decode(value, { stream: true })
+        const lines = buf.split('\n')
+        buf = lines.pop() ?? ''
+        for (const line of lines) {
+          if (!line.trim()) continue
+          try {
+            const chunk = JSON.parse(line) as any
+            const token: string = chunk?.message?.content ?? ''
+            if (token) {
+              fullReply += token
+              sendToken(token, false)
+            }
+          } catch { /* skip malformed line */ }
         }
+      }
+      // flush any remaining buffer
+      if (buf.trim()) {
+        try {
+          const chunk = JSON.parse(buf) as any
+          const token: string = chunk?.message?.content ?? ''
+          if (token) { fullReply += token; sendToken(token, false) }
+        } catch { /* ignore */ }
+      }
+      return fullReply
+    }
 
-        const r = await fetch('http://localhost:11434/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model, stream: false,
-            messages: buildMessages(systemPrompt + context, message),
-          }),
-        })
-        const data  = await r.json() as any
-        const reply: string = data?.message?.content || 'Done.'
-        memoryLayers.write(`[balanced] User: ${message} | DevOS: ${reply}`, ['chat'])
-        return res.json({ reply, mode: 'balanced' })
+    try {
+      // ── SPEED MODE ────────────────────────────────────────────
+      if (mode === 'speed') {
+        const reply = await streamOllama(buildMessages(systemPrompt, message))
+        sendToken('', true)
+        res.end()
+        memoryLayers.write(`[speed] User: ${message} | DevOS: ${reply}`, ['chat'])
+        return
       }
 
-      // ── DEEP MODE — iterative research loop ──────────────────
+      // ── BALANCED MODE ─────────────────────────────────────────
+      if (mode === 'balanced') {
+        const needsWeb = /latest|current|news|today|price|weather|who is|what is/.test(message.toLowerCase())
+        const ctx = needsWeb ? '\n[Web context hint: for live data use deep mode]' : ''
+        const reply = await streamOllama(buildMessages(systemPrompt + ctx, message))
+        sendToken('', true)
+        res.end()
+        memoryLayers.write(`[balanced] User: ${message} | DevOS: ${reply}`, ['chat'])
+        return
+      }
+
+      // ── DEEP MODE — research first, then stream answer ────────
       if (mode === 'deep') {
         let iterations       = 0
         let collectedContext = ''
         let confident        = false
         const MAX_ITERATIONS = 3
 
+        // Research phase (non-streaming LLM calls + web fetches)
         while (!confident && iterations < MAX_ITERATIONS) {
           iterations++
-
           const planRes = await fetch('http://localhost:11434/api/chat', {
-            method: 'POST',
+            method:  'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
+            body:    JSON.stringify({
               model, stream: false,
               messages: [
-                {
-                  role: 'system',
-                  content: 'You are a research planner. Given a question and collected context, decide if you have enough info or what to search for next. Respond in JSON only: { "confident": boolean, "searchQuery": string | null, "reason": string }',
-                },
-                {
-                  role: 'user',
-                  content: `Question: ${message}\nCollected so far: ${collectedContext || 'nothing yet'}\nDo you have enough info to answer comprehensively?`,
-                },
+                { role: 'system', content: 'You are a research planner. Given a question and context, decide if you have enough info or what to search for next. Respond ONLY in JSON: { "confident": boolean, "searchQuery": string | null, "reason": string }' },
+                { role: 'user',   content: `Question: ${message}\nContext so far: ${collectedContext || 'nothing yet'}\nDo you have enough to answer comprehensively?` },
               ],
             }),
           })
           const planData = await planRes.json() as any
-          const planText: string = planData?.message?.content || ''
-
+          const planText: string = planData?.message?.content ?? ''
           try {
             const plan = JSON.parse(planText.replace(/```json|```/g, '').trim())
             confident = plan.confident
             if (!confident && plan.searchQuery) {
               try {
-                const webRes = await fetch(`https://r.jina.ai/${encodeURIComponent(plan.searchQuery)}`, {
-                  headers: { 'Accept': 'text/plain' },
-                })
-                const text = await webRes.text()
+                const webRes = await fetch(`https://r.jina.ai/${encodeURIComponent(plan.searchQuery)}`, { headers: { Accept: 'text/plain' } })
+                const text   = await webRes.text()
                 collectedContext += `\n\n[Research ${iterations}]: ${text.slice(0, 800)}`
               } catch {
                 collectedContext += `\n[Could not fetch: ${plan.searchQuery}]`
                 confident = true
               }
             }
-          } catch {
-            confident = true
-          }
+          } catch { confident = true }
         }
 
-        const deepSystemPrompt = systemPrompt + '\n\nYou have done deep research. Provide a comprehensive, well-structured answer with your findings.'
-        const finalRes = await fetch('http://localhost:11434/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model, stream: false,
-            messages: buildMessages(
-              deepSystemPrompt,
-              `Question: ${message}\n\nResearch collected:\n${collectedContext}`,
-            ),
-          }),
-        })
-        const finalData = await finalRes.json() as any
-        const reply: string = finalData?.message?.content || 'Research complete.'
+        // Stream the final synthesised answer
+        const deepSys  = systemPrompt + '\n\nYou have done deep research. Provide a comprehensive, well-structured answer.'
+        const deepUser  = `Question: ${message}\n\nResearch collected:\n${collectedContext}`
+        const reply    = await streamOllama(buildMessages(deepSys, deepUser))
+        sendToken('', true)
+        res.end()
         memoryLayers.write(`[deep] User: ${message} | DevOS: ${reply}`, ['chat'])
-        return res.json({ reply, mode: 'deep', iterations })
+        return
       }
 
-    } catch {
-      return res.json({
-        reply: "I can't reach Ollama. Make sure it's running: ollama serve\nThen pull a model: ollama pull mistral:7b",
-      })
-    }
+      // Unknown mode
+      sendError(`Unknown mode: ${mode}`)
 
-    // Fallback if unknown mode
-    return res.status(400).json({ error: `Unknown mode: ${mode}` })
+    } catch (err: any) {
+      sendError("I can't reach Ollama. Make sure it's running: `ollama serve`")
+    }
   })
 
   // POST /api/goals — start execution loop async
