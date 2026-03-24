@@ -82,12 +82,34 @@ export function createApiServer(): Express {
 
   // POST /api/chat — Speed / Balanced / Deep modes
   app.post('/api/chat', async (req: Request, res: Response) => {
-    const { message, mode = 'balanced' } = req.body as { message?: string; mode?: string }
+    const { message, mode = 'balanced', history = [] } = req.body as {
+      message?: string; mode?: string; history?: { role: string; content: string }[]
+    }
     if (!message) return res.status(400).json({ error: 'message required' })
 
     let model = getChatModel()
 
-    const systemPrompt = `You are DevOS — a personal AI OS running 100% locally. You are calm, direct, and slightly witty. You help users build things, automate tasks, run goals, and control their computer. Keep responses concise and actionable. If asked to do something, confirm you'll do it and describe the plan briefly.`
+    const systemPrompt = `You are DevOS — a living AI operating system running 100% locally on this machine. You are calm, sharp, and deeply loyal to your user. You think ahead. You don't just answer questions — you notice patterns, suggest improvements, take action.
+
+You speak like a trusted co-founder, not a customer support bot. Keep responses concise and natural. Use markdown only when it genuinely helps — code blocks for code, bullet points only for 3+ distinct items, never for simple answers.
+
+When greeted, respond warmly in 1-2 sentences. Don't list your features unless asked.
+
+Current context:
+- Date: ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+- Time: ${new Date().toLocaleTimeString()}
+- Mode: ${mode}
+- You run on Ollama locally — no data leaves this machine.`
+
+    // Build messages with conversation history
+    const buildMessages = (systemContent: string, userContent: string) => [
+      { role: 'system', content: systemContent },
+      ...history.slice(-8).map((h: any) => ({
+        role: h.role === 'user' ? 'user' : 'assistant',
+        content: h.content,
+      })),
+      { role: 'user', content: userContent },
+    ]
 
     try {
       // ── SPEED MODE — just LLM, no research ──────────────────
@@ -97,10 +119,7 @@ export function createApiServer(): Express {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             model, stream: false,
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user',   content: message },
-            ],
+            messages: buildMessages(systemPrompt, message),
           }),
         })
         const data  = await r.json() as any
@@ -122,10 +141,7 @@ export function createApiServer(): Express {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             model, stream: false,
-            messages: [
-              { role: 'system', content: systemPrompt + context },
-              { role: 'user',   content: message },
-            ],
+            messages: buildMessages(systemPrompt + context, message),
           }),
         })
         const data  = await r.json() as any
@@ -184,21 +200,16 @@ export function createApiServer(): Express {
           }
         }
 
+        const deepSystemPrompt = systemPrompt + '\n\nYou have done deep research. Provide a comprehensive, well-structured answer with your findings.'
         const finalRes = await fetch('http://localhost:11434/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             model, stream: false,
-            messages: [
-              {
-                role: 'system',
-                content: systemPrompt + '\n\nYou have done deep research. Provide a comprehensive, well-structured answer with your findings.',
-              },
-              {
-                role: 'user',
-                content: `Question: ${message}\n\nResearch collected:\n${collectedContext}`,
-              },
-            ],
+            messages: buildMessages(
+              deepSystemPrompt,
+              `Question: ${message}\n\nResearch collected:\n${collectedContext}`,
+            ),
           }),
         })
         const finalData = await finalRes.json() as any
