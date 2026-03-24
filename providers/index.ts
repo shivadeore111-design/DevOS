@@ -3,7 +3,7 @@
 // Copyright (c) 2026 Shiva Deore. All rights reserved.
 // ============================================================
 
-// providers/index.ts — Config loader + active provider resolver
+// providers/index.ts — Config schema, load/save, legacy provider resolver
 
 import * as fs   from 'fs'
 import * as path from 'path'
@@ -15,33 +15,68 @@ import { createGeminiProvider } from './gemini'
 
 // ── Config schema ─────────────────────────────────────────────
 
+export interface APIEntry {
+  name:           string        // e.g. "groq-1", "groq-2"
+  provider:       string        // "groq" | "openrouter" | "gemini" | "cerebras" | "nvidia"
+  key:            string        // actual API key (or "env:VAR_NAME")
+  model:          string        // default model for this entry
+  enabled:        boolean       // user can disable without deleting
+  rateLimited:    boolean       // auto-set to true when 429 hit
+  rateLimitedAt?: number        // timestamp when rate limited
+  usageCount:     number        // how many times used this session
+}
+
 export interface DevOSConfig {
   user:    { name: string }
-  model:   { active: string; activeModel: string; fallback?: string }
+  model:   { active: string; activeModel: string }
   providers: {
     ollama: { enabled: boolean; models: string[] }
-    apis:   { name: string; provider: string; key: string }[]
+    apis:   APIEntry[]
+  }
+  routing: {
+    mode:            'auto' | 'manual'   // auto = cycle through, manual = use active only
+    fallbackToOllama: boolean            // if all APIs rate limited, use Ollama
   }
   onboardingComplete: boolean
 }
 
 const CONFIG_PATH = path.join(process.cwd(), 'config', 'devos.config.json')
 
+// ── Defaults ──────────────────────────────────────────────────
+
+function defaultConfig(): DevOSConfig {
+  return {
+    user:    { name: 'there' },
+    model:   { active: 'ollama', activeModel: 'mistral:7b' },
+    providers: {
+      ollama: { enabled: true, models: [] },
+      apis:   [],
+    },
+    routing: { mode: 'auto', fallbackToOllama: true },
+    onboardingComplete: false,
+  }
+}
+
 // ── Load / save ───────────────────────────────────────────────
 
 export function loadConfig(): DevOSConfig {
   try {
-    return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8')) as DevOSConfig
-  } catch {
-    return {
-      user:    { name: 'there' },
-      model:   { active: 'ollama', activeModel: 'mistral:7b' },
-      providers: {
-        ollama: { enabled: true, models: [] },
-        apis:   [],
-      },
-      onboardingComplete: false,
+    const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8')) as any
+    // Back-compat: migrate old apis entries that lack new fields
+    if (raw.providers?.apis) {
+      raw.providers.apis = (raw.providers.apis as any[]).map(a => ({
+        model:       '',
+        enabled:     true,
+        rateLimited: false,
+        usageCount:  0,
+        ...a,
+      }))
     }
+    // Back-compat: add routing if missing
+    if (!raw.routing) raw.routing = { mode: 'auto', fallbackToOllama: true }
+    return raw as DevOSConfig
+  } catch {
+    return defaultConfig()
   }
 }
 
@@ -50,35 +85,32 @@ export function saveConfig(config: DevOSConfig): void {
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf-8')
 }
 
-// ── Active provider resolver ──────────────────────────────────
+// ── Legacy active provider resolver (used by onboarding fallback) ──
 
 export function getActiveProvider(): { provider: Provider; model: string; userName: string } {
   const config   = loadConfig()
   const userName = config.user?.name || 'there'
 
-  // Ollama (local)
   if (config.model.active === 'ollama') {
     return { provider: ollamaProvider, model: config.model.activeModel || 'mistral:7b', userName }
   }
 
-  // Cloud API
   const apiConfig = config.providers?.apis?.find(a => a.name === config.model.active)
   if (!apiConfig) {
     return { provider: ollamaProvider, model: config.model.activeModel || 'mistral:7b', userName }
   }
 
-  // Resolve env-prefixed keys
   const key = apiConfig.key.startsWith('env:')
     ? process.env[apiConfig.key.replace('env:', '')] || ''
     : apiConfig.key
 
   switch (apiConfig.provider) {
     case 'groq':
-      return { provider: createGroqProvider(key), model: config.model.activeModel || 'llama-3.3-70b-versatile', userName }
+      return { provider: createGroqProvider(key), model: apiConfig.model || 'llama-3.3-70b-versatile', userName }
     case 'openrouter':
-      return { provider: createOpenRouterProvider(key), model: config.model.activeModel || 'meta-llama/llama-3.3-70b-instruct', userName }
+      return { provider: createOpenRouterProvider(key), model: apiConfig.model || 'meta-llama/llama-3.3-70b-instruct', userName }
     case 'gemini':
-      return { provider: createGeminiProvider(key), model: config.model.activeModel || 'gemini-1.5-flash', userName }
+      return { provider: createGeminiProvider(key), model: apiConfig.model || 'gemini-1.5-flash', userName }
     default:
       return { provider: ollamaProvider, model: config.model.activeModel || 'mistral:7b', userName }
   }

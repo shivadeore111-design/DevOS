@@ -33,8 +33,9 @@ import { livePulse }      from '../coordination/livePulse'
 import { runDoctor }      from '../core/doctor'
 import { modelRouter }    from '../core/modelRouter'
 import { registerComputerUseRoutes } from './routes/computerUse'
-import { loadConfig, saveConfig, getActiveProvider } from '../providers/index'
+import { loadConfig, saveConfig, APIEntry } from '../providers/index'
 import { ollamaProvider } from '../providers/ollama'
+import { getSmartProvider, markRateLimited, incrementUsage } from '../providers/router'
 
 // ── App factory ───────────────────────────────────────────────
 
@@ -69,40 +70,61 @@ export function createApiServer(): Express {
     res.json({ status: 'ok', version: '1.0.0', timestamp: new Date().toISOString() })
   })
 
-  // POST /api/chat — SSE streaming via active provider
+  // POST /api/chat — SSE streaming with smart routing + auto-fallback
   app.post('/api/chat', async (req: Request, res: Response) => {
     const { message, history = [] } = req.body as {
       message?: string; history?: { role: string; content: string }[]
     }
     if (!message) { res.status(400).json({ error: 'message required' }); return }
 
-    const { provider, model, userName } = getActiveProvider()
-
-    const systemPrompt = `You are DevOS — a personal AI OS running locally. You are calm, direct, intelligent, and slightly witty. You speak like a trusted co-founder, not a chatbot. Be concise. Use markdown only when it genuinely helps. When greeted respond in 1-2 sentences max. You do NOT have internet access unless explicitly configured. Never make up facts, news, or current events. If you don't know something, say so.
-User's name: ${userName}. Current date: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.`
-
-    const messages = [
-      { role: 'system', content: systemPrompt },
-      ...history.slice(-10),
-      { role: 'user', content: message },
-    ]
-
-    // ── SSE headers ────────────────────────────────────────────
     res.setHeader('Content-Type',  'text/event-stream')
     res.setHeader('Cache-Control', 'no-cache')
     res.setHeader('Connection',    'keep-alive')
     res.setHeader('Access-Control-Allow-Origin', '*')
     res.flushHeaders()
 
-    try {
-      await provider.generateStream(messages, model, (token) => {
-        res.write(`data: ${JSON.stringify({ token, done: false })}\n\n`)
-      })
-      res.write(`data: ${JSON.stringify({ done: true })}\n\n`)
-      memoryLayers.write(`User: ${message}`, ['chat'])
-    } catch (err: any) {
-      res.write(`data: ${JSON.stringify({ done: true, error: err?.message ?? 'provider error' })}\n\n`)
+    const MAX_RETRIES = 3
+    let attempt   = 0
+    let lastError = ''
+
+    while (attempt < MAX_RETRIES) {
+      attempt++
+      const { provider, model, userName, apiName } = getSmartProvider()
+
+      const systemPrompt = `You are DevOS — a personal AI OS running locally. You are calm, direct, intelligent, and slightly witty. You speak like a trusted co-founder, not a chatbot. Be concise. Use markdown only when it genuinely helps. Never make up facts or claim capabilities you don't have.
+User's name: ${userName}. Date: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.`
+
+      const messages = [
+        { role: 'system', content: systemPrompt },
+        ...history.slice(-10),
+        { role: 'user', content: message },
+      ]
+
+      try {
+        await provider.generateStream(messages, model, (token) => {
+          res.write(`data: ${JSON.stringify({ token, done: false, provider: apiName })}\n\n`)
+        })
+        incrementUsage(apiName)
+        res.write(`data: ${JSON.stringify({ done: true, provider: apiName })}\n\n`)
+        res.end()
+        memoryLayers.write(`User: ${message}`, ['chat'])
+        return
+      } catch (err: any) {
+        const errMsg = err?.message || ''
+        const is429  = errMsg.includes('429') || errMsg.toLowerCase().includes('rate') || errMsg.toLowerCase().includes('limit')
+
+        if (is429 && apiName !== 'ollama') {
+          markRateLimited(apiName)
+          res.write(`data: ${JSON.stringify({ token: `\n\n⚡ ${apiName} rate limited — switching provider...\n\n`, done: false })}\n\n`)
+          continue
+        }
+
+        lastError = errMsg
+        break
+      }
     }
+
+    res.write(`data: ${JSON.stringify({ done: true, error: lastError || 'All providers unavailable' })}\n\n`)
     res.end()
   })
 
@@ -153,37 +175,102 @@ User's name: ${userName}. Current date: ${new Date().toLocaleDateString('en-US',
       userName?: string; modelType?: string; modelId?: string
       apiProvider?: string; apiKey?: string; apiName?: string; apiModel?: string
     }
-    const config      = loadConfig()
-    config.user.name  = userName || 'there'
+    const config     = loadConfig()
+    config.user.name = userName || 'there'
 
     if (modelType === 'local' && modelId) {
       config.model = { active: 'ollama', activeModel: modelId }
     } else if (modelType === 'api' && apiKey && apiProvider) {
-      const entry = { name: apiName || `${apiProvider}-main`, provider: apiProvider, key: apiKey }
-      const idx   = config.providers.apis.findIndex(a => a.name === entry.name)
+      const entry: APIEntry = {
+        name:        apiName || `${apiProvider}-main`,
+        provider:    apiProvider,
+        key:         apiKey,
+        model:       apiModel || getDefaultModel(apiProvider),
+        enabled:     true,
+        rateLimited: false,
+        usageCount:  0,
+      }
+      const idx = config.providers.apis.findIndex(a => a.name === entry.name)
       if (idx >= 0) config.providers.apis[idx] = entry
       else config.providers.apis.push(entry)
-      config.model = { active: entry.name, activeModel: apiModel || '' }
+      config.model = { active: entry.name, activeModel: entry.model }
     }
 
+    if (!config.routing) config.routing = { mode: 'auto', fallbackToOllama: true }
     config.onboardingComplete = true
     saveConfig(config)
     res.json({ success: true, config })
   })
 
-  // POST /api/providers/add — add API key without full onboarding
+  // GET /api/providers — list all configured APIs with status
+  app.get('/api/providers', (_req: Request, res: Response) => {
+    const config = loadConfig()
+    res.json({
+      apis: config.providers.apis.map(api => ({
+        name:          api.name,
+        provider:      api.provider,
+        model:         api.model,
+        enabled:       api.enabled,
+        rateLimited:   api.rateLimited,
+        rateLimitedAt: api.rateLimitedAt,
+        usageCount:    api.usageCount || 0,
+        hasKey:        !!api.key,
+      })),
+      routing: config.routing || { mode: 'auto', fallbackToOllama: true },
+      ollama:  config.providers.ollama,
+    })
+  })
+
+  // POST /api/providers/add — add or update a single API key
   app.post('/api/providers/add', (req: Request, res: Response) => {
-    const { name, provider, key, model } = req.body as {
-      name?: string; provider?: string; key?: string; model?: string
+    const { name, provider, key, model, enabled = true } = req.body as {
+      name?: string; provider?: string; key?: string; model?: string; enabled?: boolean
     }
     if (!provider || !key) { res.status(400).json({ error: 'provider and key required' }); return }
+
     const config = loadConfig()
-    const entry  = { name: name || `${provider}-${Date.now()}`, provider, key }
-    const idx    = config.providers.apis.findIndex(a => a.name === entry.name)
-    if (idx >= 0) config.providers.apis[idx] = entry
+    const entry: APIEntry = {
+      name:        name || `${provider}-${config.providers.apis.filter(a => a.provider === provider).length + 1}`,
+      provider,
+      key,
+      model:       model || getDefaultModel(provider),
+      enabled:     enabled !== false,
+      rateLimited: false,
+      usageCount:  0,
+    }
+    const idx = config.providers.apis.findIndex(a => a.name === entry.name)
+    if (idx >= 0) config.providers.apis[idx] = { ...config.providers.apis[idx], ...entry }
     else config.providers.apis.push(entry)
+
+    if (!config.routing) config.routing = { mode: 'auto', fallbackToOllama: true }
     saveConfig(config)
-    res.json({ success: true, entry })
+    res.json({ success: true, entry: { ...entry, key: '***' } })
+  })
+
+  // DELETE /api/providers/:name — remove an API
+  app.delete('/api/providers/:name', (req: Request, res: Response) => {
+    const config = loadConfig()
+    config.providers.apis = config.providers.apis.filter(a => a.name !== req.params.name)
+    saveConfig(config)
+    res.json({ success: true })
+  })
+
+  // PATCH /api/providers/:name — update enabled/rateLimited/model etc.
+  app.patch('/api/providers/:name', (req: Request, res: Response) => {
+    const config = loadConfig()
+    config.providers.apis = config.providers.apis.map(a =>
+      a.name === req.params.name ? { ...a, ...req.body } : a
+    )
+    saveConfig(config)
+    res.json({ success: true })
+  })
+
+  // POST /api/providers/reset-limits — manually reset all rate limits
+  app.post('/api/providers/reset-limits', (_req: Request, res: Response) => {
+    const config = loadConfig()
+    config.providers.apis = config.providers.apis.map(a => ({ ...a, rateLimited: false, rateLimitedAt: undefined }))
+    saveConfig(config)
+    res.json({ success: true, message: 'All rate limits reset' })
   })
 
   // POST /api/providers/switch — switch active model/provider
@@ -271,6 +358,19 @@ User's name: ${userName}. Current date: ${new Date().toLocaleDateString('en-US',
   })
 
   return app
+}
+
+// ── Helper ────────────────────────────────────────────────────
+
+export function getDefaultModel(provider: string): string {
+  const defaults: Record<string, string> = {
+    groq:       'llama-3.3-70b-versatile',
+    openrouter: 'meta-llama/llama-3.3-70b-instruct',
+    gemini:     'gemini-1.5-flash',
+    cerebras:   'llama3.1-8b',
+    nvidia:     'meta/llama-3.3-70b-instruct',
+  }
+  return defaults[provider] || 'llama-3.3-70b-versatile'
 }
 
 // ── Server launcher ───────────────────────────────────────────

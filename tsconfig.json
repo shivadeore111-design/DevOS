@@ -45,6 +45,9 @@
     "providers/groq.ts",
     "providers/openrouter.ts",
     "providers/gemini.ts",
+    "providers/cerebras.ts",
+    "providers/nvidia.ts",
+    "providers/router.ts",
     "providers/index.ts"
   ],
   "exclude": [

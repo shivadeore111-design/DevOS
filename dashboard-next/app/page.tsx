@@ -32,6 +32,18 @@ const CHIPS = [
   'Explain my codebase',
 ]
 
+// ── Provider metadata ─────────────────────────────────────────
+
+const PROVIDER_INFO: Record<string, {
+  label: string; color: string; freeUrl: string; defaultModel: string; models: string[]
+}> = {
+  groq:       { label:'Groq',       color:'#f55036', freeUrl:'https://console.groq.com',                    defaultModel:'llama-3.3-70b-versatile',          models:['llama-3.3-70b-versatile','llama-3.1-70b-versatile','mixtral-8x7b-32768','gemma2-9b-it'] },
+  gemini:     { label:'Gemini',     color:'#4285f4', freeUrl:'https://aistudio.google.com/app/apikey',      defaultModel:'gemini-1.5-flash',                 models:['gemini-1.5-flash','gemini-1.5-pro','gemini-2.0-flash-exp'] },
+  openrouter: { label:'OpenRouter', color:'#7c3aed', freeUrl:'https://openrouter.ai/keys',                  defaultModel:'meta-llama/llama-3.3-70b-instruct', models:['meta-llama/llama-3.3-70b-instruct','google/gemini-flash-1.5','mistralai/mistral-7b-instruct:free'] },
+  cerebras:   { label:'Cerebras',   color:'#059669', freeUrl:'https://cloud.cerebras.ai',                   defaultModel:'llama3.1-8b',                      models:['llama3.1-8b','llama3.3-70b'] },
+  nvidia:     { label:'NVIDIA NIM', color:'#76b900', freeUrl:'https://build.nvidia.com/explore/discover',   defaultModel:'meta/llama-3.3-70b-instruct',      models:['meta/llama-3.3-70b-instruct','meta/llama-3.1-405b-instruct','mistralai/mistral-7b-instruct-v0.3'] },
+}
+
 // ── Intent detection ─────────────────────────────────────────
 
 function detectMode(text: string): string {
@@ -46,13 +58,13 @@ function detectMode(text: string): string {
 function Cursor() {
   return (
     <span style={{
-      display:         'inline-block',
-      width:           '2px',
-      height:          '14px',
-      background:      '#63b3ed',
-      marginLeft:      '2px',
-      verticalAlign:   'text-bottom',
-      animation:       'pulse 1s ease infinite',
+      display:       'inline-block',
+      width:         '2px',
+      height:        '14px',
+      background:    '#63b3ed',
+      marginLeft:    '2px',
+      verticalAlign: 'text-bottom',
+      animation:     'pulse 1s ease infinite',
     }} />
   )
 }
@@ -71,7 +83,7 @@ export default function Home() {
         setOnboardingDone(d.onboardingComplete ?? true)
         if (d.userName && d.userName !== 'there') setUserName(d.userName)
       })
-      .catch(() => setOnboardingDone(true)) // server offline → skip onboarding
+      .catch(() => setOnboardingDone(true))
   }, [])
 
   const [tab, setTab]               = useState<Tab>('chat')
@@ -93,9 +105,17 @@ export default function Home() {
   ])
   const [model, setModel]           = useState('mistral:7b')
 
-  const bottomRef  = useRef<HTMLDivElement>(null)
-  const inputRef   = useRef<HTMLTextAreaElement>(null)
-  const abortRef   = useRef<AbortController | null>(null)
+  // ── Settings state ───────────────────────────────────────────
+  const [providers, setProviders]         = useState<any[]>([])
+  const [routing, setRouting]             = useState<any>({ mode: 'auto', fallbackToOllama: true })
+  const [addingProvider, setAddingProvider] = useState<string | null>(null)
+  const [newKey, setNewKey]               = useState('')
+  const [newModel, setNewModel]           = useState('')
+  const [savingKey, setSavingKey]         = useState(false)
+
+  const bottomRef = useRef<HTMLDivElement>(null)
+  const inputRef  = useRef<HTMLTextAreaElement>(null)
+  const abortRef  = useRef<AbortController | null>(null)
 
   // ── Persist messages ────────────────────────────────────────
   useEffect(() => {
@@ -141,13 +161,27 @@ export default function Home() {
     } catch {}
   }, [])
 
-  // ── Read model from config ──────────────────────────────────
+  // ── Read active model name ──────────────────────────────────
   useEffect(() => {
-    fetch('http://localhost:4200/api/models')
+    fetch('http://localhost:4200/api/onboarding')
       .then(r => r.json())
-      .then(d => { if (d?.compatible?.[0]) setModel(d.compatible[0]) })
+      .then((d: any) => {
+        if (d?.activeModel?.activeModel) setModel(d.activeModel.activeModel)
+      })
       .catch(() => {})
   }, [])
+
+  // ── Load providers when Settings tab opens ──────────────────
+  useEffect(() => {
+    if (tab !== 'settings') return
+    fetch('http://localhost:4200/api/providers')
+      .then(r => r.json())
+      .then((d: any) => {
+        setProviders(d.apis || [])
+        setRouting(d.routing || { mode: 'auto', fallbackToOllama: true })
+      })
+      .catch(() => {})
+  }, [tab])
 
   // ── Escape key stops streaming ──────────────────────────────
   useEffect(() => {
@@ -162,11 +196,49 @@ export default function Home() {
   const stopStreaming = useCallback(() => {
     abortRef.current?.abort()
     setStreaming(false)
-    // seal the last message (remove streaming flag)
     setMessages(prev => prev.map((m, i) =>
       i === prev.length - 1 ? { ...m, streaming: false } : m
     ))
   }, [])
+
+  // ── Settings helpers ─────────────────────────────────────────
+  const saveKey = async (providerID: string) => {
+    if (!newKey.trim()) return
+    setSavingKey(true)
+    try {
+      await fetch('http://localhost:4200/api/providers/add', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ provider: providerID, key: newKey.trim(), model: newModel || undefined }),
+      })
+      setNewKey('')
+      setNewModel('')
+      setAddingProvider(null)
+      const d = await fetch('http://localhost:4200/api/providers').then(r => r.json()) as any
+      setProviders(d.apis || [])
+    } catch {}
+    setSavingKey(false)
+  }
+
+  const toggleProvider = async (name: string, enabled: boolean) => {
+    await fetch(`http://localhost:4200/api/providers/${encodeURIComponent(name)}`, {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ enabled }),
+    }).catch(() => {})
+    setProviders(prev => prev.map((p: any) => p.name === name ? { ...p, enabled } : p))
+  }
+
+  const deleteProvider = async (name: string) => {
+    if (!window.confirm(`Remove ${name}?`)) return
+    await fetch(`http://localhost:4200/api/providers/${encodeURIComponent(name)}`, { method: 'DELETE' }).catch(() => {})
+    setProviders(prev => prev.filter((p: any) => p.name !== name))
+  }
+
+  const resetLimits = async () => {
+    await fetch('http://localhost:4200/api/providers/reset-limits', { method: 'POST' }).catch(() => {})
+    setProviders(prev => prev.map((p: any) => ({ ...p, rateLimited: false })))
+  }
 
   // ── Send message ────────────────────────────────────────────
   const send = useCallback(async (override?: string) => {
@@ -179,17 +251,15 @@ export default function Home() {
     setMessages(prev => [...prev, { role: 'user', content: msg, time }])
     setStreaming(true)
 
-    const mode        = detectMode(msg)
-    const newHistory  = [...history, { role: 'user', content: msg }]
+    const mode       = detectMode(msg)
+    const newHistory = [...history, { role: 'user', content: msg }]
     setHistory(newHistory)
 
-    // Add empty DevOS message that will be filled token by token
     setMessages(prev => [...prev, { role: 'devos', content: '', time, streaming: true }])
 
     try {
       if (mode === 'goal') {
-        // Goals don't stream — fire and forget
-        const r = await fetch('http://localhost:4200/api/goals', {
+        const r    = await fetch('http://localhost:4200/api/goals', {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
           body:    JSON.stringify({ title: msg, description: msg }),
@@ -209,14 +279,13 @@ export default function Home() {
         return
       }
 
-      // Streaming fetch for chat modes
-      const controller   = new AbortController()
-      abortRef.current   = controller
+      const controller = new AbortController()
+      abortRef.current = controller
 
       const r = await fetch('http://localhost:4200/api/chat', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ message: msg, mode, history: newHistory.slice(-10) }),
+        body:    JSON.stringify({ message: msg, history: newHistory.slice(-10) }),
         signal:  controller.signal,
       })
 
@@ -279,16 +348,13 @@ export default function Home() {
       try { localStorage.setItem('devos_history', JSON.stringify(updatedHistory.slice(-20))) } catch {}
 
     } catch (err: any) {
-      if (err?.name === 'AbortError') {
-        // stopped by user — message already sealed by stopStreaming
-      } else {
+      if (err?.name !== 'AbortError') {
         setMessages(prev => {
           const next = [...prev]
           next[next.length - 1] = {
             role: 'devos',
             content: "I can't reach the DevOS API. Make sure the server is running.",
-            time,
-            streaming: false,
+            time, streaming: false,
           }
           return next
         })
@@ -334,12 +400,12 @@ export default function Home() {
   // ── Render ───────────────────────────────────────────────────
   return (
     <div style={{
-      height:          '100vh',
-      display:         'flex',
-      flexDirection:   'column',
-      background:      'radial-gradient(ellipse at 30% 20%, #0a1628 0%, #060d1f 50%, #030812 100%)',
-      color:           '#e8e8e8',
-      overflow:        'hidden',
+      height:        '100vh',
+      display:       'flex',
+      flexDirection: 'column',
+      background:    'radial-gradient(ellipse at 30% 20%, #0a1628 0%, #060d1f 50%, #030812 100%)',
+      color:         '#e8e8e8',
+      overflow:      'hidden',
     }}>
 
       {/* ── NAV ─────────────────────────────────────────────── */}
@@ -380,7 +446,7 @@ export default function Home() {
             background: apiStatus === 'online' ? '#22c55e' : '#f87171',
           }}/>
           <span style={{ fontSize:'11px', fontFamily:'monospace', color: apiStatus === 'online' ? '#22c55e' : '#f87171' }}>
-            {apiStatus === 'online' ? '31 agents live' : 'server offline'}
+            {apiStatus === 'online' ? `${providers.filter(p => p.enabled && !p.rateLimited).length || '0'} APIs live` : 'server offline'}
           </span>
         </div>
 
@@ -414,76 +480,231 @@ export default function Home() {
       {/* ── BODY ────────────────────────────────────────────── */}
       {tab === 'settings' ? (
 
-        /* ── SETTINGS PANEL ────────────────────────────────── */
-        <div style={{
-          flex:1, overflowY:'auto',
-          display:'flex', justifyContent:'center',
-          padding:'32px 16px',
-        }}>
-          <div style={{ width:'100%', maxWidth:'560px', display:'flex', flexDirection:'column', gap:'20px' }}>
+        /* ── SETTINGS PANEL ─────────────────────────────────── */
+        <div style={{ flex:1, overflowY:'auto', padding:'24px 16px' }}>
+          <div style={{ maxWidth:'640px', margin:'0 auto', display:'flex', flexDirection:'column', gap:'16px' }}>
 
-            {/* Status card */}
-            <div style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:'12px', padding:'20px' }}>
-              <div style={{ fontSize:'11px', fontFamily:'monospace', color:'rgba(255,255,255,0.3)', textTransform:'uppercase', letterSpacing:'.1em', marginBottom:'14px' }}>System Status</div>
-              {[
-                { label:'API Server',   value: apiStatus === 'online' ? '● online  :4200' : '● offline', ok: apiStatus === 'online' },
-                { label:'Ollama',       value: apiStatus === 'online' ? '● running :11434' : '● unreachable', ok: apiStatus === 'online' },
-                { label:'Active Model', value: model, ok: true },
-                { label:'Data Privacy', value:'100% local — no cloud', ok: true },
-              ].map(row => (
-                <div key={row.label} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'8px 0', borderBottom:'1px solid rgba(255,255,255,0.05)' }}>
-                  <span style={{ fontSize:'13px', color:'rgba(255,255,255,0.5)' }}>{row.label}</span>
-                  <span style={{ fontSize:'12px', fontFamily:'monospace', color: row.ok ? '#22c55e' : '#f87171' }}>{row.value}</span>
-                </div>
-              ))}
+            {/* Header */}
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+              <h2 style={{ fontSize:'17px', fontWeight:700 }}>API Keys</h2>
+              <div style={{ display:'flex', gap:'8px', alignItems:'center' }}>
+                <span style={{ fontSize:'10px', fontFamily:'monospace', color:'rgba(255,255,255,0.3)' }}>
+                  routing: {routing.mode || 'auto'}
+                </span>
+                <button onClick={resetLimits} style={{
+                  fontSize:'10px', fontFamily:'monospace', padding:'4px 10px',
+                  background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)',
+                  borderRadius:'6px', color:'rgba(255,255,255,0.4)', cursor:'pointer',
+                }}>reset limits</button>
+              </div>
             </div>
 
-            {/* Quick commands */}
-            <div style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:'12px', padding:'20px' }}>
-              <div style={{ fontSize:'11px', fontFamily:'monospace', color:'rgba(255,255,255,0.3)', textTransform:'uppercase', letterSpacing:'.1em', marginBottom:'14px' }}>Quick Commands</div>
-              {[
-                { cmd:'devos setup',    desc:'Run first-boot configuration wizard' },
-                { cmd:'devos doctor',   desc:'Check all subsystem health' },
-                { cmd:'devos models',   desc:'List compatible local models' },
-                { cmd:'ollama serve',   desc:'Start Ollama inference server' },
-                { cmd:'ollama pull mistral:7b', desc:'Download default model' },
-              ].map(row => (
-                <div key={row.cmd} style={{ display:'flex', alignItems:'center', gap:'12px', padding:'8px 0', borderBottom:'1px solid rgba(255,255,255,0.05)' }}>
-                  <code style={{ fontSize:'11px', fontFamily:'monospace', color:'#93c5fd', background:'rgba(255,255,255,0.06)', padding:'2px 6px', borderRadius:'4px', flexShrink:0 }}>{row.cmd}</code>
-                  <span style={{ fontSize:'12px', color:'rgba(255,255,255,0.4)' }}>{row.desc}</span>
-                </div>
-              ))}
+            {/* Info banner */}
+            <div style={{
+              background:'rgba(99,179,237,0.06)', border:'1px solid rgba(99,179,237,0.15)',
+              borderRadius:'10px', padding:'12px 14px',
+              fontSize:'12px', fontFamily:'monospace',
+              color:'rgba(255,255,255,0.5)', lineHeight:'1.7',
+            }}>
+              ⚡ Auto-routing enabled — DevOS cycles through available APIs automatically.<br/>
+              When one hits its rate limit, it switches to the next one instantly.<br/>
+              Add multiple keys per provider for maximum free usage.
             </div>
+
+            {/* Existing APIs */}
+            {providers.length > 0 && (
+              <div style={{ display:'flex', flexDirection:'column', gap:'6px' }}>
+                <div style={{
+                  fontSize:'10px', fontFamily:'monospace', color:'rgba(255,255,255,0.25)',
+                  textTransform:'uppercase', letterSpacing:'.1em', marginBottom:'4px',
+                }}>
+                  Configured APIs ({providers.filter((p: any) => p.enabled && !p.rateLimited).length} active)
+                </div>
+                {providers.map((api: any) => (
+                  <div key={api.name} style={{
+                    display:'flex', alignItems:'center', gap:'10px',
+                    background:'rgba(255,255,255,0.04)',
+                    border: `1px solid ${api.rateLimited ? 'rgba(248,113,113,0.2)' : api.enabled ? 'rgba(34,197,94,0.15)' : 'rgba(255,255,255,0.06)'}`,
+                    borderRadius:'10px', padding:'12px 14px',
+                  }}>
+                    {/* Status dot */}
+                    <div style={{
+                      width:'8px', height:'8px', borderRadius:'50%', flexShrink:0,
+                      background: api.rateLimited ? '#f87171' : api.enabled ? '#22c55e' : '#555',
+                    }}/>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
+                        <span style={{ fontSize:'12px', fontWeight:600 }}>{api.name}</span>
+                        {api.rateLimited && (
+                          <span style={{
+                            fontSize:'9px', fontFamily:'monospace', padding:'1px 6px',
+                            background:'rgba(248,113,113,0.12)', border:'1px solid rgba(248,113,113,0.2)',
+                            borderRadius:'3px', color:'#f87171',
+                          }}>rate limited</span>
+                        )}
+                      </div>
+                      <div style={{ fontSize:'10px', fontFamily:'monospace', color:'rgba(255,255,255,0.3)', marginTop:'2px' }}>
+                        {PROVIDER_INFO[api.provider]?.label || api.provider} · {api.model || '—'} · used {api.usageCount || 0}×
+                      </div>
+                    </div>
+                    {/* Toggle */}
+                    <button onClick={() => toggleProvider(api.name, !api.enabled)} style={{
+                      padding:'4px 10px', borderRadius:'5px', fontSize:'10px', fontFamily:'monospace',
+                      border:'1px solid rgba(255,255,255,0.08)', cursor:'pointer',
+                      background: api.enabled ? 'rgba(34,197,94,0.1)' : 'rgba(255,255,255,0.04)',
+                      color: api.enabled ? '#22c55e' : 'rgba(255,255,255,0.3)',
+                    }}>{api.enabled ? 'on' : 'off'}</button>
+                    {/* Delete */}
+                    <button onClick={() => deleteProvider(api.name)} style={{
+                      width:'26px', height:'26px', borderRadius:'5px', fontSize:'14px',
+                      border:'1px solid rgba(255,255,255,0.06)', cursor:'pointer',
+                      background:'transparent', color:'rgba(255,255,255,0.2)',
+                      display:'flex', alignItems:'center', justifyContent:'center',
+                    }}>×</button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Add new API — one card per provider */}
+            <div style={{
+              fontSize:'10px', fontFamily:'monospace', color:'rgba(255,255,255,0.25)',
+              textTransform:'uppercase', letterSpacing:'.1em',
+            }}>Add API Key</div>
+
+            {Object.entries(PROVIDER_INFO).map(([id, info]) => (
+              <div key={id} style={{
+                background:'rgba(255,255,255,0.03)',
+                border:'1px solid rgba(255,255,255,0.07)',
+                borderRadius:'12px', overflow:'hidden',
+              }}>
+                {/* Provider header — click to expand */}
+                <div
+                  onClick={() => setAddingProvider(addingProvider === id ? null : id)}
+                  style={{ display:'flex', alignItems:'center', gap:'10px', padding:'14px 16px', cursor:'pointer' }}
+                >
+                  <div style={{ width:'8px', height:'8px', borderRadius:'50%', background:info.color, flexShrink:0 }}/>
+                  <span style={{ fontSize:'13px', fontWeight:600, flex:1 }}>{info.label}</span>
+                  <span style={{ fontSize:'10px', fontFamily:'monospace', color:'rgba(255,255,255,0.25)' }}>
+                    {providers.filter((p: any) => p.provider === id).length} key{providers.filter((p: any) => p.provider === id).length !== 1 ? 's' : ''} added
+                  </span>
+                  <span style={{
+                    fontSize:'10px', color:'rgba(255,255,255,0.2)',
+                    display:'inline-block',
+                    transform: addingProvider === id ? 'rotate(180deg)' : 'none',
+                    transition:'transform .2s',
+                  }}>▼</span>
+                </div>
+
+                {/* Expanded form */}
+                {addingProvider === id && (
+                  <div style={{
+                    padding:'0 16px 16px', paddingTop:'14px',
+                    borderTop:'1px solid rgba(255,255,255,0.06)',
+                    display:'flex', flexDirection:'column', gap:'10px',
+                  }}>
+                    <a href={info.freeUrl} target="_blank" rel="noopener noreferrer"
+                      style={{ fontSize:'10px', fontFamily:'monospace', color:'#63b3ed', textDecoration:'none' }}>
+                      Get free API key → {info.freeUrl.replace('https://', '')}
+                    </a>
+                    <input
+                      autoFocus
+                      value={newKey}
+                      onChange={e => setNewKey(e.target.value)}
+                      placeholder={`Paste ${info.label} API key...`}
+                      type="password"
+                      style={{
+                        padding:'10px 12px', width:'100%', boxSizing:'border-box',
+                        background:'rgba(0,0,0,0.3)', border:'1px solid rgba(255,255,255,0.1)',
+                        borderRadius:'8px', color:'#e8e8e8', fontSize:'12px',
+                        fontFamily:'monospace', outline:'none',
+                      }}
+                    />
+                    <select
+                      value={newModel || info.defaultModel}
+                      onChange={e => setNewModel(e.target.value)}
+                      style={{
+                        padding:'8px 10px',
+                        background:'rgba(0,0,0,0.3)', border:'1px solid rgba(255,255,255,0.1)',
+                        borderRadius:'8px', color:'#e8e8e8', fontSize:'12px',
+                        fontFamily:'monospace', outline:'none',
+                      }}
+                    >
+                      {info.models.map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                    <div style={{ display:'flex', gap:'8px' }}>
+                      <button onClick={() => { setAddingProvider(null); setNewKey(''); setNewModel('') }} style={{
+                        flex:1, padding:'9px', borderRadius:'8px', fontSize:'12px',
+                        border:'1px solid rgba(255,255,255,0.08)', background:'transparent',
+                        color:'rgba(255,255,255,0.3)', cursor:'pointer', fontFamily:'monospace',
+                      }}>Cancel</button>
+                      <button
+                        onClick={() => saveKey(id)}
+                        disabled={!newKey.trim() || savingKey}
+                        style={{
+                          flex:2, padding:'9px', borderRadius:'8px', fontSize:'12px', fontWeight:600,
+                          border:'none', fontFamily:'monospace',
+                          cursor:     newKey.trim() ? 'pointer' : 'default',
+                          background: newKey.trim() ? '#63b3ed' : 'rgba(255,255,255,0.05)',
+                          color:      newKey.trim() ? '#000'    : 'rgba(255,255,255,0.2)',
+                        }}
+                      >
+                        {savingKey ? 'Saving...' : 'Save Key →'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
 
             {/* Model switcher */}
-            <div style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:'12px', padding:'20px' }}>
-              <div style={{ fontSize:'11px', fontFamily:'monospace', color:'rgba(255,255,255,0.3)', textTransform:'uppercase', letterSpacing:'.1em', marginBottom:'12px' }}>Model & Provider</div>
-              <p style={{ fontSize:'12px', color:'rgba(255,255,255,0.35)', marginBottom:'12px', lineHeight:'1.6' }}>
-                Switch between local Ollama models and cloud APIs (Groq, OpenRouter, Gemini).
-              </p>
+            <div style={{
+              background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.07)',
+              borderRadius:'10px', padding:'14px 16px',
+              display:'flex', justifyContent:'space-between', alignItems:'center',
+            }}>
+              <div>
+                <div style={{ fontSize:'12px', fontWeight:600, marginBottom:'3px' }}>Switch Model Setup</div>
+                <div style={{ fontSize:'11px', fontFamily:'monospace', color:'rgba(255,255,255,0.3)' }}>
+                  Re-run the model selection wizard
+                </div>
+              </div>
               <button onClick={() => setOnboardingDone(false)} style={{
-                padding:'8px 16px', borderRadius:'7px',
-                border:'1px solid rgba(255,255,255,0.1)',
-                background:'transparent', color:'rgba(255,255,255,0.5)',
-                fontSize:'12px', fontFamily:'monospace', cursor:'pointer',
-                transition:'all .15s',
+                padding:'7px 14px', borderRadius:'7px', fontSize:'11px', fontFamily:'monospace',
+                border:'1px solid rgba(255,255,255,0.1)', background:'transparent',
+                color:'rgba(255,255,255,0.4)', cursor:'pointer', transition:'all .15s',
               }}
                 onMouseEnter={e => { (e.target as HTMLElement).style.borderColor = 'rgba(99,179,237,0.35)'; (e.target as HTMLElement).style.color = '#63b3ed' }}
-                onMouseLeave={e => { (e.target as HTMLElement).style.borderColor = 'rgba(255,255,255,0.1)'; (e.target as HTMLElement).style.color = 'rgba(255,255,255,0.5)' }}
-              >
-                Re-run model setup →
-              </button>
+                onMouseLeave={e => { (e.target as HTMLElement).style.borderColor = 'rgba(255,255,255,0.1)'; (e.target as HTMLElement).style.color = 'rgba(255,255,255,0.4)' }}
+              >Re-run →</button>
+            </div>
+
+            {/* System status */}
+            <div style={{
+              background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.06)',
+              borderRadius:'10px', padding:'14px',
+            }}>
+              <div style={{ fontSize:'12px', fontWeight:600, marginBottom:'10px' }}>System Status</div>
+              {[
+                { label:'API Server',   value: apiStatus === 'online' ? 'online :4200' : 'offline', ok: apiStatus === 'online' },
+                { label:'Ollama',       value: 'localhost:11434', ok: true },
+                { label:'Routing',      value: routing.mode || 'auto', ok: true },
+                { label:'Active Model', value: model, ok: true },
+              ].map(item => (
+                <div key={item.label} style={{
+                  display:'flex', justifyContent:'space-between',
+                  padding:'7px 0', borderBottom:'1px solid rgba(255,255,255,0.04)',
+                  fontSize:'11px', fontFamily:'monospace',
+                }}>
+                  <span style={{ color:'rgba(255,255,255,0.35)' }}>{item.label}</span>
+                  <span style={{ color: item.ok ? '#22c55e' : '#f87171' }}>{item.value}</span>
+                </div>
+              ))}
             </div>
 
             {/* About */}
-            <div style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:'12px', padding:'20px' }}>
-              <div style={{ fontSize:'11px', fontFamily:'monospace', color:'rgba(255,255,255,0.3)', textTransform:'uppercase', letterSpacing:'.1em', marginBottom:'12px' }}>About DevOS</div>
-              <p style={{ fontSize:'13px', lineHeight:'1.7', color:'rgba(255,255,255,0.5)', marginBottom:'10px' }}>
-                DevOS is a sovereign AI operating system. All models run locally via Ollama — your data never leaves this machine.
-              </p>
-              <p style={{ fontSize:'12px', fontFamily:'monospace', color:'rgba(255,255,255,0.25)' }}>
-                © 2026 Shiva Deore · v1.0 · Sprint 29
-              </p>
+            <div style={{ fontSize:'11px', fontFamily:'monospace', color:'rgba(255,255,255,0.2)', textAlign:'center', paddingBottom:'8px' }}>
+              © 2026 Shiva Deore · DevOS v1.0 · Sprint 30
             </div>
 
           </div>
@@ -506,10 +727,8 @@ export default function Home() {
                 <div style={{ textAlign:'center', paddingTop:'60px', paddingBottom:'20px' }}>
                   <div style={{
                     width:'64px', height:'64px', margin:'0 auto 20px',
-                    background:'rgba(99,179,237,0.1)',
-                    border:'1px solid rgba(99,179,237,0.2)',
-                    borderRadius:'50%',
-                    display:'flex', alignItems:'center', justifyContent:'center',
+                    background:'rgba(99,179,237,0.1)', border:'1px solid rgba(99,179,237,0.2)',
+                    borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center',
                   }}>
                     <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#63b3ed" strokeWidth="1.5">
                       <circle cx="12" cy="8" r="3"/>
@@ -521,14 +740,12 @@ export default function Home() {
                     Your personal AI OS — running 100% on your machine.<br/>
                     Just tell me what you want to do.
                   </p>
-
                   {/* Suggestion chips */}
                   <div style={{ display:'flex', flexWrap:'wrap', gap:'8px', justifyContent:'center' }}>
                     {CHIPS.map(chip => (
                       <button key={chip} onClick={() => send(chip)} style={{
                         fontSize:'12px', fontFamily:'inherit',
-                        color:'rgba(255,255,255,0.55)',
-                        background:'rgba(255,255,255,0.05)',
+                        color:'rgba(255,255,255,0.55)', background:'rgba(255,255,255,0.05)',
                         border:'1px solid rgba(255,255,255,0.1)',
                         borderRadius:'20px', padding:'6px 14px',
                         cursor:'pointer', transition:'all .15s',
@@ -545,20 +762,17 @@ export default function Home() {
               {messages.map((msg, i) => (
                 <div key={i} style={{ display:'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
                   <div style={{
-                    maxWidth:     '78%',
-                    padding:      '10px 14px',
+                    maxWidth:     '78%', padding:'10px 14px',
                     borderRadius: msg.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
                     background:   msg.role === 'user' ? 'rgba(99,179,237,0.15)' : 'rgba(255,255,255,0.05)',
                     border:       msg.role === 'user' ? '1px solid rgba(99,179,237,0.2)' : '1px solid rgba(255,255,255,0.07)',
-                    fontSize:     '14px',
-                    lineHeight:   '1.6',
-                    color:        '#e8e8e8',
+                    fontSize:'14px', lineHeight:'1.6', color:'#e8e8e8',
                   }} className={msg.role === 'devos' ? 'msg-bubble' : ''}>
                     {msg.role === 'devos'
                       ? <>
                           {msg.content
                             ? <ReactMarkdown>{msg.content}</ReactMarkdown>
-                            : <span style={{ color: 'rgba(255,255,255,0.25)', fontSize:'13px' }}>thinking…</span>
+                            : <span style={{ color:'rgba(255,255,255,0.25)', fontSize:'13px' }}>thinking…</span>
                           }
                           {msg.streaming && <Cursor />}
                         </>
@@ -576,8 +790,7 @@ export default function Home() {
                     {agentEvents.slice(0, 3).map(ev => (
                       <div key={ev.id} style={{
                         display:'flex', alignItems:'center', gap:'10px',
-                        background:'rgba(255,255,255,0.03)',
-                        border:'1px solid rgba(255,255,255,0.05)',
+                        background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.05)',
                         borderRadius:'8px', padding:'8px 12px',
                       }}>
                         <div style={{ width:'6px', height:'6px', borderRadius:'50%', background: dotColor[ev.type] || '#888', flexShrink:0 }}/>
@@ -597,16 +810,13 @@ export default function Home() {
 
           {/* ── INPUT BAR ───────────────────────────────────── */}
           <div style={{
-            flexShrink:  0,
-            padding:     '12px 16px 16px',
-            background:  'rgba(6,13,31,0.95)',
-            borderTop:   '1px solid rgba(255,255,255,0.05)',
+            flexShrink:0, padding:'12px 16px 16px',
+            background:'rgba(6,13,31,0.95)', borderTop:'1px solid rgba(255,255,255,0.05)',
           }}>
             <div style={{ maxWidth:'680px', margin:'0 auto' }}>
               <div style={{
                 display:'flex', alignItems:'flex-end', gap:'10px',
-                background:'rgba(255,255,255,0.05)',
-                border:'1px solid rgba(255,255,255,0.09)',
+                background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.09)',
                 borderRadius:'14px', padding:'10px 12px',
               }}>
                 <textarea
@@ -629,16 +839,13 @@ export default function Home() {
                     minHeight:'24px', maxHeight:'120px', overflowY:'auto',
                   }}
                 />
-
                 {/* Send / Stop button */}
                 {streaming ? (
                   <button onClick={stopStreaming} title="Stop (Esc)" style={{
                     width:'34px', height:'34px', flexShrink:0,
-                    background:'rgba(248,113,113,0.15)',
-                    border:'1px solid rgba(248,113,113,0.35)',
+                    background:'rgba(248,113,113,0.15)', border:'1px solid rgba(248,113,113,0.35)',
                     borderRadius:'8px', cursor:'pointer',
                     display:'flex', alignItems:'center', justifyContent:'center',
-                    transition:'all .15s',
                   }}>
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="#f87171">
                       <rect x="3" y="3" width="18" height="18" rx="2"/>
@@ -661,12 +868,10 @@ export default function Home() {
                   </button>
                 )}
               </div>
-
               {/* Status bar */}
               <div style={{
                 display:'flex', alignItems:'center', justifyContent:'space-between',
-                marginTop:'6px',
-                fontSize:'10px', fontFamily:'monospace',
+                marginTop:'6px', fontSize:'10px', fontFamily:'monospace',
                 color:'rgba(255,255,255,0.15)',
               }}>
                 <span>DevOS runs locally · your data never leaves this machine</span>
