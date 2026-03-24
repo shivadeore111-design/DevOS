@@ -38,7 +38,14 @@
     "integrations/computerUse/screenAgent.ts",
     "integrations/computerUse/apiRegistry.ts",
     "integrations/computerUse/visionLoop.ts",
-    "api/routes/computerUse.ts"
+    "api/routes/computerUse.ts",
+    "api/server.ts",
+    "providers/types.ts",
+    "providers/ollama.ts",
+    "providers/groq.ts",
+    "providers/openrouter.ts",
+    "providers/gemini.ts",
+    "providers/index.ts"
   ],
   "exclude": [
     "node_modules",

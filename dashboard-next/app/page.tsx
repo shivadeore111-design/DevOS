@@ -1,6 +1,7 @@
 "use client"
 import { useState, useEffect, useRef, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
+import Onboarding from '../components/Onboarding'
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -59,6 +60,20 @@ function Cursor() {
 // ── Main component ────────────────────────────────────────────
 
 export default function Home() {
+  const [onboardingDone, setOnboardingDone] = useState<boolean | null>(null)
+  const [userName, setUserName]             = useState('there')
+
+  // ── Check onboarding status on mount ─────────────────────────
+  useEffect(() => {
+    fetch('http://localhost:4200/api/onboarding')
+      .then(r => r.json())
+      .then((d: any) => {
+        setOnboardingDone(d.onboardingComplete ?? true)
+        if (d.userName && d.userName !== 'there') setUserName(d.userName)
+      })
+      .catch(() => setOnboardingDone(true)) // server offline → skip onboarding
+  }, [])
+
   const [tab, setTab]               = useState<Tab>('chat')
   const [messages, setMessages]     = useState<Message[]>(() => {
     if (typeof window === 'undefined') return []
@@ -300,6 +315,22 @@ export default function Home() {
     thinking: '#60a5fa', acting: '#f97316', done: '#22c55e', error: '#f87171',
   }
 
+  // ── Loading splash ────────────────────────────────────────────
+  if (onboardingDone === null) return (
+    <div style={{
+      height:'100vh', display:'flex', alignItems:'center', justifyContent:'center',
+      background:'#060d1f', color:'rgba(255,255,255,0.25)',
+      fontFamily:'monospace', fontSize:'12px',
+    }}>
+      loading...
+    </div>
+  )
+
+  // ── First-run onboarding ──────────────────────────────────────
+  if (!onboardingDone) return (
+    <Onboarding onComplete={(name) => { setUserName(name); setOnboardingDone(true) }} />
+  )
+
   // ── Render ───────────────────────────────────────────────────
   return (
     <div style={{
@@ -424,6 +455,26 @@ export default function Home() {
               ))}
             </div>
 
+            {/* Model switcher */}
+            <div style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:'12px', padding:'20px' }}>
+              <div style={{ fontSize:'11px', fontFamily:'monospace', color:'rgba(255,255,255,0.3)', textTransform:'uppercase', letterSpacing:'.1em', marginBottom:'12px' }}>Model & Provider</div>
+              <p style={{ fontSize:'12px', color:'rgba(255,255,255,0.35)', marginBottom:'12px', lineHeight:'1.6' }}>
+                Switch between local Ollama models and cloud APIs (Groq, OpenRouter, Gemini).
+              </p>
+              <button onClick={() => setOnboardingDone(false)} style={{
+                padding:'8px 16px', borderRadius:'7px',
+                border:'1px solid rgba(255,255,255,0.1)',
+                background:'transparent', color:'rgba(255,255,255,0.5)',
+                fontSize:'12px', fontFamily:'monospace', cursor:'pointer',
+                transition:'all .15s',
+              }}
+                onMouseEnter={e => { (e.target as HTMLElement).style.borderColor = 'rgba(99,179,237,0.35)'; (e.target as HTMLElement).style.color = '#63b3ed' }}
+                onMouseLeave={e => { (e.target as HTMLElement).style.borderColor = 'rgba(255,255,255,0.1)'; (e.target as HTMLElement).style.color = 'rgba(255,255,255,0.5)' }}
+              >
+                Re-run model setup →
+              </button>
+            </div>
+
             {/* About */}
             <div style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:'12px', padding:'20px' }}>
               <div style={{ fontSize:'11px', fontFamily:'monospace', color:'rgba(255,255,255,0.3)', textTransform:'uppercase', letterSpacing:'.1em', marginBottom:'12px' }}>About DevOS</div>
@@ -431,7 +482,7 @@ export default function Home() {
                 DevOS is a sovereign AI operating system. All models run locally via Ollama — your data never leaves this machine.
               </p>
               <p style={{ fontSize:'12px', fontFamily:'monospace', color:'rgba(255,255,255,0.25)' }}>
-                © 2026 Shiva Deore · v1.0 · Sprint 28
+                © 2026 Shiva Deore · v1.0 · Sprint 29
               </p>
             </div>
 
@@ -465,7 +516,7 @@ export default function Home() {
                       <path d="M6 20v-2a6 6 0 0 1 12 0v2"/>
                     </svg>
                   </div>
-                  <h1 style={{ fontSize:'28px', fontWeight:800, marginBottom:'8px' }}>Hi, I'm DevOS.</h1>
+                  <h1 style={{ fontSize:'28px', fontWeight:800, marginBottom:'8px' }}>Hi {userName}, I'm DevOS.</h1>
                   <p style={{ fontSize:'14px', color:'rgba(255,255,255,0.4)', lineHeight:'1.6', marginBottom:'28px' }}>
                     Your personal AI OS — running 100% on your machine.<br/>
                     Just tell me what you want to do.

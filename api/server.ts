@@ -33,19 +33,8 @@ import { livePulse }      from '../coordination/livePulse'
 import { runDoctor }      from '../core/doctor'
 import { modelRouter }    from '../core/modelRouter'
 import { registerComputerUseRoutes } from './routes/computerUse'
-
-// ── Helpers ───────────────────────────────────────────────────
-
-function getChatModel(): string {
-  try {
-    const cfg = JSON.parse(fs.readFileSync(
-      path.join(process.cwd(), 'config/model-selection.json'), 'utf-8'
-    ))
-    return cfg.chat || 'mistral:7b'
-  } catch {
-    return 'mistral:7b'
-  }
-}
+import { loadConfig, saveConfig, getActiveProvider } from '../providers/index'
+import { ollamaProvider } from '../providers/ollama'
 
 // ── App factory ───────────────────────────────────────────────
 
@@ -80,25 +69,22 @@ export function createApiServer(): Express {
     res.json({ status: 'ok', version: '1.0.0', timestamp: new Date().toISOString() })
   })
 
-  // POST /api/chat — SSE streaming with Speed / Balanced / Deep modes
+  // POST /api/chat — SSE streaming via active provider
   app.post('/api/chat', async (req: Request, res: Response) => {
-    const { message, mode = 'balanced', history = [] } = req.body as {
-      message?: string; mode?: string; history?: { role: string; content: string }[]
+    const { message, history = [] } = req.body as {
+      message?: string; history?: { role: string; content: string }[]
     }
     if (!message) { res.status(400).json({ error: 'message required' }); return }
 
-    const model = getChatModel()
+    const { provider, model, userName } = getActiveProvider()
 
-    const systemPrompt = `You are DevOS — a sovereign AI OS running 100% locally on this machine. You are calm, sharp, and loyal. Speak like a trusted co-founder, not a chatbot. Be concise and natural. Use markdown only when it genuinely helps — code blocks for code, bullet lists only for 3+ distinct items. Never dump feature lists when greeted. When someone says hi, respond warmly in 1–2 sentences max. Current date: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}. All inference runs on Ollama — no data leaves this machine.`
+    const systemPrompt = `You are DevOS — a personal AI OS running locally. You are calm, direct, intelligent, and slightly witty. You speak like a trusted co-founder, not a chatbot. Be concise. Use markdown only when it genuinely helps. When greeted respond in 1-2 sentences max. You do NOT have internet access unless explicitly configured. Never make up facts, news, or current events. If you don't know something, say so.
+User's name: ${userName}. Current date: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.`
 
-    // Build messages array with conversation history
-    const buildMessages = (sysContent: string, userContent: string) => [
-      { role: 'system', content: sysContent },
-      ...history.slice(-8).map((h: any) => ({
-        role: h.role === 'user' ? 'user' : 'assistant',
-        content: h.content,
-      })),
-      { role: 'user', content: userContent },
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      ...history.slice(-10),
+      { role: 'user', content: message },
     ]
 
     // ── SSE headers ────────────────────────────────────────────
@@ -108,135 +94,105 @@ export function createApiServer(): Express {
     res.setHeader('Access-Control-Allow-Origin', '*')
     res.flushHeaders()
 
-    const sendToken = (token: string, done = false) => {
-      res.write(`data: ${JSON.stringify({ token, done })}\n\n`)
-    }
-    const sendError = (msg: string) => {
-      res.write(`data: ${JSON.stringify({ error: msg, done: true })}\n\n`)
-      res.end()
-    }
-
-    // ── Helper: stream Ollama and pipe tokens to client ───────
-    const streamOllama = async (messages: object[]): Promise<string> => {
-      const ollamaRes = await fetch('http://localhost:11434/api/chat', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ model, stream: true, messages }),
-      })
-      if (!ollamaRes.ok || !ollamaRes.body) {
-        throw new Error(`Ollama returned ${ollamaRes.status}`)
-      }
-
-      const reader  = (ollamaRes.body as any).getReader()
-      const decoder = new TextDecoder()
-      let fullReply = ''
-      let buf       = ''
-
-      while (true) {
-        const { value, done } = await reader.read()
-        if (done) break
-        buf += decoder.decode(value, { stream: true })
-        const lines = buf.split('\n')
-        buf = lines.pop() ?? ''
-        for (const line of lines) {
-          if (!line.trim()) continue
-          try {
-            const chunk = JSON.parse(line) as any
-            const token: string = chunk?.message?.content ?? ''
-            if (token) {
-              fullReply += token
-              sendToken(token, false)
-            }
-          } catch { /* skip malformed line */ }
-        }
-      }
-      // flush any remaining buffer
-      if (buf.trim()) {
-        try {
-          const chunk = JSON.parse(buf) as any
-          const token: string = chunk?.message?.content ?? ''
-          if (token) { fullReply += token; sendToken(token, false) }
-        } catch { /* ignore */ }
-      }
-      return fullReply
-    }
-
     try {
-      // ── SPEED MODE ────────────────────────────────────────────
-      if (mode === 'speed') {
-        const reply = await streamOllama(buildMessages(systemPrompt, message))
-        sendToken('', true)
-        res.end()
-        memoryLayers.write(`[speed] User: ${message} | DevOS: ${reply}`, ['chat'])
-        return
-      }
-
-      // ── BALANCED MODE ─────────────────────────────────────────
-      if (mode === 'balanced') {
-        const needsWeb = /latest|current|news|today|price|weather|who is|what is/.test(message.toLowerCase())
-        const ctx = needsWeb ? '\n[Web context hint: for live data use deep mode]' : ''
-        const reply = await streamOllama(buildMessages(systemPrompt + ctx, message))
-        sendToken('', true)
-        res.end()
-        memoryLayers.write(`[balanced] User: ${message} | DevOS: ${reply}`, ['chat'])
-        return
-      }
-
-      // ── DEEP MODE — research first, then stream answer ────────
-      if (mode === 'deep') {
-        let iterations       = 0
-        let collectedContext = ''
-        let confident        = false
-        const MAX_ITERATIONS = 3
-
-        // Research phase (non-streaming LLM calls + web fetches)
-        while (!confident && iterations < MAX_ITERATIONS) {
-          iterations++
-          const planRes = await fetch('http://localhost:11434/api/chat', {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({
-              model, stream: false,
-              messages: [
-                { role: 'system', content: 'You are a research planner. Given a question and context, decide if you have enough info or what to search for next. Respond ONLY in JSON: { "confident": boolean, "searchQuery": string | null, "reason": string }' },
-                { role: 'user',   content: `Question: ${message}\nContext so far: ${collectedContext || 'nothing yet'}\nDo you have enough to answer comprehensively?` },
-              ],
-            }),
-          })
-          const planData = await planRes.json() as any
-          const planText: string = planData?.message?.content ?? ''
-          try {
-            const plan = JSON.parse(planText.replace(/```json|```/g, '').trim())
-            confident = plan.confident
-            if (!confident && plan.searchQuery) {
-              try {
-                const webRes = await fetch(`https://r.jina.ai/${encodeURIComponent(plan.searchQuery)}`, { headers: { Accept: 'text/plain' } })
-                const text   = await webRes.text()
-                collectedContext += `\n\n[Research ${iterations}]: ${text.slice(0, 800)}`
-              } catch {
-                collectedContext += `\n[Could not fetch: ${plan.searchQuery}]`
-                confident = true
-              }
-            }
-          } catch { confident = true }
-        }
-
-        // Stream the final synthesised answer
-        const deepSys  = systemPrompt + '\n\nYou have done deep research. Provide a comprehensive, well-structured answer.'
-        const deepUser  = `Question: ${message}\n\nResearch collected:\n${collectedContext}`
-        const reply    = await streamOllama(buildMessages(deepSys, deepUser))
-        sendToken('', true)
-        res.end()
-        memoryLayers.write(`[deep] User: ${message} | DevOS: ${reply}`, ['chat'])
-        return
-      }
-
-      // Unknown mode
-      sendError(`Unknown mode: ${mode}`)
-
+      await provider.generateStream(messages, model, (token) => {
+        res.write(`data: ${JSON.stringify({ token, done: false })}\n\n`)
+      })
+      res.write(`data: ${JSON.stringify({ done: true })}\n\n`)
+      memoryLayers.write(`User: ${message}`, ['chat'])
     } catch (err: any) {
-      sendError("I can't reach Ollama. Make sure it's running: `ollama serve`")
+      res.write(`data: ${JSON.stringify({ done: true, error: err?.message ?? 'provider error' })}\n\n`)
     }
+    res.end()
+  })
+
+  // GET /api/onboarding — check status + get available models
+  app.get('/api/onboarding', async (_req: Request, res: Response) => {
+    const config          = loadConfig()
+    const installedModels = await ollamaProvider.listModels?.() || []
+
+    const RECOMMENDED: Record<string, { label: string; contextWindow: number; speed: string }> = {
+      'llama3.2:3b':         { label: 'Llama 3.2 3B',       contextWindow: 128000, speed: '⚡ fastest'  },
+      'mistral:7b':          { label: 'Mistral 7B',          contextWindow: 32000,  speed: '🔥 fast'     },
+      'qwen2.5:7b':          { label: 'Qwen 2.5 7B',         contextWindow: 128000, speed: '🔥 fast'     },
+      'qwen2.5-coder:7b':    { label: 'Qwen 2.5 Coder 7B',   contextWindow: 128000, speed: '🔥 fast'     },
+      'llama3.1:8b':         { label: 'Llama 3.1 8B',        contextWindow: 128000, speed: '🔥 fast'     },
+      'phi4:mini':           { label: 'Phi-4 Mini',          contextWindow: 128000, speed: '⚡ fastest'  },
+      'mistral-nemo:12b':    { label: 'Mistral Nemo 12B',    contextWindow: 128000, speed: '💪 powerful' },
+      'llama3.3:70b':        { label: 'Llama 3.3 70B',       contextWindow: 128000, speed: '💪 powerful' },
+    }
+
+    const localModels = installedModels.map(name => ({
+      id:          name,
+      label:       RECOMMENDED[name]?.label || name,
+      speed:       RECOMMENDED[name]?.speed || '🔥 fast',
+      contextWindow: RECOMMENDED[name]?.contextWindow || 32000,
+      installed:   true,
+      recommended: name.includes('qwen2.5') || name.includes('llama3') || name.includes('phi4'),
+    })).sort((a, b) => (b.recommended ? 1 : 0) - (a.recommended ? 1 : 0))
+
+    const cloudProviders = [
+      { id: 'groq',       label: 'Groq',       subtitle: 'Free tier · llama3.3:70b · blazing fast', url: 'https://console.groq.com',              models: ['llama-3.3-70b-versatile', 'llama-3.1-70b-versatile', 'mixtral-8x7b-32768'] },
+      { id: 'openrouter', label: 'OpenRouter', subtitle: 'Access 200+ models · pay per use',         url: 'https://openrouter.ai/keys',             models: ['meta-llama/llama-3.3-70b-instruct', 'anthropic/claude-3.5-sonnet', 'openai/gpt-4o'] },
+      { id: 'gemini',     label: 'Gemini',     subtitle: 'Free tier available · fast',               url: 'https://aistudio.google.com/app/apikey', models: ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash-exp'] },
+    ]
+
+    res.json({
+      onboardingComplete: config.onboardingComplete,
+      userName:           config.user?.name,
+      localModels,
+      cloudProviders,
+      activeModel:        config.model,
+      existingApis:       config.providers?.apis?.map(a => ({ name: a.name, provider: a.provider })) || [],
+    })
+  })
+
+  // POST /api/onboarding — save onboarding result
+  app.post('/api/onboarding', (req: Request, res: Response) => {
+    const { userName, modelType, modelId, apiProvider, apiKey, apiName, apiModel } = req.body as {
+      userName?: string; modelType?: string; modelId?: string
+      apiProvider?: string; apiKey?: string; apiName?: string; apiModel?: string
+    }
+    const config      = loadConfig()
+    config.user.name  = userName || 'there'
+
+    if (modelType === 'local' && modelId) {
+      config.model = { active: 'ollama', activeModel: modelId }
+    } else if (modelType === 'api' && apiKey && apiProvider) {
+      const entry = { name: apiName || `${apiProvider}-main`, provider: apiProvider, key: apiKey }
+      const idx   = config.providers.apis.findIndex(a => a.name === entry.name)
+      if (idx >= 0) config.providers.apis[idx] = entry
+      else config.providers.apis.push(entry)
+      config.model = { active: entry.name, activeModel: apiModel || '' }
+    }
+
+    config.onboardingComplete = true
+    saveConfig(config)
+    res.json({ success: true, config })
+  })
+
+  // POST /api/providers/add — add API key without full onboarding
+  app.post('/api/providers/add', (req: Request, res: Response) => {
+    const { name, provider, key, model } = req.body as {
+      name?: string; provider?: string; key?: string; model?: string
+    }
+    if (!provider || !key) { res.status(400).json({ error: 'provider and key required' }); return }
+    const config = loadConfig()
+    const entry  = { name: name || `${provider}-${Date.now()}`, provider, key }
+    const idx    = config.providers.apis.findIndex(a => a.name === entry.name)
+    if (idx >= 0) config.providers.apis[idx] = entry
+    else config.providers.apis.push(entry)
+    saveConfig(config)
+    res.json({ success: true, entry })
+  })
+
+  // POST /api/providers/switch — switch active model/provider
+  app.post('/api/providers/switch', (req: Request, res: Response) => {
+    const { active, activeModel } = req.body as { active?: string; activeModel?: string }
+    const config = loadConfig()
+    config.model = { active: active || 'ollama', activeModel: activeModel || 'mistral:7b' }
+    saveConfig(config)
+    res.json({ success: true })
   })
 
   // POST /api/goals — start execution loop async
