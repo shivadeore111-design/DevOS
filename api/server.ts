@@ -34,6 +34,19 @@ import { runDoctor }      from '../core/doctor'
 import { modelRouter }    from '../core/modelRouter'
 import { registerComputerUseRoutes } from './routes/computerUse'
 
+// ── Helpers ───────────────────────────────────────────────────
+
+function getChatModel(): string {
+  try {
+    const cfg = JSON.parse(fs.readFileSync(
+      path.join(process.cwd(), 'config/model-selection.json'), 'utf-8'
+    ))
+    return cfg.chat || 'mistral:7b'
+  } catch {
+    return 'mistral:7b'
+  }
+}
+
 // ── App factory ───────────────────────────────────────────────
 
 export function createApiServer(): Express {
@@ -71,8 +84,42 @@ export function createApiServer(): Express {
   app.post('/api/chat', async (req: Request, res: Response) => {
     const { message } = req.body as { message?: string }
     if (!message) return res.status(400).json({ error: 'message required' })
-    memoryLayers.write(`User: ${message}`, ['chat', 'user'])
-    res.json({ reply: 'Goal received. DevOS is processing.', status: 'queued' })
+
+    try {
+      const model = getChatModel()
+      const ollamaRes = await fetch('http://localhost:11434/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model,
+          stream: false,
+          messages: [
+            {
+              role: 'system',
+              content: `You are DevOS — a personal AI OS running locally on the user's machine. You are calm, direct, and slightly witty. You help users build things, automate tasks, run goals, and control their computer. Keep responses concise. If the user wants to build something or run a task, confirm you'll start it and describe what you'll do. You run 100% locally — no data leaves their machine.`
+            },
+            {
+              role: 'user',
+              content: message
+            }
+          ]
+        })
+      })
+
+      const data = await ollamaRes.json() as any
+      const reply: string = data?.message?.content
+        || data?.choices?.[0]?.message?.content
+        || 'Done.'
+
+      // Save to memory (synchronous)
+      memoryLayers.write(`User: ${message} | DevOS: ${reply}`, ['chat'])
+
+      res.json({ reply })
+    } catch (err: any) {
+      res.json({
+        reply: `I can't reach Ollama right now. Make sure it's running with: ollama serve\n\nThen pull a model: ollama pull mistral:7b`
+      })
+    }
   })
 
   // POST /api/goals
