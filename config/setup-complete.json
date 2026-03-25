@@ -1,0 +1,20 @@
+{
+  "complete": true,
+  "setupAt": "2026-03-23T08:23:58.658Z",
+  "hardware": {
+    "gpu": "NVIDIA GeForce GTX 1060 6GB",
+    "vramGB": 6,
+    "ramGB": 16,
+    "platform": "windows",
+    "cudaAvailable": true,
+    "appleSilicon": false,
+    "detectedAt": "2026-03-23T07:19:50.446Z"
+  },
+  "models": {
+    "chat": "mistral-nemo:12b",
+    "code": "qwen2.5-coder:7b",
+    "vision": "llava:7b",
+    "reasoning": "mistral:7b",
+    "embedding": "mxbai-embed-large"
+  }
+}

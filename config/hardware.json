@@ -1,0 +1,9 @@
+{
+  "gpu": "NVIDIA GeForce GTX 1060 6GB",
+  "vramGB": 6,
+  "ramGB": 16,
+  "platform": "windows",
+  "cudaAvailable": true,
+  "appleSilicon": false,
+  "detectedAt": "2026-03-24T18:15:08.069Z"
+}

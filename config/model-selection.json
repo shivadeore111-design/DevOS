@@ -1,0 +1,7 @@
+{
+  "chat": "mistral-nemo:12b",
+  "code": "qwen2.5-coder:7b",
+  "vision": "llava:7b",
+  "reasoning": "mistral:7b",
+  "embedding": "mxbai-embed-large"
+}
