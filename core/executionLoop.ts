@@ -34,134 +34,164 @@ export interface PlanStep {
   result?:     any
 }
 
-// ── LLM helper ────────────────────────────────────────────────
+// ── Payload parser ────────────────────────────────────────────
 
-async function callOllama(prompt: string): Promise<string> {
-  try {
-    let model = 'mistral:7b'
-    try {
-      const cfg = JSON.parse(fs.readFileSync(
-        path.join(process.cwd(), 'config/model-selection.json'), 'utf-8'
-      ))
-      model = cfg.reasoning || cfg.chat || model
-    } catch { /* use default */ }
-
-    const res = await fetch('http://localhost:11434/api/chat', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model,
-        stream:   false,
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    })
-    const data = await res.json() as any
-    return data?.message?.content || ''
-  } catch { return '' }
+function parsePayload(skill: string, command: string): any {
+  // Try JSON first (for compound payloads like file_write)
+  try { return JSON.parse(command) } catch {}
+  // Skill-specific scalar mappings
+  switch (skill) {
+    case 'open_browser': return { url: command }
+    case 'web_search':   return { query: command }
+    case 'shell_exec':   return { command }
+    case 'run_powershell': return { script: command }
+    case 'file_read':    return { path: command }
+    case 'file_list':    return { path: command }
+    case 'system_info':  return {}
+    case 'notify':       return { message: command }
+    default:             return { command }
+  }
 }
 
 // ── Planner ───────────────────────────────────────────────────
 
 async function generatePlan(goal: string, goalId: string): Promise<GoalPlan> {
-  livePulse.act('CEO', `Planning: ${goal}`)
+  livePulse.thinking('CEO', `Planning: ${goal}`)
+  const lower = goal.toLowerCase()
 
-  const prompt = `You are DevOS CEO Agent running on Windows 11. Break this goal into 2-5 concrete steps.
-Goal: "${goal}"
+  // ── Direct tool mapping — no LLM needed for common patterns ──
 
-IMPORTANT: Generate REAL Windows commands that will actually work.
-For opening URLs use: Start-Process "https://url.com"
-For creating files use file_write tool with actual content
-For running scripts use shell_exec with PowerShell commands
-For notifications use the notify tool
-
-Respond ONLY with valid JSON, no other text:
-{
-  "steps": [
-    { "skill": "open_browser", "description": "Open URL in browser", "command": "https://example.com" },
-    { "skill": "shell_exec", "description": "Check system info", "command": "Get-ComputerInfo | Select-Object CsName" }
-  ]
-}
-
-Available skills: shell_exec, file_write, file_read, web_search, run_python, run_node, notify, system_info, open_browser
-OS: Windows 11, Shell: PowerShell`
-
-  const raw = await callOllama(prompt)
-
-  try {
-    const clean  = raw.replace(/```json|```/g, '').trim()
-    const parsed = JSON.parse(clean)
+  const urlMatch = goal.match(/https?:\/\/[^\s]+/) ||
+    goal.match(/([a-zA-Z0-9-]+\.(com|org|net|io|dev|co|uk))/i)
+  if (urlMatch && /open|go to|browse|show|navigate|launch/.test(lower)) {
+    const url = urlMatch[0].startsWith('http') ? urlMatch[0] : `https://${urlMatch[0]}`
     return {
-      goalId,
-      goal,
-      complete: false,
-      steps: (parsed.steps as any[]).map((s: any, i: number) => ({
-        id:          `step_${i}`,
-        skill:       s.skill,
-        description: s.description,
-        command:     s.command,
-        status:      'pending' as const,
-      })),
+      goalId, goal, complete: false,
+      steps: [{ id: 'step_0', skill: 'open_browser', description: `Open ${url}`, command: url, status: 'pending' }],
     }
-  } catch {
-    // Fallback single step
+  }
+
+  if (/system info|my pc|computer specs|my ram|my cpu|disk space/i.test(lower)) {
+    return {
+      goalId, goal, complete: false,
+      steps: [{ id: 'step_0', skill: 'system_info', description: 'Get system info', command: '', status: 'pending' }],
+    }
+  }
+
+  if (/(create|write|make).+(file|txt|py|js|html|md)/i.test(lower)) {
+    const nameMatch    = goal.match(/called?\s+["']?([^\s"',]+\.?\w*)["']?/i)
+    const fileName     = nameMatch?.[1] || 'devos-file.txt'
+    const contentMatch = goal.match(/(?:with|containing|content)[:\s]+["']?(.+?)["']?$/i)
+    const content      = contentMatch?.[1] || `Created by DevOS on ${new Date().toLocaleDateString()}`
+    const desktopPath  = `C:\\Users\\${process.env.USERNAME || 'shiva'}\\Desktop\\${fileName}`
     return {
       goalId, goal, complete: false,
       steps: [{
-        id: 'step_0', skill: 'shell_exec',
-        description: goal,
-        command: `echo "Working on: ${goal}"`,
+        id: 'step_0', skill: 'file_write',
+        description: `Create ${fileName} on Desktop`,
+        command: JSON.stringify({ path: desktopPath, content }),
         status: 'pending',
       }],
     }
+  }
+
+  if (/^(search|find|look up|search for|find me)/i.test(lower)) {
+    const query = goal.replace(/^(search|find|look up|search for|find me)/i, '').trim()
+    return {
+      goalId, goal, complete: false,
+      steps: [{ id: 'step_0', skill: 'web_search', description: `Search: ${query}`, command: query, status: 'pending' }],
+    }
+  }
+
+  if (/notify|notification|alert/i.test(lower)) {
+    const msg = goal.replace(/^(notify|send notification|alert|send alert)[:\s]*/i, '').trim()
+    return {
+      goalId, goal, complete: false,
+      steps: [{ id: 'step_0', skill: 'notify', description: `Notify: ${msg}`, command: JSON.stringify({ message: msg }), status: 'pending' }],
+    }
+  }
+
+  // ── LLM planning for complex tasks (tries Groq first, then Ollama) ──
+  try {
+    const { loadConfig } = await import('../providers/index')
+    const config = loadConfig()
+    const api    = config.providers.apis.find((a: any) => a.enabled && !a.rateLimited && a.provider === 'groq')
+    if (api) {
+      const prompt = `Plan this task on Windows: "${goal}"
+Respond ONLY with JSON (no markdown):
+{"steps":[{"skill":"open_browser","description":"what this does","command":"https://example.com"}]}
+Skills: open_browser(command=url), file_write(command=json{path,content}), shell_exec(command=powershell), web_search(command=query), run_python(command=json{script}), system_info(command=""), notify(command=json{message})
+Max 3 steps.`
+
+      const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.key}` },
+        body: JSON.stringify({
+          model:      api.model || 'llama-3.3-70b-versatile',
+          messages:   [{ role: 'user', content: prompt }],
+          max_tokens: 300,
+        }),
+        signal: AbortSignal.timeout(10000),
+      })
+      const d      = await r.json() as any
+      const raw    = d?.choices?.[0]?.message?.content || ''
+      const parsed = JSON.parse(raw.replace(/```json|```/g, '').trim())
+      if (parsed.steps?.length) {
+        return {
+          goalId, goal, complete: false,
+          steps: parsed.steps.map((s: any, i: number) => ({
+            id: `step_${i}`, skill: s.skill, description: s.description, command: s.command, status: 'pending' as const,
+          })),
+        }
+      }
+    }
+  } catch { /* fall through to Ollama */ }
+
+  // ── Ollama fallback ───────────────────────────────────────────
+  try {
+    let ollamaModel = 'mistral:7b'
+    try {
+      const cfg = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'config/model-selection.json'), 'utf-8'))
+      ollamaModel = cfg.reasoning || cfg.chat || ollamaModel
+    } catch {}
+
+    const res = await fetch('http://localhost:11434/api/chat', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model:    ollamaModel,
+        stream:   false,
+        messages: [{ role: 'user', content: `Plan this Windows task in JSON only (no markdown): "${goal}"\n{"steps":[{"skill":"shell_exec","description":"step","command":"command"}]}` }],
+      }),
+    })
+    const data   = await res.json() as any
+    const raw    = data?.message?.content || ''
+    const parsed = JSON.parse(raw.replace(/```json|```/g, '').trim())
+    if (parsed.steps?.length) {
+      return {
+        goalId, goal, complete: false,
+        steps: parsed.steps.map((s: any, i: number) => ({
+          id: `step_${i}`, skill: s.skill, description: s.description, command: s.command, status: 'pending' as const,
+        })),
+      }
+    }
+  } catch {}
+
+  // Last resort
+  return {
+    goalId, goal, complete: false,
+    steps: [{ id: 'step_0', skill: 'notify', description: 'Could not plan', command: JSON.stringify({ message: `Could not plan: ${goal.slice(0, 40)}` }), status: 'pending' }],
   }
 }
 
 // ── Replanner ─────────────────────────────────────────────────
 
-async function replan(plan: GoalPlan, lastResult: any): Promise<GoalPlan> {
+async function replan(plan: GoalPlan, _lastResult: any): Promise<GoalPlan> {
   const remaining = plan.steps.filter(s => s.status === 'pending')
+  // If nothing left, mark complete
   if (!remaining.length) return { ...plan, complete: true }
-
-  const done = plan.steps
-    .filter(s => s.status === 'done')
-    .map(s => `✓ ${s.description}`)
-    .join('\n')
-
-  const prompt = `You are DevOS CEO Agent. A goal is in progress.
-
-Goal: "${plan.goal}"
-Completed: ${done || 'nothing yet'}
-Last result: ${JSON.stringify(lastResult).slice(0, 300)}
-Remaining planned steps: ${remaining.map(s => s.description).join(', ')}
-
-Should we continue with remaining steps or adjust the plan?
-Respond ONLY with JSON:
-{
-  "continue": true,
-  "steps": [
-    { "skill": "shell_exec", "description": "next step", "command": "command" }
-  ]
-}`
-
-  try {
-    const raw    = await callOllama(prompt)
-    const clean  = raw.replace(/```json|```/g, '').trim()
-    const parsed = JSON.parse(clean)
-    if (!parsed.continue) return { ...plan, complete: true }
-    const newSteps: PlanStep[] = (parsed.steps as any[]).map((s: any, i: number) => ({
-      id:          `replan_${Date.now()}_${i}`,
-      skill:       s.skill,
-      description: s.description,
-      command:     s.command,
-      status:      'pending' as const,
-    }))
-    return {
-      ...plan,
-      steps: [...plan.steps.filter(s => s.status !== 'pending'), ...newSteps],
-    }
-  } catch {
-    return plan
-  }
+  // Otherwise keep going with remaining steps
+  return plan
 }
 
 // ── Main execution loop ───────────────────────────────────────
@@ -200,15 +230,14 @@ export async function runGoalLoop(goal: string): Promise<{ success: boolean; sum
     let stepError:    string | undefined
 
     try {
-      // Execute through executor — unknown skill types will throw,
-      // caught below and treated as failure
-      const execResult = await executor.execute({
+      const stepPayload = parsePayload(nextStep.skill, nextStep.command)
+      const execResult  = await executor.execute({
         id:          nextStep.id,
         type:        nextStep.skill as any,
         confidence:  0.9,
         description: nextStep.description,
-        payload:     { command: nextStep.command },
-        retries:     2,
+        payload:     stepPayload,
+        retries:     1,
         timeoutMs:   30000,
       } as any)
 

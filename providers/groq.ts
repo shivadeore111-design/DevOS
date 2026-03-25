@@ -5,11 +5,33 @@
 
 // providers/groq.ts — Groq cloud provider (OpenAI-compatible)
 
-import { Provider } from './types'
+import { Provider, ToolDefinition, ToolCall } from './types'
 
 export function createGroqProvider(apiKey: string): Provider {
   return {
     name: 'groq',
+
+    async generateWithTools(messages, model, tools) {
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model,
+          messages,
+          tools:        tools.map(t => ({ type: 'function', function: t })),
+          tool_choice:  'auto',
+          stream:       false,
+        }),
+      })
+      const data = await res.json() as any
+      if (!res.ok) throw new Error(`${res.status}: ${JSON.stringify(data)}`)
+      const message    = data.choices?.[0]?.message
+      const toolCalls: ToolCall[] = (message?.tool_calls || []).map((tc: any) => ({
+        name:      tc.function.name,
+        arguments: JSON.parse(tc.function.arguments || '{}'),
+      }))
+      return { content: message?.content || '', toolCalls }
+    },
 
     async generate(messages, model) {
       const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {

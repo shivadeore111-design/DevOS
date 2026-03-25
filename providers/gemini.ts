@@ -5,11 +5,54 @@
 
 // providers/gemini.ts — Google Gemini provider
 
-import { Provider } from './types'
+import { Provider, ToolDefinition, ToolCall } from './types'
 
 export function createGeminiProvider(apiKey: string): Provider {
   return {
     name: 'gemini',
+
+    async generateWithTools(messages, model, tools) {
+      const geminiModel = model || 'gemini-1.5-flash'
+      const contents    = messages
+        .filter(m => m.role !== 'system')
+        .map(m => ({
+          role:  m.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: m.content }],
+        }))
+      const system = messages.find(m => m.role === 'system')?.content
+
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${apiKey}`,
+        {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents,
+            systemInstruction: system ? { parts: [{ text: system }] } : undefined,
+            tools: [{
+              functionDeclarations: tools.map(t => ({
+                name:        t.name,
+                description: t.description,
+                parameters:  t.parameters,
+              })),
+            }],
+          }),
+        }
+      )
+      const data      = await res.json() as any
+      if (!res.ok) throw new Error(`${res.status}: ${JSON.stringify(data)}`)
+      const candidate = data.candidates?.[0]?.content
+      const toolCalls: ToolCall[] = []
+      let   content   = ''
+      for (const part of candidate?.parts || []) {
+        if (part.text)         content += part.text
+        if (part.functionCall) toolCalls.push({
+          name:      part.functionCall.name,
+          arguments: part.functionCall.args || {},
+        })
+      }
+      return { content, toolCalls }
+    },
 
     async generate(messages, model) {
       const geminiModel = model || 'gemini-1.5-flash'

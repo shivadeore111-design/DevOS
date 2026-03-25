@@ -3,33 +3,17 @@
 // Copyright (c) 2026 Shiva Deore. All rights reserved.
 // ============================================================
 
-// core/toolRegistry.ts — Centralized tool registry mapping every
-// capability name to an async executor function.
-// Single source of truth for all DevOS tools.
+// core/toolRegistry.ts — Centralized tool registry with real Playwright
+// browser automation, file I/O, shell exec, and web utilities.
 
 import { exec }    from 'child_process'
 import { promisify } from 'util'
-import * as fs     from 'fs'
-import * as path   from 'path'
+import fs   from 'fs'
+import path from 'path'
 
 const execAsync = promisify(exec)
 
-// ── Tool payload / result types ───────────────────────────────
-
-export interface ToolPayload {
-  command?:  string
-  cmd?:      string
-  path?:     string
-  file?:     string
-  content?:  string
-  script?:   string
-  url?:      string
-  query?:    string
-  message?:  string
-  branch?:   string
-  remote?:   string
-  [key: string]: any
-}
+// ── Types ─────────────────────────────────────────────────────
 
 export interface ToolResult {
   success: boolean
@@ -37,176 +21,295 @@ export interface ToolResult {
   error?:  string
 }
 
-type ToolFn = (payload: ToolPayload) => Promise<ToolResult>
+// ── Singleton Playwright browser ─────────────────────────────
 
-// ── Individual tool implementations ───────────────────────────
+let browserInstance: any = null
 
-const shell_exec: ToolFn = async (payload) => {
-  const cmd = payload.command || payload.cmd || ''
-  if (!cmd) return { success: false, output: '', error: 'No command provided' }
-  const { stdout, stderr } = await execAsync(cmd, {
-    shell:   'powershell.exe',
-    timeout: 30000,
-    cwd:     process.cwd(),
-  })
-  return { success: true, output: stdout || stderr }
+async function getBrowser(): Promise<any> {
+  if (!browserInstance) {
+    const { chromium } = await import('playwright')
+    browserInstance = await chromium.launch({ headless: false })
+  }
+  return browserInstance
 }
 
-const run_powershell: ToolFn = async (payload) => {
-  const script  = payload.script || payload.command || ''
-  if (!script) return { success: false, output: '', error: 'No script provided' }
-  const tmpFile = path.join(process.cwd(), 'workspace', `tmp_${Date.now()}.ps1`)
-  fs.mkdirSync(path.dirname(tmpFile), { recursive: true })
-  fs.writeFileSync(tmpFile, script)
-  const { stdout, stderr } = await execAsync(
-    `powershell.exe -ExecutionPolicy Bypass -File "${tmpFile}"`,
-    { timeout: 30000 },
-  )
-  fs.unlinkSync(tmpFile)
-  return { success: true, output: stdout || stderr }
-}
+// ── Tool implementations ──────────────────────────────────────
 
-const file_write: ToolFn = async (payload) => {
-  const filePath = payload.path || payload.file || ''
-  const content  = payload.content || payload.command || ''
-  if (!filePath) return { success: false, output: '', error: 'No path provided' }
-  const resolved = filePath.startsWith('C:') ? filePath : path.join(process.cwd(), filePath)
-  fs.mkdirSync(path.dirname(resolved), { recursive: true })
-  fs.writeFileSync(resolved, content, 'utf-8')
-  return { success: true, output: `File written: ${resolved}` }
-}
+export const TOOLS: Record<string, (payload: any) => Promise<ToolResult>> = {
 
-const file_read: ToolFn = async (payload) => {
-  const filePath = payload.path || payload.file || ''
-  if (!filePath) return { success: false, output: '', error: 'No path provided' }
-  const resolved = filePath.startsWith('C:') ? filePath : path.join(process.cwd(), filePath)
-  const content  = fs.readFileSync(resolved, 'utf-8')
-  return { success: true, output: content.slice(0, 2000) }
-}
+  open_browser: async (p) => {
+    const url = p.url || p.command || ''
+    if (!url) return { success: false, output: '', error: 'No URL provided' }
+    try {
+      const browser  = await getBrowser()
+      const context  = await browser.newContext()
+      const page     = await context.newPage()
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 })
+      const title = await page.title()
+      return { success: true, output: `Opened: ${url} — Page title: "${title}"` }
+    } catch (e: any) { return { success: false, output: '', error: e.message } }
+  },
 
-const run_python: ToolFn = async (payload) => {
-  const script  = payload.script || payload.command || ''
-  const tmpFile = path.join(process.cwd(), 'workspace', `tmp_${Date.now()}.py`)
-  fs.mkdirSync(path.dirname(tmpFile), { recursive: true })
-  fs.writeFileSync(tmpFile, script)
-  const { stdout, stderr } = await execAsync(`python "${tmpFile}"`, { timeout: 30000 })
-  fs.unlinkSync(tmpFile)
-  return { success: true, output: stdout || stderr }
-}
+  browser_screenshot: async () => {
+    try {
+      const browser  = await getBrowser()
+      const pages    = browser.contexts().flatMap((c: any) => c.pages()) as any[]
+      const page     = pages[pages.length - 1] || (await (await browser.newContext()).newPage())
+      const outPath  = path.join(process.cwd(), 'workspace', `screenshot_${Date.now()}.png`)
+      fs.mkdirSync(path.dirname(outPath), { recursive: true })
+      await page.screenshot({ path: outPath, fullPage: false })
+      return { success: true, output: `Screenshot saved: ${outPath}` }
+    } catch (e: any) { return { success: false, output: '', error: e.message } }
+  },
 
-const run_node: ToolFn = async (payload) => {
-  const script  = payload.script || payload.command || ''
-  const tmpFile = path.join(process.cwd(), 'workspace', `tmp_${Date.now()}.js`)
-  fs.mkdirSync(path.dirname(tmpFile), { recursive: true })
-  fs.writeFileSync(tmpFile, script)
-  const { stdout, stderr } = await execAsync(`node "${tmpFile}"`, { timeout: 30000 })
-  fs.unlinkSync(tmpFile)
-  return { success: true, output: stdout || stderr }
-}
+  browser_click: async (p) => {
+    const selector = p.selector || p.text || p.command || ''
+    try {
+      const browser = await getBrowser()
+      const pages   = browser.contexts().flatMap((c: any) => c.pages()) as any[]
+      const page    = pages[pages.length - 1]
+      if (!page) return { success: false, output: '', error: 'No browser page open' }
+      await page.click(selector).catch(() => page.click(`text=${selector}`))
+      return { success: true, output: `Clicked: ${selector}` }
+    } catch (e: any) { return { success: false, output: '', error: e.message } }
+  },
 
-const open_browser: ToolFn = async (payload) => {
-  const url = payload.url || payload.command || 'https://google.com'
-  await execAsync(`Start-Process "${url}"`, { shell: 'powershell.exe' })
-  return { success: true, output: `Opened: ${url}` }
-}
+  browser_type: async (p) => {
+    const selector = p.selector || 'input'
+    const text     = p.text || p.command || ''
+    try {
+      const browser = await getBrowser()
+      const pages   = browser.contexts().flatMap((c: any) => c.pages()) as any[]
+      const page    = pages[pages.length - 1]
+      if (!page) return { success: false, output: '', error: 'No browser page open' }
+      await page.fill(selector, text)
+      return { success: true, output: `Typed "${text}" into ${selector}` }
+    } catch (e: any) { return { success: false, output: '', error: e.message } }
+  },
 
-const notify: ToolFn = async (payload) => {
-  const msg = (payload.message || payload.command || '').replace(/'/g, '')
-  await execAsync(
-    `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show('${msg}', 'DevOS')`,
-    { shell: 'powershell.exe' },
-  )
-  return { success: true, output: `Notification sent: ${msg}` }
-}
+  browser_extract: async () => {
+    try {
+      const browser  = await getBrowser()
+      const pages    = browser.contexts().flatMap((c: any) => c.pages()) as any[]
+      const page     = pages[pages.length - 1]
+      if (!page) return { success: false, output: '', error: 'No browser page open' }
+      const content  = await page.evaluate('document.body.innerText')
+      return { success: true, output: (content as string).slice(0, 3000) }
+    } catch (e: any) { return { success: false, output: '', error: e.message } }
+  },
 
-const system_info: ToolFn = async () => {
-  const { stdout } = await execAsync(
-    'Get-ComputerInfo | Select-Object CsName, OsName, TotalPhysicalMemory | ConvertTo-Json',
-    { shell: 'powershell.exe', timeout: 10000 },
-  )
-  return { success: true, output: stdout }
-}
+  shell_exec: async (p) => {
+    const cmd = p.command || p.cmd || ''
+    if (!cmd) return { success: false, output: '', error: 'No command' }
+    try {
+      const { stdout, stderr } = await execAsync(cmd, {
+        shell:   'powershell.exe',
+        timeout: 30000,
+        env:     { ...process.env, PATH: process.env.PATH },
+      })
+      return { success: true, output: (stdout || stderr || '').trim() || '(completed)' }
+    } catch (e: any) { return { success: false, output: e.stdout || '', error: e.message } }
+  },
 
-const web_search: ToolFn = async (payload) => {
-  const query = payload.query || payload.command || ''
-  await execAsync(
-    `Start-Process "https://google.com/search?q=${encodeURIComponent(query)}"`,
-    { shell: 'powershell.exe' },
-  )
-  return { success: true, output: `Searched: ${query}` }
-}
+  run_powershell: async (p) => {
+    const script  = p.script || p.command || ''
+    if (!script) return { success: false, output: '', error: 'No script' }
+    const tmpFile = path.join(process.cwd(), 'workspace', `tmp_${Date.now()}.ps1`)
+    fs.mkdirSync(path.dirname(tmpFile), { recursive: true })
+    fs.writeFileSync(tmpFile, script)
+    try {
+      const { stdout, stderr } = await execAsync(
+        `powershell.exe -ExecutionPolicy Bypass -File "${tmpFile}"`,
+        { timeout: 30000 }
+      )
+      return { success: true, output: (stdout || stderr || '').trim() }
+    } catch (e: any) { return { success: false, output: '', error: e.message } }
+    finally { try { fs.unlinkSync(tmpFile) } catch {} }
+  },
 
-const fetch_url: ToolFn = async (payload) => {
-  const url = payload.url || payload.command || ''
-  if (!url) return { success: false, output: '', error: 'No URL provided' }
-  const res  = await fetch(url, { signal: AbortSignal.timeout(10000) })
-  const text = await res.text()
-  return { success: true, output: text.slice(0, 3000) }
-}
+  file_write: async (p) => {
+    const filePath = p.path || p.file || ''
+    const content  = p.content || ''
+    if (!filePath) return { success: false, output: '', error: 'No path' }
+    try {
+      const resolved = filePath.match(/^[A-Z]:/i)
+        ? filePath
+        : filePath.startsWith('~')
+          ? filePath.replace('~', process.env.USERPROFILE || 'C:\\Users\\shiva')
+          : path.join(process.cwd(), filePath)
+      fs.mkdirSync(path.dirname(resolved), { recursive: true })
+      fs.writeFileSync(resolved, content, 'utf-8')
+      const written = fs.existsSync(resolved)
+      return {
+        success: written,
+        output:  written
+          ? `Written and verified: ${resolved} (${content.length} chars)`
+          : 'Write failed',
+      }
+    } catch (e: any) { return { success: false, output: '', error: e.message } }
+  },
 
-const git_commit: ToolFn = async (payload) => {
-  const msg = payload.message || payload.command || 'DevOS auto-commit'
-  const { stdout, stderr } = await execAsync(
-    `git add -A && git commit -m "${msg.replace(/"/g, "'")}"`,
-    { shell: 'powershell.exe', timeout: 30000, cwd: process.cwd() },
-  )
-  return { success: true, output: stdout || stderr }
-}
+  file_read: async (p) => {
+    const filePath = p.path || p.file || ''
+    if (!filePath) return { success: false, output: '', error: 'No path' }
+    try {
+      const resolved = filePath.match(/^[A-Z]:/i)
+        ? filePath
+        : path.join(process.cwd(), filePath)
+      if (!fs.existsSync(resolved)) return { success: false, output: '', error: `Not found: ${resolved}` }
+      return { success: true, output: fs.readFileSync(resolved, 'utf-8').slice(0, 5000) }
+    } catch (e: any) { return { success: false, output: '', error: e.message } }
+  },
 
-const git_push: ToolFn = async (payload) => {
-  const remote = payload.remote || 'origin'
-  const branch = payload.branch || 'master'
-  const { stdout, stderr } = await execAsync(
-    `git push ${remote} ${branch}`,
-    { shell: 'powershell.exe', timeout: 60000, cwd: process.cwd() },
-  )
-  return { success: true, output: stdout || stderr }
-}
+  file_list: async (p) => {
+    const dirPath = p.path || p.dir || process.cwd()
+    try {
+      const resolved = dirPath.match(/^[A-Z]:/i)
+        ? dirPath
+        : path.join(process.cwd(), dirPath)
+      return { success: true, output: fs.readdirSync(resolved).join('\n') }
+    } catch (e: any) { return { success: false, output: '', error: e.message } }
+  },
 
-// ── Registry ──────────────────────────────────────────────────
+  run_python: async (p) => {
+    const script = p.script || p.code || p.command || ''
+    if (!script) return { success: false, output: '', error: 'No script' }
+    const tmp = path.join(process.cwd(), 'workspace', `py_${Date.now()}.py`)
+    fs.mkdirSync(path.dirname(tmp), { recursive: true })
+    fs.writeFileSync(tmp, script)
+    try {
+      const { stdout, stderr } = await execAsync(`python "${tmp}"`, { timeout: 30000 })
+      return { success: true, output: (stdout || stderr || '').trim() }
+    } catch (e: any) { return { success: false, output: e.stdout || '', error: e.message } }
+    finally { try { fs.unlinkSync(tmp) } catch {} }
+  },
 
-export const TOOLS: Record<string, ToolFn> = {
-  shell_exec,
-  run_powershell,
-  file_write,
-  file_read,
-  run_python,
-  run_node,
-  open_browser,
-  notify,
-  system_info,
-  web_search,
-  fetch_url,
-  git_commit,
-  git_push,
+  run_node: async (p) => {
+    const script = p.script || p.code || p.command || ''
+    if (!script) return { success: false, output: '', error: 'No script' }
+    const tmp = path.join(process.cwd(), 'workspace', `js_${Date.now()}.js`)
+    fs.mkdirSync(path.dirname(tmp), { recursive: true })
+    fs.writeFileSync(tmp, script)
+    try {
+      const { stdout, stderr } = await execAsync(`node "${tmp}"`, { timeout: 30000 })
+      return { success: true, output: (stdout || stderr || '').trim() }
+    } catch (e: any) { return { success: false, output: e.stdout || '', error: e.message } }
+    finally { try { fs.unlinkSync(tmp) } catch {} }
+  },
+
+  system_info: async () => {
+    try {
+      const { stdout } = await execAsync(
+        `@{ CPU=(Get-CimInstance Win32_Processor).Name; RAM_GB=[math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory/1GB,1); OS=(Get-CimInstance Win32_OperatingSystem).Caption; FreeGB=[math]::Round((Get-PSDrive C).Free/1GB,1); User=$env:USERNAME } | ConvertTo-Json`,
+        { shell: 'powershell.exe', timeout: 15000 }
+      )
+      return { success: true, output: stdout.trim() }
+    } catch (e: any) { return { success: false, output: '', error: e.message } }
+  },
+
+  notify: async (p) => {
+    const msg = (p.message || p.command || '').replace(/'/g, '').replace(/"/g, '')
+    try {
+      await execAsync(
+        `powershell -WindowStyle Hidden -Command "Add-Type -AssemblyName System.Windows.Forms; $n = New-Object System.Windows.Forms.NotifyIcon; $n.Icon = [System.Drawing.SystemIcons]::Information; $n.Visible = $true; $n.ShowBalloonTip(3000, 'DevOS', '${msg}', [System.Windows.Forms.ToolTipIcon]::Info); Start-Sleep -s 4; $n.Dispose()"`,
+        { shell: 'powershell.exe' }
+      )
+      return { success: true, output: `Notification sent: ${msg}` }
+    } catch (e: any) { return { success: false, output: '', error: e.message } }
+  },
+
+  web_search: async (p) => {
+    const query = p.query || p.command || ''
+    if (!query) return { success: false, output: '', error: 'No query' }
+    try {
+      // 1. DuckDuckGo instant answers
+      const res  = await fetch(
+        `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1`,
+        { signal: AbortSignal.timeout(8000) }
+      )
+      const data = await res.json() as any
+      const parts = [
+        data.Answer,
+        data.Abstract,
+        ...(data.RelatedTopics || []).slice(0, 3).map((t: any) => t.Text),
+      ].filter(Boolean)
+
+      // 2. Weather fallback
+      if (!parts.length && /weather/i.test(query)) {
+        const city = query.replace(/weather|in|today|current|forecast/gi, '').trim()
+        const wr   = await fetch(`https://wttr.in/${encodeURIComponent(city)}?format=4`, { signal: AbortSignal.timeout(6000) })
+        const wt   = await wr.text()
+        if (wt && !wt.includes('Unknown')) return { success: true, output: wt }
+      }
+
+      // 3. Wikipedia fallback
+      if (!parts.length) {
+        try {
+          const searchTerm = query.split(' ').slice(0, 4).join(' ')
+          const wr = await fetch(
+            `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(searchTerm)}`,
+            { signal: AbortSignal.timeout(6000) }
+          )
+          const wd = await wr.json() as any
+          if (wd.extract) return { success: true, output: wd.extract.slice(0, 600) }
+        } catch {}
+      }
+
+      // Also open browser to DuckDuckGo in background
+      try {
+        const browser  = await getBrowser()
+        const context  = await browser.newContext()
+        const page     = await context.newPage()
+        await page.goto(`https://duckduckgo.com/?q=${encodeURIComponent(query)}`, { timeout: 10000 })
+      } catch {}
+
+      return { success: true, output: parts.join('\n\n') || `Searched: ${query}` }
+    } catch (e: any) { return { success: false, output: '', error: e.message } }
+  },
+
+  fetch_url: async (p) => {
+    const url = p.url || p.command || ''
+    if (!url) return { success: false, output: '', error: 'No URL' }
+    try {
+      const res  = await fetch(url, { signal: AbortSignal.timeout(10000) })
+      const text = await res.text()
+      return { success: true, output: text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 3000) }
+    } catch (e: any) { return { success: false, output: '', error: e.message } }
+  },
+
+  git_commit: async (p) => {
+    const msg = (p.message || p.command || 'DevOS auto-commit').replace(/"/g, "'")
+    try {
+      const { stdout, stderr } = await execAsync(
+        `git add -A && git commit -m "${msg}"`,
+        { shell: 'powershell.exe', timeout: 30000, cwd: process.cwd() }
+      )
+      return { success: true, output: stdout || stderr }
+    } catch (e: any) { return { success: false, output: '', error: e.message } }
+  },
+
+  git_push: async (p) => {
+    const remote = p.remote || 'origin'
+    const branch = p.branch || 'master'
+    try {
+      const { stdout, stderr } = await execAsync(
+        `git push ${remote} ${branch}`,
+        { shell: 'powershell.exe', timeout: 60000, cwd: process.cwd() }
+      )
+      return { success: true, output: stdout || stderr }
+    } catch (e: any) { return { success: false, output: '', error: e.message } }
+  },
 }
 
 // ── Public executor ───────────────────────────────────────────
 
-/**
- * Execute a registered tool by name.
- * Throws if the tool is unknown, otherwise returns a ToolResult.
- */
-export async function executeTool(
-  type:    string,
-  payload: ToolPayload,
-): Promise<ToolResult> {
+export async function executeTool(type: string, payload: any): Promise<ToolResult> {
   const fn = TOOLS[type]
 
   if (!fn) {
-    // Last-resort: try as raw shell command
-    const cmd = payload.command || ''
-    if (cmd) {
-      try {
-        const { stdout, stderr } = await execAsync(cmd, {
-          shell:   'powershell.exe',
-          timeout: 30000,
-        })
-        return { success: true, output: stdout || stderr }
-      } catch (err: any) {
-        return { success: false, output: '', error: err.message }
-      }
-    }
+    // Last resort: run as raw shell command
+    const cmd = payload?.command || ''
+    if (cmd) return TOOLS.shell_exec({ command: cmd })
     return { success: false, output: '', error: `Unknown tool: ${type}` }
   }
 
@@ -217,9 +320,6 @@ export async function executeTool(
   }
 }
 
-/**
- * Return the list of all registered tool names.
- */
 export function listTools(): string[] {
   return Object.keys(TOOLS)
 }

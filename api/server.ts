@@ -36,53 +36,8 @@ import { registerComputerUseRoutes } from './routes/computerUse'
 import { loadConfig, saveConfig, APIEntry } from '../providers/index'
 import { ollamaProvider } from '../providers/ollama'
 import { getSmartProvider, markRateLimited, incrementUsage } from '../providers/router'
-
-// ── Web search helper ─────────────────────────────────────────
-
-async function webSearch(query: string): Promise<string> {
-  // 1. DuckDuckGo Instant Answer API
-  try {
-    const r = await fetch(
-      `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&no_redirect=1`,
-      { signal: AbortSignal.timeout(6000) }
-    )
-    const d = await r.json() as any
-    const parts: string[] = []
-    if (d.Answer)  parts.push(d.Answer)
-    if (d.Abstract) parts.push(d.Abstract)
-    if (d.RelatedTopics?.length) {
-      d.RelatedTopics.slice(0, 3).forEach((t: any) => { if (t.Text) parts.push(t.Text) })
-    }
-    if (parts.length) return parts.join('\n\n')
-  } catch {}
-
-  // 2. wttr.in for weather queries
-  const isWeather = /weather|temperature|forecast|rain|sunny|cloudy|wind/i.test(query)
-  if (isWeather) {
-    try {
-      const city = query.replace(/weather|in|today|current|forecast/gi, '').trim()
-      const r = await fetch(
-        `https://wttr.in/${encodeURIComponent(city)}?format=4`,
-        { signal: AbortSignal.timeout(6000) }
-      )
-      const text = await r.text()
-      if (text && !text.includes('Unknown')) return `Current weather: ${text}`
-    } catch {}
-  }
-
-  // 3. Wikipedia summary for factual queries
-  try {
-    const searchTerm = query.split(' ').slice(0, 4).join(' ')
-    const r = await fetch(
-      `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(searchTerm)}`,
-      { signal: AbortSignal.timeout(6000) }
-    )
-    const d = await r.json() as any
-    if (d.extract) return d.extract.slice(0, 600)
-  } catch {}
-
-  return ''
-}
+import { executeTool } from '../core/toolRegistry'
+import type { ToolDefinition, ToolCall } from '../providers/types'
 
 // ── App factory ───────────────────────────────────────────────
 
@@ -117,19 +72,47 @@ export function createApiServer(): Express {
     res.json({ status: 'ok', version: '1.0.0', timestamp: new Date().toISOString() })
   })
 
-  // ── Intent detection helper ───────────────────────────────────
-  async function detectIntent(msg: string): Promise<'chat' | 'execute' | 'search'> {
-    const lower = msg.toLowerCase()
-    const executeWords = ['create', 'build', 'make', 'write', 'run', 'execute', 'deploy', 'install',
-      'delete', 'move', 'open', 'launch', 'start', 'stop', 'download', 'automate', 'schedule']
-    const searchWords  = ['search', 'find', 'look up', 'what is', 'who is', 'latest', 'news',
-      'price', 'weather', 'research']
-    if (executeWords.some(w => lower.includes(w))) return 'execute'
-    if (searchWords.some(w  => lower.includes(w))) return 'search'
+  // ── Intent detection (sync) ───────────────────────────────────
+  function detectIntent(message: string): 'chat' | 'execute' {
+    const lower = message.toLowerCase().trim()
+
+    // Short messages and questions always go to chat
+    if (lower.split(' ').length < 4) return 'chat'
+    if (/\?$/.test(lower))           return 'chat'
+    if (/^(hi|hello|hey|thanks|thank you|ok|okay|got it|nice|cool|great|what|who|why|when|where|how|is |are |can you tell|do you|did you|tell me|explain|describe)/.test(lower)) return 'chat'
+
+    // Clear action commands go to execute
+    if (/^(open |launch |start |run |execute |create |make |build |write |delete |move |copy |install |deploy |download |search for |go to |navigate to |find me |show me |give me |send |close |kill |restart )/.test(lower)) return 'execute'
+
     return 'chat'
   }
 
-  // POST /api/chat — intent routing + SSE streaming with smart provider fallback
+  // ── DevOS tool definitions ────────────────────────────────────
+
+  const DEVOS_TOOLS: ToolDefinition[] = [
+    { name: 'open_browser',      description: 'Open a URL in a real Chromium browser window',                     parameters: { type: 'object', properties: { url: { type: 'string', description: 'Full URL including https://' } }, required: ['url'] } },
+    { name: 'browser_extract',   description: 'Extract all text from the currently open browser page',            parameters: { type: 'object', properties: {} } },
+    { name: 'browser_click',     description: 'Click an element on the current browser page',                     parameters: { type: 'object', properties: { selector: { type: 'string', description: 'CSS selector or visible text' } }, required: ['selector'] } },
+    { name: 'browser_type',      description: 'Type text into an input field on the current page',                parameters: { type: 'object', properties: { selector: { type: 'string', description: 'CSS selector of input' }, text: { type: 'string', description: 'Text to type' } }, required: ['selector', 'text'] } },
+    { name: 'browser_screenshot', description: 'Take a screenshot of the current browser page',                   parameters: { type: 'object', properties: {} } },
+    { name: 'shell_exec',        description: 'Run a PowerShell command on Windows and get real output',          parameters: { type: 'object', properties: { command: { type: 'string', description: 'PowerShell command' } }, required: ['command'] } },
+    { name: 'file_write',        description: 'Create or overwrite a file with content',                          parameters: { type: 'object', properties: { path: { type: 'string', description: 'Full path e.g. C:\\Users\\shiva\\Desktop\\test.txt' }, content: { type: 'string', description: 'File content' } }, required: ['path', 'content'] } },
+    { name: 'file_read',         description: 'Read a file and return its contents',                              parameters: { type: 'object', properties: { path: { type: 'string', description: 'Full file path' } }, required: ['path'] } },
+    { name: 'file_list',         description: 'List files in a directory',                                        parameters: { type: 'object', properties: { path: { type: 'string', description: 'Directory path' } } } },
+    { name: 'run_python',        description: 'Write and run a Python script, returns stdout output',             parameters: { type: 'object', properties: { script: { type: 'string', description: 'Python code to run' } }, required: ['script'] } },
+    { name: 'run_node',          description: 'Write and run a Node.js script, returns stdout output',            parameters: { type: 'object', properties: { script: { type: 'string', description: 'JavaScript code to run' } }, required: ['script'] } },
+    { name: 'web_search',        description: 'Search the web and return real results. Use for weather, news, current info.', parameters: { type: 'object', properties: { query: { type: 'string', description: 'Search query' } }, required: ['query'] } },
+    { name: 'fetch_url',         description: 'Fetch and return text content from a URL',                         parameters: { type: 'object', properties: { url: { type: 'string', description: 'URL to fetch' } }, required: ['url'] } },
+    { name: 'system_info',       description: 'Get real system info — CPU, RAM, disk space, OS, username',        parameters: { type: 'object', properties: {} } },
+    { name: 'notify',            description: 'Send a Windows desktop toast notification',                        parameters: { type: 'object', properties: { message: { type: 'string', description: 'Notification message' } }, required: ['message'] } },
+  ]
+
+  // ── Icons / styles for activity SSE events ────────────────────
+  const ACTIVITY_ICONS: Record<string, string> = {
+    act: '⚙️', done: '✅', error: '❌', warn: '⚠️', info: 'ℹ️', thinking: '💭', tool: '🔧',
+  }
+
+  // POST /api/chat — function calling loop + SSE streaming
   app.post('/api/chat', async (req: Request, res: Response) => {
     const { message, history = [] } = req.body as {
       message?: string; history?: { role: string; content: string }[]
@@ -142,183 +125,169 @@ export function createApiServer(): Express {
     res.setHeader('Access-Control-Allow-Origin', '*')
     res.flushHeaders()
 
-    const intent = await detectIntent(message)
-
-    // ── Execute intent → goal engine with live progress streaming ─
-    if (intent === 'execute') {
-      try {
-        const { runGoalLoop } = await import('../core/executionLoop')
-        const { livePulse: lp } = await import('../coordination/livePulse')
-
-        // Fire a structured "started" activity
-        res.write(`data: ${JSON.stringify({
-          activity: { icon: '🎯', agent: 'CEO', message: 'Starting execution…', style: 'act' },
-          done: false,
-        })}\n\n`)
-
-        // Map PulseEventType → icon + style for the UI
-        const ICONS: Record<string, string> = {
-          act:      '⚙️',
-          done:     '✅',
-          error:    '❌',
-          warn:     '⚠️',
-          info:     'ℹ️',
-          thinking: '💭',
-          tool:     '🔧',
-        }
-        const STYLES: Record<string, string> = {
-          act:      'act',
-          done:     'done',
-          error:    'error',
-          warn:     'warn',
-          info:     'info',
-          thinking: 'thinking',
-          tool:     'tool',
-        }
-
-        const onAny = (event: any) => {
-          try {
-            res.write(`data: ${JSON.stringify({
-              activity: {
-                icon:    ICONS[event.type]  ?? '⚙️',
-                agent:   event.agent,
-                message: event.message,
-                style:   STYLES[event.type] ?? 'act',
-                tool:    event.tool,
-                command: event.command,
-                output:  event.output,
-              },
-              done: false,
-            })}\n\n`)
-          } catch { /* response may be closed */ }
-        }
-
-        lp.on('any', onAny)
-
-        try {
-          const result = await runGoalLoop(message)
-          const emoji  = result.success ? '✅' : '⚠️'
-          // Final summary activity
-          res.write(`data: ${JSON.stringify({
-            activity: {
-              icon:    emoji,
-              agent:   'CEO',
-              message: result.summary,
-              style:   result.success ? 'done' : 'warn',
-            },
-            done: true,
-            provider: 'devos-executor',
-          })}\n\n`)
-        } finally {
-          lp.off('any', onAny)
-        }
-
-        res.end()
-        return
-      } catch (err: any) {
-        res.write(`data: ${JSON.stringify({
-          activity: { icon: '❌', agent: 'CEO', message: `Execution error: ${err.message}`, style: 'error' },
-          done: true,
-        })}\n\n`)
-        res.end()
-        return
-      }
+    const send = (data: object) => {
+      try { res.write(`data: ${JSON.stringify(data)}\n\n`) } catch {}
     }
 
-    // ── Search intent → web context via DuckDuckGo ───────────────
-    let webContext = ''
-    if (intent === 'search') {
-      try {
-        res.write(`data: ${JSON.stringify({ token: '*Searching the web...*\n\n', done: false })}\n\n`)
-        const results = await webSearch(message)
-        if (results) {
-          webContext = `\n\n[REAL WEB DATA - use this to answer, do not make up information]:
-${results}
-
-IMPORTANT: Answer using ONLY the above real data. If the data doesn't fully answer the question, say what you found and what you couldn't find. Never guess.`
-        } else {
-          webContext = '\n\n[Web search returned no results. Tell the user honestly you could not find current information and suggest they check the source directly.]'
-        }
-      } catch {
-        webContext = '\n\n[Web search failed — say so honestly]'
-      }
-    }
-
-    // ── Chat with full DevOS system prompt ────────────────────────
-    const MAX_RETRIES = 3
     let attempt   = 0
-    let lastError = ''
+    const MAX_RETRIES = 3
 
     while (attempt < MAX_RETRIES) {
       attempt++
       const { provider, model, userName, apiName } = getSmartProvider()
 
-      const systemPrompt = `You are Aiden (also called DevOS) — a personal AI OS running 100% locally on ${userName}'s machine. You are calm, direct, intelligent, and slightly witty. You speak like a trusted co-founder.
+      const systemPrompt = `You are Aiden — a personal AI OS running on ${userName}'s Windows machine. You are calm, direct, capable, and slightly witty. You speak like a trusted co-founder.
 
-YOUR ACTUAL CAPABILITIES (these are real, not hypothetical):
-- Execute terminal commands, PowerShell scripts, Python, Node.js on ${userName}'s machine
-- Create, read, edit, delete files anywhere on the computer
-- Browse the web, click links, fill forms using a real browser
-- Search the web and fetch content from URLs
-- Deploy to Vercel, push to GitHub
-- Send notifications via Telegram, WhatsApp, Discord, Slack, Email
-- Control the computer — move mouse, click, type, take screenshots
-- Run Docker containers for sandboxed execution
-- Remember past goals and learn from them
-- Run 31 specialist agents for complex multi-step tasks
+You have REAL tools. When asked to DO something, call the appropriate tool — do not describe doing it, actually do it.
 
-IMPORTANT RULES:
-- When the user asks you to DO something, confirm you'll do it and describe your plan briefly
-- When the user asks something you can DO, say "I'll do that" not "I can help you do that"
-- You DO have web access — you can fetch URLs and search the web as a tool
-- Never say you "don't have access" to something you actually can do
-- Be concise. 2-3 sentences max for simple replies
-- Use markdown only when it genuinely helps
-- Current date: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}${webContext}`
+RULES:
+- Use open_browser to open websites — it uses real Chromium, not just a command
+- Use web_search for weather, news, current prices, anything that needs live data
+- Use shell_exec for PowerShell commands — you get the real stdout back
+- Use file_write/file_read for files — you get confirmation it was written
+- Use system_info to get real CPU/RAM/disk info
+- After a tool runs you see the REAL output — report it accurately
+- Never claim you did something if the tool failed
+- For simple chat/questions, just respond naturally without tools
+- Be concise. 1-3 sentences for simple answers.
 
-      const messages = [
-        { role: 'system', content: systemPrompt },
-        ...history.slice(-10),
-        { role: 'user', content: message },
-      ]
+Current date: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}`
 
       try {
+        const conversationMessages = [
+          { role: 'system', content: systemPrompt },
+          ...history.slice(-8),
+          { role: 'user', content: message },
+        ]
+
+        // ── PATH 1: Function calling (Groq, Gemini) ───────────────
+        if (provider.generateWithTools) {
+          let   currentMessages = [...conversationMessages]
+          const MAX_ITER        = 6
+          let   iteration       = 0
+
+          while (iteration < MAX_ITER) {
+            iteration++
+
+            const { content, toolCalls } = await provider.generateWithTools(
+              currentMessages, model, DEVOS_TOOLS
+            )
+
+            if (!toolCalls.length) {
+              // Final answer — stream word by word
+              if (content) {
+                const words = content.split(' ')
+                for (const word of words) {
+                  send({ token: word + ' ', done: false, provider: apiName })
+                  await new Promise(r => setTimeout(r, 12))
+                }
+              }
+              incrementUsage(apiName)
+              send({ done: true, provider: apiName })
+              res.end()
+              memoryLayers.write(`User: ${message}`, ['chat'])
+              return
+            }
+
+            // Execute each tool call for real
+            for (const tc of toolCalls) {
+              send({
+                activity: {
+                  icon:    '🔧',
+                  agent:   'Aiden',
+                  message: `${tc.name}(${JSON.stringify(tc.arguments).slice(0, 100)})`,
+                  style:   'tool',
+                },
+                done: false,
+              })
+
+              const result = await executeTool(tc.name, tc.arguments)
+
+              send({
+                activity: {
+                  icon:    result.success ? '✅' : '❌',
+                  agent:   'Aiden',
+                  message: (result.success ? result.output : result.error || 'failed').slice(0, 160),
+                  style:   result.success ? 'done' : 'error',
+                },
+                done: false,
+              })
+
+              // Feed result back to LLM as user message
+              currentMessages = [
+                ...currentMessages,
+                { role: 'assistant', content: content || `Calling ${tc.name}` },
+                {
+                  role: 'user',
+                  content: `Tool ${tc.name} result: ${
+                    result.success ? result.output.slice(0, 800) : 'FAILED: ' + result.error
+                  }`,
+                },
+              ]
+            }
+          }
+
+          // Max iterations hit — just send done
+          incrementUsage(apiName)
+          send({ done: true, provider: apiName })
+          res.end()
+          return
+        }
+
+        // ── PATH 2: No function calling (Ollama / fallback) ───────
+        // Pre-fetch web data if the query looks like it needs live info
+        const needsSearch = /weather|news|latest|current|today|price|stock|score/i.test(message)
+        let webContext     = ''
+        if (needsSearch) {
+          send({
+            activity: { icon: '🔍', agent: 'Aiden', message: 'Searching the web...', style: 'act' },
+            done: false,
+          })
+          try {
+            const result = await executeTool('web_search', { query: message })
+            if (result.success && result.output) {
+              webContext = `\n\nReal search results:\n${result.output}\n\nAnswer using ONLY this data. Do not make up information.`
+            }
+          } catch {}
+        }
+
+        const msgs = [
+          { role: 'system', content: systemPrompt + webContext },
+          ...history.slice(-8),
+          { role: 'user', content: message },
+        ]
+
         let streamEnded = false
         const streamTimeout = setTimeout(() => {
-          if (!streamEnded) {
-            res.write(`data: ${JSON.stringify({ done: true, error: 'Response timed out — try again' })}\n\n`)
-            res.end()
-          }
+          if (!streamEnded) { send({ done: true, error: 'Response timed out — try again' }); res.end() }
         }, 30000)
 
-        await provider.generateStream(messages, model, (token) => {
-          res.write(`data: ${JSON.stringify({ token, done: false, provider: apiName })}\n\n`)
+        await provider.generateStream(msgs, model, (token) => {
+          send({ token, done: false, provider: apiName })
         })
 
         streamEnded = true
         clearTimeout(streamTimeout)
         incrementUsage(apiName)
-        res.write(`data: ${JSON.stringify({ done: true, provider: apiName })}\n\n`)
+        send({ done: true, provider: apiName })
         res.end()
         memoryLayers.write(`User: ${message}`, ['chat'])
         return
 
       } catch (err: any) {
-        const errMsg = err?.message || ''
-        const is429  = errMsg.includes('429') || errMsg.toLowerCase().includes('rate') || errMsg.toLowerCase().includes('limit')
-
+        const is429 = err.message?.includes('429') || err.message?.toLowerCase().includes('rate')
         if (is429 && apiName !== 'ollama') {
           markRateLimited(apiName)
-          res.write(`data: ${JSON.stringify({ token: `\n\n⚡ ${apiName} rate limited — switching provider...\n\n`, done: false })}\n\n`)
+          send({ token: `\n⚡ ${apiName} rate limited — switching...\n`, done: false })
           continue
         }
-
-        lastError = errMsg
-        break
+        send({ done: true, error: err.message })
+        res.end()
+        return
       }
     }
 
-    res.write(`data: ${JSON.stringify({ done: true, error: lastError || 'All providers unavailable. Start Ollama: ollama serve' })}\n\n`)
+    send({ done: true, error: 'All providers unavailable. Start Ollama: ollama serve' })
     res.end()
   })
 
