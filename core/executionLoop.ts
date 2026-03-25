@@ -65,18 +65,25 @@ async function callOllama(prompt: string): Promise<string> {
 async function generatePlan(goal: string, goalId: string): Promise<GoalPlan> {
   livePulse.act('CEO', `Planning: ${goal}`)
 
-  const prompt = `You are DevOS CEO Agent. Break this goal into 2-5 concrete steps.
+  const prompt = `You are DevOS CEO Agent running on Windows 11. Break this goal into 2-5 concrete steps.
 Goal: "${goal}"
 
-Respond ONLY with JSON in this exact format, no other text:
+IMPORTANT: Generate REAL Windows commands that will actually work.
+For opening URLs use: Start-Process "https://url.com"
+For creating files use file_write tool with actual content
+For running scripts use shell_exec with PowerShell commands
+For notifications use the notify tool
+
+Respond ONLY with valid JSON, no other text:
 {
   "steps": [
-    { "skill": "shell_exec", "description": "what this step does", "command": "actual command to run" },
-    { "skill": "file_write", "description": "what this step does", "command": "file content or path" }
+    { "skill": "open_browser", "description": "Open URL in browser", "command": "https://example.com" },
+    { "skill": "shell_exec", "description": "Check system info", "command": "Get-ComputerInfo | Select-Object CsName" }
   ]
 }
 
-Available skills: shell_exec, file_write, file_read, web_search, run_python, run_node, notify`
+Available skills: shell_exec, file_write, file_read, web_search, run_python, run_node, notify, system_info, open_browser
+OS: Windows 11, Shell: PowerShell`
 
   const raw = await callOllama(prompt)
 
@@ -196,6 +203,7 @@ export async function runGoalLoop(goal: string): Promise<{ success: boolean; sum
         type:        nextStep.skill as any,
         confidence:  0.9,
         description: nextStep.description,
+        payload:     { command: nextStep.command },
         retries:     2,
         timeoutMs:   30000,
       } as any)

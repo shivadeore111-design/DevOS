@@ -4,30 +4,35 @@
 // ============================================================
 
 // coordination/livePulse.ts — Real-time agent pulse / activity log.
-//
-// NOTE: This is the sandbox stub. The full WebSocket-based
-// implementation lives at C:\Users\shiva\DevOS\coordination\livePulse.ts.
-// This stub satisfies all imports from setupWizard.ts and is type-safe.
+// Extends EventEmitter so subscribers (e.g. /api/chat) can stream
+// live execution progress directly to the UI.
 
-class LivePulse {
+import { EventEmitter } from 'events'
+
+class LivePulse extends EventEmitter {
   act(agent: string, message: string): void {
     console.log(`[${agent}] ${message}`)
+    this.emit('act', agent, message)
   }
 
   done(agent: string, message: string): void {
     console.log(`[${agent}] ✓ ${message}`)
+    this.emit('done', agent, message)
   }
 
   error(agent: string, message: string): void {
     console.error(`[${agent}] ✗ ${message}`)
+    this.emit('error', agent, message)
   }
 
   warn(agent: string, message: string): void {
     console.warn(`[${agent}] ⚠ ${message}`)
+    this.emit('warn', agent, message)
   }
 
   info(agent: string, message: string): void {
     console.log(`[${agent}] ℹ ${message}`)
+    this.emit('info', agent, message)
   }
 }
 

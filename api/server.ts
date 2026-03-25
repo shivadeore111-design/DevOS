@@ -144,21 +144,47 @@ export function createApiServer(): Express {
 
     const intent = await detectIntent(message)
 
-    // ── Execute intent → hand off to goal engine ─────────────────
+    // ── Execute intent → goal engine with live progress streaming ─
     if (intent === 'execute') {
       try {
         const { runGoalLoop } = await import('../core/executionLoop')
-        res.write(`data: ${JSON.stringify({ token: 'Got it — starting execution...\n\n', done: false })}\n\n`)
-        runGoalLoop(message).then((result: any) => {
-          res.write(`data: ${JSON.stringify({ token: result?.summary || 'Done.', done: false })}\n\n`)
+        const { livePulse }   = await import('../coordination/livePulse')
+
+        res.write(`data: ${JSON.stringify({ token: '🎯 Starting execution...\n\n', done: false })}\n\n`)
+
+        const onAct = (agent: string, msg: string) => {
+          res.write(`data: ${JSON.stringify({ token: `**${agent}:** ${msg}\n`, done: false })}\n\n`)
+        }
+        const onDone = (agent: string, msg: string) => {
+          res.write(`data: ${JSON.stringify({ token: `**${agent}:** ${msg}\n`, done: false })}\n\n`)
+        }
+        const onErr = (agent: string, msg: string) => {
+          res.write(`data: ${JSON.stringify({ token: `❌ **${agent}:** ${msg}\n`, done: false })}\n\n`)
+        }
+
+        livePulse.on('act',   onAct)
+        livePulse.on('done',  onDone)
+        livePulse.on('error', onErr)
+
+        try {
+          const result = await runGoalLoop(message)
+          const emoji  = result.success ? '✅' : '⚠️'
+          res.write(`data: ${JSON.stringify({ token: `\n${emoji} ${result.summary}`, done: false })}\n\n`)
           res.write(`data: ${JSON.stringify({ done: true, provider: 'devos-executor' })}\n\n`)
-          res.end()
-        }).catch(() => {
-          res.write(`data: ${JSON.stringify({ done: true, error: 'Execution failed' })}\n\n`)
-          res.end()
-        })
+        } finally {
+          livePulse.off('act',   onAct)
+          livePulse.off('done',  onDone)
+          livePulse.off('error', onErr)
+        }
+
+        res.end()
         return
-      } catch { /* fall through to chat if executionLoop unavailable */ }
+      } catch (err: any) {
+        res.write(`data: ${JSON.stringify({ token: `❌ Execution error: ${err.message}`, done: false })}\n\n`)
+        res.write(`data: ${JSON.stringify({ done: true })}\n\n`)
+        res.end()
+        return
+      }
     }
 
     // ── Search intent → web context via DuckDuckGo ───────────────
