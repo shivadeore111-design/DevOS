@@ -32,6 +32,10 @@ export function createGeminiProvider(apiKey: string): Provider {
           }),
         },
       )
+      if (!res.ok) {
+        const err = await res.text()
+        throw new Error(`${res.status}: ${err}`)
+      }
       const data = await res.json() as any
       return data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
     },

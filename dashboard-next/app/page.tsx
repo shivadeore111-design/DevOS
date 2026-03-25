@@ -10,6 +10,7 @@ interface Message {
   content:    string
   time:       string
   streaming?: boolean
+  provider?:  string
 }
 
 interface AgentEvent {
@@ -326,7 +327,10 @@ export default function Home() {
             if (payload.done) {
               setMessages(prev => {
                 const next = [...prev]
-                next[next.length - 1] = { role: 'devos', content: full, time, streaming: false }
+                next[next.length - 1] = {
+                  role: 'devos', content: full, time, streaming: false,
+                  provider: payload.provider || next[next.length - 1]?.provider,
+                }
                 return next
               })
             }
@@ -775,6 +779,14 @@ export default function Home() {
                             : <span style={{ color:'rgba(255,255,255,0.25)', fontSize:'13px' }}>thinking…</span>
                           }
                           {msg.streaming && <Cursor />}
+                          {!msg.streaming && msg.provider && (
+                            <div style={{
+                              fontSize:'9px', fontFamily:'monospace',
+                              color:'rgba(255,255,255,0.2)', marginTop:'4px', paddingLeft:'2px',
+                            }}>
+                              via {msg.provider}
+                            </div>
+                          )}
                         </>
                       : msg.content
                     }

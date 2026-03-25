@@ -70,7 +70,19 @@ export function createApiServer(): Express {
     res.json({ status: 'ok', version: '1.0.0', timestamp: new Date().toISOString() })
   })
 
-  // POST /api/chat — SSE streaming with smart routing + auto-fallback
+  // ── Intent detection helper ───────────────────────────────────
+  async function detectIntent(msg: string): Promise<'chat' | 'execute' | 'search'> {
+    const lower = msg.toLowerCase()
+    const executeWords = ['create', 'build', 'make', 'write', 'run', 'execute', 'deploy', 'install',
+      'delete', 'move', 'open', 'launch', 'start', 'stop', 'download', 'automate', 'schedule']
+    const searchWords  = ['search', 'find', 'look up', 'what is', 'who is', 'latest', 'news',
+      'price', 'weather', 'research']
+    if (executeWords.some(w => lower.includes(w))) return 'execute'
+    if (searchWords.some(w  => lower.includes(w))) return 'search'
+    return 'chat'
+  }
+
+  // POST /api/chat — intent routing + SSE streaming with smart provider fallback
   app.post('/api/chat', async (req: Request, res: Response) => {
     const { message, history = [] } = req.body as {
       message?: string; history?: { role: string; content: string }[]
@@ -83,6 +95,41 @@ export function createApiServer(): Express {
     res.setHeader('Access-Control-Allow-Origin', '*')
     res.flushHeaders()
 
+    const intent = await detectIntent(message)
+
+    // ── Execute intent → hand off to goal engine ─────────────────
+    if (intent === 'execute') {
+      try {
+        const { runGoalLoop } = await import('../core/executionLoop')
+        res.write(`data: ${JSON.stringify({ token: 'Got it — starting execution...\n\n', done: false })}\n\n`)
+        runGoalLoop(message).then((result: any) => {
+          res.write(`data: ${JSON.stringify({ token: result?.summary || 'Done.', done: false })}\n\n`)
+          res.write(`data: ${JSON.stringify({ done: true, provider: 'devos-executor' })}\n\n`)
+          res.end()
+        }).catch(() => {
+          res.write(`data: ${JSON.stringify({ done: true, error: 'Execution failed' })}\n\n`)
+          res.end()
+        })
+        return
+      } catch { /* fall through to chat if executionLoop unavailable */ }
+    }
+
+    // ── Search intent → web context via Jina reader ──────────────
+    let webContext = ''
+    if (intent === 'search') {
+      try {
+        res.write(`data: ${JSON.stringify({ token: '_Searching the web..._\n\n', done: false })}\n\n`)
+        const searchRes = await fetch(`https://r.jina.ai/${encodeURIComponent(message)}`, {
+          headers: { 'Accept': 'text/plain' },
+        })
+        const text = await searchRes.text()
+        webContext = `\n\nWeb search results for "${message}":\n${text.slice(0, 1500)}`
+      } catch {
+        webContext = '\n\n[Web search unavailable]'
+      }
+    }
+
+    // ── Chat with full DevOS system prompt ────────────────────────
     const MAX_RETRIES = 3
     let attempt   = 0
     let lastError = ''
@@ -91,8 +138,28 @@ export function createApiServer(): Express {
       attempt++
       const { provider, model, userName, apiName } = getSmartProvider()
 
-      const systemPrompt = `You are DevOS — a personal AI OS running locally. You are calm, direct, intelligent, and slightly witty. You speak like a trusted co-founder, not a chatbot. Be concise. Use markdown only when it genuinely helps. Never make up facts or claim capabilities you don't have.
-User's name: ${userName}. Date: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.`
+      const systemPrompt = `You are Aiden (also called DevOS) — a personal AI OS running 100% locally on ${userName}'s machine. You are calm, direct, intelligent, and slightly witty. You speak like a trusted co-founder.
+
+YOUR ACTUAL CAPABILITIES (these are real, not hypothetical):
+- Execute terminal commands, PowerShell scripts, Python, Node.js on ${userName}'s machine
+- Create, read, edit, delete files anywhere on the computer
+- Browse the web, click links, fill forms using a real browser
+- Search the web and fetch content from URLs
+- Deploy to Vercel, push to GitHub
+- Send notifications via Telegram, WhatsApp, Discord, Slack, Email
+- Control the computer — move mouse, click, type, take screenshots
+- Run Docker containers for sandboxed execution
+- Remember past goals and learn from them
+- Run 31 specialist agents for complex multi-step tasks
+
+IMPORTANT RULES:
+- When the user asks you to DO something, confirm you'll do it and describe your plan briefly
+- When the user asks something you can DO, say "I'll do that" not "I can help you do that"
+- You DO have web access — you can fetch URLs and search the web as a tool
+- Never say you "don't have access" to something you actually can do
+- Be concise. 2-3 sentences max for simple replies
+- Use markdown only when it genuinely helps
+- Current date: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}${webContext}`
 
       const messages = [
         { role: 'system', content: systemPrompt },
@@ -101,14 +168,26 @@ User's name: ${userName}. Date: ${new Date().toLocaleDateString('en-US', { weekd
       ]
 
       try {
+        let streamEnded = false
+        const streamTimeout = setTimeout(() => {
+          if (!streamEnded) {
+            res.write(`data: ${JSON.stringify({ done: true, error: 'Response timed out — try again' })}\n\n`)
+            res.end()
+          }
+        }, 30000)
+
         await provider.generateStream(messages, model, (token) => {
           res.write(`data: ${JSON.stringify({ token, done: false, provider: apiName })}\n\n`)
         })
+
+        streamEnded = true
+        clearTimeout(streamTimeout)
         incrementUsage(apiName)
         res.write(`data: ${JSON.stringify({ done: true, provider: apiName })}\n\n`)
         res.end()
         memoryLayers.write(`User: ${message}`, ['chat'])
         return
+
       } catch (err: any) {
         const errMsg = err?.message || ''
         const is429  = errMsg.includes('429') || errMsg.toLowerCase().includes('rate') || errMsg.toLowerCase().includes('limit')
@@ -124,7 +203,7 @@ User's name: ${userName}. Date: ${new Date().toLocaleDateString('en-US', { weekd
       }
     }
 
-    res.write(`data: ${JSON.stringify({ done: true, error: lastError || 'All providers unavailable' })}\n\n`)
+    res.write(`data: ${JSON.stringify({ done: true, error: lastError || 'All providers unavailable. Start Ollama: ollama serve' })}\n\n`)
     res.end()
   })
 
