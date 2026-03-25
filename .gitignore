@@ -1,0 +1,10 @@
+node_modules/
+.env
+.env.local
+dashboard-next/.env.local
+dashboard-next/node_modules/
+dashboard-next/.next/
+dashboard-next/tsconfig.tsbuildinfo
+config/devos.config.json
+workspace/
+*.log
