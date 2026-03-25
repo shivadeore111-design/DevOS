@@ -236,16 +236,13 @@ export const TOOLS: Record<string, (payload: any) => Promise<ToolResult>> = {
     const query = p.query || p.command || ''
     if (!query) return { success: false, output: '', error: 'No query' }
     try {
-      // 1. Rich weather via wttr.in JSON API (format=j1)
+      // 1. Weather via wttr.in JSON API
       if (/weather|temperature|forecast|rain|snow|sunny|cloudy|humidity|wind/i.test(query)) {
         const city = query
           .replace(/weather|temperature|forecast|rain|snow|sunny|cloudy|humidity|wind|in|today|current|for|the/gi, '')
           .trim() || 'auto'
         try {
-          const wr   = await fetch(
-            `https://wttr.in/${encodeURIComponent(city)}?format=j1`,
-            { signal: AbortSignal.timeout(8000) },
-          )
+          const wr   = await fetch(`https://wttr.in/${encodeURIComponent(city)}?format=j1`, { signal: AbortSignal.timeout(8000) })
           const data = await wr.json() as any
           const cc   = data.current_condition?.[0]
           const area = data.nearest_area?.[0]
@@ -270,40 +267,61 @@ export const TOOLS: Record<string, (payload: any) => Promise<ToolResult>> = {
         } catch {}
       }
 
-      // 2. DuckDuckGo instant answers
+      // 2. Fetch real page content from top DuckDuckGo HTML results
+      try {
+        const searchRes = await fetch(
+          `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
+          {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+            signal: AbortSignal.timeout(8000),
+          },
+        )
+        const html       = await searchRes.text()
+        const urlMatches = html.match(/href="(https?:\/\/[^"]+)"/g) || []
+        const urls       = urlMatches
+          .map(m => m.replace(/^href="/, '').replace(/"$/, ''))
+          .filter(u => !u.includes('duckduckgo') && !u.includes('google') && u.startsWith('https'))
+          .slice(0, 3)
+
+        const pageContents: string[] = []
+        for (const url of urls) {
+          try {
+            const r    = await fetch(url, {
+              headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+              signal: AbortSignal.timeout(8000),
+            })
+            const text  = await r.text()
+            const clean = text
+              .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+              .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+              .replace(/<[^>]+>/g, ' ')
+              .replace(/\s+/g, ' ')
+              .trim()
+              .slice(0, 1500)
+            if (clean.length > 100) pageContents.push(`Source: ${url}\n${clean}`)
+          } catch {}
+        }
+
+        if (pageContents.length) {
+          return { success: true, output: pageContents.join('\n\n---\n\n') }
+        }
+      } catch {}
+
+      // 3. DuckDuckGo instant answers fallback
       const res   = await fetch(
         `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1`,
-        { signal: AbortSignal.timeout(8000) },
+        { signal: AbortSignal.timeout(6000) },
       )
       const data  = await res.json() as any
       const parts = [
         data.Answer,
         data.Abstract,
-        ...(data.RelatedTopics || []).slice(0, 3).map((t: any) => t.Text),
+        ...(data.RelatedTopics || []).slice(0, 5).map((t: any) => t.Text),
       ].filter(Boolean)
 
-      // 3. Wikipedia fallback
-      if (!parts.length) {
-        try {
-          const searchTerm = query.split(' ').slice(0, 4).join(' ')
-          const wr = await fetch(
-            `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(searchTerm)}`,
-            { signal: AbortSignal.timeout(6000) },
-          )
-          const wd = await wr.json() as any
-          if (wd.extract) return { success: true, output: wd.extract.slice(0, 600) }
-        } catch {}
-      }
+      if (parts.length) return { success: true, output: parts.join('\n\n') }
 
-      // Also open browser to DuckDuckGo in background
-      try {
-        const browser = await getBrowser()
-        const context = await browser.newContext()
-        const page    = await context.newPage()
-        await page.goto(`https://duckduckgo.com/?q=${encodeURIComponent(query)}`, { timeout: 10000 })
-      } catch {}
-
-      return { success: true, output: parts.join('\n\n') || `Searched: ${query}` }
+      return { success: false, output: '', error: `No results for: ${query}` }
     } catch (e: any) { return { success: false, output: '', error: e.message } }
   },
 
@@ -315,6 +333,91 @@ export const TOOLS: Record<string, (payload: any) => Promise<ToolResult>> = {
       const text = await res.text()
       return { success: true, output: text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 3000) }
     } catch (e: any) { return { success: false, output: '', error: e.message } }
+  },
+
+  // Dedicated page fetcher — strips all HTML, returns clean readable text
+  fetch_page: async (p) => {
+    const url = p.url || p.command || ''
+    if (!url) return { success: false, output: '', error: 'No URL' }
+    try {
+      const r    = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+        signal: AbortSignal.timeout(10000),
+      })
+      const text  = await r.text()
+      const clean = text
+        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+      return { success: true, output: clean.slice(0, 3000) }
+    } catch (e: any) { return { success: false, output: '', error: e.message } }
+  },
+
+  // 3-pass deep research: broad → entity extraction → per-entity deep dive
+  deep_research: async (p) => {
+    const topic = p.topic || p.query || p.command || ''
+    if (!topic) return { success: false, output: '', error: 'No topic provided' }
+
+    const results: string[] = []
+
+    // PASS 1: Broad search
+    const broad = await TOOLS.web_search({ query: topic })
+    if (broad.success) results.push(`=== BROAD RESEARCH ===\n${broad.output}`)
+
+    // Extract entity names using capitalization heuristic
+    const entityPatterns = (broad.output || '').match(/\b([A-Z][a-zA-Z]+(?:\s[A-Z][a-zA-Z]+)?)\b/g) || []
+    const SKIP_WORDS = new Set(['The','This','That','From','With','For','And','But','Source','Nov','Sep','Jan','Feb','Dec','You','Your','More','Also','Our'])
+    const uniqueEntities = [...new Set(entityPatterns)]
+      .filter(e => e.length > 3 && !SKIP_WORDS.has(e))
+      .slice(0, 4)
+
+    // PASS 2: Deep dive each entity
+    for (const entity of uniqueEntities) {
+      try {
+        const deep = await TOOLS.web_search({ query: `${entity} features review pros cons 2025` })
+        if (deep.success && deep.output.length > 100) {
+          results.push(`=== ${entity.toUpperCase()} DEEP DIVE ===\n${deep.output.slice(0, 1200)}`)
+        }
+      } catch {}
+    }
+
+    // PASS 3: Check depth — if shallow, fetch one more broad query
+    if (results.join('\n').length < 1000) {
+      const fallback = await TOOLS.web_search({ query: `${topic} complete guide comparison 2025` })
+      if (fallback.success) results.push(`=== ADDITIONAL RESEARCH ===\n${fallback.output}`)
+    }
+
+    return { success: true, output: results.join('\n\n') }
+  },
+
+  // Activate a specialist agent persona — actual synthesis happens in respond phase
+  run_agent: async (p) => {
+    const agentName = (p.agent || 'engineer').toLowerCase()
+    const task      = p.task || p.command || ''
+    if (!task) return { success: false, output: '', error: 'No task provided' }
+
+    const agentPersonas: Record<string, string> = {
+      engineer:     'Senior TypeScript/JavaScript engineer — writes clean, working code with full error handling.',
+      security:     'Security auditor — analyzes for OWASP Top 10, provides specific fixes with code examples.',
+      data_analyst: 'Data analyst — provides statistical analysis, patterns, and visualizable insights.',
+      designer:     'UI/UX designer — provides design recommendations with color codes, typography, and layout.',
+      researcher:   'Research specialist — extracts entities, compares systematically, identifies trends, gives conclusions.',
+      debugger:     'Debugger — forms 3 hypotheses, eliminates systematically, provides exact fix with code.',
+    }
+
+    const persona = agentPersonas[agentName] || agentPersonas.engineer
+
+    try {
+      const { memoryLayers } = await import('../memory/memoryLayers')
+      memoryLayers.write(`Agent ${agentName} task: ${task}`, ['agent', agentName])
+    } catch {}
+
+    return {
+      success: true,
+      output:  `Agent: ${agentName}\nPersona: ${persona}\nTask: ${task}\n\n[Specialist agent will synthesize this task in the response phase with full context]`,
+    }
   },
 
   git_commit: async (p) => {
