@@ -12,19 +12,23 @@ interface LocalModel {
   recommended: boolean
 }
 
-interface CloudProvider {
-  id: string
-  label: string
-  subtitle: string
-  url: string
-  models: string[]
-}
-
 interface OnboardingData {
   localModels:  LocalModel[]
-  cloudProviders: CloudProvider[]
+  cloudProviders: { id: string; label: string; subtitle: string; url: string; models: string[] }[]
   existingApis: { name: string; provider: string }[]
   userName?: string
+}
+
+// ── Provider metadata (mirrors page.tsx PROVIDER_INFO) ────────
+
+const PROVIDER_INFO: Record<string, {
+  label: string; color: string; freeUrl: string; defaultModel: string; models: string[]
+}> = {
+  groq:       { label:'Groq',       color:'#f55036', freeUrl:'https://console.groq.com',                   defaultModel:'llama-3.3-70b-versatile',           models:['llama-3.3-70b-versatile','llama-3.1-70b-versatile','mixtral-8x7b-32768','gemma2-9b-it'] },
+  gemini:     { label:'Gemini',     color:'#4285f4', freeUrl:'https://aistudio.google.com/app/apikey',     defaultModel:'gemini-1.5-flash',                  models:['gemini-1.5-flash','gemini-1.5-pro','gemini-2.0-flash-exp'] },
+  openrouter: { label:'OpenRouter', color:'#7c3aed', freeUrl:'https://openrouter.ai/keys',                 defaultModel:'meta-llama/llama-3.3-70b-instruct',  models:['meta-llama/llama-3.3-70b-instruct','google/gemini-flash-1.5','mistralai/mistral-7b-instruct:free'] },
+  cerebras:   { label:'Cerebras',   color:'#059669', freeUrl:'https://cloud.cerebras.ai',                  defaultModel:'llama3.1-8b',                       models:['llama3.1-8b','llama3.3-70b'] },
+  nvidia:     { label:'NVIDIA NIM', color:'#76b900', freeUrl:'https://build.nvidia.com/explore/discover',  defaultModel:'meta/llama-3.3-70b-instruct',       models:['meta/llama-3.3-70b-instruct','meta/llama-3.1-405b-instruct','mistralai/mistral-7b-instruct-v0.3'] },
 }
 
 // ── Helpers ───────────────────────────────────────────────────
@@ -43,17 +47,19 @@ const cardStyle = (selected: boolean): React.CSSProperties => ({
 // ── Onboarding component ──────────────────────────────────────
 
 export default function Onboarding({ onComplete }: { onComplete: (name: string) => void }) {
-  const [step, setStep]                       = useState(1)
-  const [name, setName]                       = useState('')
-  const [modelType, setModelType]             = useState<'local' | 'api'>('local')
-  const [selectedModel, setSelectedModel]     = useState('')
-  const [selectedProvider, setSelectedProvider] = useState('')
-  const [selectedApiModel, setSelectedApiModel] = useState('')
-  const [apiKey, setApiKey]                   = useState('')
-  const [apiName, setApiName]                 = useState('')
-  const [data, setData]                       = useState<OnboardingData | null>(null)
-  const [saving, setSaving]                   = useState(false)
-  const [showApiKey, setShowApiKey]           = useState(false)
+  const [step, setStep]               = useState(1)
+  const [name, setName]               = useState('')
+  const [modelType, setModelType]     = useState<'local' | 'api'>('local')
+  const [selectedModel, setSelectedModel] = useState('')
+  const [data, setData]               = useState<OnboardingData | null>(null)
+  const [saving, setSaving]           = useState(false)
+
+  // ── Per-provider isolated state ───────────────────────────────
+  const [providerKeys,    setProviderKeys]    = useState<Record<string, string>>({})
+  const [providerModels,  setProviderModels]  = useState<Record<string, string>>({})
+  const [validating,      setValidating]      = useState<Record<string, boolean>>({})
+  const [keyStatus,       setKeyStatus]       = useState<Record<string, 'valid'|'invalid'|'unchecked'>>({})
+  const [expandedProvider, setExpandedProvider] = useState<string|null>(null)
 
   useEffect(() => {
     fetch('http://localhost:4200/api/onboarding')
@@ -66,32 +72,78 @@ export default function Onboarding({ onComplete }: { onComplete: (name: string) 
       .catch(() => {})
   }, [])
 
+  // ── Validate a single key against the server ──────────────────
+  const validateKey = async (providerId: string, key: string) => {
+    if (!key.trim()) return
+    setValidating(prev => ({ ...prev, [providerId]: true }))
+    try {
+      const r = await fetch('http://localhost:4200/api/providers/validate', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ provider: providerId, key: key.trim() }),
+      })
+      const d = await r.json() as any
+      setKeyStatus(prev => ({ ...prev, [providerId]: d.valid ? 'valid' : 'invalid' }))
+    } catch {
+      setKeyStatus(prev => ({ ...prev, [providerId]: 'invalid' }))
+    }
+    setValidating(prev => ({ ...prev, [providerId]: false }))
+  }
+
+  // ── Save all valid keys and complete onboarding ───────────────
   const finish = async () => {
     if (!name.trim()) return
     setSaving(true)
     try {
-      const provider = data?.cloudProviders.find(p => p.id === selectedProvider)
+      // Collect all validated keys
+      const validKeys = Object.entries(providerKeys).filter(
+        ([id, key]) => key.trim() && keyStatus[id] === 'valid'
+      )
+
+      // Save each valid key to the providers pool
+      for (const [providerId, key] of validKeys) {
+        await fetch('http://localhost:4200/api/providers/add', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({
+            provider: providerId,
+            key:      key.trim(),
+            model:    providerModels[providerId] || PROVIDER_INFO[providerId]?.defaultModel,
+            name:     `${providerId}-1`,
+          }),
+        })
+      }
+
+      // Build onboarding payload
+      const payload: any = {
+        userName:  name.trim(),
+        modelType,
+        modelId:   modelType === 'local' ? selectedModel : undefined,
+      }
+
+      if (modelType === 'api' && validKeys.length > 0) {
+        const [firstProvider, firstKey] = validKeys[0]
+        payload.apiProvider = firstProvider
+        payload.apiKey      = firstKey
+        payload.apiModel    = providerModels[firstProvider] || PROVIDER_INFO[firstProvider]?.defaultModel
+        payload.apiName     = `${firstProvider}-1`
+      }
+
       await fetch('http://localhost:4200/api/onboarding', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userName:    name.trim(),
-          modelType,
-          modelId:     modelType === 'local' ? selectedModel : undefined,
-          apiProvider: selectedProvider,
-          apiKey:      apiKey.trim(),
-          apiName:     apiName.trim() || `${selectedProvider}-main`,
-          apiModel:    selectedApiModel || provider?.models[0],
-        }),
+        body:    JSON.stringify(payload),
       })
+
       onComplete(name.trim())
-    } catch { /* server offline — still complete */ onComplete(name.trim()) }
+    } catch {
+      onComplete(name.trim())
+    }
     setSaving(false)
   }
 
-  const canProceedStep2 = modelType === 'local'
-    ? !!selectedModel
-    : !!selectedProvider && !!apiKey.trim()
+  const validKeyCount = Object.values(keyStatus).filter(s => s === 'valid').length
+  const canProceedStep2 = modelType === 'local' ? !!selectedModel : validKeyCount > 0
 
   // ── Render ────────────────────────────────────────────────────
   return (
@@ -279,76 +331,123 @@ export default function Onboarding({ onComplete }: { onComplete: (name: string) 
               </div>
             )}
 
-            {/* ── CLOUD PROVIDERS ──────────────────────────────── */}
+            {/* ── CLOUD PROVIDERS — isolated per-provider state ─── */}
             {modelType === 'api' && (
-              <div style={{ display:'flex', flexDirection:'column', gap:'6px' }}>
-                {data?.cloudProviders.map(p => (
-                  <div key={p.id} onClick={() => {
-                    setSelectedProvider(p.id)
-                    setSelectedApiModel(p.models[0])
-                    setApiName(`${p.id}-main`)
-                  }} style={cardStyle(selectedProvider === p.id)}>
-                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
-                      <div>
-                        <div style={{ fontSize:'13px', fontWeight:600, marginBottom:'3px' }}>{p.label}</div>
-                        <div style={{ fontSize:'11px', fontFamily:'monospace', color:'rgba(255,255,255,0.3)' }}>
-                          {p.subtitle}
-                        </div>
-                      </div>
-                      <div style={{
-                        width:'16px', height:'16px', borderRadius:'50%',
-                        border: selectedProvider === p.id ? '5px solid #63b3ed' : '2px solid rgba(255,255,255,0.15)',
-                        transition:'all .15s', flexShrink:0, marginTop:'2px',
-                      }}/>
-                    </div>
+              <div style={{ display:'flex', flexDirection:'column', gap:'6px', maxHeight:'320px', overflowY:'auto' }}>
+                <div style={{ fontSize:'11px', fontFamily:'monospace', color:'rgba(255,255,255,0.35)',
+                  marginBottom:'4px' }}>
+                  Add keys for any providers you have. DevOS will cycle through them automatically.
+                </div>
 
-                    {selectedProvider === p.id && (
-                      <div style={{ marginTop:'12px', display:'flex', flexDirection:'column', gap:'8px' }}
-                        onClick={e => e.stopPropagation()}>
-                        {/* API key input */}
-                        <div style={{ position:'relative' }}>
-                          <input
-                            autoFocus
-                            value={apiKey}
-                            onChange={e => setApiKey(e.target.value)}
-                            placeholder={`Paste your ${p.label} API key...`}
-                            type={showApiKey ? 'text' : 'password'}
+                {Object.entries(PROVIDER_INFO).map(([id, info]) => {
+                  const key         = providerKeys[id] || ''
+                  const status      = keyStatus[id] || 'unchecked'
+                  const isValidating = validating[id]
+                  const isExpanded  = expandedProvider === id
+
+                  return (
+                    <div key={id} style={{
+                      background:'rgba(255,255,255,0.03)',
+                      border: status === 'valid'
+                        ? '1px solid rgba(34,197,94,0.35)'
+                        : status === 'invalid'
+                        ? '1px solid rgba(248,113,113,0.25)'
+                        : '1px solid rgba(255,255,255,0.08)',
+                      borderRadius:'10px', overflow:'hidden',
+                    }}>
+                      {/* Provider header — click to expand */}
+                      <div
+                        onClick={() => setExpandedProvider(isExpanded ? null : id)}
+                        style={{ display:'flex', alignItems:'center', gap:'10px',
+                          padding:'12px 14px', cursor:'pointer' }}
+                      >
+                        <div style={{ width:'7px', height:'7px', borderRadius:'50%',
+                          background: status === 'valid' ? '#22c55e' : status === 'invalid' ? '#f87171' : '#555',
+                          flexShrink:0 }}/>
+                        <span style={{ fontSize:'13px', fontWeight:600, flex:1 }}>{info.label}</span>
+                        {status === 'valid' && (
+                          <span style={{ fontSize:'10px', fontFamily:'monospace', color:'#22c55e' }}>✓ valid</span>
+                        )}
+                        {status === 'invalid' && (
+                          <span style={{ fontSize:'10px', fontFamily:'monospace', color:'#f87171' }}>✗ invalid</span>
+                        )}
+                        {isValidating && (
+                          <span style={{ fontSize:'10px', fontFamily:'monospace', color:'rgba(255,255,255,0.3)' }}>checking...</span>
+                        )}
+                        <span style={{ fontSize:'11px', color:'rgba(255,255,255,0.2)',
+                          display:'inline-block',
+                          transform: isExpanded ? 'rotate(180deg)' : 'none',
+                          transition:'transform .2s' }}>▼</span>
+                      </div>
+
+                      {/* Expanded form */}
+                      {isExpanded && (
+                        <div
+                          style={{ padding:'0 14px 14px', borderTop:'1px solid rgba(255,255,255,0.06)',
+                            paddingTop:'12px', display:'flex', flexDirection:'column', gap:'8px' }}
+                          onClick={e => e.stopPropagation()}
+                        >
+                          <a href={info.freeUrl} target="_blank" rel="noopener noreferrer"
+                            style={{ fontSize:'10px', fontFamily:'monospace', color:'#63b3ed', textDecoration:'none' }}>
+                            Get free key → {info.freeUrl.replace('https://', '')}
+                          </a>
+                          <div style={{ position:'relative' }}>
+                            <input
+                              autoFocus
+                              value={key}
+                              onChange={e => {
+                                setProviderKeys(prev => ({ ...prev, [id]: e.target.value }))
+                                setKeyStatus(prev => ({ ...prev, [id]: 'unchecked' }))
+                              }}
+                              onBlur={() => key.trim() && validateKey(id, key)}
+                              placeholder={`${info.label} API key...`}
+                              type="password"
+                              style={{
+                                width:'100%', padding:'9px 44px 9px 12px',
+                                background:'rgba(0,0,0,0.3)',
+                                border:'1px solid rgba(255,255,255,0.1)',
+                                borderRadius:'7px', color:'#e8e8e8',
+                                fontSize:'12px', fontFamily:'monospace',
+                                outline:'none', boxSizing:'border-box',
+                              }}
+                            />
+                            {/* Inline test button */}
+                            <button
+                              onClick={() => validateKey(id, key)}
+                              disabled={!key.trim() || isValidating}
+                              style={{
+                                position:'absolute', right:'6px', top:'50%',
+                                transform:'translateY(-50%)', background:'transparent',
+                                border:'none', cursor: key.trim() ? 'pointer' : 'default',
+                                fontSize:'11px', fontFamily:'monospace',
+                                color: status === 'valid' ? '#22c55e' : status === 'invalid' ? '#f87171' : 'rgba(255,255,255,0.3)',
+                              }}
+                            >
+                              {isValidating ? '...' : status === 'valid' ? '✓' : status === 'invalid' ? '✗' : 'test'}
+                            </button>
+                          </div>
+                          <select
+                            value={providerModels[id] || info.defaultModel}
+                            onChange={e => setProviderModels(prev => ({ ...prev, [id]: e.target.value }))}
                             style={{
-                              width:'100%', padding:'9px 40px 9px 12px',
+                              padding:'7px 10px',
                               background:'rgba(0,0,0,0.3)',
                               border:'1px solid rgba(255,255,255,0.1)',
                               borderRadius:'7px', color:'#e8e8e8',
-                              fontSize:'12px', fontFamily:'monospace',
-                              outline:'none', boxSizing:'border-box',
+                              fontSize:'12px', fontFamily:'monospace', outline:'none',
                             }}
-                          />
-                          <button onClick={() => setShowApiKey(!showApiKey)} style={{
-                            position:'absolute', right:'8px', top:'50%', transform:'translateY(-50%)',
-                            background:'transparent', border:'none', cursor:'pointer',
-                            color:'rgba(255,255,255,0.3)', fontSize:'11px', fontFamily:'monospace',
-                          }}>{showApiKey ? 'hide' : 'show'}</button>
+                          >
+                            {info.models.map(m => <option key={m} value={m}>{m}</option>)}
+                          </select>
                         </div>
-                        {/* Get key link */}
-                        <a href={p.url} target="_blank" rel="noopener noreferrer"
-                          style={{ fontSize:'10px', fontFamily:'monospace', color:'#63b3ed', textDecoration:'none' }}>
-                          Get free API key → {p.url.replace('https://', '')}
-                        </a>
-                        {/* Model selector */}
-                        <select value={selectedApiModel} onChange={e => setSelectedApiModel(e.target.value)} style={{
-                          padding:'8px 10px',
-                          background:'rgba(0,0,0,0.3)',
-                          border:'1px solid rgba(255,255,255,0.1)',
-                          borderRadius:'7px', color:'#e8e8e8',
-                          fontSize:'12px', fontFamily:'monospace', outline:'none',
-                        }}>
-                          {p.models.map(m => (
-                            <option key={m} value={m}>{m}</option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-                  </div>
-                ))}
+                      )}
+                    </div>
+                  )
+                })}
+
+                <div style={{ fontSize:'10px', fontFamily:'monospace', color:'rgba(255,255,255,0.2)', marginTop:'4px' }}>
+                  {validKeyCount} valid key{validKeyCount !== 1 ? 's' : ''} added · DevOS auto-routes between them
+                </div>
               </div>
             )}
 
@@ -398,14 +497,23 @@ export default function Onboarding({ onComplete }: { onComplete: (name: string) 
                 {
                   label: 'Brain',
                   value: modelType === 'local'
-                    ? (data?.localModels.find(m => m.id === selectedModel)?.label || selectedModel)
-                    : `${selectedProvider} · ${selectedApiModel}`,
+                    ? (data?.localModels.find(m => m.id === selectedModel)?.label || selectedModel || 'Not selected')
+                    : `${validKeyCount} API key${validKeyCount !== 1 ? 's' : ''} configured`,
+                },
+                {
+                  label: 'Providers',
+                  value: modelType === 'api'
+                    ? (Object.entries(keyStatus)
+                        .filter(([, s]) => s === 'valid')
+                        .map(([id]) => PROVIDER_INFO[id]?.label || id)
+                        .join(', ') || 'None validated')
+                    : 'Ollama (local)',
                 },
                 {
                   label: 'Mode',
                   value: modelType === 'local'
                     ? '⚡ Local — data stays on your machine'
-                    : '☁ Cloud API',
+                    : '☁ Cloud API — auto-routing enabled',
                 },
               ].map(item => (
                 <div key={item.label} style={{

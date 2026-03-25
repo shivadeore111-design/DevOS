@@ -105,6 +105,7 @@ export default function Home() {
     { id:'3', agent:'Memory Agent', message:'Warm layer near capacity',          type:'thinking', time:'3m ago'   },
   ])
   const [model, setModel]           = useState('mistral:7b')
+  const [activeModel, setActiveModel] = useState('')
 
   // ── Settings state ───────────────────────────────────────────
   const [providers, setProviders]         = useState<any[]>([])
@@ -162,14 +163,23 @@ export default function Home() {
     } catch {}
   }, [])
 
-  // ── Read active model name ──────────────────────────────────
+  // ── Read active model + config ──────────────────────────────
   useEffect(() => {
-    fetch('http://localhost:4200/api/onboarding')
+    fetch('http://localhost:4200/api/config')
       .then(r => r.json())
       .then((d: any) => {
-        if (d?.activeModel?.activeModel) setModel(d.activeModel.activeModel)
+        if (d?.activeModel) { setModel(d.activeModel); setActiveModel(d.activeModel) }
+        if (d?.userName && d.userName !== 'there') setUserName(d.userName)
       })
-      .catch(() => {})
+      .catch(() => {
+        // Fallback to onboarding endpoint
+        fetch('http://localhost:4200/api/onboarding')
+          .then(r => r.json())
+          .then((d: any) => {
+            if (d?.activeModel?.activeModel) { setModel(d.activeModel.activeModel); setActiveModel(d.activeModel.activeModel) }
+          })
+          .catch(() => {})
+      })
   }, [])
 
   // ── Load providers when Settings tab opens ──────────────────
@@ -453,6 +463,14 @@ export default function Home() {
             {apiStatus === 'online' ? `${providers.filter(p => p.enabled && !p.rateLimited).length || '0'} APIs live` : 'server offline'}
           </span>
         </div>
+        {activeModel && (
+          <span style={{
+            fontSize:'10px', fontFamily:'monospace',
+            color:'rgba(255,255,255,0.2)', marginLeft:'8px',
+          }}>
+            {activeModel}
+          </span>
+        )}
 
         {/* Tabs */}
         <div style={{ display:'flex', gap:'4px', marginLeft:'16px' }}>

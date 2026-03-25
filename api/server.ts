@@ -37,6 +37,44 @@ import { loadConfig, saveConfig, APIEntry } from '../providers/index'
 import { ollamaProvider } from '../providers/ollama'
 import { getSmartProvider, markRateLimited, incrementUsage } from '../providers/router'
 
+// ── Web search helper ─────────────────────────────────────────
+
+async function webSearch(query: string): Promise<string> {
+  // Try DuckDuckGo instant answer API first
+  try {
+    const ddg = await fetch(
+      `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`,
+      { headers: { 'User-Agent': 'DevOS/1.0' }, signal: AbortSignal.timeout(8000) }
+    )
+    const data = await ddg.json() as any
+    const results: string[] = []
+    if (data.Abstract)           results.push(data.Abstract)
+    if (data.Answer)             results.push(`Answer: ${data.Answer}`)
+    if (data.RelatedTopics?.length) {
+      data.RelatedTopics.slice(0, 3).forEach((t: any) => {
+        if (t.Text) results.push(t.Text)
+      })
+    }
+    if (results.length) return results.join('\n\n')
+  } catch {}
+
+  // Fallback — fetch DuckDuckGo HTML and extract text snippets
+  try {
+    const res = await fetch(
+      `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
+      { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(8000) }
+    )
+    const html = await res.text()
+    const snippets = html.match(/class="result__snippet"[^>]*>([^<]{20,300})</g)
+      ?.slice(0, 5)
+      .map(s => s.replace(/class="result__snippet"[^>]*>/, '').trim())
+      .filter(Boolean) || []
+    if (snippets.length) return snippets.join('\n\n')
+  } catch {}
+
+  return ''
+}
+
 // ── App factory ───────────────────────────────────────────────
 
 export function createApiServer(): Express {
@@ -114,18 +152,19 @@ export function createApiServer(): Express {
       } catch { /* fall through to chat if executionLoop unavailable */ }
     }
 
-    // ── Search intent → web context via Jina reader ──────────────
+    // ── Search intent → web context via DuckDuckGo ───────────────
     let webContext = ''
     if (intent === 'search') {
       try {
-        res.write(`data: ${JSON.stringify({ token: '_Searching the web..._\n\n', done: false })}\n\n`)
-        const searchRes = await fetch(`https://r.jina.ai/${encodeURIComponent(message)}`, {
-          headers: { 'Accept': 'text/plain' },
-        })
-        const text = await searchRes.text()
-        webContext = `\n\nWeb search results for "${message}":\n${text.slice(0, 1500)}`
+        res.write(`data: ${JSON.stringify({ token: '*Searching the web...*\n\n', done: false })}\n\n`)
+        const results = await webSearch(message)
+        if (results) {
+          webContext = `\n\nReal web search results for "${message}":\n${results}\n\nUse ONLY this data to answer. Do not guess or make up information.`
+        } else {
+          webContext = '\n\n[Web search returned no results — say so honestly]'
+        }
       } catch {
-        webContext = '\n\n[Web search unavailable]'
+        webContext = '\n\n[Web search failed — say so honestly]'
       }
     }
 
@@ -359,6 +398,103 @@ IMPORTANT RULES:
     config.model = { active: active || 'ollama', activeModel: activeModel || 'mistral:7b' }
     saveConfig(config)
     res.json({ success: true })
+  })
+
+  // GET /api/config — current active model + user info
+  app.get('/api/config', (_req: Request, res: Response) => {
+    const config = loadConfig()
+    res.json({
+      userName:            config.user.name,
+      activeModel:         config.model.activeModel,
+      activeProvider:      config.model.active,
+      onboardingComplete:  config.onboardingComplete,
+      routing:             config.routing,
+    })
+  })
+
+  // POST /api/providers/validate — test an API key without saving it
+  app.post('/api/providers/validate', async (req: Request, res: Response) => {
+    const { provider, key, model } = req.body as { provider?: string; key?: string; model?: string }
+    if (!provider || !key) { res.status(400).json({ valid: false, error: 'Missing provider or key' }); return }
+
+    const testMessages = [{ role: 'user', content: 'Say "ok" in one word only.' }]
+    const testModel    = model || getDefaultModel(provider)
+
+    try {
+      let valid = false
+      let error = ''
+
+      switch (provider) {
+        case 'groq': {
+          const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+            body:    JSON.stringify({ model: testModel, messages: testMessages, max_tokens: 5 }),
+            signal:  AbortSignal.timeout(8000),
+          })
+          valid = r.ok
+          if (!r.ok) error = `${r.status}: ${await r.text()}`
+          break
+        }
+        case 'gemini': {
+          const r = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`,
+            {
+              method:  'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body:    JSON.stringify({ contents: [{ parts: [{ text: 'Say ok' }] }] }),
+              signal:  AbortSignal.timeout(8000),
+            }
+          )
+          valid = r.ok
+          if (!r.ok) error = `${r.status}: ${await r.text()}`
+          break
+        }
+        case 'openrouter': {
+          const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method:  'POST',
+            headers: {
+              'Content-Type': 'application/json', 'Authorization': `Bearer ${key}`,
+              'HTTP-Referer': 'http://localhost:3000', 'X-Title': 'DevOS',
+            },
+            body:   JSON.stringify({ model: 'meta-llama/llama-3.2-1b-instruct:free', messages: testMessages, max_tokens: 5 }),
+            signal: AbortSignal.timeout(8000),
+          })
+          valid = r.ok
+          if (!r.ok) error = `${r.status}: ${await r.text()}`
+          break
+        }
+        case 'cerebras': {
+          const r = await fetch('https://api.cerebras.ai/v1/chat/completions', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+            body:    JSON.stringify({ model: 'llama3.1-8b', messages: testMessages, max_tokens: 5 }),
+            signal:  AbortSignal.timeout(8000),
+          })
+          valid = r.ok
+          if (!r.ok) error = `${r.status}: ${await r.text()}`
+          break
+        }
+        case 'nvidia': {
+          const r = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+            body:    JSON.stringify({ model: 'meta/llama-3.2-1b-instruct', messages: testMessages, max_tokens: 5 }),
+            signal:  AbortSignal.timeout(8000),
+          })
+          valid = r.ok
+          if (!r.ok) error = `${r.status}: ${await r.text()}`
+          break
+        }
+        default:
+          valid = false
+          error = 'Unknown provider'
+      }
+
+      res.json({ valid, error: valid ? null : error })
+    } catch (err: any) {
+      res.json({ valid: false, error: err.message })
+    }
   })
 
   // POST /api/goals — start execution loop async
