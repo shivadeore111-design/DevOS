@@ -40,36 +40,45 @@ import { getSmartProvider, markRateLimited, incrementUsage } from '../providers/
 // ── Web search helper ─────────────────────────────────────────
 
 async function webSearch(query: string): Promise<string> {
-  // Try DuckDuckGo instant answer API first
+  // 1. DuckDuckGo Instant Answer API
   try {
-    const ddg = await fetch(
-      `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`,
-      { headers: { 'User-Agent': 'DevOS/1.0' }, signal: AbortSignal.timeout(8000) }
+    const r = await fetch(
+      `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&no_redirect=1`,
+      { signal: AbortSignal.timeout(6000) }
     )
-    const data = await ddg.json() as any
-    const results: string[] = []
-    if (data.Abstract)           results.push(data.Abstract)
-    if (data.Answer)             results.push(`Answer: ${data.Answer}`)
-    if (data.RelatedTopics?.length) {
-      data.RelatedTopics.slice(0, 3).forEach((t: any) => {
-        if (t.Text) results.push(t.Text)
-      })
+    const d = await r.json() as any
+    const parts: string[] = []
+    if (d.Answer)  parts.push(d.Answer)
+    if (d.Abstract) parts.push(d.Abstract)
+    if (d.RelatedTopics?.length) {
+      d.RelatedTopics.slice(0, 3).forEach((t: any) => { if (t.Text) parts.push(t.Text) })
     }
-    if (results.length) return results.join('\n\n')
+    if (parts.length) return parts.join('\n\n')
   } catch {}
 
-  // Fallback — fetch DuckDuckGo HTML and extract text snippets
+  // 2. wttr.in for weather queries
+  const isWeather = /weather|temperature|forecast|rain|sunny|cloudy|wind/i.test(query)
+  if (isWeather) {
+    try {
+      const city = query.replace(/weather|in|today|current|forecast/gi, '').trim()
+      const r = await fetch(
+        `https://wttr.in/${encodeURIComponent(city)}?format=4`,
+        { signal: AbortSignal.timeout(6000) }
+      )
+      const text = await r.text()
+      if (text && !text.includes('Unknown')) return `Current weather: ${text}`
+    } catch {}
+  }
+
+  // 3. Wikipedia summary for factual queries
   try {
-    const res = await fetch(
-      `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
-      { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(8000) }
+    const searchTerm = query.split(' ').slice(0, 4).join(' ')
+    const r = await fetch(
+      `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(searchTerm)}`,
+      { signal: AbortSignal.timeout(6000) }
     )
-    const html = await res.text()
-    const snippets = html.match(/class="result__snippet"[^>]*>([^<]{20,300})</g)
-      ?.slice(0, 5)
-      .map(s => s.replace(/class="result__snippet"[^>]*>/, '').trim())
-      .filter(Boolean) || []
-    if (snippets.length) return snippets.join('\n\n')
+    const d = await r.json() as any
+    if (d.extract) return d.extract.slice(0, 600)
   } catch {}
 
   return ''
@@ -159,9 +168,12 @@ export function createApiServer(): Express {
         res.write(`data: ${JSON.stringify({ token: '*Searching the web...*\n\n', done: false })}\n\n`)
         const results = await webSearch(message)
         if (results) {
-          webContext = `\n\nReal web search results for "${message}":\n${results}\n\nUse ONLY this data to answer. Do not guess or make up information.`
+          webContext = `\n\n[REAL WEB DATA - use this to answer, do not make up information]:
+${results}
+
+IMPORTANT: Answer using ONLY the above real data. If the data doesn't fully answer the question, say what you found and what you couldn't find. Never guess.`
         } else {
-          webContext = '\n\n[Web search returned no results — say so honestly]'
+          webContext = '\n\n[Web search returned no results. Tell the user honestly you could not find current information and suggest they check the source directly.]'
         }
       } catch {
         webContext = '\n\n[Web search failed — say so honestly]'
