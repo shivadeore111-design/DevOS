@@ -5,20 +5,23 @@ import Onboarding from '../components/Onboarding'
 
 // ── Types ────────────────────────────────────────────────────
 
-interface Message {
-  role:       'user' | 'devos'
-  content:    string
-  time:       string
-  streaming?: boolean
-  provider?:  string
+interface ActivityItem {
+  icon:     string
+  agent:    string
+  message:  string
+  style:    'act' | 'done' | 'error' | 'warn' | 'info' | 'thinking' | 'tool'
+  tool?:    string
+  command?: string
+  output?:  string
 }
 
-interface AgentEvent {
-  id:      string
-  agent:   string
-  message: string
-  type:    'thinking' | 'acting' | 'done' | 'error'
-  time:    string
+interface Message {
+  role:         'user' | 'devos'
+  content:      string
+  time:         string
+  streaming?:   boolean
+  provider?:    string
+  activities?:  ActivityItem[]
 }
 
 type Tab = 'chat' | 'settings'
@@ -70,6 +73,55 @@ function Cursor() {
   )
 }
 
+// ── ActivityLog component ─────────────────────────────────────
+
+const STYLE_COLORS: Record<string, string> = {
+  act:      '#f97316',
+  done:     '#22c55e',
+  error:    '#f87171',
+  warn:     '#fbbf24',
+  info:     '#60a5fa',
+  thinking: '#a78bfa',
+  tool:     '#34d399',
+}
+
+function ActivityLog({ items }: { items: ActivityItem[] }) {
+  if (!items.length) return null
+  return (
+    <div style={{ marginBottom:'10px', display:'flex', flexDirection:'column', gap:'3px' }}>
+      {items.map((item, i) => (
+        <div key={i} style={{
+          display:'flex', alignItems:'flex-start', gap:'8px',
+          background:'rgba(255,255,255,0.025)',
+          border:`1px solid ${STYLE_COLORS[item.style] ?? '#888'}22`,
+          borderRadius:'7px', padding:'6px 10px',
+        }}>
+          <span style={{ fontSize:'13px', lineHeight:'1.4', flexShrink:0 }}>{item.icon}</span>
+          <div style={{ flex:1, minWidth:0 }}>
+            <span style={{
+              fontSize:'10px', fontFamily:'monospace', fontWeight:600,
+              color: STYLE_COLORS[item.style] ?? 'rgba(255,255,255,0.4)',
+              marginRight:'6px',
+            }}>{item.agent}</span>
+            <span style={{
+              fontSize:'11px', fontFamily:'monospace',
+              color:'rgba(255,255,255,0.55)',
+              overflowWrap:'break-word', wordBreak:'break-all',
+            }}>{item.message}</span>
+            {item.output && (
+              <div style={{
+                marginTop:'3px', fontSize:'10px', fontFamily:'monospace',
+                color:'rgba(255,255,255,0.3)', paddingLeft:'2px',
+                overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
+              }}>→ {item.output.slice(0, 100)}</div>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ── Main component ────────────────────────────────────────────
 
 export default function Home() {
@@ -99,11 +151,6 @@ export default function Home() {
   const [input, setInput]           = useState('')
   const [streaming, setStreaming]   = useState(false)
   const [apiStatus, setApiStatus]   = useState<'online'|'offline'>('offline')
-  const [agentEvents, setAgentEvents] = useState<AgentEvent[]>([
-    { id:'1', agent:'CEO Agent',    message:'Goal logged: Dashboard redesign',  type:'done',     time:'just now' },
-    { id:'2', agent:'Dev Agent',    message:'ts-node compile running...',        type:'acting',   time:'1m ago'   },
-    { id:'3', agent:'Memory Agent', message:'Warm layer near capacity',          type:'thinking', time:'3m ago'   },
-  ])
   const [model, setModel]           = useState('mistral:7b')
   const [activeModel, setActiveModel] = useState('')
 
@@ -142,26 +189,6 @@ export default function Home() {
     return () => clearInterval(iv)
   }, [])
 
-  // ── SSE agent events ────────────────────────────────────────
-  useEffect(() => {
-    try {
-      const es = new EventSource('http://localhost:4200/api/stream')
-      es.onmessage = (e) => {
-        try {
-          const data = JSON.parse(e.data)
-          if (data.type === 'ping') return
-          setAgentEvents(prev => [{
-            id:      Date.now().toString(),
-            agent:   data.agent    || 'DevOS',
-            message: data.message  || '',
-            type:    data.eventType || 'acting',
-            time:    'just now',
-          }, ...prev].slice(0, 10))
-        } catch {}
-      }
-      return () => es.close()
-    } catch {}
-  }, [])
 
   // ── Read active model + config ──────────────────────────────
   useEffect(() => {
@@ -326,6 +353,21 @@ export default function Home() {
               })
               break
             }
+            // Structured activity event from execute intent
+            if (payload.activity) {
+              const item = payload.activity as ActivityItem
+              setMessages(prev => {
+                const next = [...prev]
+                const last = next[next.length - 1]
+                next[next.length - 1] = {
+                  ...last,
+                  activities: [...(last.activities || []), item],
+                  streaming: !payload.done,
+                  provider: payload.done ? (payload.provider || last.provider) : last.provider,
+                }
+                return next
+              })
+            }
             if (payload.token) {
               full += payload.token
               setMessages(prev => {
@@ -334,7 +376,7 @@ export default function Home() {
                 return next
               })
             }
-            if (payload.done) {
+            if (payload.done && !payload.activity) {
               setMessages(prev => {
                 const next = [...prev]
                 next[next.length - 1] = {
@@ -388,11 +430,6 @@ export default function Home() {
     setHistory([])
     localStorage.removeItem('devos_chat')
     localStorage.removeItem('devos_history')
-  }
-
-  // ── Colours ──────────────────────────────────────────────────
-  const dotColor: Record<string, string> = {
-    thinking: '#60a5fa', acting: '#f97316', done: '#22c55e', error: '#f87171',
   }
 
   // ── Loading splash ────────────────────────────────────────────
@@ -726,7 +763,7 @@ export default function Home() {
 
             {/* About */}
             <div style={{ fontSize:'11px', fontFamily:'monospace', color:'rgba(255,255,255,0.2)', textAlign:'center', paddingBottom:'8px' }}>
-              © 2026 Shiva Deore · DevOS v1.0 · Sprint 30
+              © 2026 Shiva Deore · DevOS v1.0 · Sprint 34
             </div>
 
           </div>
@@ -792,9 +829,15 @@ export default function Home() {
                   }} className={msg.role === 'devos' ? 'msg-bubble' : ''}>
                     {msg.role === 'devos'
                       ? <>
+                          {/* Inline activity log — shown for execute intent responses */}
+                          {msg.activities && msg.activities.length > 0 && (
+                            <ActivityLog items={msg.activities} />
+                          )}
                           {msg.content
                             ? <ReactMarkdown>{msg.content}</ReactMarkdown>
-                            : <span style={{ color:'rgba(255,255,255,0.25)', fontSize:'13px' }}>thinking…</span>
+                            : (!msg.activities || msg.activities.length === 0)
+                              ? <span style={{ color:'rgba(255,255,255,0.25)', fontSize:'13px' }}>thinking…</span>
+                              : null
                           }
                           {msg.streaming && <Cursor />}
                           {!msg.streaming && msg.provider && (
@@ -812,26 +855,6 @@ export default function Home() {
                 </div>
               ))}
 
-              {/* Agent Activity */}
-              {agentEvents.length > 0 && messages.length > 0 && (
-                <div style={{ marginTop:'8px' }}>
-                  <div style={{ fontSize:'9px', fontFamily:'monospace', color:'rgba(255,255,255,0.2)', textTransform:'uppercase', letterSpacing:'.1em', marginBottom:'6px' }}>Agent Activity</div>
-                  <div style={{ display:'flex', flexDirection:'column', gap:'4px' }}>
-                    {agentEvents.slice(0, 3).map(ev => (
-                      <div key={ev.id} style={{
-                        display:'flex', alignItems:'center', gap:'10px',
-                        background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.05)',
-                        borderRadius:'8px', padding:'8px 12px',
-                      }}>
-                        <div style={{ width:'6px', height:'6px', borderRadius:'50%', background: dotColor[ev.type] || '#888', flexShrink:0 }}/>
-                        <span style={{ fontSize:'12px', fontWeight:600, minWidth:'100px', flexShrink:0 }}>{ev.agent}</span>
-                        <span style={{ fontSize:'11px', color:'rgba(255,255,255,0.4)', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{ev.message}</span>
-                        <span style={{ fontSize:'10px', fontFamily:'monospace', color:'rgba(255,255,255,0.2)', flexShrink:0 }}>{ev.time}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
 
               {/* Scroll anchor */}
               <div ref={bottomRef} style={{ height:'8px' }} />

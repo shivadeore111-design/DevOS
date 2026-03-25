@@ -148,40 +148,78 @@ export function createApiServer(): Express {
     if (intent === 'execute') {
       try {
         const { runGoalLoop } = await import('../core/executionLoop')
-        const { livePulse }   = await import('../coordination/livePulse')
+        const { livePulse: lp } = await import('../coordination/livePulse')
 
-        res.write(`data: ${JSON.stringify({ token: '🎯 Starting execution...\n\n', done: false })}\n\n`)
+        // Fire a structured "started" activity
+        res.write(`data: ${JSON.stringify({
+          activity: { icon: '🎯', agent: 'CEO', message: 'Starting execution…', style: 'act' },
+          done: false,
+        })}\n\n`)
 
-        const onAct = (agent: string, msg: string) => {
-          res.write(`data: ${JSON.stringify({ token: `**${agent}:** ${msg}\n`, done: false })}\n\n`)
+        // Map PulseEventType → icon + style for the UI
+        const ICONS: Record<string, string> = {
+          act:      '⚙️',
+          done:     '✅',
+          error:    '❌',
+          warn:     '⚠️',
+          info:     'ℹ️',
+          thinking: '💭',
+          tool:     '🔧',
         }
-        const onDone = (agent: string, msg: string) => {
-          res.write(`data: ${JSON.stringify({ token: `**${agent}:** ${msg}\n`, done: false })}\n\n`)
-        }
-        const onErr = (agent: string, msg: string) => {
-          res.write(`data: ${JSON.stringify({ token: `❌ **${agent}:** ${msg}\n`, done: false })}\n\n`)
+        const STYLES: Record<string, string> = {
+          act:      'act',
+          done:     'done',
+          error:    'error',
+          warn:     'warn',
+          info:     'info',
+          thinking: 'thinking',
+          tool:     'tool',
         }
 
-        livePulse.on('act',   onAct)
-        livePulse.on('done',  onDone)
-        livePulse.on('error', onErr)
+        const onAny = (event: any) => {
+          try {
+            res.write(`data: ${JSON.stringify({
+              activity: {
+                icon:    ICONS[event.type]  ?? '⚙️',
+                agent:   event.agent,
+                message: event.message,
+                style:   STYLES[event.type] ?? 'act',
+                tool:    event.tool,
+                command: event.command,
+                output:  event.output,
+              },
+              done: false,
+            })}\n\n`)
+          } catch { /* response may be closed */ }
+        }
+
+        lp.on('any', onAny)
 
         try {
           const result = await runGoalLoop(message)
           const emoji  = result.success ? '✅' : '⚠️'
-          res.write(`data: ${JSON.stringify({ token: `\n${emoji} ${result.summary}`, done: false })}\n\n`)
-          res.write(`data: ${JSON.stringify({ done: true, provider: 'devos-executor' })}\n\n`)
+          // Final summary activity
+          res.write(`data: ${JSON.stringify({
+            activity: {
+              icon:    emoji,
+              agent:   'CEO',
+              message: result.summary,
+              style:   result.success ? 'done' : 'warn',
+            },
+            done: true,
+            provider: 'devos-executor',
+          })}\n\n`)
         } finally {
-          livePulse.off('act',   onAct)
-          livePulse.off('done',  onDone)
-          livePulse.off('error', onErr)
+          lp.off('any', onAny)
         }
 
         res.end()
         return
       } catch (err: any) {
-        res.write(`data: ${JSON.stringify({ token: `❌ Execution error: ${err.message}`, done: false })}\n\n`)
-        res.write(`data: ${JSON.stringify({ done: true })}\n\n`)
+        res.write(`data: ${JSON.stringify({
+          activity: { icon: '❌', agent: 'CEO', message: `Execution error: ${err.message}`, style: 'error' },
+          done: true,
+        })}\n\n`)
         res.end()
         return
       }

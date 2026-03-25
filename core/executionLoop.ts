@@ -188,7 +188,11 @@ export async function runGoalLoop(goal: string): Promise<{ success: boolean; sum
     if (!nextStep) { plan.complete = true; break }
 
     nextStep.status = 'running'
-    livePulse.act('Engineer', `${nextStep.skill}: ${nextStep.description}`)
+
+    // Emit thinking before we run — lets UI show "planning this step"
+    livePulse.thinking('CEO', `Next: ${nextStep.description}`)
+    // Emit tool event so UI knows exactly what will run
+    livePulse.tool('Engineer', nextStep.skill, nextStep.command)
 
     const stepStart   = Date.now()
     let stepResult:   any
@@ -221,25 +225,30 @@ export async function runGoalLoop(goal: string): Promise<{ success: boolean; sum
         if (verified) {
           nextStep.status = 'done'
           nextStep.result = execResult
-          livePulse.done('Engineer', `✓ ${nextStep.description}`)
+          const toolOutput = typeof execResult.data === 'string'
+            ? execResult.data.slice(0, 120)
+            : undefined
+          // Emit tool event with output so UI can show result
+          livePulse.tool('Engineer', nextStep.skill, nextStep.command, toolOutput)
+          livePulse.done('Engineer', `${nextStep.description}${toolOutput ? ` → ${toolOutput}` : ''}`)
         } else {
           stepSuccess = false
           stepError   = 'TruthCheck failed'
           // Log fault classification for diagnostics
           faultEngine.classify(stepError)
           nextStep.status = 'failed'
-          livePulse.error('Engineer', `✗ ${nextStep.description}: TruthCheck failed`)
+          livePulse.error('Engineer', `${nextStep.description}: TruthCheck failed`)
         }
       } else {
         nextStep.status = 'failed'
         stepError       = (execResult.error as any)?.message
-        livePulse.error('Engineer', `✗ ${nextStep.description}: ${stepError}`)
+        livePulse.error('Engineer', `${nextStep.description}: ${stepError}`)
       }
     } catch (err: any) {
       nextStep.status = 'failed'
       stepError       = err.message
       stepSuccess     = false
-      livePulse.error('Engineer', `✗ ${nextStep.skill} threw: ${err.message}`)
+      livePulse.error('Engineer', `${nextStep.skill} threw: ${err.message}`)
     }
 
     // Record step in evolution report

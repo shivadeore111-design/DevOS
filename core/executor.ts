@@ -11,11 +11,6 @@
 //   api_call  → APIRegistry (API-first, BrowserVault UI fallback)
 //   all others → ScreenAgent (mouse/keyboard/screenshot)
 
-import { exec }   from 'child_process'
-import { promisify } from 'util'
-import * as fs   from 'fs'
-import * as path from 'path'
-
 import { ComputerUseAction, ApiCallAction } from '../types/computerUse'
 import {
   ExecutorResult,
@@ -28,113 +23,7 @@ import { apiRegistry } from '../integrations/computerUse/apiRegistry'
 import { faultEngine } from './faultEngine'
 import { truthCheck }  from './truthCheck'
 import { memoryLayers } from '../memory/memoryLayers'
-
-const execAsync = promisify(exec)
-
-// ── Real tool execution ───────────────────────────────────────
-
-async function runTool(
-  type: string,
-  payload: any,
-): Promise<{ success: boolean; output: string; error?: string }> {
-  try {
-    switch (type) {
-
-      case 'shell_exec': {
-        const cmd = payload.command || payload.cmd || ''
-        if (!cmd) return { success: false, output: '', error: 'No command provided' }
-        const { stdout, stderr } = await execAsync(cmd, {
-          shell:   'powershell.exe',
-          timeout: 30000,
-          cwd:     process.cwd(),
-        })
-        return { success: true, output: stdout || stderr }
-      }
-
-      case 'file_write': {
-        const filePath = payload.path || payload.file || ''
-        const content  = payload.content || payload.command || ''
-        if (!filePath) return { success: false, output: '', error: 'No path provided' }
-        const resolved = filePath.startsWith('C:') ? filePath : path.join(process.cwd(), filePath)
-        fs.mkdirSync(path.dirname(resolved), { recursive: true })
-        fs.writeFileSync(resolved, content, 'utf-8')
-        return { success: true, output: `File written: ${resolved}` }
-      }
-
-      case 'file_read': {
-        const filePath = payload.path || payload.file || ''
-        if (!filePath) return { success: false, output: '', error: 'No path provided' }
-        const resolved = filePath.startsWith('C:') ? filePath : path.join(process.cwd(), filePath)
-        const content  = fs.readFileSync(resolved, 'utf-8')
-        return { success: true, output: content.slice(0, 2000) }
-      }
-
-      case 'run_python': {
-        const script  = payload.script || payload.command || ''
-        const tmpFile = path.join(process.cwd(), 'workspace', `tmp_${Date.now()}.py`)
-        fs.mkdirSync(path.dirname(tmpFile), { recursive: true })
-        fs.writeFileSync(tmpFile, script)
-        const { stdout, stderr } = await execAsync(`python "${tmpFile}"`, { timeout: 30000 })
-        fs.unlinkSync(tmpFile)
-        return { success: true, output: stdout || stderr }
-      }
-
-      case 'run_node': {
-        const script  = payload.script || payload.command || ''
-        const tmpFile = path.join(process.cwd(), 'workspace', `tmp_${Date.now()}.js`)
-        fs.mkdirSync(path.dirname(tmpFile), { recursive: true })
-        fs.writeFileSync(tmpFile, script)
-        const { stdout, stderr } = await execAsync(`node "${tmpFile}"`, { timeout: 30000 })
-        fs.unlinkSync(tmpFile)
-        return { success: true, output: stdout || stderr }
-      }
-
-      case 'open_browser': {
-        const url = payload.url || payload.command || 'https://google.com'
-        await execAsync(`Start-Process "${url}"`, { shell: 'powershell.exe' })
-        return { success: true, output: `Opened: ${url}` }
-      }
-
-      case 'notify': {
-        const msg = (payload.message || payload.command || '').replace(/'/g, '')
-        await execAsync(
-          `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show('${msg}', 'DevOS')`,
-          { shell: 'powershell.exe' }
-        )
-        return { success: true, output: `Notification sent: ${msg}` }
-      }
-
-      case 'system_info': {
-        const { stdout } = await execAsync(
-          'Get-ComputerInfo | Select-Object CsName, OsName, TotalPhysicalMemory | ConvertTo-Json',
-          { shell: 'powershell.exe', timeout: 10000 }
-        )
-        return { success: true, output: stdout }
-      }
-
-      case 'web_search': {
-        const query = payload.query || payload.command || ''
-        await execAsync(
-          `Start-Process "https://google.com/search?q=${encodeURIComponent(query)}"`,
-          { shell: 'powershell.exe' }
-        )
-        return { success: true, output: `Searched: ${query}` }
-      }
-
-      default: {
-        // Fallback — try running as shell command
-        const cmd = payload.command || ''
-        if (cmd) {
-          const { stdout, stderr } = await execAsync(cmd, { shell: 'powershell.exe', timeout: 30000 })
-          return { success: true, output: stdout || stderr }
-        }
-        return { success: false, output: '', error: `Unknown tool: ${type}` }
-      }
-    }
-  } catch (err: any) {
-    return { success: false, output: '', error: err.message }
-  }
-}
+import { executeTool }  from './toolRegistry'
 
 // ── Executor ──────────────────────────────────────────────────
 
@@ -305,10 +194,10 @@ class Executor {
         return screenAgent.execute(action)
 
       default: {
-        // Real tool execution for DevOS skills
+        // Real tool execution via centralized toolRegistry
         const a       = action as any
         const payload = a.payload || { command: a.command || a.description }
-        const result  = await runTool(a.type, payload)
+        const result  = await executeTool(a.type, payload)
         if (!result.success) throw new Error(result.error || 'Tool execution failed')
         return result.output
       }
