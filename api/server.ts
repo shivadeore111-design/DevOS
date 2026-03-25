@@ -37,7 +37,8 @@ import { loadConfig, saveConfig, APIEntry } from '../providers/index'
 import { ollamaProvider } from '../providers/ollama'
 import { getSmartProvider, markRateLimited, incrementUsage } from '../providers/router'
 import { executeTool } from '../core/toolRegistry'
-import type { ToolDefinition, ToolCall } from '../providers/types'
+import { planWithLLM, executePlan, respondWithResults } from '../core/agentLoop'
+import type { AgentPlan, StepResult } from '../core/agentLoop'
 
 // ── App factory ───────────────────────────────────────────────
 
@@ -72,47 +73,7 @@ export function createApiServer(): Express {
     res.json({ status: 'ok', version: '1.0.0', timestamp: new Date().toISOString() })
   })
 
-  // ── Intent detection (sync) ───────────────────────────────────
-  function detectIntent(message: string): 'chat' | 'execute' {
-    const lower = message.toLowerCase().trim()
-
-    // Short messages and questions always go to chat
-    if (lower.split(' ').length < 4) return 'chat'
-    if (/\?$/.test(lower))           return 'chat'
-    if (/^(hi|hello|hey|thanks|thank you|ok|okay|got it|nice|cool|great|what|who|why|when|where|how|is |are |can you tell|do you|did you|tell me|explain|describe)/.test(lower)) return 'chat'
-
-    // Clear action commands go to execute
-    if (/^(open |launch |start |run |execute |create |make |build |write |delete |move |copy |install |deploy |download |search for |go to |navigate to |find me |show me |give me |send |close |kill |restart )/.test(lower)) return 'execute'
-
-    return 'chat'
-  }
-
-  // ── DevOS tool definitions ────────────────────────────────────
-
-  const DEVOS_TOOLS: ToolDefinition[] = [
-    { name: 'open_browser',      description: 'Open a URL in a real Chromium browser window',                     parameters: { type: 'object', properties: { url: { type: 'string', description: 'Full URL including https://' } }, required: ['url'] } },
-    { name: 'browser_extract',   description: 'Extract all text from the currently open browser page',            parameters: { type: 'object', properties: {} } },
-    { name: 'browser_click',     description: 'Click an element on the current browser page',                     parameters: { type: 'object', properties: { selector: { type: 'string', description: 'CSS selector or visible text' } }, required: ['selector'] } },
-    { name: 'browser_type',      description: 'Type text into an input field on the current page',                parameters: { type: 'object', properties: { selector: { type: 'string', description: 'CSS selector of input' }, text: { type: 'string', description: 'Text to type' } }, required: ['selector', 'text'] } },
-    { name: 'browser_screenshot', description: 'Take a screenshot of the current browser page',                   parameters: { type: 'object', properties: {} } },
-    { name: 'shell_exec',        description: 'Run a PowerShell command on Windows and get real output',          parameters: { type: 'object', properties: { command: { type: 'string', description: 'PowerShell command' } }, required: ['command'] } },
-    { name: 'file_write',        description: 'Create or overwrite a file with content',                          parameters: { type: 'object', properties: { path: { type: 'string', description: 'Full path e.g. C:\\Users\\shiva\\Desktop\\test.txt' }, content: { type: 'string', description: 'File content' } }, required: ['path', 'content'] } },
-    { name: 'file_read',         description: 'Read a file and return its contents',                              parameters: { type: 'object', properties: { path: { type: 'string', description: 'Full file path' } }, required: ['path'] } },
-    { name: 'file_list',         description: 'List files in a directory',                                        parameters: { type: 'object', properties: { path: { type: 'string', description: 'Directory path' } } } },
-    { name: 'run_python',        description: 'Write and run a Python script, returns stdout output',             parameters: { type: 'object', properties: { script: { type: 'string', description: 'Python code to run' } }, required: ['script'] } },
-    { name: 'run_node',          description: 'Write and run a Node.js script, returns stdout output',            parameters: { type: 'object', properties: { script: { type: 'string', description: 'JavaScript code to run' } }, required: ['script'] } },
-    { name: 'web_search',        description: 'Search the web and return real results. Use for weather, news, current info.', parameters: { type: 'object', properties: { query: { type: 'string', description: 'Search query' } }, required: ['query'] } },
-    { name: 'fetch_url',         description: 'Fetch and return text content from a URL',                         parameters: { type: 'object', properties: { url: { type: 'string', description: 'URL to fetch' } }, required: ['url'] } },
-    { name: 'system_info',       description: 'Get real system info — CPU, RAM, disk space, OS, username',        parameters: { type: 'object', properties: {} } },
-    { name: 'notify',            description: 'Send a Windows desktop toast notification',                        parameters: { type: 'object', properties: { message: { type: 'string', description: 'Notification message' } }, required: ['message'] } },
-  ]
-
-  // ── Icons / styles for activity SSE events ────────────────────
-  const ACTIVITY_ICONS: Record<string, string> = {
-    act: '⚙️', done: '✅', error: '❌', warn: '⚠️', info: 'ℹ️', thinking: '💭', tool: '🔧',
-  }
-
-  // POST /api/chat — function calling loop + SSE streaming
+  // POST /api/chat — 3-step agent loop: PLAN → EXECUTE → RESPOND
   app.post('/api/chat', async (req: Request, res: Response) => {
     const { message, history = [] } = req.body as {
       message?: string; history?: { role: string; content: string }[]
@@ -129,145 +90,99 @@ export function createApiServer(): Express {
       try { res.write(`data: ${JSON.stringify(data)}\n\n`) } catch {}
     }
 
-    let attempt   = 0
+    let attempt = 0
     const MAX_RETRIES = 3
 
     while (attempt < MAX_RETRIES) {
       attempt++
       const { provider, model, userName, apiName } = getSmartProvider()
 
-      const systemPrompt = `You are Aiden — a personal AI OS running on ${userName}'s Windows machine. You are calm, direct, capable, and slightly witty. You speak like a trusted co-founder.
-
-You have REAL tools. When asked to DO something, call the appropriate tool — do not describe doing it, actually do it.
-
-RULES:
-- Use open_browser to open websites — it uses real Chromium, not just a command
-- Use web_search for weather, news, current prices, anything that needs live data
-- Use shell_exec for PowerShell commands — you get the real stdout back
-- Use file_write/file_read for files — you get confirmation it was written
-- Use system_info to get real CPU/RAM/disk info
-- After a tool runs you see the REAL output — report it accurately
-- Never claim you did something if the tool failed
-- For simple chat/questions, just respond naturally without tools
-- Be concise. 1-3 sentences for simple answers.
-
-Current date: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}`
+      // Resolve raw API key and provider type for agentLoop functions
+      const config       = loadConfig()
+      const apiEntry     = config.providers.apis.find(a => a.name === apiName)
+      const rawKey       = apiEntry
+        ? (apiEntry.key.startsWith('env:')
+            ? process.env[apiEntry.key.replace('env:', '')] || ''
+            : apiEntry.key)
+        : ''
+      const providerName = apiEntry?.provider || (apiName === 'ollama' ? 'ollama' : 'ollama')
 
       try {
-        const conversationMessages = [
-          { role: 'system', content: systemPrompt },
-          ...history.slice(-8),
-          { role: 'user', content: message },
-        ]
+        // ── STEP 1: PLAN ─────────────────────────────────────────
+        send({
+          activity: { icon: '💭', agent: 'Aiden', message: 'Planning...', style: 'thinking' },
+          done: false,
+        })
 
-        // ── PATH 1: Function calling (Groq, Gemini) ───────────────
-        if (provider.generateWithTools) {
-          let   currentMessages = [...conversationMessages]
-          const MAX_ITER        = 6
-          let   iteration       = 0
+        const plan: AgentPlan = await planWithLLM(message, history, rawKey, model, providerName)
 
-          while (iteration < MAX_ITER) {
-            iteration++
-
-            const { content, toolCalls } = await provider.generateWithTools(
-              currentMessages, model, DEVOS_TOOLS
-            )
-
-            if (!toolCalls.length) {
-              // Final answer — stream word by word
-              if (content) {
-                const words = content.split(' ')
-                for (const word of words) {
-                  send({ token: word + ' ', done: false, provider: apiName })
-                  await new Promise(r => setTimeout(r, 12))
-                }
-              }
-              incrementUsage(apiName)
-              send({ done: true, provider: apiName })
-              res.end()
-              memoryLayers.write(`User: ${message}`, ['chat'])
-              return
+        if (!plan.requires_execution) {
+          // Pure chat / knowledge question
+          if (plan.direct_response) {
+            // LLM already answered in the plan — stream it word-by-word
+            const words = plan.direct_response.split(' ')
+            for (const word of words) {
+              send({ token: word + ' ', done: false, provider: apiName })
+              await new Promise(r => setTimeout(r, 10))
             }
-
-            // Execute each tool call for real
-            for (const tc of toolCalls) {
-              send({
-                activity: {
-                  icon:    '🔧',
-                  agent:   'Aiden',
-                  message: `${tc.name}(${JSON.stringify(tc.arguments).slice(0, 100)})`,
-                  style:   'tool',
-                },
-                done: false,
-              })
-
-              const result = await executeTool(tc.name, tc.arguments)
-
-              send({
-                activity: {
-                  icon:    result.success ? '✅' : '❌',
-                  agent:   'Aiden',
-                  message: (result.success ? result.output : result.error || 'failed').slice(0, 160),
-                  style:   result.success ? 'done' : 'error',
-                },
-                done: false,
-              })
-
-              // Feed result back to LLM as user message
-              currentMessages = [
-                ...currentMessages,
-                { role: 'assistant', content: content || `Calling ${tc.name}` },
-                {
-                  role: 'user',
-                  content: `Tool ${tc.name} result: ${
-                    result.success ? result.output.slice(0, 800) : 'FAILED: ' + result.error
-                  }`,
-                },
-              ]
-            }
+          } else {
+            // No direct response — stream via provider normally
+            const sysPrompt = `You are Aiden — a personal AI OS running on ${userName}'s Windows machine. You are calm, direct, capable, and slightly witty. You speak like a trusted co-founder.
+Current date: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+Be concise. 1-3 sentences for simple answers.`
+            const msgs = [
+              { role: 'system', content: sysPrompt },
+              ...history.slice(-8),
+              { role: 'user', content: message },
+            ]
+            await provider.generateStream(msgs, model, (token) => {
+              send({ token, done: false, provider: apiName })
+            })
           }
-
-          // Max iterations hit — just send done
           incrementUsage(apiName)
           send({ done: true, provider: apiName })
           res.end()
+          memoryLayers.write(`User: ${message}`, ['chat'])
           return
         }
 
-        // ── PATH 2: No function calling (Ollama / fallback) ───────
-        // Pre-fetch web data if the query looks like it needs live info
-        const needsSearch = /weather|news|latest|current|today|price|stock|score/i.test(message)
-        let webContext     = ''
-        if (needsSearch) {
+        // Show plan steps as activity events
+        for (const step of plan.steps) {
           send({
-            activity: { icon: '🔍', agent: 'Aiden', message: 'Searching the web...', style: 'act' },
+            activity: {
+              icon: '📋', agent: 'Aiden',
+              message: `Plan: ${step.description}`,
+              style: 'act',
+            },
             done: false,
           })
-          try {
-            const result = await executeTool('web_search', { query: message })
-            if (result.success && result.output) {
-              webContext = `\n\nReal search results:\n${result.output}\n\nAnswer using ONLY this data. Do not make up information.`
-            }
-          } catch {}
         }
 
-        const msgs = [
-          { role: 'system', content: systemPrompt + webContext },
-          ...history.slice(-8),
-          { role: 'user', content: message },
-        ]
-
-        let streamEnded = false
-        const streamTimeout = setTimeout(() => {
-          if (!streamEnded) { send({ done: true, error: 'Response timed out — try again' }); res.end() }
-        }, 30000)
-
-        await provider.generateStream(msgs, model, (token) => {
-          send({ token, done: false, provider: apiName })
+        // ── STEP 2: EXECUTE ──────────────────────────────────────
+        const results: StepResult[] = await executePlan(plan, (result) => {
+          send({
+            activity: {
+              icon:    result.success ? '✅' : '❌',
+              agent:   'Aiden',
+              message: `${result.tool}: ${(result.success ? result.output : result.error || 'failed').slice(0, 180)}`,
+              style:   result.success ? 'done' : 'error',
+            },
+            done: false,
+          })
         })
 
-        streamEnded = true
-        clearTimeout(streamTimeout)
+        // ── STEP 3: RESPOND ──────────────────────────────────────
+        send({
+          activity: { icon: '✍️', agent: 'Aiden', message: 'Writing response...', style: 'thinking' },
+          done: false,
+        })
+
+        await respondWithResults(
+          message, plan, results, history,
+          userName, rawKey, model, providerName,
+          (token) => { send({ token, done: false, provider: apiName }) },
+        )
+
         incrementUsage(apiName)
         send({ done: true, provider: apiName })
         res.end()

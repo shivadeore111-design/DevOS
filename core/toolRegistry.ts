@@ -40,14 +40,28 @@ export const TOOLS: Record<string, (payload: any) => Promise<ToolResult>> = {
   open_browser: async (p) => {
     const url = p.url || p.command || ''
     if (!url) return { success: false, output: '', error: 'No URL provided' }
+    // Try Playwright first, fall back to PowerShell Start-Process
     try {
-      const browser  = await getBrowser()
-      const context  = await browser.newContext()
-      const page     = await context.newPage()
+      const browser    = await getBrowser()
+      const context    = await browser.newContext()
+      const page       = await context.newPage()
       await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 })
-      const title = await page.title()
-      return { success: true, output: `Opened: ${url} — Page title: "${title}"` }
-    } catch (e: any) { return { success: false, output: '', error: e.message } }
+      const title      = await page.title()
+      const currentUrl = page.url()
+      return { success: true, output: `Opened: ${url} — Title: "${title}" — URL: ${currentUrl}` }
+    } catch (playwrightErr: any) {
+      // PowerShell fallback — opens in default Windows browser
+      try {
+        const safeUrl = url.replace(/'/g, '%27').replace(/"/g, '%22')
+        await execAsync(
+          `powershell.exe -WindowStyle Hidden -Command "Start-Process '${safeUrl}'"`,
+          { timeout: 8000 },
+        )
+        return { success: true, output: `Opened in default browser: ${url}` }
+      } catch (psErr: any) {
+        return { success: false, output: '', error: `Playwright: ${playwrightErr.message} | PowerShell: ${psErr.message}` }
+      }
+    }
   },
 
   browser_screenshot: async () => {
@@ -222,25 +236,51 @@ export const TOOLS: Record<string, (payload: any) => Promise<ToolResult>> = {
     const query = p.query || p.command || ''
     if (!query) return { success: false, output: '', error: 'No query' }
     try {
-      // 1. DuckDuckGo instant answers
-      const res  = await fetch(
+      // 1. Rich weather via wttr.in JSON API (format=j1)
+      if (/weather|temperature|forecast|rain|snow|sunny|cloudy|humidity|wind/i.test(query)) {
+        const city = query
+          .replace(/weather|temperature|forecast|rain|snow|sunny|cloudy|humidity|wind|in|today|current|for|the/gi, '')
+          .trim() || 'auto'
+        try {
+          const wr   = await fetch(
+            `https://wttr.in/${encodeURIComponent(city)}?format=j1`,
+            { signal: AbortSignal.timeout(8000) },
+          )
+          const data = await wr.json() as any
+          const cc   = data.current_condition?.[0]
+          const area = data.nearest_area?.[0]
+          if (cc && area) {
+            const location = [area.areaName?.[0]?.value, area.country?.[0]?.value].filter(Boolean).join(', ')
+            const desc     = cc.weatherDesc?.[0]?.value || ''
+            let out = `Weather for ${location || city}:\n`
+            out    += `Condition: ${desc}\n`
+            out    += `Temperature: ${cc.temp_C}°C / ${cc.temp_F}°F (feels like ${cc.FeelsLikeC}°C)\n`
+            out    += `Humidity: ${cc.humidity}% | Wind: ${cc.windspeedKmph} km/h ${cc.winddir16Point}`
+            out    += ` | Visibility: ${cc.visibility} km | UV Index: ${cc.uvIndex}\n`
+            const forecasts = (data.weather || []).slice(0, 3) as any[]
+            if (forecasts.length) {
+              out += '\n3-Day Forecast:\n'
+              for (const day of forecasts) {
+                const midDesc = day.hourly?.[4]?.weatherDesc?.[0]?.value || ''
+                out += `  ${day.date}: High ${day.maxtempC}°C / Low ${day.mintempC}°C${midDesc ? ' — ' + midDesc : ''}\n`
+              }
+            }
+            return { success: true, output: out.trim() }
+          }
+        } catch {}
+      }
+
+      // 2. DuckDuckGo instant answers
+      const res   = await fetch(
         `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1`,
-        { signal: AbortSignal.timeout(8000) }
+        { signal: AbortSignal.timeout(8000) },
       )
-      const data = await res.json() as any
+      const data  = await res.json() as any
       const parts = [
         data.Answer,
         data.Abstract,
         ...(data.RelatedTopics || []).slice(0, 3).map((t: any) => t.Text),
       ].filter(Boolean)
-
-      // 2. Weather fallback
-      if (!parts.length && /weather/i.test(query)) {
-        const city = query.replace(/weather|in|today|current|forecast/gi, '').trim()
-        const wr   = await fetch(`https://wttr.in/${encodeURIComponent(city)}?format=4`, { signal: AbortSignal.timeout(6000) })
-        const wt   = await wr.text()
-        if (wt && !wt.includes('Unknown')) return { success: true, output: wt }
-      }
 
       // 3. Wikipedia fallback
       if (!parts.length) {
@@ -248,7 +288,7 @@ export const TOOLS: Record<string, (payload: any) => Promise<ToolResult>> = {
           const searchTerm = query.split(' ').slice(0, 4).join(' ')
           const wr = await fetch(
             `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(searchTerm)}`,
-            { signal: AbortSignal.timeout(6000) }
+            { signal: AbortSignal.timeout(6000) },
           )
           const wd = await wr.json() as any
           if (wd.extract) return { success: true, output: wd.extract.slice(0, 600) }
@@ -257,9 +297,9 @@ export const TOOLS: Record<string, (payload: any) => Promise<ToolResult>> = {
 
       // Also open browser to DuckDuckGo in background
       try {
-        const browser  = await getBrowser()
-        const context  = await browser.newContext()
-        const page     = await context.newPage()
+        const browser = await getBrowser()
+        const context = await browser.newContext()
+        const page    = await context.newPage()
         await page.goto(`https://duckduckgo.com/?q=${encodeURIComponent(query)}`, { timeout: 10000 })
       } catch {}
 
