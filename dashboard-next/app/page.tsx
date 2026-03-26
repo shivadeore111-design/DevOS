@@ -128,6 +128,16 @@ export default function Home() {
   const [onboardingDone, setOnboardingDone] = useState<boolean | null>(null)
   const [userName, setUserName]             = useState('there')
 
+  // ── Session ID — persists across refreshes of this tab, new tab = new session ──
+  const [sessionId] = useState<string>(() => {
+    if (typeof window === 'undefined') return `session_${Date.now()}`
+    const stored = sessionStorage.getItem('devos_session')
+    if (stored) return stored
+    const newId = `session_${Date.now()}`
+    sessionStorage.setItem('devos_session', newId)
+    return newId
+  })
+
   // ── Check onboarding status on mount ─────────────────────────
   useEffect(() => {
     fetch('http://localhost:4200/api/onboarding')
@@ -333,7 +343,7 @@ export default function Home() {
       const r = await fetch('http://localhost:4200/api/chat', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ message: msg, history: newHistory.slice(-10), mode: execMode }),
+        body:    JSON.stringify({ message: msg, history: newHistory.slice(-10), mode: execMode, sessionId }),
         signal:  controller.signal,
       })
 

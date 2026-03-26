@@ -15,6 +15,7 @@ import type { Phase }                      from './planTool'
 import { WorkspaceMemory }                 from './workspaceMemory'
 import { taskStateManager, TaskState }     from './taskState'
 import { skillLoader }                     from './skillLoader'
+import { learningMemory }                  from './learningMemory'
 import * as nodeFs             from 'fs'
 import * as nodePath           from 'path'
 import * as nodeOs             from 'os'
@@ -242,6 +243,10 @@ export async function planWithLLM(
     ? `\n\nCONVERSATION MEMORY (use to resolve references like "that file", "the report", "it"):\n${memoryContext}\n\nWhen the user says "that file", "the report", "the script" etc., use the paths/queries above to resolve them into concrete values in your plan inputs.\n`
     : ''
 
+  // Build learning context — past experiences with similar tasks
+  const learningCtx     = learningMemory.buildLearningContext(message)
+  const learningSection = learningCtx ? `\n${learningCtx}\n` : ''
+
   const plannerPrompt = `You are DevOS Planner. Analyze the user request and output a JSON plan.
 
 CRITICAL RULES:
@@ -289,7 +294,7 @@ OUTPUT FORMAT (strict JSON only):
 
 If requires_execution is false:
 { "goal": "...", "requires_execution": false, "reasoning": "...", "plan": [] }
-${skillContext}${memorySection}
+${skillContext}${memorySection}${learningSection}
 Output ONLY valid JSON, nothing else:`
 
   const messages = [
@@ -373,6 +378,7 @@ export async function executePlan(
 
   const results:     StepResult[]           = []
   const stepOutputs: Record<number, string> = {}
+  const planStart    = Date.now()
 
   // Workspace memory for persisting intermediate artifacts
   const workspace = plan.planId ? new WorkspaceMemory(plan.planId) : null
@@ -551,6 +557,24 @@ export async function executePlan(
     const failed = results.filter(r => !r.success).map(r => r.tool).join(', ')
     taskStateManager.fail(state, failed ? `Steps failed: ${failed}` : 'Incomplete execution')
   }
+
+  // Record experience for self-learning
+  const filesCreatedInPlan = results
+    .filter(r => r.tool === 'file_write' && r.success && r.input?.path)
+    .map(r => r.input.path as string)
+    .filter(Boolean)
+
+  learningMemory.record({
+    task:         plan.goal,
+    success:      allSucceeded,
+    steps:        results.map(r => r.tool),
+    duration:     Date.now() - planStart,
+    tokenUsage:   state.tokenUsage,
+    filesCreated: filesCreatedInPlan,
+    errorMessage: !allSucceeded
+      ? results.find(r => !r.success)?.error
+      : undefined,
+  })
 
   return results
 }

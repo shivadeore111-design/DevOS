@@ -47,6 +47,7 @@ import { skillLoader }                                  from '../core/skillLoade
 import { conversationMemory }                           from '../core/conversationMemory'
 import { semanticMemory }                               from '../core/semanticMemory'
 import { entityGraph }                                  from '../core/entityGraph'
+import { learningMemory }                               from '../core/learningMemory'
 
 // ── App factory ───────────────────────────────────────────────
 
@@ -84,12 +85,16 @@ export function createApiServer(): Express {
   // POST /api/chat — PLAN → EXECUTE → RESPOND with mode support
   // mode: 'auto' (default) | 'plan' (show plan only) | 'chat' (force chat, skip planner)
   app.post('/api/chat', async (req: Request, res: Response) => {
-    const { message, history = [], mode = 'auto' } = req.body as {
-      message?: string
-      history?: { role: string; content: string }[]
-      mode?:    'auto' | 'plan' | 'chat'
+    const { message, history = [], mode = 'auto', sessionId } = req.body as {
+      message?:   string
+      history?:   { role: string; content: string }[]
+      mode?:      'auto' | 'plan' | 'chat'
+      sessionId?: string
     }
     if (!message) { res.status(400).json({ error: 'message required' }); return }
+
+    // Switch to the caller's session before any memory operations
+    if (sessionId) conversationMemory.setSession(sessionId)
 
     res.setHeader('Content-Type',  'text/event-stream')
     res.setHeader('Cache-Control', 'no-cache')
@@ -730,6 +735,20 @@ export function createApiServer(): Express {
         frequent: entityGraph.getFrequent(10),
       })
     }
+  })
+
+  // GET /api/memory/learning?q=query — learning stats or similar past experiences
+  app.get('/api/memory/learning', (req: Request, res: Response) => {
+    const query = req.query.q as string
+    res.json({
+      stats:   learningMemory.getStats(),
+      similar: query ? learningMemory.findSimilar(query) : [],
+    })
+  })
+
+  // GET /api/memory/sessions — list all session IDs
+  app.get('/api/memory/sessions', (_req: Request, res: Response) => {
+    res.json({ sessions: conversationMemory.getSessions() })
   })
 
   // ── 404 catch-all ─────────────────────────────────────────────
