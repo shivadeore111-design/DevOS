@@ -218,11 +218,12 @@ function inferPhasesFromSteps(
 // ── STEP 1: planWithLLM ────────────────────────────────────────
 
 export async function planWithLLM(
-  message:      string,
-  history:      { role: string; content: string }[],
-  apiKey:       string,
-  model:        string,
-  provider:     string,
+  message:       string,
+  history:       { role: string; content: string }[],
+  apiKey:        string,
+  model:         string,
+  provider:      string,
+  memoryContext?: string,
 ): Promise<AgentPlan> {
 
   const ALLOWED_TOOLS = [
@@ -235,6 +236,11 @@ export async function planWithLLM(
   // Load any relevant skills to guide planning
   const relevantSkills = skillLoader.findRelevant(message)
   const skillContext   = skillLoader.formatForPrompt(relevantSkills)
+
+  // Build memory section — inject when available
+  const memorySection = memoryContext && memoryContext.trim()
+    ? `\n\nCONVERSATION MEMORY (use to resolve references like "that file", "the report", "it"):\n${memoryContext}\n\nWhen the user says "that file", "the report", "the script" etc., use the paths/queries above to resolve them into concrete values in your plan inputs.\n`
+    : ''
 
   const plannerPrompt = `You are DevOS Planner. Analyze the user request and output a JSON plan.
 
@@ -283,7 +289,7 @@ OUTPUT FORMAT (strict JSON only):
 
 If requires_execution is false:
 { "goal": "...", "requires_execution": false, "reasoning": "...", "plan": [] }
-${skillContext}
+${skillContext}${memorySection}
 Output ONLY valid JSON, nothing else:`
 
   const messages = [

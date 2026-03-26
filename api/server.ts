@@ -44,6 +44,7 @@ import type { Phase }                                   from '../core/planTool'
 import { taskStateManager }                             from '../core/taskState'
 import { recoverTasks }                                 from '../core/taskRecovery'
 import { skillLoader }                                  from '../core/skillLoader'
+import { conversationMemory }                           from '../core/conversationMemory'
 
 // ── App factory ───────────────────────────────────────────────
 
@@ -110,20 +111,25 @@ export function createApiServer(): Express {
     const activeModel  = apiEntry?.model || model
 
     try {
+      // ── RESOLVE REFERENCES & RECORD USER TURN ────────────────
+      const resolvedMessage = conversationMemory.addUserMessage(message)
+      conversationMemory.recordUserTurn(resolvedMessage)
+
       // ── FORCE CHAT MODE ──────────────────────────────────────
       if (mode === 'chat') {
-        await streamChat(message, history, userName, provider, activeModel, apiName, send)
+        await streamChat(resolvedMessage, history, userName, provider, activeModel, apiName, send)
         incrementUsage(apiName)
         send({ done: true, provider: apiName })
         res.end()
-        memoryLayers.write(`User: ${message}`, ['chat'])
+        memoryLayers.write(`User: ${resolvedMessage}`, ['chat'])
         return
       }
 
       // ── STEP 1: PLAN ─────────────────────────────────────────
       send({ activity: { icon: '🧠', agent: 'Aiden', message: 'Thinking...', style: 'thinking' }, done: false })
 
-      const plan: AgentPlan = await planWithLLM(message, history, rawKey, activeModel, providerName)
+      const memoryContext = conversationMemory.buildContext()
+      const plan: AgentPlan = await planWithLLM(resolvedMessage, history, rawKey, activeModel, providerName, memoryContext)
 
       // ── PLAN-ONLY MODE ───────────────────────────────────────
       if (mode === 'plan') {
@@ -142,19 +148,22 @@ export function createApiServer(): Express {
 
       // ── NO EXECUTION NEEDED — PURE CHAT ─────────────────────
       if (!plan.requires_execution || plan.plan.length === 0) {
+        let fullReply = ''
         if (plan.direct_response) {
+          fullReply = plan.direct_response
           const words = plan.direct_response.split(' ')
           for (const word of words) {
             send({ token: word + ' ', done: false, provider: apiName })
             await new Promise(r => setTimeout(r, 10))
           }
         } else {
-          await streamChat(message, history, userName, provider, activeModel, apiName, send)
+          await streamChat(resolvedMessage, history, userName, provider, activeModel, apiName, send)
         }
         incrementUsage(apiName)
         send({ done: true, provider: apiName })
         res.end()
-        memoryLayers.write(`User: ${message}`, ['chat'])
+        memoryLayers.write(`User: ${resolvedMessage}`, ['chat'])
+        if (fullReply) conversationMemory.addAssistantMessage(fullReply)
         return
       }
 
@@ -209,22 +218,39 @@ export function createApiServer(): Express {
       send({ activity: { icon: '✍️', agent: 'Aiden', message: 'Writing response...', style: 'thinking' }, done: false })
 
       let streamEnded = false
+      let fullReply   = ''
       const timeout = setTimeout(() => {
         if (!streamEnded) { send({ done: true, error: 'Response timed out' }); res.end() }
       }, 30000)
 
       await respondWithResults(
-        message, plan, results, history,
+        resolvedMessage, plan, results, history,
         userName, rawKey, activeModel, providerName,
-        (token) => { send({ token, done: false, provider: apiName }) },
+        (token) => {
+          fullReply += token
+          send({ token, done: false, provider: apiName })
+        },
       )
 
       streamEnded = true
       clearTimeout(timeout)
+
+      // ── UPDATE CONVERSATION MEMORY ───────────────────────────
+      const toolsUsed     = results.map(r => r.tool)
+      const filesCreated  = results
+        .filter(r => r.tool === 'file_write' && r.success && r.input?.path)
+        .map(r => r.input.path as string)
+      const searchQueries = results
+        .filter(r => (r.tool === 'web_search' || r.tool === 'deep_research') && r.input?.query)
+        .map(r => r.input.query as string)
+
+      conversationMemory.updateFromExecution(toolsUsed, filesCreated, searchQueries, plan.planId)
+      conversationMemory.addAssistantMessage(fullReply, { toolsUsed, filesCreated, searchQueries, planId: plan.planId })
+
       incrementUsage(apiName)
       send({ done: true, provider: apiName })
       res.end()
-      memoryLayers.write(`User: ${message}`, ['chat'])
+      memoryLayers.write(`User: ${resolvedMessage}`, ['chat'])
 
     } catch (err: any) {
       const is429 = err.message?.includes('429') || err.message?.toLowerCase().includes('rate')
@@ -664,6 +690,20 @@ export function createApiServer(): Express {
 
     recoverTasks().catch(() => {})
     res.json({ success: true, message: `Retrying task ${req.params.id}` })
+  })
+
+  // GET /api/memory — return current conversation facts and recent history
+  app.get('/api/memory', (_req: Request, res: Response) => {
+    res.json({
+      facts:         conversationMemory.getFacts(),
+      recentHistory: conversationMemory.getRecentHistory(),
+    })
+  })
+
+  // DELETE /api/memory — clear all conversation memory
+  app.delete('/api/memory', (_req: Request, res: Response) => {
+    conversationMemory.clear()
+    res.json({ success: true, message: 'Conversation memory cleared' })
   })
 
   // ── 404 catch-all ─────────────────────────────────────────────

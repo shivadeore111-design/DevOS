@@ -440,6 +440,7 @@ export default function Home() {
     setHistory([])
     localStorage.removeItem('devos_chat')
     localStorage.removeItem('devos_history')
+    fetch('http://localhost:4200/api/memory', { method: 'DELETE' }).catch(() => {})
   }
 
   // ── Loading splash ────────────────────────────────────────────
