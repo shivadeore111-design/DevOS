@@ -17,7 +17,7 @@ import { taskStateManager, TaskState }     from './taskState'
 import { skillLoader }                     from './skillLoader'
 import { learningMemory }                  from './learningMemory'
 import { conversationMemory }             from './conversationMemory'
-import { getNextAvailableAPI }            from '../providers/router'
+import { getNextAvailableAPI, markRateLimited, incrementUsage } from '../providers/router'
 import * as nodeFs             from 'fs'
 import * as nodePath           from 'path'
 import * as nodeOs             from 'os'
@@ -323,18 +323,33 @@ Output ONLY valid JSON, nothing else:`
       )
 
       if (!raw || raw.trim().length === 0) {
-        console.warn(`[Planner] Empty response attempt ${attempt + 1} (${curProvider}) — rotating`)
+        console.warn(`[Planner] Empty response attempt ${attempt + 1} (${curProvider}) — marking and rotating`)
+        try {
+          markRateLimited(curProvider)
+        } catch {}
       } else {
         const jsonMatch = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').match(/\{[\s\S]*\}/)
         if (!jsonMatch) {
           console.warn(`[Planner] No JSON attempt ${attempt + 1}: ${raw.slice(0, 100)}`)
         } else {
           parsed = JSON.parse(jsonMatch[0])
+          try { incrementUsage(curProvider) } catch {}
           break // success — exit retry loop
         }
       }
     } catch (e: any) {
       console.warn(`[Planner] Attempt ${attempt + 1} error (${curProvider}): ${e.message}`)
+      if (
+        e.message?.includes('timeout') ||
+        e.message?.includes('429') ||
+        e.message?.includes('rate') ||
+        e.message?.includes('aborted')
+      ) {
+        try {
+          markRateLimited(curProvider)
+          console.log(`[Planner] Marked ${curProvider} as rate limited — will rotate away`)
+        } catch {}
+      }
     }
 
     // Wait before next attempt — helps with rate-limit recovery
@@ -749,57 +764,76 @@ export async function respondWithResults(
     { role: 'user',   content: userContent },
   ]
 
-  if (providerName === 'gemini') {
-    const contents = messages
-      .filter(m => m.role !== 'system')
-      .map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }))
-    const system = messages.find(m => m.role === 'system')?.content
+  try {
+    if (providerName === 'gemini') {
+      const contents = messages
+        .filter(m => m.role !== 'system')
+        .map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }))
+      const system = messages.find(m => m.role === 'system')?.content
 
-    const r = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`,
-      {
+      const r = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`,
+        {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents,
+            systemInstruction: system ? { parts: [{ text: system }] } : undefined,
+          }),
+        },
+      )
+      if (!r.ok) {
+        const errText = await r.text().catch(() => '')
+        if (r.status === 429) { try { markRateLimited(providerName) } catch {} }
+        throw new Error(`Responder ${r.status}: ${errText}`)
+      }
+      await streamGeminiResponse(r, onToken)
+
+    } else if (providerName === 'ollama') {
+      const r = await fetch('http://localhost:11434/api/chat', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents,
-          systemInstruction: system ? { parts: [{ text: system }] } : undefined,
-        }),
-      },
-    )
-    await streamGeminiResponse(r, onToken)
+        body: JSON.stringify({ model, stream: true, messages }),
+      })
+      if (!r.body) return
+      const reader  = (r.body as any).getReader()
+      const decoder = new TextDecoder()
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        const line = decoder.decode(value)
+        try {
+          const parsed = JSON.parse(line) as any
+          if (parsed?.message?.content) onToken(parsed.message.content)
+        } catch {}
+      }
 
-  } else if (providerName === 'ollama') {
-    const r = await fetch('http://localhost:11434/api/chat', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model, stream: true, messages }),
-    })
-    if (!r.body) return
-    const reader  = (r.body as any).getReader()
-    const decoder = new TextDecoder()
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      const line = decoder.decode(value)
-      try {
-        const parsed = JSON.parse(line) as any
-        if (parsed?.message?.content) onToken(parsed.message.content)
-      } catch {}
+    } else {
+      // OpenAI-compatible
+      const url = OPENAI_COMPAT_ENDPOINTS[providerName] || OPENAI_COMPAT_ENDPOINTS.groq
+      const r   = await fetch(url, {
+        method:  'POST',
+        headers: buildHeaders(providerName, apiKey),
+        body: JSON.stringify({ model, messages, stream: true }),
+      })
+      if (!r.ok) {
+        const errText = await r.text().catch(() => '')
+        if (r.status === 429) { try { markRateLimited(providerName) } catch {} }
+        throw new Error(`Responder ${r.status}: ${errText}`)
+      }
+      await streamOpenAIResponse(r, onToken)
     }
-
-  } else {
-    // OpenAI-compatible
-    const url = OPENAI_COMPAT_ENDPOINTS[providerName] || OPENAI_COMPAT_ENDPOINTS.groq
-    const r   = await fetch(url, {
-      method:  'POST',
-      headers: buildHeaders(providerName, apiKey),
-      body: JSON.stringify({ model, messages, stream: true }),
-    })
-    if (!r.ok) {
-      const err = await r.text()
-      throw new Error(`Responder ${r.status}: ${err}`)
+  } catch (e: any) {
+    console.error('[Responder] Error:', e.message)
+    if (
+      e.message?.includes('timeout') ||
+      e.message?.includes('429') ||
+      e.message?.includes('rate') ||
+      e.message?.includes('aborted')
+    ) {
+      try { markRateLimited(providerName) } catch {}
     }
-    await streamOpenAIResponse(r, onToken)
+    onToken('\n\nI encountered an error generating a response. Please try again.')
   }
 }
 
@@ -823,9 +857,16 @@ async function callLLM(
             contents: [{ role: 'user', parts: [{ text: prompt }] }],
             generationConfig: { maxOutputTokens: 2000 },
           }),
-          signal: AbortSignal.timeout(30000),
+          signal: AbortSignal.timeout(12000),
         },
       )
+      if (r.status === 429) {
+        try { markRateLimited(providerName) } catch {}
+        throw new Error(`Rate limited (429): ${providerName}`)
+      }
+      if (!r.ok) {
+        throw new Error(`HTTP ${r.status} from ${providerName}`)
+      }
       const d = await r.json() as any
       return d?.candidates?.[0]?.content?.parts?.[0]?.text || ''
 
@@ -834,8 +875,15 @@ async function callLLM(
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: model || 'mistral:7b', stream: false, messages }),
-        signal: AbortSignal.timeout(30000),
+        signal: AbortSignal.timeout(12000),
       })
+      if (r.status === 429) {
+        try { markRateLimited(providerName) } catch {}
+        throw new Error(`Rate limited (429): ${providerName}`)
+      }
+      if (!r.ok) {
+        throw new Error(`HTTP ${r.status} from ${providerName}`)
+      }
       const d = await r.json() as any
       return d?.message?.content || ''
 
@@ -847,8 +895,15 @@ async function callLLM(
         method:  'POST',
         headers,
         body: JSON.stringify({ model, messages, stream: false, max_tokens: 2000 }),
-        signal: AbortSignal.timeout(30000),
+        signal: AbortSignal.timeout(12000),
       })
+      if (r.status === 429) {
+        try { markRateLimited(providerName) } catch {}
+        throw new Error(`Rate limited (429): ${providerName}`)
+      }
+      if (!r.ok) {
+        throw new Error(`HTTP ${r.status} from ${providerName}`)
+      }
       const d = await r.json() as any
       return d?.choices?.[0]?.message?.content || ''
     }
