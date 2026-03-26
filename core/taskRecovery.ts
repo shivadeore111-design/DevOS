@@ -80,6 +80,19 @@ async function recoverSingleTask(state: TaskState): Promise<void> {
       phases:       savedPlan.phases,
     }
 
+    // Filter out steps with no actionable input — recovered steps built from
+    // phase metadata alone have input:{} which most tools cannot act on.
+    // If nothing valid remains, the task's work is already on disk — mark done.
+    const validSteps = agentPlan.plan.filter(
+      (s: any) => s.input && Object.keys(s.input).length > 0,
+    )
+    if (validSteps.length === 0) {
+      console.log(`[Recovery] Task ${state.id} — no recoverable steps with inputs, marking complete`)
+      taskStateManager.complete(state)
+      return
+    }
+    agentPlan.plan = validSteps
+
     livePulse.act('Aiden', `Recovering task: ${state.goal.slice(0, 40)}`)
 
     await executePlan(

@@ -899,6 +899,71 @@ export function getDefaultModel(provider: string): string {
   return defaults[provider] || 'llama-3.3-70b-versatile'
 }
 
+// ── Startup health check ──────────────────────────────────────
+// Validates that every core subsystem initialises without throwing.
+// Logs a summary so operators can spot broken modules at boot time.
+
+export function startupCheck(): void {
+  const checks: { name: string; ok: boolean; detail?: string }[] = []
+
+  // SkillLoader
+  try {
+    const skills = skillLoader.loadAll()
+    checks.push({ name: 'SkillLoader', ok: true, detail: `${skills.length} skill(s) loaded` })
+  } catch (e: any) {
+    checks.push({ name: 'SkillLoader', ok: false, detail: e.message })
+  }
+
+  // KnowledgeBase
+  try {
+    const stats = knowledgeBase.getStats()
+    checks.push({ name: 'KnowledgeBase', ok: true, detail: `${stats.files} file(s), ${stats.chunks} chunk(s)` })
+  } catch (e: any) {
+    checks.push({ name: 'KnowledgeBase', ok: false, detail: e.message })
+  }
+
+  // SkillTeacher
+  try {
+    const stats = skillTeacher.getStats()
+    checks.push({ name: 'SkillTeacher', ok: true, detail: `${stats.learned} learned, ${stats.approved} approved` })
+  } catch (e: any) {
+    checks.push({ name: 'SkillTeacher', ok: false, detail: e.message })
+  }
+
+  // ConversationMemory
+  try {
+    conversationMemory.getFacts()
+    checks.push({ name: 'ConversationMemory', ok: true })
+  } catch (e: any) {
+    checks.push({ name: 'ConversationMemory', ok: false, detail: e.message })
+  }
+
+  // SemanticMemory
+  try {
+    const stats = semanticMemory.getStats()
+    checks.push({ name: 'SemanticMemory', ok: true, detail: `${stats.total} item(s)` })
+  } catch (e: any) {
+    checks.push({ name: 'SemanticMemory', ok: false, detail: e.message })
+  }
+
+  // EntityGraph
+  try {
+    const stats = entityGraph.getStats()
+    checks.push({ name: 'EntityGraph', ok: true, detail: `${stats.nodes} node(s), ${stats.edges} edge(s)` })
+  } catch (e: any) {
+    checks.push({ name: 'EntityGraph', ok: false, detail: e.message })
+  }
+
+  // Print summary
+  const allOk = checks.every(c => c.ok)
+  console.log(`[Startup] Health check — ${allOk ? 'ALL OK' : 'SOME FAILED'}`)
+  for (const c of checks) {
+    const icon = c.ok ? '✓' : '✗'
+    const detail = c.detail ? ` — ${c.detail}` : ''
+    console.log(`[Startup]   ${icon} ${c.name}${detail}`)
+  }
+}
+
 // ── Server launcher ───────────────────────────────────────────
 
 export function startApiServer(portArg?: number): Express {
@@ -914,8 +979,25 @@ export function startApiServer(portArg?: number): Express {
     }
   } catch { /* use defaults */ }
 
+  // ── TASK 2: Process-level error handlers — prevent silent crashes ─
+  process.on('unhandledRejection', (reason: any) => {
+    console.error('[Process] Unhandled promise rejection:', reason?.message ?? reason)
+    try { livePulse.error('Aiden', `Unhandled rejection: ${String(reason?.message ?? reason).slice(0, 100)}`) } catch {}
+  })
+  process.on('uncaughtException', (err: Error) => {
+    console.error('[Process] Uncaught exception:', err.message)
+    console.error('[Process] Stack:', err.stack?.split('\n').slice(0, 5).join('\n'))
+    try { livePulse.error('Aiden', `Uncaught exception: ${err.message.slice(0, 100)}`) } catch {}
+    // Do NOT exit — let the server keep running for other requests
+  })
+
   const app    = createApiServer()
   const server = http.createServer(app)
+
+  // ── Startup health check ──────────────────────────────────────
+  try { startupCheck() } catch (e: any) {
+    console.error('[Startup] startupCheck threw:', e.message)
+  }
 
   // ── WebSocket terminal ────────────────────────────────────────
   const wss = new WebSocketServer({ server })
