@@ -25,16 +25,17 @@ export type PulseEventType =
   | 'tool'
 
 export interface PulseEvent {
-  type:      PulseEventType
-  agent:     string
-  message:   string
-  timestamp: number
+  type:       PulseEventType
+  agent:      string
+  message:    string
+  timestamp:  number
+  missionId?: string
   /** Present only for 'tool' events */
-  tool?:     string
+  tool?:      string
   /** Present only for 'tool' events */
-  command?:  string
+  command?:   string
   /** Present only for 'tool' events — output after execution */
-  output?:   string
+  output?:    string
 }
 
 // ── Implementation ────────────────────────────────────────────
@@ -56,52 +57,81 @@ class LivePulse extends EventEmitter {
     this.emit('any', event)
   }
 
-  // ── Public methods ────────────────────────────────────────
+  // ── Public methods — all wrapped in try-catch so they NEVER throw ──
 
-  act(agent: string, message: string): void {
-    console.log(`[${agent}] ${message}`)
-    this.emit_event({ type: 'act', agent, message, timestamp: Date.now() })
+  act(agent: string, message: string, missionId?: string): void {
+    try {
+      console.log(`[${agent}] ${message}`)
+      this.emit_event({ type: 'act', agent, message, timestamp: Date.now(), missionId })
+    } catch {
+      // Silent fail — never throw from pulse methods
+    }
   }
 
-  done(agent: string, message: string): void {
-    console.log(`[${agent}] ✓ ${message}`)
-    this.emit_event({ type: 'done', agent, message, timestamp: Date.now() })
+  done(agent: string, message: string, missionId?: string): void {
+    try {
+      console.log(`[${agent}] ✓ ${message}`)
+      this.emit_event({ type: 'done', agent, message, timestamp: Date.now(), missionId })
+    } catch {
+      // Silent fail — never throw from pulse methods
+    }
   }
 
-  error(agent: string, message: string): void {
-    console.error(`[${agent}] ✗ ${message}`)
-    this.emit_event({ type: 'error', agent, message, timestamp: Date.now() })
+  error(agent: string, message: string, missionId?: string): void {
+    try {
+      console.error(`[${agent}] ✗ ${message}`)
+      this.emit_event({ type: 'error', agent, message, timestamp: Date.now(), missionId })
+    } catch {
+      // Never throw from error handler
+      console.error(`[LivePulse] Failed to emit error event: ${message}`)
+    }
   }
 
-  warn(agent: string, message: string): void {
-    console.warn(`[${agent}] ⚠ ${message}`)
-    this.emit_event({ type: 'warn', agent, message, timestamp: Date.now() })
+  warn(agent: string, message: string, missionId?: string): void {
+    try {
+      console.warn(`[${agent}] ⚠ ${message}`)
+      this.emit_event({ type: 'warn', agent, message, timestamp: Date.now(), missionId })
+    } catch {
+      // Silent fail — never throw from pulse methods
+    }
   }
 
-  info(agent: string, message: string): void {
-    console.log(`[${agent}] ℹ ${message}`)
-    this.emit_event({ type: 'info', agent, message, timestamp: Date.now() })
+  info(agent: string, message: string, missionId?: string): void {
+    try {
+      console.log(`[${agent}] ℹ ${message}`)
+      this.emit_event({ type: 'info', agent, message, timestamp: Date.now(), missionId })
+    } catch {
+      // Silent fail — never throw from pulse methods
+    }
   }
 
-  thinking(agent: string, message: string): void {
-    console.log(`[${agent}] 💭 ${message}`)
-    this.emit_event({ type: 'thinking', agent, message, timestamp: Date.now() })
+  thinking(agent: string, message: string, missionId?: string): void {
+    try {
+      console.log(`[${agent}] 💭 ${message}`)
+      this.emit_event({ type: 'thinking', agent, message, timestamp: Date.now(), missionId })
+    } catch {
+      // Silent fail — never throw from pulse methods
+    }
   }
 
   tool(agent: string, toolName: string, command: string, output?: string): void {
-    const message = output
-      ? `${toolName}: ${command} → ${output.slice(0, 120)}`
-      : `${toolName}: ${command}`
-    console.log(`[${agent}] 🔧 ${message}`)
-    this.emit_event({
-      type:      'tool',
-      agent,
-      message,
-      timestamp: Date.now(),
-      tool:      toolName,
-      command,
-      output,
-    })
+    try {
+      const message = output
+        ? `${toolName}: ${command} → ${output.slice(0, 120)}`
+        : `${toolName}: ${command}`
+      console.log(`[${agent}] 🔧 ${message}`)
+      this.emit_event({
+        type:      'tool',
+        agent,
+        message,
+        timestamp: Date.now(),
+        tool:      toolName,
+        command,
+        output,
+      })
+    } catch {
+      // Silent fail — never throw from pulse methods
+    }
   }
 
   // ── History helpers ───────────────────────────────────────

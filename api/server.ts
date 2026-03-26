@@ -926,32 +926,33 @@ export function startApiServer(portArg?: number): Express {
     ws.on('close', () => {})
   })
 
-  // Run crash recovery on startup — non-blocking, finds 'running' tasks from prior session
-  recoverTasks().catch(e => console.error('[Startup] Recovery error:', e.message))
-
-  // Stale task cleanup — mark running tasks older than 24h as failed
+  // Stale task cleanup — mark running tasks older than 1h as failed (runs before recovery)
   try {
     const tasksDir = path.join(process.cwd(), 'workspace', 'tasks')
     if (fs.existsSync(tasksDir)) {
-      const taskDirs = fs.readdirSync(tasksDir).filter((d: string) => d.startsWith('task_'))
+      const taskDirs = fs.readdirSync(tasksDir)
+        .filter((d: string) => d.startsWith('task_'))
       let cleaned = 0
       for (const dir of taskDirs) {
         const statePath = path.join(tasksDir, dir, 'state.json')
         if (!fs.existsSync(statePath)) continue
         try {
-          const state   = JSON.parse(fs.readFileSync(statePath, 'utf-8'))
-          const ageHours = (Date.now() - state.createdAt) / (1000 * 60 * 60)
-          if (state.status === 'running' && ageHours > 24) {
+          const state    = JSON.parse(fs.readFileSync(statePath, 'utf-8'))
+          const ageHours = (Date.now() - (state.createdAt || 0)) / (1000 * 60 * 60)
+          if (state.status === 'running' && ageHours > 1) {
             state.status = 'failed'
-            state.error  = 'Cleaned up: task too old'
+            state.error  = 'Auto-cleaned: task interrupted and too old to recover'
             fs.writeFileSync(statePath, JSON.stringify(state, null, 2))
             cleaned++
           }
         } catch {}
       }
-      if (cleaned > 0) console.log(`[Startup] Cleaned up ${cleaned} stale tasks`)
+      if (cleaned > 0) console.log(`[Startup] Cleaned up ${cleaned} stale interrupted tasks`)
     }
   } catch {}
+
+  // Run crash recovery on startup — non-blocking, finds 'running' tasks from prior session
+  recoverTasks().catch(e => console.error('[Startup] Recovery error:', e.message))
 
   server.listen(port, host, () => {
     console.log(`[API] DevOS API running at http://${host}:${port}`)

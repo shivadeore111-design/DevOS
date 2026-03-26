@@ -561,6 +561,114 @@ export const TOOLS: Record<string, (payload: any) => Promise<ToolResult>> = {
       return { success: true, output: stdout || stderr }
     } catch (e: any) { return { success: false, output: '', error: e.message } }
   },
+
+  get_stocks: async (p: any) => {
+    const market = p.market || p.exchange || 'NSE'
+    const type   = p.type   || 'gainers' // gainers | losers | active
+
+    console.log(`[get_stocks] Fetching ${type} for ${market}`)
+
+    const results: string[] = []
+
+    // Method 1: Yahoo Finance screener API — free, no auth needed
+    try {
+      const yahooUrl = `https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved?scrIds=day_gainers&count=10&region=IN&lang=en-IN`
+      const r = await fetch(yahooUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept':     'application/json',
+        },
+        signal: AbortSignal.timeout(10000),
+      })
+      if (r.ok) {
+        const data   = await r.json() as any
+        const quotes = data?.finance?.result?.[0]?.quotes || []
+        if (quotes.length > 0) {
+          const lines = (quotes as any[]).slice(0, 10).map((q: any) =>
+            `${q.symbol}: ${q.regularMarketPrice} (${q.regularMarketChangePercent?.toFixed(2)}%) — ${q.shortName || q.longName || ''}`
+          )
+          results.push(`Top Gainers (Yahoo Finance India):\n${lines.join('\n')}`)
+        }
+      }
+    } catch (e: any) {
+      console.warn(`[get_stocks] Yahoo Finance failed: ${e.message}`)
+    }
+
+    // Method 2: Finology ticker
+    try {
+      const finologyUrl = type === 'gainers'
+        ? 'https://ticker.finology.in/market/top-gainers'
+        : type === 'losers'
+        ? 'https://ticker.finology.in/market/top-losers'
+        : 'https://ticker.finology.in/market/most-active'
+
+      const r = await fetch(finologyUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          'Accept':     'text/html',
+        },
+        signal: AbortSignal.timeout(10000),
+      })
+      if (r.ok) {
+        const html  = await r.text()
+        const rows  = [...html.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)]
+        const stocks: string[] = []
+        for (const row of rows.slice(1, 15)) {
+          const cells = [...row[1].matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)]
+            .map((c: any) => c[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim())
+            .filter(Boolean)
+          if (cells.length >= 3 && cells[0].length > 1) {
+            stocks.push(cells.slice(0, 5).join(' | '))
+          }
+        }
+        if (stocks.length > 0) {
+          results.push(`${market} Top ${type} (Finology):\n${stocks.slice(0, 10).join('\n')}`)
+        }
+      }
+    } catch (e: any) {
+      console.warn(`[get_stocks] Finology failed: ${e.message}`)
+    }
+
+    // Method 3: Economic Times market stats
+    try {
+      const segment = type === 'gainers' ? 'gainers' : type === 'losers' ? 'losers' : 'active-stocks'
+      const etUrl   = `https://economictimes.indiatimes.com/stocks/marketstats/top-${segment}/nse`
+      const r = await fetch(etUrl, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36' },
+        signal: AbortSignal.timeout(10000),
+      })
+      if (r.ok) {
+        const html  = await r.text()
+        const clean = html
+          .replace(/<script[\s\S]*?<\/script>/gi, '')
+          .replace(/<style[\s\S]*?<\/style>/gi, '')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+        const stockPattern = /\b([A-Z]{2,10})\b[\s\S]{0,30}?(\d+\.?\d*)\s*[(%]\s*([+-]?\d+\.?\d*)/g
+        const matches      = [...clean.matchAll(stockPattern)].slice(0, 10)
+        if (matches.length > 0) {
+          const lines = matches.map((m: any) => `${m[1]}: ${m[2]} (${m[3]}%)`)
+          results.push(`ET Market Stats:\n${lines.join('\n')}`)
+        }
+      }
+    } catch (e: any) {
+      console.warn(`[get_stocks] ET failed: ${e.message}`)
+    }
+
+    if (results.length === 0) {
+      return {
+        success: false,
+        output:  '',
+        error:   `Could not fetch ${type} stocks for ${market}. Try web_search as fallback.`,
+      }
+    }
+
+    return {
+      success: true,
+      output:  results.join('\n\n---\n\n').slice(0, 5000),
+    }
+  },
 }
 
 // ── Public executor ───────────────────────────────────────────

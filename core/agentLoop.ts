@@ -164,6 +164,7 @@ function inferPhasesFromSteps(
   const capabilityMap: Record<string, string> = {
     web_search:      'research', fetch_page:      'research',
     deep_research:   'research', fetch_url:       'research',
+    get_stocks:      'research',
     open_browser:    'browsing', browser_click:   'browsing',
     browser_extract: 'browsing', browser_type:    'browsing',
     file_write:      'writing',  file_read:       'reading',
@@ -234,7 +235,7 @@ export async function planWithLLM(
     'web_search', 'fetch_page', 'open_browser', 'browser_extract',
     'browser_click', 'browser_type', 'file_write', 'file_read',
     'file_list', 'shell_exec', 'run_python', 'run_node',
-    'system_info', 'notify', 'deep_research',
+    'system_info', 'notify', 'deep_research', 'get_stocks',
   ]
 
   // Load any relevant skills to guide planning
@@ -290,6 +291,12 @@ TOOL INPUT RULES:
 - deep_research: { "topic": "what to research" }
 - shell_exec: { "command": "actual powershell command" }
 - fetch_page: { "url": "https://exact-url.com" }
+- get_stocks: { "market": "NSE", "type": "gainers" }  — type: gainers | losers | active
+
+URL RULES:
+- Always use COMPLETE URLs — never truncate a URL in a tool input
+- For stock/financial queries (NSE, BSE, gainers, losers, share price) → use get_stocks, NOT web_search
+- Example: get_stocks({ "market": "NSE", "type": "gainers" })
 
 OUTPUT FORMAT (strict JSON only):
 {
@@ -457,6 +464,7 @@ export async function executePlan(
   const capabilityMap: Record<string, string> = {
     web_search:      'research', fetch_page:      'research',
     deep_research:   'research', fetch_url:       'research',
+    get_stocks:      'research',
     open_browser:    'browsing', browser_click:   'browsing',
     browser_extract: 'browsing', browser_type:    'browsing',
     file_write:      'writing',  file_read:       'reading',
