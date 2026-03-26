@@ -151,6 +151,7 @@ export default function Home() {
   const [input, setInput]           = useState('')
   const [streaming, setStreaming]   = useState(false)
   const [apiStatus, setApiStatus]   = useState<'online'|'offline'>('offline')
+  const [execMode, setExecMode]     = useState<'auto'|'plan'|'chat'>('auto')
   const [model, setModel]           = useState('mistral:7b')
   const [activeModel, setActiveModel] = useState('')
 
@@ -323,7 +324,7 @@ export default function Home() {
       const r = await fetch('http://localhost:4200/api/chat', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ message: msg, history: newHistory.slice(-10) }),
+        body:    JSON.stringify({ message: msg, history: newHistory.slice(-10), mode: execMode }),
         signal:  controller.signal,
       })
 
@@ -867,7 +868,21 @@ export default function Home() {
             background:'rgba(6,13,31,0.95)', borderTop:'1px solid rgba(255,255,255,0.05)',
           }}>
             <div style={{ maxWidth:'680px', margin:'0 auto' }}>
-              <div style={{
+              {/* ── Mode pills ─────────────────────────────────── */}
+            <div style={{ display:'flex', gap:'4px', marginBottom:'6px' }}>
+              {(['auto','plan','chat'] as const).map(m => (
+                <button key={m} onClick={() => setExecMode(m)} style={{
+                  fontSize:'9px', fontFamily:'JetBrains Mono, monospace',
+                  padding:'2px 8px', borderRadius:'10px', border:'none',
+                  cursor:'pointer', transition:'all .15s',
+                  background: execMode === m ? 'rgba(99,179,237,0.2)' : 'rgba(255,255,255,0.04)',
+                  color: execMode === m ? '#63b3ed' : 'rgba(255,255,255,0.2)',
+                }}>
+                  {m === 'auto' ? '⚡ auto' : m === 'plan' ? '📋 plan only' : '💬 chat only'}
+                </button>
+              ))}
+            </div>
+            <div style={{
                 display:'flex', alignItems:'flex-end', gap:'10px',
                 background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.09)',
                 borderRadius:'14px', padding:'10px 12px',

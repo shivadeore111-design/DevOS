@@ -8,30 +8,44 @@
 //   STEP 2: EXECUTE — Code runs each tool, gets real results
 //   STEP 3: RESPOND — LLM sees real results, streams natural language
 
-import { executeTool }  from './toolRegistry'
-import { livePulse }    from '../coordination/livePulse'
+import { executeTool, TOOLS } from './toolRegistry'
+import { livePulse }          from '../coordination/livePulse'
+import * as nodeFs             from 'fs'
+import * as nodePath           from 'path'
+import * as nodeOs             from 'os'
 
 // ── Types ─────────────────────────────────────────────────────
 
 export interface ToolStep {
+  step:        number
   tool:        string
-  args:        Record<string, any>
+  input:       Record<string, any>
   description: string
 }
 
 export interface AgentPlan {
+  goal?:              string
   requires_execution: boolean
-  steps:              ToolStep[]
-  direct_response?:   string   // populated when requires_execution is false
+  plan:               ToolStep[]
+  direct_response?:   string
 }
 
 export interface StepResult {
-  step:    number
-  tool:    string
-  args:    Record<string, any>
-  success: boolean
-  output:  string
-  error?:  string
+  step:     number
+  tool:     string
+  input:    Record<string, any>
+  success:  boolean
+  output:   string
+  error?:   string
+  duration: number
+}
+
+export interface ExecutionState {
+  goal:           string
+  completedSteps: StepResult[]
+  currentStep:    number
+  lastError?:     string
+  startTime:      number
 }
 
 export interface LoopResult {
@@ -131,156 +145,122 @@ function buildHeaders(providerName: string, apiKey: string): Record<string, stri
 
 // ── STEP 1: planWithLLM ────────────────────────────────────────
 
-const PLANNER_SYSTEM = `You are a planning agent for DevOS, an AI OS running on Windows.
-Your ONLY job is to output a JSON execution plan — no markdown, no explanation, ONLY valid JSON.
-
-AVAILABLE TOOLS:
-
-Basic tools:
-- web_search:         { "query": "..." }                        — search web, fetches real page content
-- fetch_page:         { "url": "https://..." }                  — fetch and clean a specific URL
-- open_browser:       { "url": "https://..." }                  — open URL in Chromium
-- browser_extract:    {}                                        — extract text from current browser page
-- browser_click:      { "selector": "..." }                     — click element on current page
-- browser_type:       { "selector": "...", "text": "..." }      — type into input on current page
-- browser_screenshot: {}                                        — screenshot current page
-- file_write:         { "path": "C:\\\\Users\\\\...\\\\file.txt", "content": "..." }
-- file_read:          { "path": "C:\\\\Users\\\\...\\\\file.txt" }
-- file_list:          { "path": "C:\\\\Users\\\\..." }
-- shell_exec:         { "command": "powershell command" }
-- run_python:         { "script": "python code" }
-- run_node:           { "script": "js code" }
-- system_info:        {}
-- notify:             { "message": "..." }
-
-Specialist tools (use these for complex tasks):
-- deep_research:      { "topic": "..." }  — 3-pass research with entity extraction and comparison. ALWAYS use for any research, analysis, or comparison task
-- run_agent:          { "agent": "engineer|security|data_analyst|designer|researcher|debugger", "task": "..." } — activate specialist agent persona
-
-ROUTING RULES:
-- Research / analysis / comparison → ALWAYS use deep_research (not web_search)
-- Simple factual lookup (weather, definitions, current info) → web_search
-- Create / build / code task → shell_exec or run_agent with agent="engineer"
-- Questions / greetings / explanation → requires_execution: false
-- Use {{step_N_output}} (0-indexed) to pass a step's output to the next step as input
-- Desktop path: C:\\\\Users\\\\shiva\\\\Desktop\\\\
-- Max 4 steps
-
-Output format (ONLY this JSON, nothing else):
-{
-  "goal": "original user goal",
-  "requires_execution": true,
-  "steps": [
-    { "tool": "deep_research", "args": { "topic": "best AI coding assistants 2025" }, "description": "3-pass research with entity comparison" },
-    { "tool": "file_write", "args": { "path": "C:\\\\Users\\\\shiva\\\\Desktop\\\\research.md", "content": "{{step_0_output}}" }, "description": "Save report to Desktop" }
-  ]
-}
-
-OR for chat/questions:
-{
-  "goal": "original user goal",
-  "requires_execution": false,
-  "steps": [],
-  "direct_response": "your answer here"
-}`
-
 export async function planWithLLM(
   message:      string,
   history:      { role: string; content: string }[],
   apiKey:       string,
   model:        string,
-  providerName: string,
+  provider:     string,
 ): Promise<AgentPlan> {
-  const messages = [
-    { role: 'system', content: PLANNER_SYSTEM },
-    ...history.slice(-4),
-    { role: 'user', content: `Plan this task: ${message}` },
+
+  const ALLOWED_TOOLS = [
+    'web_search', 'fetch_page', 'open_browser', 'browser_extract',
+    'browser_click', 'browser_type', 'file_write', 'file_read',
+    'file_list', 'shell_exec', 'run_python', 'run_node',
+    'system_info', 'notify', 'deep_research',
   ]
 
+  const plannerPrompt = `You are DevOS Planner. Analyze the user request and output a JSON plan.
+
+CRITICAL RULES:
+1. If the answer is in your training data (capitals, definitions, facts, opinions, advice) → requires_execution: false
+2. ONLY use tools when you need: live data, file operations, running code, or computer control
+3. You MUST ONLY use tools from this exact list: ${ALLOWED_TOOLS.join(', ')}
+4. DO NOT invent tools like "identify_top_3", "generate_report", "analyze" — these don't exist
+5. Processing/analysis happens in your response — NOT as a tool step
+6. NEVER use placeholders like "{{result}}" or "{output}" — steps must have real concrete inputs
+7. For multi-step tasks: if step N+1 needs step N's output, use the literal string "PREVIOUS_OUTPUT"
+8. Output ONLY valid JSON — no text before or after
+
+WHEN TO USE TOOLS vs NOT:
+✅ Use tools for:
+- Weather, news, current prices → web_search
+- Opening websites → open_browser
+- Writing/reading files → file_write, file_read
+- Running code → run_python, run_node
+- System info → system_info
+- Research with real sources → deep_research
+
+❌ Do NOT use tools for:
+- "What is the capital of X" → just answer
+- "Who is [famous person]" → just answer
+- "Explain X concept" → just answer
+- "What do you think about X" → just answer
+- Any question answerable from training knowledge
+
+TOOL INPUT RULES:
+- web_search: { "query": "specific search term" }
+- file_write:  { "path": "C:\\\\Users\\\\shiva\\\\Desktop\\\\filename.txt", "content": "actual content or PREVIOUS_OUTPUT" }
+- deep_research: { "topic": "what to research" }
+- shell_exec: { "command": "actual powershell command" }
+- fetch_page: { "url": "https://exact-url.com" }
+
+OUTPUT FORMAT (strict JSON only):
+{
+  "goal": "exact user request",
+  "requires_execution": true,
+  "reasoning": "one sentence why",
+  "plan": [
+    { "step": 1, "tool": "web_search", "input": { "query": "weather London today" }, "description": "Get London weather" }
+  ]
+}
+
+If requires_execution is false:
+{ "goal": "...", "requires_execution": false, "reasoning": "...", "plan": [] }`
+
+  const messages = [
+    { role: 'system', content: plannerPrompt },
+    ...history.slice(-3).map((h: any) => ({
+      role:    h.role === 'assistant' ? 'assistant' : 'user',
+      content: String(h.content).slice(0, 300),
+    })),
+    { role: 'user', content: message },
+  ]
+
+  let raw = ''
+
   try {
-    let raw = ''
+    raw = await callLLM(
+      messages.map(m => `${m.role}: ${m.content}`).join('\n'),
+      apiKey, model, provider,
+    )
 
-    if (providerName === 'gemini') {
-      const contents = messages
-        .filter(m => m.role !== 'system')
-        .map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }))
-      const system = messages.find(m => m.role === 'system')?.content
-
-      const r = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-        {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents,
-            systemInstruction: system ? { parts: [{ text: system }] } : undefined,
-            generationConfig:  { maxOutputTokens: 600, temperature: 0 },
-          }),
-          signal: AbortSignal.timeout(14000),
-        },
-      )
-      const d = await r.json() as any
-      if (!r.ok) throw new Error(`Gemini plan ${r.status}: ${JSON.stringify(d)}`)
-      raw = d?.candidates?.[0]?.content?.parts?.[0]?.text || ''
-
-    } else if (providerName === 'ollama') {
-      const r = await fetch('http://localhost:11434/api/chat', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model, stream: false, messages }),
-        signal: AbortSignal.timeout(30000),
-      })
-      const d = await r.json() as any
-      raw = d?.message?.content || ''
-
-    } else {
-      // OpenAI-compatible: groq, openrouter, cerebras, nvidia
-      const url = OPENAI_COMPAT_ENDPOINTS[providerName] || OPENAI_COMPAT_ENDPOINTS.groq
-      const r   = await fetch(url, {
-        method:  'POST',
-        headers: buildHeaders(providerName, apiKey),
-        body: JSON.stringify({
-          model,
-          messages,
-          max_tokens:  600,
-          temperature: 0,
-          stream:      false,
-        }),
-        signal: AbortSignal.timeout(14000),
-      })
-      const d = await r.json() as any
-      if (!r.ok) throw new Error(`Plan ${r.status}: ${JSON.stringify(d)}`)
-      raw = d?.choices?.[0]?.message?.content || ''
-    }
-
-    // Strip markdown fences, extract first JSON object
-    const cleaned   = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim()
-    const jsonMatch = cleaned.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) throw new Error('Planner returned no JSON')
+    const jsonMatch = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').match(/\{[\s\S]*\}/)
+    if (!jsonMatch) throw new Error('No JSON in planner response')
 
     const parsed = JSON.parse(jsonMatch[0]) as any
 
-    // Normalize: handle both "steps"/"args" and "plan"/"input" field names
-    const stepArray: any[] = Array.isArray(parsed.steps)
-      ? parsed.steps
-      : Array.isArray(parsed.plan) ? parsed.plan : []
+    // Validate tool names — reject hallucinated tools
+    const rawPlan = (parsed.plan || parsed.steps || []) as any[]
+    const validatedPlan = rawPlan.filter((s: any) => {
+      if (!ALLOWED_TOOLS.includes(s.tool)) {
+        console.warn(`[Planner] Rejected invalid tool: ${s.tool}`)
+        return false
+      }
+      // Reject old-style placeholder inputs
+      const inputStr = JSON.stringify(s.input || s.args || {})
+      if (inputStr.includes('{{') || inputStr.includes('{result') || inputStr.includes('{output')) {
+        console.warn(`[Planner] Rejected placeholder input in: ${s.tool}`)
+        return false
+      }
+      return true
+    })
 
-    const plan: AgentPlan = {
-      requires_execution: typeof parsed.requires_execution === 'boolean' ? parsed.requires_execution : false,
-      direct_response:    parsed.direct_response,
-      steps: stepArray.map((s: any) => ({
+    return {
+      goal:               parsed.goal || message,
+      requires_execution: parsed.requires_execution === true && validatedPlan.length > 0,
+      plan: validatedPlan.map((s: any, idx: number) => ({
+        step:        s.step        ?? (idx + 1),
         tool:        s.tool        || '',
-        args:        s.args        || s.input || {},
+        input:       s.input       || s.args || {},
         description: s.description || '',
       })),
+      direct_response: parsed.direct_response,
     }
 
-    return plan
-
-  } catch (err: any) {
-    console.error('[AgentLoop] planWithLLM error:', err.message)
-    // Safe fallback — treat as chat with no tools
-    return { requires_execution: false, steps: [] }
+  } catch (e: any) {
+    console.error('[Planner] Failed:', e.message, '| Raw:', raw.slice(0, 200))
+    return { goal: message, requires_execution: false, plan: [] }
   }
 }
 
@@ -288,49 +268,137 @@ export async function planWithLLM(
 
 export async function executePlan(
   plan:   AgentPlan,
-  onStep: (result: StepResult) => void,
+  onStep: (step: ToolStep, result: StepResult) => void,
 ): Promise<StepResult[]> {
-  const results:     StepResult[] = []
-  const stepOutputs: string[]     = []
+  const results:     StepResult[]           = []
+  const stepOutputs: Record<number, string> = {}
 
-  for (let i = 0; i < plan.steps.length; i++) {
-    const step = plan.steps[i]
+  const state: ExecutionState = {
+    goal:           plan.goal || '',
+    completedSteps: [],
+    currentStep:    0,
+    startTime:      Date.now(),
+  }
 
-    // Resolve {{step_N_output}} templates in every string arg
-    const resolvedArgs: Record<string, any> = {}
-    for (const [k, v] of Object.entries(step.args)) {
-      resolvedArgs[k] = typeof v === 'string' ? resolveTemplates(v, stepOutputs) : v
+  for (const step of plan.plan) {
+    state.currentStep = step.step
+    const stepStart   = Date.now()
+
+    livePulse.tool('Aiden', step.tool, JSON.stringify(step.input).slice(0, 80))
+
+    // Validate tool exists before running
+    if (!TOOLS[step.tool]) {
+      const stepResult: StepResult = {
+        step: step.step, tool: step.tool, input: step.input,
+        success:  false, output: '',
+        error:    `Tool "${step.tool}" does not exist. Available: ${Object.keys(TOOLS).join(', ')}`,
+        duration: 0,
+      }
+      results.push(stepResult)
+      state.completedSteps.push(stepResult)
+      onStep(step, stepResult)
+      livePulse.error('Aiden', `Invalid tool: ${step.tool}`)
+      continue
     }
 
-    livePulse.tool('Aiden', step.tool, JSON.stringify(resolvedArgs).slice(0, 100))
+    // Resolve PREVIOUS_OUTPUT and {{step_N_output}} in input
+    let resolvedInput = resolvePreviousOutput(step.input, stepOutputs, step.step)
 
-    const toolResult = await executeTool(step.tool, resolvedArgs)
+    let stepResult: StepResult | null = null
+    let attempts = 0
+    const MAX_ATTEMPTS = 2
 
-    const result: StepResult = {
-      step:    i,
-      tool:    step.tool,
-      args:    resolvedArgs,
-      success: toolResult.success,
-      output:  toolResult.success ? toolResult.output : '',
-      error:   toolResult.error,
+    // Self-healing retry loop
+    while (attempts < MAX_ATTEMPTS) {
+      attempts++
+      try {
+        const toolResult = await executeTool(step.tool, resolvedInput)
+
+        stepResult = {
+          step: step.step, tool: step.tool, input: resolvedInput,
+          success:  toolResult.success,
+          output:   toolResult.output || '',
+          error:    toolResult.error,
+          duration: Date.now() - stepStart,
+        }
+
+        // Verify file_write actually landed on disk
+        if (toolResult.success && step.tool === 'file_write') {
+          const targetPath = resolvedInput.path || ''
+          if (targetPath && !nodeFs.existsSync(targetPath)) {
+            stepResult.success = false
+            stepResult.error   = `Verification failed: file not found at ${targetPath}`
+          }
+        }
+
+        if (!stepResult.success && attempts < MAX_ATTEMPTS) {
+          livePulse.error('Aiden', `Attempt ${attempts} failed: ${stepResult.error} — retrying...`)
+          await new Promise(r => setTimeout(r, 800))
+          // For file_write failures, try resolving path to Desktop
+          if (step.tool === 'file_write' && resolvedInput.path) {
+            resolvedInput = {
+              ...resolvedInput,
+              path: nodePath.join(nodeOs.homedir(), 'Desktop', nodePath.basename(resolvedInput.path)),
+            }
+          }
+        } else {
+          break
+        }
+
+      } catch (e: any) {
+        state.lastError = e.message
+        stepResult = {
+          step: step.step, tool: step.tool, input: resolvedInput,
+          success:  false, output: '',
+          error:    e.message,
+          duration: Date.now() - stepStart,
+        }
+        if (attempts < MAX_ATTEMPTS) {
+          livePulse.error('Aiden', `Error attempt ${attempts}: ${e.message} — retrying...`)
+          await new Promise(r => setTimeout(r, 800))
+        } else {
+          break
+        }
+      }
     }
 
-    stepOutputs.push(
-      toolResult.success
-        ? toolResult.output
-        : (toolResult.error || 'failed'),
-    )
-    results.push(result)
-    onStep(result)
+    if (stepResult) {
+      stepOutputs[step.step] = stepResult.output
+      results.push(stepResult)
+      state.completedSteps.push(stepResult)
+      onStep(step, stepResult)
 
-    if (toolResult.success) {
-      livePulse.done('Aiden', `${step.tool}: ${toolResult.output.slice(0, 80)}`)
-    } else {
-      livePulse.error('Aiden', `${step.tool}: ${toolResult.error || 'failed'}`)
+      if (stepResult.success) {
+        livePulse.done('Aiden', `${step.tool} ✓ ${stepResult.output.slice(0, 60)}`)
+      } else {
+        livePulse.error('Aiden', `${step.tool} failed after ${attempts} attempt(s): ${stepResult.error}`)
+        // Continue to next step — don't abort the whole plan
+      }
     }
   }
 
   return results
+}
+
+// Resolve PREVIOUS_OUTPUT and {{step_N_output}} in step inputs
+function resolvePreviousOutput(
+  input:       Record<string, any>,
+  stepOutputs: Record<number, string>,
+  currentStep: number,
+): Record<string, any> {
+  const resolved: Record<string, any> = {}
+  const lastOutput = stepOutputs[currentStep - 1] || ''
+
+  for (const [key, value] of Object.entries(input)) {
+    if (typeof value === 'string') {
+      resolved[key] = value
+        .replace(/PREVIOUS_OUTPUT/g, lastOutput)
+        .replace(/\{\{step_(\d+)_output\}\}/g, (_, n) => stepOutputs[parseInt(n, 10)] || '')
+    } else {
+      resolved[key] = value
+    }
+  }
+  return resolved
 }
 
 // ── STEP 3: respondWithResults ────────────────────────────────

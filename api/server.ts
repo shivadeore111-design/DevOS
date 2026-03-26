@@ -38,7 +38,7 @@ import { ollamaProvider } from '../providers/ollama'
 import { getSmartProvider, markRateLimited, incrementUsage } from '../providers/router'
 import { executeTool } from '../core/toolRegistry'
 import { planWithLLM, executePlan, respondWithResults } from '../core/agentLoop'
-import type { AgentPlan, StepResult } from '../core/agentLoop'
+import type { AgentPlan, StepResult, ToolStep }        from '../core/agentLoop'
 
 // ── App factory ───────────────────────────────────────────────
 
@@ -73,10 +73,13 @@ export function createApiServer(): Express {
     res.json({ status: 'ok', version: '1.0.0', timestamp: new Date().toISOString() })
   })
 
-  // POST /api/chat — 3-step agent loop: PLAN → EXECUTE → RESPOND
+  // POST /api/chat — PLAN → EXECUTE → RESPOND with mode support
+  // mode: 'auto' (default) | 'plan' (show plan only) | 'chat' (force chat, skip planner)
   app.post('/api/chat', async (req: Request, res: Response) => {
-    const { message, history = [] } = req.body as {
-      message?: string; history?: { role: string; content: string }[]
+    const { message, history = [], mode = 'auto' } = req.body as {
+      message?: string
+      history?: { role: string; content: string }[]
+      mode?:    'auto' | 'plan' | 'chat'
     }
     if (!message) { res.status(400).json({ error: 'message required' }); return }
 
@@ -90,120 +93,125 @@ export function createApiServer(): Express {
       try { res.write(`data: ${JSON.stringify(data)}\n\n`) } catch {}
     }
 
-    let attempt = 0
-    const MAX_RETRIES = 3
+    const { provider, model, userName, apiName } = getSmartProvider()
+    const config       = loadConfig()
+    const apiEntry     = config.providers.apis.find(a => a.name === apiName)
+    const rawKey       = apiEntry
+      ? (apiEntry.key.startsWith('env:')
+          ? process.env[apiEntry.key.replace('env:', '')] || ''
+          : apiEntry.key)
+      : ''
+    const providerName = apiEntry?.provider || (apiName === 'ollama' ? 'ollama' : 'ollama')
+    const activeModel  = apiEntry?.model || model
 
-    while (attempt < MAX_RETRIES) {
-      attempt++
-      const { provider, model, userName, apiName } = getSmartProvider()
-
-      // Resolve raw API key and provider type for agentLoop functions
-      const config       = loadConfig()
-      const apiEntry     = config.providers.apis.find(a => a.name === apiName)
-      const rawKey       = apiEntry
-        ? (apiEntry.key.startsWith('env:')
-            ? process.env[apiEntry.key.replace('env:', '')] || ''
-            : apiEntry.key)
-        : ''
-      const providerName = apiEntry?.provider || (apiName === 'ollama' ? 'ollama' : 'ollama')
-
-      try {
-        // ── STEP 1: PLAN ─────────────────────────────────────────
-        send({
-          activity: { icon: '💭', agent: 'Aiden', message: 'Planning...', style: 'thinking' },
-          done: false,
-        })
-
-        const plan: AgentPlan = await planWithLLM(message, history, rawKey, model, providerName)
-
-        if (!plan.requires_execution) {
-          // Pure chat / knowledge question
-          if (plan.direct_response) {
-            // LLM already answered in the plan — stream it word-by-word
-            const words = plan.direct_response.split(' ')
-            for (const word of words) {
-              send({ token: word + ' ', done: false, provider: apiName })
-              await new Promise(r => setTimeout(r, 10))
-            }
-          } else {
-            // No direct response — stream via provider normally
-            const sysPrompt = `You are Aiden — a personal AI OS running on ${userName}'s Windows machine. You are calm, direct, capable, and slightly witty. You speak like a trusted co-founder.
-Current date: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
-Be concise. 1-3 sentences for simple answers.`
-            const msgs = [
-              { role: 'system', content: sysPrompt },
-              ...history.slice(-8),
-              { role: 'user', content: message },
-            ]
-            await provider.generateStream(msgs, model, (token) => {
-              send({ token, done: false, provider: apiName })
-            })
-          }
-          incrementUsage(apiName)
-          send({ done: true, provider: apiName })
-          res.end()
-          memoryLayers.write(`User: ${message}`, ['chat'])
-          return
-        }
-
-        // Show plan steps as activity events
-        for (const step of plan.steps) {
-          send({
-            activity: {
-              icon: '📋', agent: 'Aiden',
-              message: `Plan: ${step.description}`,
-              style: 'act',
-            },
-            done: false,
-          })
-        }
-
-        // ── STEP 2: EXECUTE ──────────────────────────────────────
-        const results: StepResult[] = await executePlan(plan, (result) => {
-          send({
-            activity: {
-              icon:    result.success ? '✅' : '❌',
-              agent:   'Aiden',
-              message: `${result.tool}: ${(result.success ? result.output : result.error || 'failed').slice(0, 180)}`,
-              style:   result.success ? 'done' : 'error',
-            },
-            done: false,
-          })
-        })
-
-        // ── STEP 3: RESPOND ──────────────────────────────────────
-        send({
-          activity: { icon: '✍️', agent: 'Aiden', message: 'Writing response...', style: 'thinking' },
-          done: false,
-        })
-
-        await respondWithResults(
-          message, plan, results, history,
-          userName, rawKey, model, providerName,
-          (token) => { send({ token, done: false, provider: apiName }) },
-        )
-
+    try {
+      // ── FORCE CHAT MODE ──────────────────────────────────────
+      if (mode === 'chat') {
+        await streamChat(message, history, userName, provider, activeModel, apiName, send)
         incrementUsage(apiName)
         send({ done: true, provider: apiName })
         res.end()
         memoryLayers.write(`User: ${message}`, ['chat'])
         return
+      }
 
-      } catch (err: any) {
-        const is429 = err.message?.includes('429') || err.message?.toLowerCase().includes('rate')
-        if (is429 && apiName !== 'ollama') {
-          markRateLimited(apiName)
-          send({ token: `\n⚡ ${apiName} rate limited — switching...\n`, done: false })
-          continue
+      // ── STEP 1: PLAN ─────────────────────────────────────────
+      send({ activity: { icon: '🧠', agent: 'Aiden', message: 'Thinking...', style: 'thinking' }, done: false })
+
+      const plan: AgentPlan = await planWithLLM(message, history, rawKey, activeModel, providerName)
+
+      // ── PLAN-ONLY MODE ───────────────────────────────────────
+      if (mode === 'plan') {
+        const planText = plan.requires_execution && plan.plan.length > 0
+          ? `**Planned steps:**\n${plan.plan.map(s => `${s.step}. \`${s.tool}\` — ${s.description}`).join('\n')}\n\n*Plan-only mode — not executing.*`
+          : `No execution needed. I can answer this directly.\n\n*Plan-only mode.*`
+        const words = planText.split(' ')
+        for (const word of words) {
+          send({ token: word + ' ', done: false, provider: apiName })
+          await new Promise(r => setTimeout(r, 10))
         }
-        send({ done: true, error: err.message })
+        send({ done: true, provider: apiName })
         res.end()
         return
       }
-    }
 
-    send({ done: true, error: 'All providers unavailable. Start Ollama: ollama serve' })
-    res.end()
+      // ── NO EXECUTION NEEDED — PURE CHAT ─────────────────────
+      if (!plan.requires_execution || plan.plan.length === 0) {
+        if (plan.direct_response) {
+          const words = plan.direct_response.split(' ')
+          for (const word of words) {
+            send({ token: word + ' ', done: false, provider: apiName })
+            await new Promise(r => setTimeout(r, 10))
+          }
+        } else {
+          await streamChat(message, history, userName, provider, activeModel, apiName, send)
+        }
+        incrementUsage(apiName)
+        send({ done: true, provider: apiName })
+        res.end()
+        memoryLayers.write(`User: ${message}`, ['chat'])
+        return
+      }
+
+      // ── SHOW PLAN SUMMARY ────────────────────────────────────
+      send({
+        activity: {
+          icon: '📋', agent: 'Aiden',
+          message: `Plan: ${plan.plan.map(s => s.tool).join(' → ')}`,
+          style: 'act',
+        },
+        done: false,
+      })
+
+      // ── STEP 2: EXECUTE ──────────────────────────────────────
+      const results: StepResult[] = await executePlan(plan, (step: ToolStep, result: StepResult) => {
+        send({
+          activity: { icon: '🔧', agent: 'Aiden', message: `${step.tool}: ${step.description}`, style: 'tool' },
+          done: false,
+        })
+        send({
+          activity: {
+            icon:    result.success ? '✅' : '❌',
+            agent:   'Aiden',
+            message: (result.success ? result.output : result.error || 'failed').slice(0, 160),
+            style:   result.success ? 'done' : 'error',
+          },
+          done: false,
+        })
+      })
+
+      // ── STEP 3: RESPOND ──────────────────────────────────────
+      send({ activity: { icon: '✍️', agent: 'Aiden', message: 'Writing response...', style: 'thinking' }, done: false })
+
+      let streamEnded = false
+      const timeout = setTimeout(() => {
+        if (!streamEnded) { send({ done: true, error: 'Response timed out' }); res.end() }
+      }, 30000)
+
+      await respondWithResults(
+        message, plan, results, history,
+        userName, rawKey, activeModel, providerName,
+        (token) => { send({ token, done: false, provider: apiName }) },
+      )
+
+      streamEnded = true
+      clearTimeout(timeout)
+      incrementUsage(apiName)
+      send({ done: true, provider: apiName })
+      res.end()
+      memoryLayers.write(`User: ${message}`, ['chat'])
+
+    } catch (err: any) {
+      const is429 = err.message?.includes('429') || err.message?.toLowerCase().includes('rate')
+      if (is429 && apiName !== 'ollama') {
+        markRateLimited(apiName)
+        send({ token: `\n⚡ ${apiName} rate limited — try again.\n`, done: false })
+      } else {
+        send({ token: `\n❌ ${err.message}`, done: false })
+      }
+      send({ done: true })
+      res.end()
+    }
   })
 
   // GET /api/onboarding — check status + get available models
@@ -615,4 +623,38 @@ export function startApiServer(portArg?: number): Express {
   })
 
   return app
+}
+
+// ── Pure-chat streaming helper (no planner, no tools) ─────────
+
+async function streamChat(
+  message:  string,
+  history:  { role: string; content: string }[],
+  userName: string,
+  provider: any,
+  model:    string,
+  apiName:  string,
+  send:     (data: object) => void,
+): Promise<void> {
+  const chatPrompt = `You are Aiden — a personal AI OS for ${userName}. Calm, direct, intelligent, slightly witty. Co-founder energy.
+Be concise for simple questions, thorough for complex ones. Use markdown when it helps.
+Today: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.`
+
+  const msgs = [
+    { role: 'system', content: chatPrompt },
+    ...history.slice(-8),
+    { role: 'user', content: message },
+  ]
+
+  let streamEnded = false
+  const timeout = setTimeout(() => {
+    if (!streamEnded) send({ done: true, error: 'Chat timeout' })
+  }, 30000)
+
+  await provider.generateStream(msgs, model, (token: string) => {
+    send({ token, done: false, provider: apiName })
+  })
+
+  streamEnded = true
+  clearTimeout(timeout)
 }
