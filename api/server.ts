@@ -163,7 +163,12 @@ export function createApiServer(): Express {
       // ── NO EXECUTION NEEDED — PURE CHAT ─────────────────────
       if (!plan.requires_execution || plan.plan.length === 0) {
         let fullReply = ''
-        if (plan.direct_response) {
+
+        // Capability/skills questions must go through LLM with full context injection.
+        // direct_response from the planner has no capabilities awareness — it will lie.
+        const isCapabilityQuery = /what.*(can you do|skills|tools|capabilities|abilities)|how many skills|what are you capable/i.test(resolvedMessage)
+
+        if (plan.direct_response && !isCapabilityQuery) {
           fullReply = plan.direct_response
           const words = plan.direct_response.split(' ')
           for (const word of words) {
@@ -173,6 +178,7 @@ export function createApiServer(): Express {
         } else {
           await streamChat(resolvedMessage, history, userName, provider, activeModel, apiName, send)
         }
+
         incrementUsage(apiName)
         send({ done: true, provider: apiName })
         res.end()
@@ -1089,7 +1095,43 @@ async function streamChat(
   apiName:  string,
   send:     (data: object) => void,
 ): Promise<void> {
-  const chatPrompt = `You are Aiden — a personal AI OS for ${userName}. Calm, direct, intelligent, slightly witty. Co-founder energy.
+  const streamCapabilities = `YOU ARE AIDEN — DevOS Autonomous AI OS.
+Your REAL built-in tools (these actually work):
+- web_search: Search internet for real-time info
+- deep_research: Multi-pass deep research on any topic
+- file_write: Create and save files to disk
+- file_read: Read files from disk
+- open_browser: Open URLs in browser
+- shell_exec: Run PowerShell commands
+- run_python: Execute Python scripts
+- run_node: Execute Node.js scripts
+- run_powershell: Run PowerShell natively
+- notify: Send desktop notifications
+- system_info: Get CPU/RAM/disk info
+- fetch_url: Download from any URL
+- git_push: Commit and push to GitHub
+- vercel_deploy: Deploy to Vercel
+- mouse_move: Move cursor to coordinates
+- mouse_click: Click anywhere on screen
+- keyboard_type: Type text into any window
+- keyboard_press: Press keys (Enter, Tab, Escape etc)
+- screenshot: Capture full screen
+- screen_read: Screenshot + vision model describes screen
+- vision_loop: Autonomous UI control loop
+- get_stocks: NSE/BSE stock data
+- knowledge_search: Search your personal knowledge base
+
+RULES:
+- NEVER say you cannot access the internet — you have web_search
+- NEVER say you cannot create files — you have file_write
+- NEVER say you cannot control the computer — you have mouse_move, mouse_click, keyboard_type
+- NEVER list fake capabilities like graphic design, music generation, video production
+- NEVER say you have 250+ skills — you have exactly 23 tools listed above
+- When asked what you can do — list ONLY the 23 real tools above
+- When asked how many skills — answer 23 tools
+`
+
+  const chatPrompt = streamCapabilities + `You are Aiden — a personal AI OS for ${userName}. Calm, direct, intelligent, slightly witty. Co-founder energy.
 Be concise for simple questions, thorough for complex ones. Use markdown when it helps.
 Today: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.`
 
