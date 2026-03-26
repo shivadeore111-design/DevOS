@@ -49,6 +49,7 @@ import { semanticMemory }                               from '../core/semanticMe
 import { entityGraph }                                  from '../core/entityGraph'
 import { learningMemory }                               from '../core/learningMemory'
 import { knowledgeBase }                               from '../core/knowledgeBase'
+import { skillTeacher }                               from '../core/skillTeacher'
 
 // ── App factory ───────────────────────────────────────────────
 
@@ -518,6 +519,38 @@ export function createApiServer(): Express {
   // GET /api/knowledge/stats
   app.get('/api/knowledge/stats', (_req: Request, res: Response) => {
     res.json(knowledgeBase.getStats())
+  })
+
+  // ── Skill teacher endpoints ───────────────────────────────────
+
+  // GET /api/skills/learned — list learned + approved skills + stats
+  app.get('/api/skills/learned', (_req: Request, res: Response) => {
+    try {
+      res.json({
+        learned:  skillTeacher.listLearned(),
+        approved: skillTeacher.listApproved(),
+        stats:    skillTeacher.getStats(),
+      })
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
+  // DELETE /api/skills/learned/:name — delete a learned skill
+  app.delete('/api/skills/learned/:name', (req: Request, res: Response) => {
+    try {
+      const skillDir = path.join(
+        process.cwd(), 'workspace', 'skills', 'learned', String(req.params.name),
+      )
+      if (!fs.existsSync(skillDir)) {
+        res.status(404).json({ error: 'Skill not found' }); return
+      }
+      fs.rmSync(skillDir, { recursive: true })
+      skillLoader.refresh()
+      res.json({ success: true })
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
   })
 
   // GET /api/config — current active model + user info

@@ -19,6 +19,7 @@ import { learningMemory }                  from './learningMemory'
 import { conversationMemory }             from './conversationMemory'
 import { getNextAvailableAPI, markRateLimited, incrementUsage } from '../providers/router'
 import { knowledgeBase } from './knowledgeBase'
+import { skillTeacher }  from './skillTeacher'
 import * as nodeFs             from 'fs'
 import * as nodePath           from 'path'
 import * as nodeOs             from 'os'
@@ -644,6 +645,28 @@ export async function executePlan(
       ? results.find(r => !r.success)?.error
       : undefined,
   })
+
+  // Self-teaching — generate/update SKILL.md for this tool sequence
+  const executedTools  = results.map(r => r.tool)
+  const totalDuration  = results.reduce((s, r) => s + (r.duration || 0), 0)
+  const anyFailed      = results.some(r => !r.success)
+
+  if (allSucceeded && executedTools.length > 0) {
+    try {
+      const next = getNextAvailableAPI()
+      if (next) {
+        const key = next.entry.key.startsWith('env:')
+          ? (process.env[next.entry.key.replace('env:', '')] || '')
+          : next.entry.key
+        skillTeacher.recordSuccess(
+          plan.goal, executedTools, totalDuration,
+          callLLM, key, next.entry.model, next.entry.provider,
+        ).catch(() => {})
+      }
+    } catch {}
+  } else if (anyFailed) {
+    skillTeacher.recordFailure(plan.goal, executedTools)
+  }
 
   return results
 }

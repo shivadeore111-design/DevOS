@@ -37,10 +37,12 @@ export class SkillLoader {
   private cache: Skill[] | null = null
 
   constructor() {
-    // Check both built-in project skills and user workspace skills
+    // Check built-in skills, workspace skills, and self-learned/promoted skills
     this.skillsDirs = [
       path.join(process.cwd(), 'skills'),
       path.join(process.cwd(), 'workspace', 'skills'),
+      path.join(process.cwd(), 'workspace', 'skills', 'learned'),
+      path.join(process.cwd(), 'workspace', 'skills', 'approved'),
     ].filter(d => {
       try { return fs.existsSync(d) } catch { return false }
     })
