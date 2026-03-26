@@ -43,6 +43,7 @@ import { planTool }                                     from '../core/planTool'
 import type { Phase }                                   from '../core/planTool'
 import { taskStateManager }                             from '../core/taskState'
 import { recoverTasks }                                 from '../core/taskRecovery'
+import { skillLoader }                                  from '../core/skillLoader'
 
 // ── App factory ───────────────────────────────────────────────
 
@@ -596,6 +597,37 @@ export function createApiServer(): Express {
     } catch {
       res.json([])
     }
+  })
+
+  // GET /api/skills — list all available skills
+  app.get('/api/skills', (_req: Request, res: Response) => {
+    try {
+      const skills = skillLoader.loadAll()
+      res.json(skills.map(s => ({
+        name:        s.name,
+        description: s.description,
+        version:     s.version,
+        tags:        s.tags,
+        filePath:    s.filePath,
+      })))
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
+  // GET /api/skills/relevant?q=query — find skills for a query
+  app.get('/api/skills/relevant', (req: Request, res: Response) => {
+    const query = (req.query.q as string) || ''
+    if (!query) { res.status(400).json({ error: 'q parameter required' }); return }
+    const relevant = skillLoader.findRelevant(query)
+    res.json(relevant.map(s => ({ name: s.name, description: s.description, tags: s.tags })))
+  })
+
+  // POST /api/skills/refresh — reload all skills from disk
+  app.post('/api/skills/refresh', (_req: Request, res: Response) => {
+    skillLoader.refresh()
+    const skills = skillLoader.loadAll()
+    res.json({ success: true, count: skills.length, skills: skills.map(s => s.name) })
   })
 
   // GET /api/tasks — list all tasks with status

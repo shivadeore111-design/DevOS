@@ -14,6 +14,7 @@ import { planTool }                        from './planTool'
 import type { Phase }                      from './planTool'
 import { WorkspaceMemory }                 from './workspaceMemory'
 import { taskStateManager, TaskState }     from './taskState'
+import { skillLoader }                     from './skillLoader'
 import * as nodeFs             from 'fs'
 import * as nodePath           from 'path'
 import * as nodeOs             from 'os'
@@ -231,6 +232,10 @@ export async function planWithLLM(
     'system_info', 'notify', 'deep_research',
   ]
 
+  // Load any relevant skills to guide planning
+  const relevantSkills = skillLoader.findRelevant(message)
+  const skillContext   = skillLoader.formatForPrompt(relevantSkills)
+
   const plannerPrompt = `You are DevOS Planner. Analyze the user request and output a JSON plan.
 
 CRITICAL RULES:
@@ -277,7 +282,9 @@ OUTPUT FORMAT (strict JSON only):
 }
 
 If requires_execution is false:
-{ "goal": "...", "requires_execution": false, "reasoning": "...", "plan": [] }`
+{ "goal": "...", "requires_execution": false, "reasoning": "...", "plan": [] }
+${skillContext}
+Output ONLY valid JSON, nothing else:`
 
   const messages = [
     { role: 'system', content: plannerPrompt },
@@ -610,6 +617,12 @@ export async function respondWithResults(
     weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
   })
 
+  // Load skill guidance for the response
+  const responseSkills = skillLoader.findRelevant(originalMessage, 2)
+  const responseSkillContext = responseSkills.length > 0
+    ? `\nSkill guidance for this response:\n${responseSkills.map(s => `- ${s.name}: ${s.description}`).join('\n')}\n`
+    : ''
+
   // ── Depth scoring: detect research tasks and force deep analysis ──
   const isResearch = results.some(r =>
     r.tool === 'deep_research' ||
@@ -638,7 +651,7 @@ export async function respondWithResults(
     : originalMessage
 
   const messages = [
-    { role: 'system', content: responderSystem(userName, date) },
+    { role: 'system', content: responderSystem(userName, date) + responseSkillContext },
     ...history.slice(-6),
     { role: 'user',   content: userContent },
   ]
