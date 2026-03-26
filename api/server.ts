@@ -39,6 +39,8 @@ import { getSmartProvider, markRateLimited, incrementUsage } from '../providers/
 import { executeTool } from '../core/toolRegistry'
 import { planWithLLM, executePlan, respondWithResults } from '../core/agentLoop'
 import type { AgentPlan, StepResult, ToolStep }        from '../core/agentLoop'
+import { planTool }                                     from '../core/planTool'
+import type { Phase }                                   from '../core/planTool'
 
 // ── App factory ───────────────────────────────────────────────
 
@@ -153,32 +155,52 @@ export function createApiServer(): Express {
         return
       }
 
-      // ── SHOW PLAN SUMMARY ────────────────────────────────────
-      send({
-        activity: {
-          icon: '📋', agent: 'Aiden',
-          message: `Plan: ${plan.plan.map(s => s.tool).join(' → ')}`,
-          style: 'act',
-        },
-        done: false,
-      })
-
-      // ── STEP 2: EXECUTE ──────────────────────────────────────
-      const results: StepResult[] = await executePlan(plan, (step: ToolStep, result: StepResult) => {
+      // ── SHOW PLAN PHASES ────────────────────────────────────
+      if (plan.phases && plan.phases.length > 0) {
+        const phaseList = plan.phases
+          .filter((p: Phase) => p.title !== 'Deliver Results')
+          .map((p: Phase, i: number) => `${i + 1}. ${p.title}`)
+          .join(' → ')
         send({
-          activity: { icon: '🔧', agent: 'Aiden', message: `${step.tool}: ${step.description}`, style: 'tool' },
+          activity: { icon: '📋', agent: 'Aiden', message: `Plan: ${phaseList}`, style: 'act' },
           done: false,
         })
+      } else {
         send({
           activity: {
-            icon:    result.success ? '✅' : '❌',
-            agent:   'Aiden',
-            message: (result.success ? result.output : result.error || 'failed').slice(0, 160),
-            style:   result.success ? 'done' : 'error',
+            icon: '📋', agent: 'Aiden',
+            message: `Plan: ${plan.plan.map(s => s.tool).join(' → ')}`,
+            style: 'act',
           },
           done: false,
         })
-      })
+      }
+
+      // ── STEP 2: EXECUTE ──────────────────────────────────────
+      const results: StepResult[] = await executePlan(
+        plan,
+        (step: ToolStep, result: StepResult) => {
+          send({
+            activity: { icon: '🔧', agent: 'Aiden', message: `${step.tool}: ${step.description}`, style: 'tool' },
+            done: false,
+          })
+          send({
+            activity: {
+              icon:    result.success ? '✅' : '❌',
+              agent:   'Aiden',
+              message: (result.success ? result.output : result.error || 'failed').slice(0, 160),
+              style:   result.success ? 'done' : 'error',
+            },
+            done: false,
+          })
+        },
+        (phase: Phase, index: number, total: number) => {
+          send({
+            activity: { icon: '▶', agent: 'Aiden', message: `Phase ${index + 1}/${total}: ${phase.title}`, style: 'act' },
+            done: false,
+          })
+        },
+      )
 
       // ── STEP 3: RESPOND ──────────────────────────────────────
       send({ activity: { icon: '✍️', agent: 'Aiden', message: 'Writing response...', style: 'thinking' }, done: false })
@@ -534,6 +556,45 @@ export function createApiServer(): Express {
   // POST /api/automate, POST /api/automate/stop,
   // GET  /api/automate/log, GET /api/automate/session
   registerComputerUseRoutes(app)
+
+  // GET /api/plan/:id — get plan status
+  app.get('/api/plan/:id', (req: Request, res: Response) => {
+    const plan = planTool.getPlan(String(req.params.id))
+    if (!plan) { res.status(404).json({ error: 'Plan not found' }); return }
+    res.json(plan)
+  })
+
+  // GET /api/plans/recent — list 10 most recent task plans
+  app.get('/api/plans/recent', (_req: Request, res: Response) => {
+    try {
+      const tasksDir = path.join(process.cwd(), 'workspace', 'tasks')
+      if (!fs.existsSync(tasksDir)) { res.json([]); return }
+
+      const tasks = fs.readdirSync(tasksDir)
+        .filter(t => t.startsWith('task_'))
+        .sort().reverse().slice(0, 10)
+        .map(t => {
+          try {
+            const planPath = path.join(tasksDir, t, 'plan.json')
+            if (!fs.existsSync(planPath)) return null
+            const p = JSON.parse(fs.readFileSync(planPath, 'utf-8')) as any
+            return {
+              id:               p.id,
+              goal:             p.goal,
+              status:           p.status,
+              phases:           p.phases.length,
+              completedPhases:  p.phases.filter((ph: any) => ph.status === 'done').length,
+              createdAt:        p.createdAt,
+            }
+          } catch { return null }
+        })
+        .filter(Boolean)
+
+      res.json(tasks)
+    } catch {
+      res.json([])
+    }
+  })
 
   // ── 404 catch-all ─────────────────────────────────────────────
   app.use((_req: Request, res: Response) => {

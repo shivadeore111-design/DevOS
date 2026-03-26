@@ -10,6 +10,9 @@
 
 import { executeTool, TOOLS } from './toolRegistry'
 import { livePulse }          from '../coordination/livePulse'
+import { planTool }           from './planTool'
+import type { Phase }         from './planTool'
+import { WorkspaceMemory }    from './workspaceMemory'
 import * as nodeFs             from 'fs'
 import * as nodePath           from 'path'
 import * as nodeOs             from 'os'
@@ -24,10 +27,13 @@ export interface ToolStep {
 }
 
 export interface AgentPlan {
-  goal?:              string
+  goal:               string
   requires_execution: boolean
   plan:               ToolStep[]
   direct_response?:   string
+  planId?:            string
+  workspaceDir?:      string
+  phases?:            Phase[]
 }
 
 export interface StepResult {
@@ -143,6 +149,70 @@ function buildHeaders(providerName: string, apiKey: string): Record<string, stri
   return headers
 }
 
+// ── Phase inference from tool steps ───────────────────────────
+// Groups consecutive steps of the same capability type into phases.
+
+function inferPhasesFromSteps(
+  steps: ToolStep[],
+): Omit<Phase, 'status' | 'result' | 'startedAt' | 'completedAt'>[] {
+  const capabilityMap: Record<string, string> = {
+    web_search:      'research', fetch_page:      'research',
+    deep_research:   'research', fetch_url:       'research',
+    open_browser:    'browsing', browser_click:   'browsing',
+    browser_extract: 'browsing', browser_type:    'browsing',
+    file_write:      'writing',  file_read:       'reading',
+    file_list:       'reading',  shell_exec:      'execution',
+    run_python:      'execution', run_node:       'execution',
+    system_info:     'execution', notify:         'execution',
+  }
+  const phaseNames: Record<string, string> = {
+    research:  'Research & Gather',
+    browsing:  'Browse & Extract',
+    writing:   'Write & Save',
+    reading:   'Read & Analyze',
+    execution: 'Execute Tasks',
+    delivery:  'Deliver Results',
+  }
+
+  const phases: Omit<Phase, 'status' | 'result' | 'startedAt' | 'completedAt'>[] = []
+  let currentCap  = ''
+  let currentTools: string[] = []
+
+  for (const step of steps) {
+    const cap = capabilityMap[step.tool] || 'execution'
+    if (cap !== currentCap && currentTools.length > 0) {
+      phases.push({
+        id:           `phase_${phases.length + 1}`,
+        title:        phaseNames[currentCap] || currentCap,
+        capabilities: [currentCap as Phase['capabilities'][0]],
+        tools:        [...currentTools],
+      })
+      currentTools = []
+    }
+    currentCap = cap
+    currentTools.push(step.tool)
+  }
+
+  if (currentTools.length > 0) {
+    phases.push({
+      id:           `phase_${phases.length + 1}`,
+      title:        phaseNames[currentCap] || currentCap,
+      capabilities: [currentCap as Phase['capabilities'][0]],
+      tools:        currentTools,
+    })
+  }
+
+  // Always end with a Deliver Results phase
+  phases.push({
+    id:           `phase_${phases.length + 1}`,
+    title:        'Deliver Results',
+    capabilities: ['delivery'],
+    tools:        ['respond'],
+  })
+
+  return phases
+}
+
 // ── STEP 1: planWithLLM ────────────────────────────────────────
 
 export async function planWithLLM(
@@ -253,13 +323,23 @@ If requires_execution is false:
       description: s.description || '',
     }))
 
+    // Fix step ordering — research before write
     const orderedPlan = fixStepOrdering(normalizedPlan)
+
+    // Create phased task plan and workspace
+    const phases    = inferPhasesFromSteps(orderedPlan)
+    const taskPlan  = planTool.create(message, phases)
+    const workspace = new WorkspaceMemory(taskPlan.id)
+    workspace.write('goal.txt', message)
 
     return {
       goal:               parsed.goal || message,
       requires_execution: parsed.requires_execution === true && orderedPlan.length > 0,
       plan:               orderedPlan,
       direct_response:    parsed.direct_response,
+      planId:             taskPlan.id,
+      workspaceDir:       taskPlan.workspaceDir,
+      phases:             taskPlan.phases,
     }
 
   } catch (e: any) {
@@ -271,22 +351,49 @@ If requires_execution is false:
 // ── STEP 2: executePlan ────────────────────────────────────────
 
 export async function executePlan(
-  plan:   AgentPlan,
-  onStep: (step: ToolStep, result: StepResult) => void,
+  plan:           AgentPlan,
+  onStep:         (step: ToolStep, result: StepResult) => void,
+  onPhaseChange?: (phase: Phase, index: number, total: number) => void,
 ): Promise<StepResult[]> {
+
   const results:     StepResult[]           = []
   const stepOutputs: Record<number, string> = {}
 
-  const state: ExecutionState = {
-    goal:           plan.goal || '',
-    completedSteps: [],
-    currentStep:    0,
-    startTime:      Date.now(),
+  // Workspace memory for persisting intermediate artifacts
+  const workspace = plan.planId ? new WorkspaceMemory(plan.planId) : null
+
+  // Maps each tool to its capability bucket (for phase transition detection)
+  const capabilityMap: Record<string, string> = {
+    web_search:      'research', fetch_page:      'research',
+    deep_research:   'research', fetch_url:       'research',
+    open_browser:    'browsing', browser_click:   'browsing',
+    browser_extract: 'browsing', browser_type:    'browsing',
+    file_write:      'writing',  file_read:       'reading',
+    file_list:       'reading',  shell_exec:      'execution',
+    run_python:      'execution', run_node:       'execution',
+    system_info:     'execution', notify:         'execution',
   }
 
+  let lastCapability = ''
+  let currentPhaseIdx = 0
+  const totalPhases   = plan.phases?.length || 1
+
   for (const step of plan.plan) {
-    state.currentStep = step.step
-    const stepStart   = Date.now()
+    const stepStart = Date.now()
+
+    // Detect phase transition — advance planTool when capability changes
+    const thisCap = capabilityMap[step.tool] || 'execution'
+    if (thisCap !== lastCapability && lastCapability !== '') {
+      if (plan.planId) {
+        planTool.advancePhase(plan.planId, `Completed ${lastCapability}`)
+        currentPhaseIdx++
+        const nextPhase = planTool.getCurrentPhase(plan.planId)
+        if (nextPhase && onPhaseChange) {
+          onPhaseChange(nextPhase, currentPhaseIdx, totalPhases)
+        }
+      }
+    }
+    lastCapability = thisCap
 
     livePulse.tool('Aiden', step.tool, JSON.stringify(step.input).slice(0, 80))
 
@@ -295,11 +402,10 @@ export async function executePlan(
       const stepResult: StepResult = {
         step: step.step, tool: step.tool, input: step.input,
         success:  false, output: '',
-        error:    `Tool "${step.tool}" does not exist. Available: ${Object.keys(TOOLS).join(', ')}`,
+        error:    `Tool "${step.tool}" does not exist. Available: ${Object.keys(TOOLS).slice(0, 8).join(', ')}`,
         duration: 0,
       }
       results.push(stepResult)
-      state.completedSteps.push(stepResult)
       onStep(step, stepResult)
       livePulse.error('Aiden', `Invalid tool: ${step.tool}`)
       continue
@@ -326,6 +432,11 @@ export async function executePlan(
           duration: Date.now() - stepStart,
         }
 
+        // Persist significant outputs to workspace
+        if (toolResult.success && workspace && toolResult.output.length > 300) {
+          workspace.write(`step_${step.step}_${step.tool}.txt`, toolResult.output)
+        }
+
         // Verify file_write actually landed on disk
         if (toolResult.success && step.tool === 'file_write') {
           const targetPath = resolvedInput.path || ''
@@ -338,7 +449,7 @@ export async function executePlan(
         if (!stepResult.success && attempts < MAX_ATTEMPTS) {
           livePulse.error('Aiden', `Attempt ${attempts} failed: ${stepResult.error} — retrying...`)
           await new Promise(r => setTimeout(r, 800))
-          // For file_write failures, try resolving path to Desktop
+          // For file_write failures, fall back to Desktop path
           if (step.tool === 'file_write' && resolvedInput.path) {
             resolvedInput = {
               ...resolvedInput,
@@ -350,7 +461,6 @@ export async function executePlan(
         }
 
       } catch (e: any) {
-        state.lastError = e.message
         stepResult = {
           step: step.step, tool: step.tool, input: resolvedInput,
           success:  false, output: '',
@@ -369,7 +479,6 @@ export async function executePlan(
     if (stepResult) {
       stepOutputs[step.step] = stepResult.output
       results.push(stepResult)
-      state.completedSteps.push(stepResult)
       onStep(step, stepResult)
 
       if (stepResult.success) {
@@ -381,6 +490,11 @@ export async function executePlan(
     }
   }
 
+  // Complete final phase
+  if (plan.planId) {
+    planTool.advancePhase(plan.planId, 'All steps completed')
+  }
+
   return results
 }
 
@@ -390,14 +504,14 @@ export async function executePlan(
 
 function fixStepOrdering(steps: ToolStep[]): ToolStep[] {
   const researchTools = ['web_search', 'deep_research', 'fetch_url', 'fetch_page']
-  const writeTools    = ['file_write', 'file_read']
+  const writeTools    = ['file_write']
 
-  const researchSteps = steps.filter(s => researchTools.includes(s.tool))
-  const writeSteps    = steps.filter(s => writeTools.includes(s.tool))
-  const otherSteps    = steps.filter(s => !researchTools.includes(s.tool) && !writeTools.includes(s.tool))
+  const research = steps.filter(s => researchTools.includes(s.tool))
+  const writes   = steps.filter(s => writeTools.includes(s.tool))
+  const others   = steps.filter(s => !researchTools.includes(s.tool) && !writeTools.includes(s.tool))
 
   // Order: research → other → write — re-number steps
-  return [...researchSteps, ...otherSteps, ...writeSteps]
+  return [...research, ...others, ...writes]
     .map((s, i) => ({ ...s, step: i + 1 }))
 }
 

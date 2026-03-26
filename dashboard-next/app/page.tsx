@@ -156,12 +156,13 @@ export default function Home() {
   const [activeModel, setActiveModel] = useState('')
 
   // ── Settings state ───────────────────────────────────────────
-  const [providers, setProviders]         = useState<any[]>([])
-  const [routing, setRouting]             = useState<any>({ mode: 'auto', fallbackToOllama: true })
+  const [providers, setProviders]           = useState<any[]>([])
+  const [routing, setRouting]               = useState<any>({ mode: 'auto', fallbackToOllama: true })
   const [addingProvider, setAddingProvider] = useState<string | null>(null)
-  const [newKey, setNewKey]               = useState('')
-  const [newModel, setNewModel]           = useState('')
-  const [savingKey, setSavingKey]         = useState(false)
+  const [newKey, setNewKey]                 = useState('')
+  const [newModel, setNewModel]             = useState('')
+  const [savingKey, setSavingKey]           = useState(false)
+  const [recentPlans, setRecentPlans]       = useState<any[]>([])
 
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef  = useRef<HTMLTextAreaElement>(null)
@@ -210,7 +211,7 @@ export default function Home() {
       })
   }, [])
 
-  // ── Load providers when Settings tab opens ──────────────────
+  // ── Load providers + recent plans when Settings tab opens ──
   useEffect(() => {
     if (tab !== 'settings') return
     fetch('http://localhost:4200/api/providers')
@@ -219,6 +220,14 @@ export default function Home() {
         setProviders(d.apis || [])
         setRouting(d.routing || { mode: 'auto', fallbackToOllama: true })
       })
+      .catch(() => {})
+  }, [tab])
+
+  useEffect(() => {
+    if (tab !== 'settings') return
+    fetch('http://localhost:4200/api/plans/recent')
+      .then(r => r.json())
+      .then((d: any) => setRecentPlans(Array.isArray(d) ? d : []))
       .catch(() => {})
   }, [tab])
 
@@ -543,6 +552,44 @@ export default function Home() {
         /* ── SETTINGS PANEL ─────────────────────────────────── */
         <div style={{ flex:1, overflowY:'auto', padding:'24px 16px' }}>
           <div style={{ maxWidth:'640px', margin:'0 auto', display:'flex', flexDirection:'column', gap:'16px' }}>
+
+            {/* Recent Tasks */}
+            {recentPlans.length > 0 && (
+              <div style={{ marginBottom: '8px' }}>
+                <div style={{
+                  fontSize: '10px', fontFamily: 'monospace',
+                  color: 'rgba(255,255,255,0.25)', textTransform: 'uppercase',
+                  letterSpacing: '.1em', marginBottom: '8px',
+                }}>
+                  Recent Tasks ({recentPlans.length})
+                </div>
+                {recentPlans.map((p: any) => (
+                  <div key={p.id} style={{
+                    display: 'flex', alignItems: 'center', gap: '10px',
+                    padding: '10px 12px', marginBottom: '4px',
+                    background: 'rgba(255,255,255,0.03)',
+                    border: '1px solid rgba(255,255,255,0.06)',
+                    borderRadius: '8px', fontSize: '11px', fontFamily: 'monospace',
+                  }}>
+                    <span style={{
+                      color: p.status === 'done' ? '#22c55e' : p.status === 'failed' ? '#f87171' : '#63b3ed',
+                      flexShrink: 0,
+                    }}>
+                      {p.status === 'done' ? '✓' : p.status === 'failed' ? '✗' : '▶'}
+                    </span>
+                    <span style={{
+                      flex: 1, color: 'rgba(255,255,255,0.6)',
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>
+                      {String(p.goal).slice(0, 50)}
+                    </span>
+                    <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: '9px', flexShrink: 0 }}>
+                      {p.completedPhases}/{p.phases} phases
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* Header */}
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
