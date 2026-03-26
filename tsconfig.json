@@ -17,6 +17,7 @@
     "types/computerUse.ts",
     "types/executor.ts",
     "types/screenshot-desktop.d.ts",
+    "types/nut-tree-nut-js.d.ts",
     "core/faultEngine.ts",
     "core/truthCheck.ts",
     "core/executor.ts",

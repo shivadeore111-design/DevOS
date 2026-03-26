@@ -11,6 +11,16 @@ import { promisify } from 'util'
 import fs   from 'fs'
 import path from 'path'
 
+import {
+  mouse_move,
+  mouse_click,
+  keyboard_type,
+  keyboard_press,
+  screenshot,
+  screen_read,
+  vision_loop,
+} from './computerControl'
+
 const execAsync = promisify(exec)
 
 // ── Types ─────────────────────────────────────────────────────
@@ -669,6 +679,15 @@ export const TOOLS: Record<string, (payload: any) => Promise<ToolResult>> = {
       output:  results.join('\n\n---\n\n').slice(0, 5000),
     }
   },
+
+  // ── Computer control tools ─────────────────────────────────────
+  mouse_move:     async (p: any) => mouse_move(p),
+  mouse_click:    async (p: any) => mouse_click(p),
+  keyboard_type:  async (p: any) => keyboard_type(p),
+  keyboard_press: async (p: any) => keyboard_press(p),
+  screenshot:     async (p: any) => screenshot(p),
+  screen_read:    async (p: any) => screen_read(p),
+  vision_loop:    async (p: any) => vision_loop(p),
 }
 
 // ── Public executor ───────────────────────────────────────────

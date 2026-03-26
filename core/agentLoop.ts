@@ -168,6 +168,10 @@ function inferPhasesFromSteps(
     get_stocks:      'research',
     open_browser:    'browsing', browser_click:   'browsing',
     browser_extract: 'browsing', browser_type:    'browsing',
+    mouse_move:      'browsing', mouse_click:     'browsing',
+    keyboard_type:   'browsing', keyboard_press:  'browsing',
+    screenshot:      'browsing', screen_read:     'browsing',
+    vision_loop:     'browsing',
     file_write:      'writing',  file_read:       'reading',
     file_list:       'reading',  shell_exec:      'execution',
     run_python:      'execution', run_node:       'execution',
@@ -237,6 +241,8 @@ export async function planWithLLM(
     'browser_click', 'browser_type', 'file_write', 'file_read',
     'file_list', 'shell_exec', 'run_python', 'run_node',
     'system_info', 'notify', 'deep_research', 'get_stocks',
+    'mouse_move', 'mouse_click', 'keyboard_type', 'keyboard_press',
+    'screenshot', 'screen_read', 'vision_loop',
   ]
 
   // Load any relevant skills to guide planning
@@ -468,6 +474,10 @@ export async function executePlan(
     get_stocks:      'research',
     open_browser:    'browsing', browser_click:   'browsing',
     browser_extract: 'browsing', browser_type:    'browsing',
+    mouse_move:      'browsing', mouse_click:     'browsing',
+    keyboard_type:   'browsing', keyboard_press:  'browsing',
+    screenshot:      'browsing', screen_read:     'browsing',
+    vision_loop:     'browsing',
     file_write:      'writing',  file_read:       'reading',
     file_list:       'reading',  shell_exec:      'execution',
     run_python:      'execution', run_node:       'execution',
@@ -889,7 +899,7 @@ RULES — follow strictly:
 
 // ── Non-streaming LLM helper (used by deepResearch) ──────────
 
-async function callLLM(
+export async function callLLM(
   prompt:       string,
   apiKey:       string,
   model:        string,
