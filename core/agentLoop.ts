@@ -16,6 +16,8 @@ import { WorkspaceMemory }                 from './workspaceMemory'
 import { taskStateManager, TaskState }     from './taskState'
 import { skillLoader }                     from './skillLoader'
 import { learningMemory }                  from './learningMemory'
+import { conversationMemory }             from './conversationMemory'
+import { getNextAvailableAPI }            from '../providers/router'
 import * as nodeFs             from 'fs'
 import * as nodePath           from 'path'
 import * as nodeOs             from 'os'
@@ -306,64 +308,94 @@ Output ONLY valid JSON, nothing else:`
     { role: 'user', content: message },
   ]
 
-  let raw = ''
+  // ── Provider retry loop — up to 3 attempts, rotates on failure ──
+  let curApiKey   = apiKey
+  let curModel    = model
+  let curProvider = provider
+  let raw         = ''
+  let parsed: any = null
 
-  try {
-    raw = await callLLM(
-      messages.map(m => `${m.role}: ${m.content}`).join('\n'),
-      apiKey, model, provider,
-    )
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      raw = await callLLM(
+        messages.map(m => `${m.role}: ${m.content}`).join('\n'),
+        curApiKey, curModel, curProvider,
+      )
 
-    const jsonMatch = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').match(/\{[\s\S]*\}/)
-    if (!jsonMatch) throw new Error('No JSON in planner response')
-
-    const parsed = JSON.parse(jsonMatch[0]) as any
-
-    // Validate tool names — reject hallucinated tools
-    const rawPlan = (parsed.plan || parsed.steps || []) as any[]
-    const validatedPlan = rawPlan.filter((s: any) => {
-      if (!ALLOWED_TOOLS.includes(s.tool)) {
-        console.warn(`[Planner] Rejected invalid tool: ${s.tool}`)
-        return false
+      if (!raw || raw.trim().length === 0) {
+        console.warn(`[Planner] Empty response attempt ${attempt + 1} (${curProvider}) — rotating`)
+      } else {
+        const jsonMatch = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').match(/\{[\s\S]*\}/)
+        if (!jsonMatch) {
+          console.warn(`[Planner] No JSON attempt ${attempt + 1}: ${raw.slice(0, 100)}`)
+        } else {
+          parsed = JSON.parse(jsonMatch[0])
+          break // success — exit retry loop
+        }
       }
-      // Reject old-style placeholder inputs
-      const inputStr = JSON.stringify(s.input || s.args || {})
-      if (inputStr.includes('{{') || inputStr.includes('{result') || inputStr.includes('{output')) {
-        console.warn(`[Planner] Rejected placeholder input in: ${s.tool}`)
-        return false
-      }
-      return true
-    })
-
-    const normalizedPlan: ToolStep[] = validatedPlan.map((s: any, idx: number) => ({
-      step:        s.step        ?? (idx + 1),
-      tool:        s.tool        || '',
-      input:       s.input       || s.args || {},
-      description: s.description || '',
-    }))
-
-    // Fix step ordering — research before write
-    const orderedPlan = fixStepOrdering(normalizedPlan)
-
-    // Create phased task plan and workspace
-    const phases    = inferPhasesFromSteps(orderedPlan)
-    const taskPlan  = planTool.create(message, phases)
-    const workspace = new WorkspaceMemory(taskPlan.id)
-    workspace.write('goal.txt', message)
-
-    return {
-      goal:               parsed.goal || message,
-      requires_execution: parsed.requires_execution === true && orderedPlan.length > 0,
-      plan:               orderedPlan,
-      direct_response:    parsed.direct_response,
-      planId:             taskPlan.id,
-      workspaceDir:       taskPlan.workspaceDir,
-      phases:             taskPlan.phases,
+    } catch (e: any) {
+      console.warn(`[Planner] Attempt ${attempt + 1} error (${curProvider}): ${e.message}`)
     }
 
-  } catch (e: any) {
-    console.error('[Planner] Failed:', e.message, '| Raw:', raw.slice(0, 200))
-    return { goal: message, requires_execution: false, plan: [] }
+    // Rotate to the next available provider for the next attempt
+    try {
+      const next = getNextAvailableAPI()
+      if (next) {
+        curApiKey   = next.entry.key.startsWith('env:')
+          ? (process.env[next.entry.key.replace('env:', '')] || '')
+          : next.entry.key
+        curModel    = next.entry.model
+        curProvider = next.entry.provider
+        console.log(`[Planner] Rotating to ${next.entry.name} (${curProvider}/${curModel})`)
+      }
+    } catch {}
+  }
+
+  if (!parsed) {
+    console.warn('[Planner] All attempts failed — direct answer fallback')
+    return { goal: message, requires_execution: false, plan: [], phases: [] }
+  }
+
+  // Validate tool names — reject hallucinated tools
+  const rawPlan = (parsed.plan || parsed.steps || []) as any[]
+  const validatedPlan = rawPlan.filter((s: any) => {
+    if (!ALLOWED_TOOLS.includes(s.tool)) {
+      console.warn(`[Planner] Rejected invalid tool: ${s.tool}`)
+      return false
+    }
+    // Reject old-style placeholder inputs
+    const inputStr = JSON.stringify(s.input || s.args || {})
+    if (inputStr.includes('{{') || inputStr.includes('{result') || inputStr.includes('{output')) {
+      console.warn(`[Planner] Rejected placeholder input in: ${s.tool}`)
+      return false
+    }
+    return true
+  })
+
+  const normalizedPlan: ToolStep[] = validatedPlan.map((s: any, idx: number) => ({
+    step:        s.step        ?? (idx + 1),
+    tool:        s.tool        || '',
+    input:       s.input       || s.args || {},
+    description: s.description || '',
+  }))
+
+  // Fix step ordering — research before write
+  const orderedPlan = fixStepOrdering(normalizedPlan)
+
+  // Create phased task plan and workspace
+  const phases    = inferPhasesFromSteps(orderedPlan)
+  const taskPlan  = planTool.create(message, phases)
+  const workspace = new WorkspaceMemory(taskPlan.id)
+  workspace.write('goal.txt', message)
+
+  return {
+    goal:               parsed.goal || message,
+    requires_execution: parsed.requires_execution === true && orderedPlan.length > 0,
+    plan:               orderedPlan,
+    direct_response:    parsed.direct_response,
+    planId:             taskPlan.id,
+    workspaceDir:       taskPlan.workspaceDir,
+    phases:             taskPlan.phases,
   }
 }
 
@@ -676,9 +708,15 @@ export async function respondWithResults(
       ).join('\n\n')
     : ''
 
+  // Inject conversation memory so responder can answer questions about past work
+  const memCtx    = conversationMemory.buildContext()
+  const memSection = memCtx
+    ? `\nCONVERSATION HISTORY:\n${memCtx}\n\nIf the user asks what we worked on, what was researched, or references previous work — answer from this history.\n`
+    : ''
+
   const userContent = executionSummary
-    ? `User asked: "${originalMessage}"\n\nReal execution results:\n${executionSummary}\n\nRespond naturally based on these real results only.${depthInstruction}`
-    : originalMessage
+    ? `User asked: "${originalMessage}"\n\nReal execution results:\n${executionSummary}\n\nRespond naturally based on these real results only.${depthInstruction}${memSection}`
+    : `${originalMessage}${memSection}`
 
   const messages = [
     { role: 'system', content: responderSystem(userName, date) + responseSkillContext },

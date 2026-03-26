@@ -239,8 +239,24 @@ export const TOOLS: Record<string, (payload: any) => Promise<ToolResult>> = {
       // 1. Weather via wttr.in JSON API
       if (/weather|temperature|forecast|rain|snow|sunny|cloudy|humidity|wind/i.test(query)) {
         const city = query
-          .replace(/weather|temperature|forecast|rain|snow|sunny|cloudy|humidity|wind|in|today|current|for|the/gi, '')
+          .replace(/what(?:'s| is) the weather/gi, '')
+          .replace(/\bweather\b/gi, '')
+          .replace(/\bforecast\b/gi, '')
+          .replace(/\btoday\b/gi, '')
+          .replace(/\bcurrent\b/gi, '')
+          .replace(/\btemperature\b/gi, '')
+          .replace(/\brain\b/gi, '')
+          .replace(/\bsnow\b/gi, '')
+          .replace(/\bsunny\b/gi, '')
+          .replace(/\bcloudy\b/gi, '')
+          .replace(/\bhumidity\b/gi, '')
+          .replace(/\bwind\b/gi, '')
+          .replace(/\bin\b/gi, '')
+          .replace(/\bfor\b/gi, '')
+          .replace(/\s+/g, ' ')
           .trim() || 'auto'
+        console.log(`[Weather] Extracted city: "${city}" from query: "${query}"`)
+
         try {
           const wr   = await fetch(`https://wttr.in/${encodeURIComponent(city)}?format=j1`, { signal: AbortSignal.timeout(8000) })
           const data = await wr.json() as any
@@ -267,74 +283,114 @@ export const TOOLS: Record<string, (payload: any) => Promise<ToolResult>> = {
         } catch {}
       }
 
-      // 2. Fetch real page content from top DuckDuckGo HTML results
+      const results: string[] = []
+
+      // METHOD 1: DuckDuckGo Instant Answer API — fastest, no scraping needed
+      try {
+        const ddgUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`
+        const ddgRes = await fetch(ddgUrl, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0' },
+          signal:  AbortSignal.timeout(8000),
+        })
+        const ddgData = await ddgRes.json() as any
+        const parts: string[] = []
+        if (ddgData.Answer)       parts.push(`Answer: ${ddgData.Answer}`)
+        if (ddgData.Abstract)     parts.push(`Summary: ${ddgData.Abstract}`)
+        if (ddgData.AbstractText) parts.push(ddgData.AbstractText)
+        if (ddgData.RelatedTopics?.length) {
+          const topics = ddgData.RelatedTopics
+            .slice(0, 5)
+            .map((t: any) => t.Text || t.Result || '')
+            .filter(Boolean)
+          if (topics.length) parts.push(`Related: ${topics.join('. ')}`)
+        }
+        if (parts.length > 0) {
+          results.push(`[DuckDuckGo Instant]\n${parts.join('\n')}`)
+        }
+      } catch (e: any) {
+        console.warn('[web_search] DDG instant failed:', e.message)
+      }
+
+      // METHOD 2: Wikipedia summary API — great for factual / entity queries
+      try {
+        const wikiTerm = query.split(' ').slice(0, 4).join('_')
+        const wikiRes  = await fetch(
+          `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(wikiTerm)}`,
+          { signal: AbortSignal.timeout(6000) },
+        )
+        if (wikiRes.ok) {
+          const wiki = await wikiRes.json() as any
+          if (wiki.extract && wiki.extract.length > 50) {
+            results.push(`[Wikipedia: ${wiki.title}]\n${wiki.extract.slice(0, 1000)}`)
+          }
+        }
+      } catch {}
+
+      // METHOD 3: DuckDuckGo HTML scrape — snippets first, then fetch top 2 pages
       try {
         const searchRes = await fetch(
           `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
           {
             headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36' },
-            signal: AbortSignal.timeout(10000),
+            signal:  AbortSignal.timeout(10000),
           },
         )
-        const html       = await searchRes.text()
-        const urlMatches = [...html.matchAll(/href="(https?:\/\/[^"&]+)"/g)]
-        const urls       = urlMatches
-          .map(m => m[1])
-          .filter(u =>
-            !u.includes('duckduckgo.com') &&
-            !u.includes('google.com') &&
-            !u.includes('youtube.com') &&
-            !u.includes('twitter.com') &&
-            !u.includes('facebook.com') &&
-            u.startsWith('https'),
-          )
-          .filter((u, i, arr) => arr.indexOf(u) === i) // dedupe
-          .slice(0, 4)
+        const html = await searchRes.text()
 
-        const fetchPromises = urls.map(async (url) => {
+        // Extract result snippets directly from HTML — fast, no extra fetches
+        const snippetMatches = [...html.matchAll(/class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g)]
+        const snippets = snippetMatches
+          .map(m => m[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim())
+          .filter(s => s.length > 30)
+          .slice(0, 5)
+        if (snippets.length > 0) {
+          results.push(`[Search Snippets for "${query}"]\n${snippets.join('\n\n')}`)
+        }
+
+        // Extract destination URLs from DDG redirect links (uddg= parameter is more reliable)
+        const urlMatches = [...html.matchAll(/uddg=(https?[^&"]+)/g)]
+        const urls = urlMatches
+          .map(m => decodeURIComponent(m[1]))
+          .filter(url =>
+            !url.includes('duckduckgo.com') &&
+            !url.includes('youtube.com') &&
+            url.startsWith('https'),
+          )
+          .filter((url, i, arr) => arr.indexOf(url) === i) // dedupe
+          .slice(0, 2)
+
+        // Fetch top 2 pages for real content
+        const pageResults = await Promise.all(urls.map(async (url) => {
           try {
-            const r    = await fetch(url, {
+            const r = await fetch(url, {
               headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-              signal: AbortSignal.timeout(8000),
+              signal:  AbortSignal.timeout(7000),
             })
             if (!r.ok) return null
             const text  = await r.text()
             const clean = text
-              .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-              .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-              .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, '')
-              .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, '')
-              .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, '')
+              .replace(/<script[\s\S]*?<\/script>/gi, '')
+              .replace(/<style[\s\S]*?<\/style>/gi, '')
+              .replace(/<nav[\s\S]*?<\/nav>/gi, '')
+              .replace(/<header[\s\S]*?<\/header>/gi, '')
+              .replace(/<footer[\s\S]*?<\/footer>/gi, '')
               .replace(/<[^>]+>/g, ' ')
               .replace(/\s+/g, ' ')
               .trim()
             if (clean.length < 200) return null
-            return `Source: ${url}\n${clean.slice(0, 2000)}`
+            return `[${url}]\n${clean.slice(0, 1500)}`
           } catch { return null }
-        })
+        }))
+        results.push(...(pageResults.filter(Boolean) as string[]))
 
-        const pageContents = (await Promise.all(fetchPromises)).filter(Boolean) as string[]
+      } catch (e: any) {
+        console.warn('[web_search] HTML scrape failed:', e.message)
+      }
 
-        if (pageContents.length) {
-          return { success: true, output: pageContents.join('\n\n---\n\n').slice(0, 8000) }
-        }
-      } catch {}
-
-      // 3. DuckDuckGo instant answers fallback
-      const res   = await fetch(
-        `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1`,
-        { signal: AbortSignal.timeout(6000) },
-      )
-      const data  = await res.json() as any
-      const parts = [
-        data.Answer,
-        data.Abstract,
-        ...(data.RelatedTopics || []).slice(0, 5).map((t: any) => t.Text),
-      ].filter(Boolean)
-
-      if (parts.length) return { success: true, output: parts.join('\n\n') }
-
-      return { success: false, output: '', error: `No results for: ${query}` }
+      if (results.length === 0) {
+        return { success: false, output: '', error: `No results found for: ${query}` }
+      }
+      return { success: true, output: results.join('\n\n---\n\n').slice(0, 8000) }
     } catch (e: any) { return { success: false, output: '', error: e.message } }
   },
 

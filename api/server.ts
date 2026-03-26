@@ -260,12 +260,23 @@ export function createApiServer(): Express {
       memoryLayers.write(`User: ${resolvedMessage}`, ['chat'])
 
     } catch (err: any) {
+      console.error('[Chat] Execution error:', err.message)
+      console.error('[Chat] Stack:', err.stack?.split('\n').slice(0, 5).join('\n'))
+
       const is429 = err.message?.includes('429') || err.message?.toLowerCase().includes('rate')
       if (is429 && apiName !== 'ollama') {
         markRateLimited(apiName)
-        send({ token: `\n⚡ ${apiName} rate limited — try again.\n`, done: false })
+        send({
+          activity: { icon: '⚡', agent: 'Aiden', message: `${apiName} rate limited — switching provider`, style: 'error' },
+          done: false,
+        })
+        send({ token: `\n⚡ ${apiName} rate limited — try again in a moment.\n`, done: false })
       } else {
-        send({ token: `\n❌ ${err.message}`, done: false })
+        send({
+          activity: { icon: '❌', agent: 'Aiden', message: `Failed: ${err.message}`, style: 'error' },
+          done: false,
+        })
+        send({ token: `\nSorry, something went wrong: ${err.message}`, done: false })
       }
       send({ done: true })
       res.end()

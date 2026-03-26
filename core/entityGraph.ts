@@ -78,7 +78,7 @@ export class EntityGraph {
     quoted.forEach(q => extracted.push({ name: q, type: 'concept' }))
 
     // Extract capitalized multi-word phrases (likely proper nouns / product names)
-    const phrases = text.match(/\b([A-Z][a-zA-Z]+(?:\s[A-Z][a-zA-Z]+){0,2})\b/g) || []
+    const phrases: string[] = text.match(/\b([A-Z][a-zA-Z]+(?:\s[A-Z][a-zA-Z]+){0,2})\b/g) || []
     const skipWords = new Set([
       'The', 'This', 'That', 'You', 'Your', 'I', 'We', 'It',
       'In', 'On', 'At', 'To', 'For', 'Of', 'And', 'Or', 'But',
