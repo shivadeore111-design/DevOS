@@ -48,6 +48,7 @@ import { conversationMemory }                           from '../core/conversati
 import { semanticMemory }                               from '../core/semanticMemory'
 import { entityGraph }                                  from '../core/entityGraph'
 import { learningMemory }                               from '../core/learningMemory'
+import { knowledgeBase }                               from '../core/knowledgeBase'
 
 // ── App factory ───────────────────────────────────────────────
 
@@ -455,6 +456,68 @@ export function createApiServer(): Express {
     config.model = { active: active || 'ollama', activeModel: activeModel || 'mistral:7b' }
     saveConfig(config)
     res.json({ success: true })
+  })
+
+  // ── Knowledge Base endpoints ─────────────────────────────────
+
+  // GET /api/knowledge — list all files + stats
+  app.get('/api/knowledge', (_req: Request, res: Response) => {
+    try {
+      res.json({ files: knowledgeBase.listFiles(), stats: knowledgeBase.getStats() })
+    } catch (e: any) { res.status(500).json({ error: e.message }) }
+  })
+
+  // POST /api/knowledge/upload — accept JSON { content, filename, category, tags, privacy }
+  // (no multer needed — frontend sends text file content as JSON string)
+  app.post('/api/knowledge/upload', (req: Request, res: Response) => {
+    try {
+      const { content, filename, category = 'general', tags = '', privacy = 'public' } = req.body as {
+        content?: string; filename?: string; category?: string; tags?: string; privacy?: string
+      }
+      if (!content || !filename) {
+        res.status(400).json({ error: 'content and filename required' }); return
+      }
+      const tagList = tags ? tags.split(',').map((t: string) => t.trim()).filter(Boolean) : []
+      const result  = knowledgeBase.ingestText(
+        content, filename, category, tagList,
+        (privacy as 'public' | 'private' | 'sensitive') || 'public',
+      )
+      if (!result.success) { res.status(400).json({ error: result.error }); return }
+      res.json({
+        success:    true,
+        filename,
+        chunkCount: result.chunkCount,
+        message:    `Ingested ${result.chunkCount} chunks from ${filename}`,
+      })
+    } catch (e: any) { res.status(500).json({ error: e.message }) }
+  })
+
+  // GET /api/knowledge/search?q= — search knowledge base
+  app.get('/api/knowledge/search', (req: Request, res: Response) => {
+    const query = req.query.q as string
+    if (!query) { res.status(400).json({ error: 'q parameter required' }); return }
+    const chunks = knowledgeBase.search(query, 5)
+    res.json({
+      query,
+      results: chunks.map(c => ({
+        text:     c.text.slice(0, 200),
+        filename: c.filename,
+        category: c.category,
+        score:    c.usageCount,
+      })),
+    })
+  })
+
+  // DELETE /api/knowledge/:fileId — delete a file
+  app.delete('/api/knowledge/:fileId', (req: Request, res: Response) => {
+    const deleted = knowledgeBase.deleteFile(String(req.params.fileId))
+    if (!deleted) { res.status(404).json({ error: 'File not found' }); return }
+    res.json({ success: true, message: 'File deleted from knowledge base' })
+  })
+
+  // GET /api/knowledge/stats
+  app.get('/api/knowledge/stats', (_req: Request, res: Response) => {
+    res.json(knowledgeBase.getStats())
   })
 
   // GET /api/config — current active model + user info
@@ -865,6 +928,30 @@ export function startApiServer(portArg?: number): Express {
 
   // Run crash recovery on startup — non-blocking, finds 'running' tasks from prior session
   recoverTasks().catch(e => console.error('[Startup] Recovery error:', e.message))
+
+  // Stale task cleanup — mark running tasks older than 24h as failed
+  try {
+    const tasksDir = path.join(process.cwd(), 'workspace', 'tasks')
+    if (fs.existsSync(tasksDir)) {
+      const taskDirs = fs.readdirSync(tasksDir).filter((d: string) => d.startsWith('task_'))
+      let cleaned = 0
+      for (const dir of taskDirs) {
+        const statePath = path.join(tasksDir, dir, 'state.json')
+        if (!fs.existsSync(statePath)) continue
+        try {
+          const state   = JSON.parse(fs.readFileSync(statePath, 'utf-8'))
+          const ageHours = (Date.now() - state.createdAt) / (1000 * 60 * 60)
+          if (state.status === 'running' && ageHours > 24) {
+            state.status = 'failed'
+            state.error  = 'Cleaned up: task too old'
+            fs.writeFileSync(statePath, JSON.stringify(state, null, 2))
+            cleaned++
+          }
+        } catch {}
+      }
+      if (cleaned > 0) console.log(`[Startup] Cleaned up ${cleaned} stale tasks`)
+    }
+  } catch {}
 
   server.listen(port, host, () => {
     console.log(`[API] DevOS API running at http://${host}:${port}`)

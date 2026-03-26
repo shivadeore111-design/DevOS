@@ -174,9 +174,16 @@ export default function Home() {
   const [savingKey, setSavingKey]           = useState(false)
   const [recentPlans, setRecentPlans]       = useState<any[]>([])
 
-  const bottomRef = useRef<HTMLDivElement>(null)
-  const inputRef  = useRef<HTMLTextAreaElement>(null)
-  const abortRef  = useRef<AbortController | null>(null)
+  // ── Knowledge Base state ─────────────────────────────────────
+  const [knowledgeFiles, setKnowledgeFiles]   = useState<any[]>([])
+  const [knowledgeStats, setKnowledgeStats]   = useState<any>(null)
+  const [uploadingFile, setUploadingFile]     = useState(false)
+  const [uploadCategory, setUploadCategory]   = useState('general')
+
+  const bottomRef         = useRef<HTMLDivElement>(null)
+  const inputRef          = useRef<HTMLTextAreaElement>(null)
+  const abortRef          = useRef<AbortController | null>(null)
+  const knowledgeInputRef = useRef<HTMLInputElement>(null)
 
   // ── Persist messages ────────────────────────────────────────
   useEffect(() => {
@@ -241,6 +248,19 @@ export default function Home() {
       .catch(() => {})
   }, [tab])
 
+  // ── Load knowledge files when Settings tab opens ─────────────
+  useEffect(() => {
+    if (tab !== 'settings') return
+    fetch('http://localhost:4200/api/knowledge')
+      .then(r => r.json())
+      .then((d: any) => setKnowledgeFiles(Array.isArray(d) ? d : []))
+      .catch(() => {})
+    fetch('http://localhost:4200/api/knowledge/stats')
+      .then(r => r.json())
+      .then((d: any) => setKnowledgeStats(d))
+      .catch(() => {})
+  }, [tab])
+
   // ── Escape key stops streaming ──────────────────────────────
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -296,6 +316,70 @@ export default function Home() {
   const resetLimits = async () => {
     await fetch('http://localhost:4200/api/providers/reset-limits', { method: 'POST' }).catch(() => {})
     setProviders(prev => prev.map((p: any) => ({ ...p, rateLimited: false })))
+  }
+
+  // ── Knowledge Base handlers ───────────────────────────────────
+  const handleKnowledgeUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploadingFile(true)
+    try {
+      const content = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload  = () => resolve(reader.result as string)
+        reader.onerror = reject
+        reader.readAsText(file)
+      })
+      const r = await fetch('http://localhost:4200/api/knowledge/upload', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ content, filename: file.name, category: uploadCategory }),
+      })
+      const d = await r.json() as any
+      if (d.success) {
+        const updated = await fetch('http://localhost:4200/api/knowledge').then(r2 => r2.json()) as any[]
+        setKnowledgeFiles(Array.isArray(updated) ? updated : [])
+        const stats = await fetch('http://localhost:4200/api/knowledge/stats').then(r2 => r2.json()) as any
+        setKnowledgeStats(stats)
+      }
+    } catch {}
+    setUploadingFile(false)
+    if (knowledgeInputRef.current) knowledgeInputRef.current.value = ''
+  }
+
+  const handleKnowledgeDelete = async (fileId: string) => {
+    if (!window.confirm('Remove this file from knowledge base?')) return
+    await fetch(`http://localhost:4200/api/knowledge/${encodeURIComponent(fileId)}`, { method: 'DELETE' }).catch(() => {})
+    setKnowledgeFiles(prev => prev.filter((f: any) => f.id !== fileId))
+  }
+
+  const handleQuickUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      const content = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload  = () => resolve(reader.result as string)
+        reader.onerror = reject
+        reader.readAsText(file)
+      })
+      const r = await fetch('http://localhost:4200/api/knowledge/upload', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ content, filename: file.name, category: 'general' }),
+      })
+      const d = await r.json() as any
+      if (d.success) {
+        const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        setMessages(prev => [...prev, {
+          role:      'devos' as const,
+          content:   `📎 Added **${file.name}** to knowledge base (${d.chunkCount} chunks). I can now reference this file when answering questions.`,
+          time,
+          streaming: false,
+        }])
+      }
+    } catch {}
+    if (knowledgeInputRef.current) knowledgeInputRef.current.value = ''
   }
 
   // ── Send message ────────────────────────────────────────────
@@ -601,6 +685,103 @@ export default function Home() {
                 ))}
               </div>
             )}
+
+            {/* ── Knowledge Base ─────────────────────────────── */}
+            <div>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'10px' }}>
+                <h2 style={{ fontSize:'17px', fontWeight:700 }}>Knowledge Base</h2>
+                {knowledgeStats && (
+                  <span style={{ fontSize:'10px', fontFamily:'monospace', color:'rgba(255,255,255,0.3)' }}>
+                    {knowledgeStats.files} files · {knowledgeStats.chunks} chunks
+                  </span>
+                )}
+              </div>
+              <div style={{
+                background:'rgba(255,255,255,0.02)', border:'1px solid rgba(255,255,255,0.07)',
+                borderRadius:'10px', padding:'14px',
+              }}>
+                {/* Upload controls */}
+                <div style={{ display:'flex', gap:'8px', marginBottom:'12px', alignItems:'center', flexWrap:'wrap' }}>
+                  <select
+                    value={uploadCategory}
+                    onChange={e => setUploadCategory(e.target.value)}
+                    style={{
+                      background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.1)',
+                      borderRadius:'6px', color:'rgba(255,255,255,0.6)', fontSize:'11px',
+                      fontFamily:'monospace', padding:'5px 8px', cursor:'pointer',
+                    }}
+                  >
+                    <option value="general">general</option>
+                    <option value="notes">notes</option>
+                    <option value="code">code</option>
+                    <option value="docs">docs</option>
+                    <option value="research">research</option>
+                  </select>
+                  <label style={{
+                    display:'flex', alignItems:'center', gap:'6px',
+                    background:'rgba(99,179,237,0.1)', border:'1px solid rgba(99,179,237,0.25)',
+                    borderRadius:'6px', padding:'5px 12px', cursor: uploadingFile ? 'not-allowed' : 'pointer',
+                    fontSize:'11px', fontFamily:'monospace', color:'#63b3ed',
+                    opacity: uploadingFile ? 0.5 : 1, transition:'opacity .15s',
+                  }}>
+                    {uploadingFile ? '⏳ uploading…' : '+ Upload file'}
+                    <input
+                      type="file"
+                      accept=".txt,.md,.json,.csv,.ts,.js,.py,.html,.xml"
+                      style={{ display:'none' }}
+                      onChange={handleKnowledgeUpload}
+                      disabled={uploadingFile}
+                    />
+                  </label>
+                  <span style={{ fontSize:'10px', fontFamily:'monospace', color:'rgba(255,255,255,0.2)' }}>
+                    .txt .md .json .csv .ts .js .py
+                  </span>
+                </div>
+                {/* File list */}
+                {knowledgeFiles.length === 0 ? (
+                  <div style={{
+                    fontSize:'11px', fontFamily:'monospace', color:'rgba(255,255,255,0.2)',
+                    textAlign:'center', padding:'16px 0',
+                  }}>
+                    No files yet — upload text files to give me persistent knowledge
+                  </div>
+                ) : (
+                  <div style={{ display:'flex', flexDirection:'column', gap:'4px' }}>
+                    {knowledgeFiles.map((f: any) => (
+                      <div key={f.id} style={{
+                        display:'flex', alignItems:'center', gap:'8px',
+                        padding:'8px 10px',
+                        background:'rgba(255,255,255,0.025)',
+                        border:'1px solid rgba(255,255,255,0.06)',
+                        borderRadius:'7px',
+                      }}>
+                        <span style={{ fontSize:'12px', flexShrink:0 }}>📄</span>
+                        <span style={{
+                          flex:1, fontSize:'11px', fontFamily:'monospace',
+                          color:'rgba(255,255,255,0.7)',
+                          overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
+                        }}>{f.originalName}</span>
+                        <span style={{
+                          fontSize:'9px', fontFamily:'monospace',
+                          color:'rgba(255,255,255,0.25)', flexShrink:0,
+                        }}>
+                          {f.category} · {f.chunkCount} chunks
+                        </span>
+                        <button
+                          onClick={() => handleKnowledgeDelete(f.id)}
+                          title="Remove from knowledge base"
+                          style={{
+                            background:'transparent', border:'none', cursor:'pointer',
+                            color:'rgba(248,113,113,0.5)', fontSize:'14px',
+                            padding:'0 2px', flexShrink:0, lineHeight:'1',
+                          }}
+                        >✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
 
             {/* Header */}
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
@@ -945,6 +1126,26 @@ export default function Home() {
                 background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.09)',
                 borderRadius:'14px', padding:'10px 12px',
               }}>
+                {/* Knowledge quick-upload */}
+                <input
+                  ref={knowledgeInputRef}
+                  type="file"
+                  accept=".txt,.md,.json,.csv,.ts,.js,.py,.html,.xml"
+                  style={{ display:'none' }}
+                  onChange={handleQuickUpload}
+                />
+                <button
+                  onClick={() => knowledgeInputRef.current?.click()}
+                  title="Add file to knowledge base"
+                  style={{
+                    width:'30px', height:'30px', flexShrink:0,
+                    background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.09)',
+                    borderRadius:'7px', cursor:'pointer', alignSelf:'flex-end',
+                    display:'flex', alignItems:'center', justifyContent:'center',
+                    color:'rgba(255,255,255,0.3)', fontSize:'18px', lineHeight:'1',
+                    transition:'all .15s',
+                  }}
+                >+</button>
                 <textarea
                   ref={inputRef}
                   value={input}

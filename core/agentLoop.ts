@@ -18,6 +18,7 @@ import { skillLoader }                     from './skillLoader'
 import { learningMemory }                  from './learningMemory'
 import { conversationMemory }             from './conversationMemory'
 import { getNextAvailableAPI, markRateLimited, incrementUsage } from '../providers/router'
+import { knowledgeBase } from './knowledgeBase'
 import * as nodeFs             from 'fs'
 import * as nodePath           from 'path'
 import * as nodeOs             from 'os'
@@ -249,6 +250,12 @@ export async function planWithLLM(
   const learningCtx     = learningMemory.buildLearningContext(message)
   const learningSection = learningCtx ? `\n${learningCtx}\n` : ''
 
+  // Build knowledge context — relevant chunks from user's knowledge base files
+  const knowledgeCtxPlanner = knowledgeBase.buildContext(message)
+  const knowledgeSection    = knowledgeCtxPlanner
+    ? `\n\n${knowledgeCtxPlanner}\n`
+    : ''
+
   const plannerPrompt = `You are DevOS Planner. Analyze the user request and output a JSON plan.
 
 CRITICAL RULES:
@@ -296,7 +303,7 @@ OUTPUT FORMAT (strict JSON only):
 
 If requires_execution is false:
 { "goal": "...", "requires_execution": false, "reasoning": "...", "plan": [] }
-${skillContext}${memorySection}${learningSection}
+${skillContext}${memorySection}${learningSection}${knowledgeSection}
 Output ONLY valid JSON, nothing else:`
 
   const messages = [
@@ -707,29 +714,35 @@ export async function respondWithResults(
     ? `\nSkill guidance for this response:\n${responseSkills.map(s => `- ${s.name}: ${s.description}`).join('\n')}\n`
     : ''
 
-  // Build capabilities section — strong self-awareness so Aiden never denies its own abilities
+  // Build capabilities block — strong self-awareness so Aiden never denies its own abilities
   const loadedSkills = skillLoader.loadAll()
-  const capabilitiesSection = `YOU ARE AIDEN — DevOS Autonomous AI OS.
-You have these REAL built-in tools that actually work:
-- web_search: Search the internet for real-time info (YOU CAN DO THIS)
-- deep_research: Multi-pass deep research on any topic (YOU CAN DO THIS)
-- file_write: Create and save files anywhere on disk (YOU CAN DO THIS)
-- file_read: Read any file from disk (YOU CAN DO THIS)
-- fetch_page: Fetch and extract text from any URL (YOU CAN DO THIS)
-- open_browser: Open URLs in browser (YOU CAN DO THIS)
-- shell_exec: Run PowerShell/shell commands (YOU CAN DO THIS)
-- run_python: Execute Python scripts (YOU CAN DO THIS)
-- run_node: Execute Node.js scripts (YOU CAN DO THIS)
-- system_info: Get CPU, RAM, disk info (YOU CAN DO THIS)
-- notify: Send desktop notifications (YOU CAN DO THIS)
-- deep_research: Multi-pass deep web research (YOU CAN DO THIS)
+  const capabilitiesSection = `YOU ARE AIDEN — DevOS Autonomous AI OS by Arden.
+Your REAL built-in tools (these actually work):
+- web_search: Search internet for real-time info
+- deep_research: Multi-pass deep research on any topic
+- file_write: Create and save files to disk
+- file_read: Read files from disk
+- open_browser: Open URLs in browser
+- shell_exec: Run PowerShell commands
+- run_python: Execute Python scripts
+- run_node: Execute Node.js scripts
+- system_info: Get CPU/RAM/disk info
+- notify: Send desktop notifications
 ${loadedSkills.length > 0 ? `Loaded skills: ${loadedSkills.map(s => `${s.name} (${s.description})`).join(', ')}` : ''}
-CRITICAL: When asked what you can do — list the above REAL capabilities.
-NEVER say you cannot access the internet. You have web_search.
-NEVER say you cannot create files. You have file_write.
-NEVER say you are limited to text conversations. You are an autonomous AI OS.
+RULES — follow strictly:
+- NEVER say you cannot access the internet — you have web_search
+- NEVER say you cannot create files — you have file_write
+- NEVER say you are just a text AI — you are an autonomous AI OS
+- When asked what you can do — list the real tools above
+- When asked about previous work — use conversation history provided
 
 `
+
+  // Knowledge context — relevant chunks from user's uploaded files
+  const knowledgeCtxResponder = knowledgeBase.buildContext(originalMessage || '')
+  const knowledgeResponderSection = knowledgeCtxResponder
+    ? `\nRELEVANT KNOWLEDGE FROM YOUR FILES:\n${knowledgeCtxResponder}\n`
+    : ''
 
   // ── Depth scoring: detect research tasks and force deep analysis ──
   const isResearch = results.some(r =>
@@ -765,7 +778,7 @@ NEVER say you are limited to text conversations. You are an autonomous AI OS.
     : `${originalMessage}${memSection}`
 
   const messages = [
-    { role: 'system', content: capabilitiesSection + responderSystem(userName, date) + responseSkillContext },
+    { role: 'system', content: capabilitiesSection + responderSystem(userName, date) + responseSkillContext + knowledgeResponderSection },
     ...history.slice(-6),
     { role: 'user',   content: userContent },
   ]
