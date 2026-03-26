@@ -10,9 +10,10 @@
 
 import { executeTool, TOOLS } from './toolRegistry'
 import { livePulse }          from '../coordination/livePulse'
-import { planTool }           from './planTool'
-import type { Phase }         from './planTool'
-import { WorkspaceMemory }    from './workspaceMemory'
+import { planTool }                        from './planTool'
+import type { Phase }                      from './planTool'
+import { WorkspaceMemory }                 from './workspaceMemory'
+import { taskStateManager, TaskState }     from './taskState'
 import * as nodeFs             from 'fs'
 import * as nodePath           from 'path'
 import * as nodeOs             from 'os'
@@ -354,6 +355,7 @@ export async function executePlan(
   plan:           AgentPlan,
   onStep:         (step: ToolStep, result: StepResult) => void,
   onPhaseChange?: (phase: Phase, index: number, total: number) => void,
+  existingState?: TaskState,
 ): Promise<StepResult[]> {
 
   const results:     StepResult[]           = []
@@ -361,6 +363,17 @@ export async function executePlan(
 
   // Workspace memory for persisting intermediate artifacts
   const workspace = plan.planId ? new WorkspaceMemory(plan.planId) : null
+
+  // Initialize or reuse persistent task state (enables crash recovery)
+  const taskId = plan.planId || `task_${Date.now()}`
+  const state  = existingState || taskStateManager.create(taskId, plan.goal, plan.plan.length, plan.planId)
+
+  // Restore step outputs from already-completed steps so PREVIOUS_OUTPUT works on resume
+  for (const savedStep of state.steps) {
+    if (savedStep.status === 'completed' && savedStep.output) {
+      stepOutputs[savedStep.index] = savedStep.output
+    }
+  }
 
   // Maps each tool to its capability bucket (for phase transition detection)
   const capabilityMap: Record<string, string> = {
@@ -380,6 +393,22 @@ export async function executePlan(
 
   for (const step of plan.plan) {
     const stepStart = Date.now()
+
+    // SKIP — already completed on a prior run (crash recovery idempotency)
+    if (taskStateManager.isStepCompleted(state, step.step)) {
+      console.log(`[AgentLoop] Step ${step.step} (${step.tool}) already completed — skipping`)
+      const savedStep = state.steps.find(s => s.index === step.step)
+      if (savedStep?.output) stepOutputs[step.step] = savedStep.output
+      continue
+    }
+
+    // BUDGET CHECK — stop if token estimate has exceeded limit
+    if (taskStateManager.isOverBudget(state)) {
+      const budgetMsg = `Token budget exceeded (${state.tokenUsage}/${state.tokenLimit}) — task stopped`
+      console.warn(`[AgentLoop] ${budgetMsg}`)
+      taskStateManager.fail(state, budgetMsg)
+      break
+    }
 
     // Detect phase transition — advance planTool when capability changes
     const thisCap = capabilityMap[step.tool] || 'execution'
@@ -413,6 +442,9 @@ export async function executePlan(
 
     // Resolve PREVIOUS_OUTPUT and {{step_N_output}} in input
     let resolvedInput = resolvePreviousOutput(step.input, stepOutputs, step.step)
+
+    // Mark step as started in persistent state
+    taskStateManager.startStep(state, step.step, step.tool, resolvedInput)
 
     let stepResult: StepResult | null = null
     let attempts = 0
@@ -481,9 +513,12 @@ export async function executePlan(
       results.push(stepResult)
       onStep(step, stepResult)
 
+      // Persist step result to task state immediately
       if (stepResult.success) {
+        taskStateManager.completeStep(state, step.step, stepResult.output, stepResult.duration)
         livePulse.done('Aiden', `${step.tool} ✓ ${stepResult.output.slice(0, 60)}`)
       } else {
+        taskStateManager.failStep(state, step.step, stepResult.error || 'unknown error')
         livePulse.error('Aiden', `${step.tool} failed after ${attempts} attempt(s): ${stepResult.error}`)
         // Continue to next step — don't abort the whole plan
       }
@@ -493,6 +528,15 @@ export async function executePlan(
   // Complete final phase
   if (plan.planId) {
     planTool.advancePhase(plan.planId, 'All steps completed')
+  }
+
+  // Finalize task state
+  const allSucceeded = results.every(r => r.success)
+  if (allSucceeded) {
+    taskStateManager.complete(state)
+  } else {
+    const failed = results.filter(r => !r.success).map(r => r.tool).join(', ')
+    taskStateManager.fail(state, failed ? `Steps failed: ${failed}` : 'Incomplete execution')
   }
 
   return results

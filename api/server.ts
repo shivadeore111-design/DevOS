@@ -41,6 +41,8 @@ import { planWithLLM, executePlan, respondWithResults } from '../core/agentLoop'
 import type { AgentPlan, StepResult, ToolStep }        from '../core/agentLoop'
 import { planTool }                                     from '../core/planTool'
 import type { Phase }                                   from '../core/planTool'
+import { taskStateManager }                             from '../core/taskState'
+import { recoverTasks }                                 from '../core/taskRecovery'
 
 // ── App factory ───────────────────────────────────────────────
 
@@ -596,6 +598,42 @@ export function createApiServer(): Express {
     }
   })
 
+  // GET /api/tasks — list all tasks with status
+  app.get('/api/tasks', (_req: Request, res: Response) => {
+    const tasks = taskStateManager.listAll()
+    res.json(tasks.map((t: any) => ({
+      id:         t.id,
+      goal:       t.goal,
+      status:     t.status,
+      progress:   `${t.currentStep}/${t.totalSteps}`,
+      tokenUsage: t.tokenUsage,
+      tokenLimit: t.tokenLimit,
+      createdAt:  t.createdAt,
+      updatedAt:  t.updatedAt,
+    })))
+  })
+
+  // GET /api/tasks/:id — get single task detail
+  app.get('/api/tasks/:id', (req: Request, res: Response) => {
+    const state = taskStateManager.load(String(req.params.id))
+    if (!state) { res.status(404).json({ error: 'Task not found' }); return }
+    res.json(state)
+  })
+
+  // POST /api/tasks/:id/retry — reset a failed task and re-run recovery
+  app.post('/api/tasks/:id/retry', async (req: Request, res: Response) => {
+    const state = taskStateManager.load(String(req.params.id))
+    if (!state) { res.status(404).json({ error: 'Task not found' }); return }
+    if (state.status !== 'failed') { res.status(400).json({ error: 'Task is not failed' }); return }
+
+    // Reset to running so recoverTasks picks it up
+    state.status = 'running'
+    taskStateManager.save(state)
+
+    recoverTasks().catch(() => {})
+    res.json({ success: true, message: `Retrying task ${req.params.id}` })
+  })
+
   // ── 404 catch-all ─────────────────────────────────────────────
   app.use((_req: Request, res: Response) => {
     res.status(404).json({ error: 'Not found' })
@@ -676,6 +714,9 @@ export function startApiServer(portArg?: number): Express {
 
     ws.on('close', () => {})
   })
+
+  // Run crash recovery on startup — non-blocking, finds 'running' tasks from prior session
+  recoverTasks().catch(e => console.error('[Startup] Recovery error:', e.message))
 
   server.listen(port, host, () => {
     console.log(`[API] DevOS API running at http://${host}:${port}`)
