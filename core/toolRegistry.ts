@@ -254,9 +254,10 @@ export const TOOLS: Record<string, (payload: any) => Promise<ToolResult>> = {
         .replace(/\bwind\b/gi, '')
         .replace(/\bin\b/gi, '')
         .replace(/\bfor\b/gi, '')
+        .replace(/\bon\b/gi, '')
         .replace(/\s+/g, ' ')
         .trim() || 'auto'
-      console.log(`[web_search] Weather city extracted: "${city}"`)
+      console.log(`[Weather] city extracted: "${city}"`)
 
       try {
         const wr   = await fetch(`https://wttr.in/${encodeURIComponent(city)}?format=j1`, { signal: AbortSignal.timeout(8000) })
@@ -577,10 +578,6 @@ export async function executeTool(type: string, payload: any): Promise<ToolResul
   try {
     return await fn(payload)
   } catch (err: any) {
-    return { success: false, output: '', error: err.message }
+    return { success: false, output: '', error: `Tool ${type} threw: ${err.message}` }
   }
-}
-
-export function listTools(): string[] {
-  return Object.keys(TOOLS)
 }

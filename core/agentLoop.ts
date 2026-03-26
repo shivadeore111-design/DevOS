@@ -430,6 +430,8 @@ export async function executePlan(
   const stepOutputs: Record<number, string> = {}
   const planStart    = Date.now()
 
+  console.log(`[ExecutePlan] Starting: ${plan.plan.length} steps, goal: "${plan.goal.slice(0, 60)}"`)
+
   // Workspace memory for persisting intermediate artifacts
   const workspace = plan.planId ? new WorkspaceMemory(plan.planId) : null
 
@@ -493,6 +495,7 @@ export async function executePlan(
     }
     lastCapability = thisCap
 
+    console.log(`[ExecutePlan] Step ${step.step}: ${step.tool} — input: ${JSON.stringify(step.input).slice(0, 100)}`)
     livePulse.tool('Aiden', step.tool, JSON.stringify(step.input).slice(0, 80))
 
     // Validate tool exists before running
@@ -578,6 +581,7 @@ export async function executePlan(
     }
 
     if (stepResult) {
+      console.log(`[ExecutePlan] Step ${step.step} result: ${stepResult.success ? '✓' : '✗'} ${stepResult.error || stepResult.output?.slice(0, 80) || ''}`)
       stepOutputs[step.step] = stepResult.output
       results.push(stepResult)
       onStep(step, stepResult)
@@ -703,27 +707,29 @@ export async function respondWithResults(
     ? `\nSkill guidance for this response:\n${responseSkills.map(s => `- ${s.name}: ${s.description}`).join('\n')}\n`
     : ''
 
-  // Build capabilities section — lets Aiden know what tools and skills it has
-  const loadedSkills   = skillLoader.loadAll()
-  const builtInTools   = [
-    'web_search — search the web for live information',
-    'deep_research — 3-pass in-depth research on a topic',
-    'fetch_page — fetch and extract text from a URL',
-    'fetch_url — retrieve raw content from a URL',
-    'open_browser — open and control a browser',
-    'browser_click / browser_type / browser_extract — browser automation',
-    'file_write — write files to disk',
-    'file_read — read files from disk',
-    'file_list — list files in a directory',
-    'shell_exec — run PowerShell commands',
-    'run_python — execute Python code',
-    'run_node — execute Node.js code',
-    'system_info — get system information',
-    'notify — send a system notification',
-    'run_agent — activate a specialist agent persona',
-    'git_commit / git_push — version control operations',
-  ]
-  const capabilitiesSection = `\nAIDEN CAPABILITIES:\nBuilt-in tools:\n${builtInTools.map(t => `- ${t}`).join('\n')}\nLoaded skills:\n${loadedSkills.length > 0 ? loadedSkills.map(s => `- ${s.name}: ${s.description}`).join('\n') : '(none loaded)'}\n`
+  // Build capabilities section — strong self-awareness so Aiden never denies its own abilities
+  const loadedSkills = skillLoader.loadAll()
+  const capabilitiesSection = `YOU ARE AIDEN — DevOS Autonomous AI OS.
+You have these REAL built-in tools that actually work:
+- web_search: Search the internet for real-time info (YOU CAN DO THIS)
+- deep_research: Multi-pass deep research on any topic (YOU CAN DO THIS)
+- file_write: Create and save files anywhere on disk (YOU CAN DO THIS)
+- file_read: Read any file from disk (YOU CAN DO THIS)
+- fetch_page: Fetch and extract text from any URL (YOU CAN DO THIS)
+- open_browser: Open URLs in browser (YOU CAN DO THIS)
+- shell_exec: Run PowerShell/shell commands (YOU CAN DO THIS)
+- run_python: Execute Python scripts (YOU CAN DO THIS)
+- run_node: Execute Node.js scripts (YOU CAN DO THIS)
+- system_info: Get CPU, RAM, disk info (YOU CAN DO THIS)
+- notify: Send desktop notifications (YOU CAN DO THIS)
+- deep_research: Multi-pass deep web research (YOU CAN DO THIS)
+${loadedSkills.length > 0 ? `Loaded skills: ${loadedSkills.map(s => `${s.name} (${s.description})`).join(', ')}` : ''}
+CRITICAL: When asked what you can do — list the above REAL capabilities.
+NEVER say you cannot access the internet. You have web_search.
+NEVER say you cannot create files. You have file_write.
+NEVER say you are limited to text conversations. You are an autonomous AI OS.
+
+`
 
   // ── Depth scoring: detect research tasks and force deep analysis ──
   const isResearch = results.some(r =>
@@ -759,7 +765,7 @@ export async function respondWithResults(
     : `${originalMessage}${memSection}`
 
   const messages = [
-    { role: 'system', content: responderSystem(userName, date) + responseSkillContext + capabilitiesSection },
+    { role: 'system', content: capabilitiesSection + responderSystem(userName, date) + responseSkillContext },
     ...history.slice(-6),
     { role: 'user',   content: userContent },
   ]

@@ -103,7 +103,9 @@ export function createApiServer(): Express {
     res.flushHeaders()
 
     const send = (data: object) => {
-      try { res.write(`data: ${JSON.stringify(data)}\n\n`) } catch {}
+      try { res.write(`data: ${JSON.stringify(data)}\n\n`) } catch (writeErr: any) {
+        console.error('[Chat] SSE write failed:', writeErr.message)
+      }
     }
 
     const { provider, model, userName, apiName } = getSmartProvider()
@@ -294,7 +296,9 @@ export function createApiServer(): Express {
         send({ token: `\nA fatal error occurred: ${e.message}`, done: false })
         send({ done: true })
         res.end()
-      } catch {}
+      } catch (sendErr: any) {
+        console.error('[Chat] Fatal send failed:', sendErr.message)
+      }
     }
 
   })
