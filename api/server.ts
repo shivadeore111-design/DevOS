@@ -45,6 +45,8 @@ import { taskStateManager }                             from '../core/taskState'
 import { recoverTasks }                                 from '../core/taskRecovery'
 import { skillLoader }                                  from '../core/skillLoader'
 import { conversationMemory }                           from '../core/conversationMemory'
+import { semanticMemory }                               from '../core/semanticMemory'
+import { entityGraph }                                  from '../core/entityGraph'
 
 // ── App factory ───────────────────────────────────────────────
 
@@ -704,6 +706,30 @@ export function createApiServer(): Express {
   app.delete('/api/memory', (_req: Request, res: Response) => {
     conversationMemory.clear()
     res.json({ success: true, message: 'Conversation memory cleared' })
+  })
+
+  // GET /api/memory/semantic?q=query — semantic search or stats
+  app.get('/api/memory/semantic', (req: Request, res: Response) => {
+    const query = req.query.q as string
+    if (!query) {
+      res.json(semanticMemory.getStats())
+      return
+    }
+    const results = semanticMemory.searchText(query, 5)
+    res.json({ query, results })
+  })
+
+  // GET /api/memory/graph?entity=name — entity relationships or graph overview
+  app.get('/api/memory/graph', (req: Request, res: Response) => {
+    const entity = req.query.entity as string
+    if (entity) {
+      res.json({ entity, related: entityGraph.getRelated(entity) })
+    } else {
+      res.json({
+        stats:    entityGraph.getStats(),
+        frequent: entityGraph.getFrequent(10),
+      })
+    }
   })
 
   // ── 404 catch-all ─────────────────────────────────────────────

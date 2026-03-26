@@ -9,6 +9,8 @@
 
 import fs   from 'fs'
 import path from 'path'
+import { semanticMemory } from './semanticMemory'
+import { entityGraph }    from './entityGraph'
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -94,7 +96,10 @@ export class ConversationMemory {
 
   addUserMessage(message: string): string {
     // Return resolved version (with references replaced)
-    return this.resolveReferences(message)
+    const resolved = this.resolveReferences(message)
+    // Index user message into semantic memory
+    semanticMemory.add(resolved, 'exchange', ['user'])
+    return resolved
   }
 
   addAssistantMessage(
@@ -136,6 +141,16 @@ export class ConversationMemory {
     }
 
     this.save()
+
+    // Index assistant reply into semantic memory
+    semanticMemory.add(reply.slice(0, 500), 'exchange', ['assistant'])
+
+    // Auto-extract entities and build graph from this exchange
+    entityGraph.extractAndAdd(reply, {
+      files:       metadata?.filesCreated,
+      tools:       metadata?.toolsUsed,
+      searchQuery: metadata?.searchQueries?.[0],
+    })
   }
 
   // Called at the start of processing each user message — records the user turn
@@ -232,8 +247,9 @@ export class ConversationMemory {
   // ── Context building for planner ─────────────────────────────
 
   buildContext(): string {
-    const facts     = this.state.facts
-    const recent    = this.state.exchanges.slice(-6)  // last 6 exchanges
+    const facts  = this.state.facts
+    const recent = this.state.exchanges.slice(-6)  // last 6 exchanges
+    const lastUserMsg = recent.filter(e => e.userMessage).slice(-1)[0]?.userMessage || ''
 
     const lines: string[] = []
 
@@ -260,6 +276,23 @@ export class ConversationMemory {
         if (ex.userMessage) lines.push(`  User: ${ex.userMessage.slice(0, 150)}`)
         if (ex.aiReply)     lines.push(`  Aiden: ${ex.aiReply.slice(0, 100)}`)
       }
+    }
+
+    // Semantic memory — similar past exchanges
+    if (lastUserMsg) {
+      const semanticMatches = semanticMemory.searchText(lastUserMsg, 3)
+      if (semanticMatches.length > 0) {
+        lines.push('')
+        lines.push('SEMANTIC MEMORY (similar past exchanges):')
+        semanticMatches.forEach(m => lines.push(`- ${m.slice(0, 120)}`))
+      }
+    }
+
+    // Entity graph context — known topics and their relationships
+    const graphContext = entityGraph.buildContextString(lastUserMsg)
+    if (graphContext) {
+      lines.push('')
+      lines.push(graphContext)
     }
 
     return lines.join('\n')
