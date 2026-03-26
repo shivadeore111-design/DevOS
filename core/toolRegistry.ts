@@ -272,38 +272,51 @@ export const TOOLS: Record<string, (payload: any) => Promise<ToolResult>> = {
         const searchRes = await fetch(
           `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
           {
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-            signal: AbortSignal.timeout(8000),
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36' },
+            signal: AbortSignal.timeout(10000),
           },
         )
         const html       = await searchRes.text()
-        const urlMatches = html.match(/href="(https?:\/\/[^"]+)"/g) || []
+        const urlMatches = [...html.matchAll(/href="(https?:\/\/[^"&]+)"/g)]
         const urls       = urlMatches
-          .map(m => m.replace(/^href="/, '').replace(/"$/, ''))
-          .filter(u => !u.includes('duckduckgo') && !u.includes('google') && u.startsWith('https'))
-          .slice(0, 3)
+          .map(m => m[1])
+          .filter(u =>
+            !u.includes('duckduckgo.com') &&
+            !u.includes('google.com') &&
+            !u.includes('youtube.com') &&
+            !u.includes('twitter.com') &&
+            !u.includes('facebook.com') &&
+            u.startsWith('https'),
+          )
+          .filter((u, i, arr) => arr.indexOf(u) === i) // dedupe
+          .slice(0, 4)
 
-        const pageContents: string[] = []
-        for (const url of urls) {
+        const fetchPromises = urls.map(async (url) => {
           try {
             const r    = await fetch(url, {
               headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
               signal: AbortSignal.timeout(8000),
             })
+            if (!r.ok) return null
             const text  = await r.text()
             const clean = text
               .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
               .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+              .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, '')
+              .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, '')
+              .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, '')
               .replace(/<[^>]+>/g, ' ')
               .replace(/\s+/g, ' ')
               .trim()
-              .slice(0, 1500)
-            if (clean.length > 100) pageContents.push(`Source: ${url}\n${clean}`)
-          } catch {}
-        }
+            if (clean.length < 200) return null
+            return `Source: ${url}\n${clean.slice(0, 2000)}`
+          } catch { return null }
+        })
+
+        const pageContents = (await Promise.all(fetchPromises)).filter(Boolean) as string[]
 
         if (pageContents.length) {
-          return { success: true, output: pageContents.join('\n\n---\n\n') }
+          return { success: true, output: pageContents.join('\n\n---\n\n').slice(0, 8000) }
         }
       } catch {}
 
@@ -373,18 +386,18 @@ export const TOOLS: Record<string, (payload: any) => Promise<ToolResult>> = {
       .filter(e => e.length > 3 && !SKIP_WORDS.has(e))
       .slice(0, 4)
 
-    // PASS 2: Deep dive each entity
+    // PASS 2: Deep dive each entity — tie query to topic for relevance
     for (const entity of uniqueEntities) {
       try {
-        const deep = await TOOLS.web_search({ query: `${entity} features review pros cons 2025` })
-        if (deep.success && deep.output.length > 100) {
-          results.push(`=== ${entity.toUpperCase()} DEEP DIVE ===\n${deep.output.slice(0, 1200)}`)
+        const deep = await TOOLS.web_search({ query: `${entity} ${topic} features review 2025` })
+        if (deep.success && deep.output.length > 200) {
+          results.push(`=== ${entity.toUpperCase()} DEEP DIVE ===\n${deep.output.slice(0, 2000)}`)
         }
       } catch {}
     }
 
     // PASS 3: Check depth — if shallow, fetch one more broad query
-    if (results.join('\n').length < 1000) {
+    if (results.join('\n').length < 2000) {
       const fallback = await TOOLS.web_search({ query: `${topic} complete guide comparison 2025` })
       if (fallback.success) results.push(`=== ADDITIONAL RESEARCH ===\n${fallback.output}`)
     }

@@ -246,16 +246,20 @@ If requires_execution is false:
       return true
     })
 
+    const normalizedPlan: ToolStep[] = validatedPlan.map((s: any, idx: number) => ({
+      step:        s.step        ?? (idx + 1),
+      tool:        s.tool        || '',
+      input:       s.input       || s.args || {},
+      description: s.description || '',
+    }))
+
+    const orderedPlan = fixStepOrdering(normalizedPlan)
+
     return {
       goal:               parsed.goal || message,
-      requires_execution: parsed.requires_execution === true && validatedPlan.length > 0,
-      plan: validatedPlan.map((s: any, idx: number) => ({
-        step:        s.step        ?? (idx + 1),
-        tool:        s.tool        || '',
-        input:       s.input       || s.args || {},
-        description: s.description || '',
-      })),
-      direct_response: parsed.direct_response,
+      requires_execution: parsed.requires_execution === true && orderedPlan.length > 0,
+      plan:               orderedPlan,
+      direct_response:    parsed.direct_response,
     }
 
   } catch (e: any) {
@@ -378,6 +382,23 @@ export async function executePlan(
   }
 
   return results
+}
+
+// ── Step ordering fixer ────────────────────────────────────────
+// Ensures research/fetch steps always run before file_write steps.
+// Prevents file_write from executing before deep_research has data.
+
+function fixStepOrdering(steps: ToolStep[]): ToolStep[] {
+  const researchTools = ['web_search', 'deep_research', 'fetch_url', 'fetch_page']
+  const writeTools    = ['file_write', 'file_read']
+
+  const researchSteps = steps.filter(s => researchTools.includes(s.tool))
+  const writeSteps    = steps.filter(s => writeTools.includes(s.tool))
+  const otherSteps    = steps.filter(s => !researchTools.includes(s.tool) && !writeTools.includes(s.tool))
+
+  // Order: research → other → write — re-number steps
+  return [...researchSteps, ...otherSteps, ...writeSteps]
+    .map((s, i) => ({ ...s, step: i + 1 }))
 }
 
 // Resolve PREVIOUS_OUTPUT and {{step_N_output}} in step inputs
