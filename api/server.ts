@@ -117,6 +117,9 @@ export function createApiServer(): Express {
     const providerName = apiEntry?.provider || (apiName === 'ollama' ? 'ollama' : 'ollama')
     const activeModel  = apiEntry?.model || model
 
+    // ── OUTER FATAL CATCH — catches anything that escapes the inner handler ──
+    try {
+
     try {
       // ── RESOLVE REFERENCES & RECORD USER TURN ────────────────
       const resolvedMessage = conversationMemory.addUserMessage(message)
@@ -281,6 +284,19 @@ export function createApiServer(): Express {
       send({ done: true })
       res.end()
     }
+
+    } catch (e: any) {
+      // Fatal outer catch — something threw outside the inner try (e.g. getSmartProvider crash)
+      console.error('[Chat] FATAL outer error:', e.message)
+      console.error('[Chat] FATAL stack:', e.stack?.split('\n').slice(0, 3).join('\n'))
+      try {
+        send({ activity: { icon: '💥', agent: 'Aiden', message: `Fatal error: ${e.message}`, style: 'error' }, done: false })
+        send({ token: `\nA fatal error occurred: ${e.message}`, done: false })
+        send({ done: true })
+        res.end()
+      } catch {}
+    }
+
   })
 
   // GET /api/onboarding — check status + get available models

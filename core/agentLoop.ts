@@ -337,6 +337,9 @@ Output ONLY valid JSON, nothing else:`
       console.warn(`[Planner] Attempt ${attempt + 1} error (${curProvider}): ${e.message}`)
     }
 
+    // Wait before next attempt — helps with rate-limit recovery
+    await new Promise(r => setTimeout(r, 1000))
+
     // Rotate to the next available provider for the next attempt
     try {
       const next = getNextAvailableAPI()
@@ -685,6 +688,28 @@ export async function respondWithResults(
     ? `\nSkill guidance for this response:\n${responseSkills.map(s => `- ${s.name}: ${s.description}`).join('\n')}\n`
     : ''
 
+  // Build capabilities section — lets Aiden know what tools and skills it has
+  const loadedSkills   = skillLoader.loadAll()
+  const builtInTools   = [
+    'web_search — search the web for live information',
+    'deep_research — 3-pass in-depth research on a topic',
+    'fetch_page — fetch and extract text from a URL',
+    'fetch_url — retrieve raw content from a URL',
+    'open_browser — open and control a browser',
+    'browser_click / browser_type / browser_extract — browser automation',
+    'file_write — write files to disk',
+    'file_read — read files from disk',
+    'file_list — list files in a directory',
+    'shell_exec — run PowerShell commands',
+    'run_python — execute Python code',
+    'run_node — execute Node.js code',
+    'system_info — get system information',
+    'notify — send a system notification',
+    'run_agent — activate a specialist agent persona',
+    'git_commit / git_push — version control operations',
+  ]
+  const capabilitiesSection = `\nAIDEN CAPABILITIES:\nBuilt-in tools:\n${builtInTools.map(t => `- ${t}`).join('\n')}\nLoaded skills:\n${loadedSkills.length > 0 ? loadedSkills.map(s => `- ${s.name}: ${s.description}`).join('\n') : '(none loaded)'}\n`
+
   // ── Depth scoring: detect research tasks and force deep analysis ──
   const isResearch = results.some(r =>
     r.tool === 'deep_research' ||
@@ -719,7 +744,7 @@ export async function respondWithResults(
     : `${originalMessage}${memSection}`
 
   const messages = [
-    { role: 'system', content: responderSystem(userName, date) + responseSkillContext },
+    { role: 'system', content: responderSystem(userName, date) + responseSkillContext + capabilitiesSection },
     ...history.slice(-6),
     { role: 'user',   content: userContent },
   ]
@@ -798,7 +823,7 @@ async function callLLM(
             contents: [{ role: 'user', parts: [{ text: prompt }] }],
             generationConfig: { maxOutputTokens: 2000 },
           }),
-          signal: AbortSignal.timeout(25000),
+          signal: AbortSignal.timeout(30000),
         },
       )
       const d = await r.json() as any
@@ -822,7 +847,7 @@ async function callLLM(
         method:  'POST',
         headers,
         body: JSON.stringify({ model, messages, stream: false, max_tokens: 2000 }),
-        signal: AbortSignal.timeout(25000),
+        signal: AbortSignal.timeout(30000),
       })
       const d = await r.json() as any
       return d?.choices?.[0]?.message?.content || ''
