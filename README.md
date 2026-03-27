@@ -1,173 +1,120 @@
-# DevOS — Autonomous AI Execution System
+# DevOS — Aiden
 
-> Copyright © 2026 Shiva Deore. All rights reserved.
+**Your personal AI OS. Runs locally. Works for everyone.**
 
-DevOS is a personal AI operating system that runs on your Windows machine. It connects to any LLM provider and executes real tasks — web search, file I/O, code execution, computer control, and deep research — through a reliable three-step agent loop.
-
----
-
-## What it can do
-
-**Research & Data**
-- Real-time web search and structured deep research (3-pass LLM-assisted)
-- NSE/BSE stock data via `get_stocks` (gainers, losers, active)
-- Automatic entity extraction and source ranking
-
-**File & Code Execution**
-- Write, read, and list files anywhere on your machine
-- Execute Python and Node.js scripts on the fly
-- PowerShell command execution with full stdout/stderr capture
-
-**Computer Control**
-- Mouse move, click (single + double), right-click
-- Keyboard typing and key press (Enter, Tab, Ctrl+C, etc.)
-- Full-screen screenshot via GDI+
-- Vision loop: see → decide → act using Ollama llava or any vision-capable LLM
-
-**Memory & Learning**
-- Conversation memory with reference resolution ("that file", "the report")
-- Semantic memory with 128-dim word-hash embeddings
-- Entity graph tracking relationships between files, topics, and people
-- Learning memory: records every task outcome to guide future planning
-- Self-teaching: generates SKILL.md files from successful executions, promotes them after 3 successes
-
-**Knowledge Base**
-- Ingest text files (.txt, .md, .csv, etc.) and chunk them with local embeddings
-- Cosine similarity search with decay scoring
-- Prompt-injection sanitized — all ingested content is sandboxed
+Aiden searches the web, writes code, controls your computer,
+learns from your files, and runs autonomously — all on your machine.
+Free with Ollama. Zero telemetry. Your data never leaves.
 
 ---
 
-## Quick start
+## Quick Start
 
 ```bash
-# Install dependencies
+# Requirements: Node 18+, Ollama
 npm install
-
-# Run TypeScript check
-npx tsc --noEmit
-
-# Start the API server (port 4200 by default)
-npx ts-node api/server.ts
-
-# Or build and run
-npx tsc && node dist/api/server.js
+npx ts-node index.ts serve
+# Open http://localhost:3000
 ```
 
-Open the dashboard at `http://localhost:3000` (Next.js app in `dashboard-next/`).
+---
 
-The first run launches the onboarding wizard — choose a local Ollama model or add a cloud API key.
+## What Aiden Can Do
+
+**23 built-in tools:**
+
+- Web search and deep research (SearxNG self-hosted + Brave + DDG fallback)
+- Create, read, edit any file on your computer
+- Run Python, Node.js, PowerShell scripts
+- Control mouse, keyboard, take screenshots (vision loop)
+- Deploy to Vercel, push to GitHub
+- NSE / BSE stock data (Yahoo Finance + Finology)
+- Upload books, research papers, PDFs → Aiden learns from them
+- 6 communication channels: Telegram, WhatsApp, Discord, Slack, Email, Web
 
 ---
 
 ## Providers
 
-DevOS supports multiple LLM providers simultaneously and rotates automatically on rate limits:
+Works with 10 LLM providers. Ollama is free and fully local.
+Add API keys in **Settings → Providers** for cloud providers.
 
-| Provider   | Free tier | Speed       | Best model                          |
-|------------|-----------|-------------|-------------------------------------|
-| Groq       | Yes       | ⚡ Blazing  | `llama-3.3-70b-versatile`           |
-| Gemini     | Yes       | 🔥 Fast     | `gemini-1.5-flash`                  |
-| OpenRouter | Credits   | 🔥 Fast     | `meta-llama/llama-3.3-70b-instruct` |
-| Cerebras   | Yes       | ⚡ Blazing  | `llama3.1-8b`                       |
-| NVIDIA NIM | Credits   | 💪 Powerful | `meta/llama-3.3-70b-instruct`       |
-| Ollama     | Local     | Varies      | `qwen2.5:7b`, `phi4:mini`           |
-
-Add API keys via `POST /api/providers/add` or through the Settings panel in the dashboard.
+| Provider    | Free tier | Notes                    |
+|-------------|-----------|--------------------------|
+| Ollama      | ✓ Always  | Local, private, no limit |
+| Groq        | ✓ Yes     | Fast inference           |
+| Gemini      | ✓ Yes     | Google Flash models      |
+| OpenRouter  | ✓ Yes     | 200+ models              |
+| Cerebras    | ✓ Yes     | Ultra-fast               |
+| NVIDIA      | ✓ Yes     | Llama 3.1 405B           |
+| OpenAI      | Paid      | GPT-4o                   |
+| Anthropic   | Paid      | Claude                   |
+| Together AI | Paid      | Open models              |
+| Mistral     | Paid      | European models          |
 
 ---
 
-## Architecture
+## Optional: Web Search Setup
 
-```
-User message
-    │
-    ▼
-┌─────────────┐
-│  PLAN       │  planWithLLM() — LLM outputs structured JSON plan
-│             │  Validates tool names against ALLOWED_TOOLS whitelist
-│             │  Injects skill context + memory + knowledge base
-└──────┬──────┘
-       │
-       ▼
-┌─────────────┐
-│  EXECUTE    │  executePlan() — runs each tool step by step
-│             │  Self-healing retry (2 attempts per step)
-│             │  PREVIOUS_OUTPUT template resolution
-│             │  Crash-recoverable: persists state to workspace/tasks/
-└──────┬──────┘
-       │
-       ▼
-┌─────────────┐
-│  RESPOND    │  respondWithResults() — streams natural language reply
-│             │  Sees real tool outputs, not hallucinated summaries
-│             │  Provider failover on 429 / timeout
-└─────────────┘
+For best search results, run SearxNG locally (free, unlimited):
+
+```bash
+# Docker required
+docker compose -f docker-compose.searxng.yml up -d
+# Or use the PowerShell helper:
+.\scripts\start-searxng.ps1
 ```
 
-**Core modules:**
-
-| File | Purpose |
-|------|---------|
-| `core/agentLoop.ts` | Three-step loop: plan → execute → respond |
-| `core/toolRegistry.ts` | All tool implementations |
-| `core/computerControl.ts` | Mouse, keyboard, screenshot, vision loop |
-| `core/skillLoader.ts` | Loads SKILL.md files and injects context |
-| `core/skillTeacher.ts` | Self-learning: generates skills from task outcomes |
-| `core/knowledgeBase.ts` | Local vector knowledge base |
-| `core/taskState.ts` | Persistent step-level task state |
-| `core/taskRecovery.ts` | Crash recovery on server restart |
-| `core/conversationMemory.ts` | Per-session conversation tracking |
-| `core/semanticMemory.ts` | Embedding-based semantic search |
-| `core/entityGraph.ts` | Relationship graph between named entities |
-| `core/learningMemory.ts` | Task outcome history for planning guidance |
-| `api/server.ts` | Express REST API + WebSocket terminal |
-| `coordination/livePulse.ts` | Real-time activity feed for the dashboard |
+Add to `.env` for Brave Search API fallback (2000 free queries/month):
+```
+BRAVE_SEARCH_API_KEY=your_key_here
+```
 
 ---
 
-## API endpoints
+## Optional: Voice Setup
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET`  | `/api/health` | Liveness check |
-| `POST` | `/api/chat` | Send a message (SSE stream) |
-| `GET`  | `/api/providers` | List configured API providers |
-| `POST` | `/api/providers/add` | Add an API key |
-| `POST` | `/api/providers/validate` | Test an API key |
-| `GET`  | `/api/knowledge` | List knowledge base files |
-| `POST` | `/api/knowledge/upload` | Ingest a file into the knowledge base |
-| `DELETE` | `/api/knowledge/:id` | Remove a knowledge file |
-| `GET`  | `/api/skills` | List all loaded skills |
-| `GET`  | `/api/skills/learned` | List self-learned skills + stats |
-| `GET`  | `/api/tasks` | List all tasks with status |
-| `GET`  | `/api/tasks/:id` | Get single task detail |
-| `POST` | `/api/tasks/:id/retry` | Retry a failed task |
-| `GET`  | `/api/memory` | Conversation memory facts |
-| `GET`  | `/api/memory/semantic` | Semantic memory search |
-| `GET`  | `/api/memory/graph` | Entity relationship graph |
-| `GET`  | `/api/doctor` | System health report |
-| `POST` | `/api/automate` | Start a vision loop session |
+Install Python packages for voice input/output:
+
+```bash
+pip install faster-whisper edge-tts
+```
+
+Once installed, the 🎤 and 🔊 buttons appear in the chat panel.
 
 ---
 
-## Self-teaching skills
+## Stress Test
 
-After every successful task, DevOS generates a `SKILL.md` file capturing:
-- The tool sequence that worked
-- Key steps and tips
-- Estimated duration
+Verify reliability after setup:
 
-Skills accumulate in `workspace/skills/learned/`. After 3 successes, a skill is promoted to `workspace/skills/approved/` and injected into future planning prompts automatically.
+```bash
+# Terminal 1 — start DevOS
+npx ts-node index.ts serve
 
----
-
-## Crash recovery
-
-Every task step is persisted to `workspace/tasks/<task_id>/state.json` as it runs. On server restart, DevOS automatically finds any tasks that were `running` at shutdown and resumes them from the last incomplete step. Tasks stuck for more than 1 hour are cleaned up automatically.
+# Terminal 2 — run 20-task stress test
+npm run stress-test
+# Target: 90%+ pass rate
+```
 
 ---
 
-## License
+## Privacy
 
-Copyright © 2026 Shiva Deore. All rights reserved. Unauthorised copying, distribution, or use is prohibited.
+Everything stays on your machine:
+
+- All conversations and task history
+- Knowledge base files and embeddings (`workspace/knowledge/`)
+- PDF, EPUB, document extractions — local only, no cloud OCR
+- Memory, entity graph, semantic index
+- Your API keys (stored in `config/config.json`)
+
+---
+
+## Built By
+
+**Shiva Deore** · [Taracod](https://taracod.com) · White Lotus
+
+contact@taracod.com
+
+© 2026 All rights reserved · Apache 2.0 License

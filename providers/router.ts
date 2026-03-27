@@ -15,7 +15,27 @@ import { createCerebrasProvider } from './cerebras'
 import { createNvidiaProvider } from './nvidia'
 import { Provider } from './types'
 
-const RATE_LIMIT_RESET_MS = 60 * 60 * 1000 // 1 hour
+// Per-provider rate-limit windows — tuned to actual reset characteristics.
+// Previous flat 1-hour window was far too conservative for fast-reset APIs.
+const RATE_LIMIT_WINDOWS: Record<string, number> = {
+  groq:       15  * 1000,  // Groq free tier resets in ~10–15 s
+  gemini:     90  * 1000,  // Gemini resets in ~60–90 s
+  openrouter: 30  * 1000,  // OpenRouter rarely rate-limits; 30 s is safe
+  together:   30  * 1000,
+  mistral:    60  * 1000,
+  cohere:     60  * 1000,
+  deepseek:   60  * 1000,
+  openai:     60  * 1000,
+  anthropic:  60  * 1000,
+  cerebras:   30  * 1000,
+  nvidia:     60  * 1000,
+  ollama:     0,           // local — never rate-limited
+}
+const DEFAULT_RATE_LIMIT_MS = 60 * 1000 // 1 minute fallback
+
+// In-memory response-time tracking (EWMA per provider)
+// Separate from the config file so it resets on restart without persisting stale values.
+const responseTimesMs = new Map<string, number>()
 
 // ── Provider factory ──────────────────────────────────────────
 
@@ -41,10 +61,13 @@ function autoResetExpiredLimits(): boolean {
   let   changed = false
 
   config.providers.apis = config.providers.apis.map(api => {
-    if (api.rateLimited && api.rateLimitedAt && Date.now() - api.rateLimitedAt > RATE_LIMIT_RESET_MS) {
-      changed = true
-      const { rateLimitedAt, ...rest } = api
-      return { ...rest, rateLimited: false }
+    if (api.rateLimited && api.rateLimitedAt) {
+      const window = RATE_LIMIT_WINDOWS[api.provider] ?? DEFAULT_RATE_LIMIT_MS
+      if (window === 0 || Date.now() - api.rateLimitedAt > window) {
+        changed = true
+        const { rateLimitedAt, ...rest } = api
+        return { ...rest, rateLimited: false }
+      }
     }
     return api
   })
@@ -53,7 +76,7 @@ function autoResetExpiredLimits(): boolean {
   return changed
 }
 
-// ── Get next available API (least used, not rate-limited) ─────
+// ── Get next available API — scored by response time + failures ──
 
 export function getNextAvailableAPI(): { provider: Provider; model: string; entry: APIEntry } | null {
   autoResetExpiredLimits()
@@ -63,8 +86,17 @@ export function getNextAvailableAPI(): { provider: Provider; model: string; entr
   )
   if (!available.length) return null
 
-  // Round-robin: pick least used
-  const entry = available.sort((a, b) => (a.usageCount || 0) - (b.usageCount || 0))[0]
+  // Score: lower is better — blend usage count, response time, and failure history
+  const scored = available
+    .map(api => {
+      const avgMs      = responseTimesMs.get(api.name) ?? 2000  // assume 2s if unknown
+      const usageScore = (api.usageCount || 0) * 0.1
+      const timeScore  = avgMs / 1000
+      return { api, score: usageScore + timeScore }
+    })
+    .sort((a, b) => a.score - b.score)
+
+  const entry = scored[0].api
   return { provider: buildProvider(entry), model: entry.model, entry }
 }
 
@@ -72,13 +104,26 @@ export function getNextAvailableAPI(): { provider: Provider; model: string; entr
 
 export function markRateLimited(apiName: string): void {
   const config = loadConfig()
+  // Find the provider type to get the right window
+  const entry  = config.providers.apis.find(a => a.name === apiName)
+  const window = entry ? (RATE_LIMIT_WINDOWS[entry.provider] ?? DEFAULT_RATE_LIMIT_MS) : DEFAULT_RATE_LIMIT_MS
   config.providers.apis = config.providers.apis.map(api =>
     api.name === apiName
       ? { ...api, rateLimited: true, rateLimitedAt: Date.now() }
       : api
   )
   saveConfig(config)
-  console.log(`[Router] ${apiName} rate limited — will auto-reset in 1 hour`)
+  const resetSecs = window === 0 ? 'never' : `${window / 1000}s`
+  console.log(`[Router] ${apiName} rate limited — auto-reset in ${resetSecs}`)
+}
+
+// ── Record response time (EWMA) ───────────────────────────────
+// Call this after each successful LLM response to improve provider selection.
+
+export function recordResponseTime(providerName: string, ms: number): void {
+  const prev = responseTimesMs.get(providerName)
+  // Exponential moving average — weight recent observations at 20%
+  responseTimesMs.set(providerName, prev ? prev * 0.8 + ms * 0.2 : ms)
 }
 
 // ── Increment usage count ─────────────────────────────────────
