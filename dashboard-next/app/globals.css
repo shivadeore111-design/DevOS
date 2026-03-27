@@ -1,0 +1,74 @@
+/* ── DevOS Design Tokens ────────────────────────────────────── */
+:root {
+  --bg:      #0e0e0e;
+  --bg1:     #141414;
+  --bg2:     #1a1a1a;
+  --bg3:     #222222;
+  --border:  #2a2a2a;
+  --border2: #333333;
+  --text:    #e8e8e8;
+  --muted:   #555555;
+  --muted2:  #888888;
+  --muted3:  #aaaaaa;
+  --orange:  #f97316;
+  --green:   #22c55e;
+  --red:     #ef4444;
+  --mono:    var(--font-mono, 'JetBrains Mono', monospace);
+  --sans:    var(--font-sans, 'Outfit', sans-serif);
+  --odim:    rgba(249, 115, 22, 0.08);
+}
+
+/* ── Base reset ─────────────────────────────────────────────── */
+* { box-sizing: border-box; }
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: #0e0e0e;
+  color: #e8e8e8;
+  overflow: hidden;
+}
+textarea { font-family: inherit; }
+textarea:focus { outline: none; }
+button:focus { outline: none; }
+
+/* ── Scrollbar ──────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 3px; height: 3px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: #333333; }
+
+/* ── Animations ─────────────────────────────────────────────── */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes thinkingPulse {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+  40%           { transform: scale(1);   opacity: 1; }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.2; }
+}
+
+@keyframes pulse-orange {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.4); }
+  50%      { box-shadow: 0 0 0 6px rgba(249, 115, 22, 0); }
+}
+
+@keyframes slideIn {
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.3; }
+}
+
+/* ── Copy button hover ──────────────────────────────────────── */
+.copy-btn { opacity: 0 !important; transition: opacity 0.15s !important; }
+.message-bubble:hover .copy-btn { opacity: 1 !important; }
