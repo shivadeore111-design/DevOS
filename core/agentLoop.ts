@@ -20,7 +20,6 @@ import { conversationMemory }             from './conversationMemory'
 import { getNextAvailableAPI, markRateLimited, incrementUsage } from '../providers/router'
 import { knowledgeBase } from './knowledgeBase'
 import { skillTeacher }  from './skillTeacher'
-import { AIDEN_RESPONDER_SYSTEM } from './aidenPersonality'
 import * as nodeFs             from 'fs'
 import * as nodePath           from 'path'
 import * as nodeOs             from 'os'
@@ -243,7 +242,7 @@ export async function planWithLLM(
     'file_list', 'shell_exec', 'run_python', 'run_node',
     'system_info', 'notify', 'deep_research', 'get_stocks',
     'mouse_move', 'mouse_click', 'keyboard_type', 'keyboard_press',
-    'screenshot', 'screen_read', 'vision_loop', 'wait',
+    'screenshot', 'screen_read', 'vision_loop',
   ]
 
   // Load any relevant skills to guide planning
@@ -300,17 +299,6 @@ TOOL INPUT RULES:
 - shell_exec: { "command": "actual powershell command" }
 - fetch_page: { "url": "https://exact-url.com" }
 - get_stocks: { "market": "NSE", "type": "gainers" }  — type: gainers | losers | active
-- wait: { "ms": 2000 }  — Pause execution. Use after open_browser, after clicks, after any UI action that needs time to complete. Max 5000ms.
-
-COMPUTER CONTROL RULES — follow strictly when controlling mouse/keyboard/browser:
-- ALWAYS use open_browser BEFORE keyboard_type or mouse_click on browser
-- ALWAYS add a wait step of 2000ms after open_browser before any interaction
-- For web searches: step 1 = open_browser(url), step 2 = wait(2000), step 3 = keyboard_press(ctrl+l), step 4 = keyboard_type(query), step 5 = keyboard_press(enter)
-- For clicking browser address bar: use keyboard_press(ctrl+l) to focus it first
-- After typing a URL: use keyboard_press(enter) to navigate
-- For vision_loop tasks: set max_steps to at least 5
-- Never assume the browser is already open — always open it first
-- After any mouse_click: add wait(800) to let UI respond
 
 URL RULES:
 - Always use COMPLETE URLs — never truncate a URL in a tool input
@@ -439,7 +427,7 @@ Output ONLY valid JSON, nothing else:`
   const workspace = new WorkspaceMemory(taskPlan.id)
   workspace.write('goal.txt', message)
 
-  const candidatePlan: AgentPlan = {
+  return {
     goal:               parsed.goal || message,
     requires_execution: parsed.requires_execution === true && orderedPlan.length > 0,
     plan:               orderedPlan,
@@ -447,164 +435,6 @@ Output ONLY valid JSON, nothing else:`
     planId:             taskPlan.id,
     workspaceDir:       taskPlan.workspaceDir,
     phases:             taskPlan.phases,
-  }
-
-  // Validate before returning — log warnings, strip hard-invalid steps
-  const validation = validatePlan(candidatePlan)
-  if (validation.warnings.length > 0) {
-    console.warn(`[Planner] Validation warnings:\n  ${validation.warnings.join('\n  ')}`)
-  }
-  if (!validation.valid) {
-    console.warn(`[Planner] Plan has validation errors:\n  ${validation.errors.join('\n  ')}`)
-
-    // One retry — ask the LLM to fix the plan
-    console.log('[Planner] Retrying with validation errors injected into prompt...')
-    const retryMessages = [
-      ...messages,
-      {
-        role:    'assistant',
-        content: raw.slice(0, 500),
-      },
-      {
-        role:    'user',
-        content: `The plan you produced has errors:\n${validation.errors.join('\n')}\n\nFix these issues and output a corrected JSON plan.`,
-      },
-    ]
-    try {
-      const retryRaw = await callLLM(
-        retryMessages.map(m => `${m.role}: ${m.content}`).join('\n'),
-        curApiKey, curModel, curProvider,
-      )
-      const retryMatch = retryRaw.replace(/```json\s*/g, '').replace(/```\s*/g, '').match(/\{[\s\S]*\}/)
-      if (retryMatch) {
-        const retryParsed = JSON.parse(retryMatch[0])
-        const retryRaw2   = (retryParsed.plan || retryParsed.steps || []) as any[]
-        const retryValid  = retryRaw2.filter((s: any) => ALLOWED_TOOLS.includes(s.tool))
-        const retryNorm   = retryValid.map((s: any, idx: number) => ({
-          step:        s.step        ?? (idx + 1),
-          tool:        s.tool        || '',
-          input:       s.input       || s.args || {},
-          description: s.description || '',
-        }))
-        const retryOrdered = fixStepOrdering(retryNorm)
-        if (retryOrdered.length > 0) {
-          candidatePlan.plan = retryOrdered
-          console.log(`[Planner] Retry succeeded: ${retryOrdered.length} valid steps`)
-        }
-      }
-    } catch (e: any) {
-      console.warn(`[Planner] Retry failed: ${e.message}`)
-    }
-  }
-
-  return candidatePlan
-}
-
-// ── Plan validation ────────────────────────────────────────────
-// Called after planWithLLM — rejects structurally bad plans before execution.
-
-const VALID_TOOLS = [
-  'web_search', 'fetch_page', 'fetch_url', 'open_browser', 'browser_extract',
-  'browser_click', 'browser_type', 'browser_screenshot', 'file_write', 'file_read',
-  'file_list', 'shell_exec', 'run_python', 'run_node', 'run_powershell',
-  'system_info', 'notify', 'deep_research', 'get_stocks', 'run_agent', 'git_commit',
-  'git_push', 'mouse_move', 'mouse_click', 'keyboard_type', 'keyboard_press',
-  'screenshot', 'screen_read', 'vision_loop', 'wait',
-]
-
-interface ValidationResult {
-  valid:    boolean
-  errors:   string[]
-  warnings: string[]
-}
-
-export function validatePlan(plan: AgentPlan): ValidationResult {
-  const errors:   string[] = []
-  const warnings: string[] = []
-
-  if (!plan.requires_execution || plan.plan.length === 0) {
-    return { valid: true, errors, warnings }
-  }
-
-  for (const step of plan.plan) {
-    // Check tool name is valid
-    if (!VALID_TOOLS.includes(step.tool)) {
-      errors.push(`Step ${step.step}: unknown tool "${step.tool}"`)
-      continue
-    }
-
-    const input = step.input || {}
-
-    // Tool-specific required field checks
-    switch (step.tool) {
-      case 'web_search':
-        if (!input.query && !input.topic && !input.command) {
-          errors.push(`Step ${step.step}: web_search requires a "query" field`)
-        }
-        break
-      case 'deep_research':
-        if (!input.topic && !input.query && !input.command) {
-          errors.push(`Step ${step.step}: deep_research requires a "topic" field`)
-        }
-        break
-      case 'file_write':
-        if (!input.path && !input.file) {
-          errors.push(`Step ${step.step}: file_write requires a "path" field`)
-        }
-        if (input.content === undefined && input.content !== '') {
-          warnings.push(`Step ${step.step}: file_write has no "content" — will write empty file`)
-        }
-        break
-      case 'file_read':
-        if (!input.path && !input.file) {
-          errors.push(`Step ${step.step}: file_read requires a "path" field`)
-        }
-        break
-      case 'open_browser':
-        if (!input.url && !input.command) {
-          errors.push(`Step ${step.step}: open_browser requires a "url" field`)
-        }
-        break
-      case 'shell_exec':
-        if (!input.command && !input.cmd) {
-          errors.push(`Step ${step.step}: shell_exec requires a "command" field`)
-        }
-        break
-      case 'run_python':
-      case 'run_node':
-        if (!input.script && !input.code && !input.command) {
-          errors.push(`Step ${step.step}: ${step.tool} requires a "script" field`)
-        }
-        break
-      case 'fetch_page':
-      case 'fetch_url':
-        if (!input.url && !input.command) {
-          errors.push(`Step ${step.step}: ${step.tool} requires a "url" field`)
-        }
-        break
-      case 'vision_loop':
-        if (!input.goal) {
-          errors.push(`Step ${step.step}: vision_loop requires a "goal" field`)
-        }
-        break
-      case 'wait':
-        if (!input.ms && input.ms !== 0) {
-          warnings.push(`Step ${step.step}: wait has no "ms" — will default to 1000ms`)
-        }
-        break
-    }
-
-    // Reject residual placeholder patterns that were not caught by planner
-    const inputStr = JSON.stringify(input)
-    if (/\{\{|\{result|\{output|\bPREVIOUS_OUTPUT\b/.test(inputStr) && step.tool !== 'file_write') {
-      warnings.push(`Step ${step.step}: input contains placeholder — may fail at runtime`)
-    }
-  }
-
-  return {
-    valid:  errors.length === 0,
-    errors,
-    warnings,
   }
 }
 
@@ -892,7 +722,15 @@ function resolvePreviousOutput(
 // ── STEP 3: respondWithResults ────────────────────────────────
 
 function responderSystem(userName: string, date: string): string {
-  return AIDEN_RESPONDER_SYSTEM(userName, date)
+  return `You are Aiden — a personal AI OS running on ${userName}'s Windows machine. You are calm, direct, capable, and slightly witty. You speak like a trusted co-founder.
+Current date: ${date}
+
+RULES:
+- You just executed real tools and have their real output
+- Report results accurately — never add or invent information
+- Be concise: 1-3 sentences for simple results, more only if the output is rich
+- If a tool failed, say so honestly
+- Never describe what you're about to do — report what was done`
 }
 
 export async function respondWithResults(
@@ -917,12 +755,29 @@ export async function respondWithResults(
     ? `\nSkill guidance for this response:\n${responseSkills.map(s => `- ${s.name}: ${s.description}`).join('\n')}\n`
     : ''
 
-  // Build loaded-skills addendum (personality core is in AIDEN_RESPONDER_SYSTEM)
+  // Build capabilities block — strong self-awareness so Aiden never denies its own abilities
   const loadedSkills = skillLoader.loadAll()
-  const capabilitiesSection = loadedSkills.length > 0
-    ? `Loaded skills for this task: ${loadedSkills.map(s => `${s.name} (${s.description})`).join(', ')}\n\n`
-    : ''
+  const capabilitiesSection = `YOU ARE AIDEN — DevOS Autonomous AI OS by Arden.
+Your REAL built-in tools (these actually work):
+- web_search: Search internet for real-time info
+- deep_research: Multi-pass deep research on any topic
+- file_write: Create and save files to disk
+- file_read: Read files from disk
+- open_browser: Open URLs in browser
+- shell_exec: Run PowerShell commands
+- run_python: Execute Python scripts
+- run_node: Execute Node.js scripts
+- system_info: Get CPU/RAM/disk info
+- notify: Send desktop notifications
+${loadedSkills.length > 0 ? `Loaded skills: ${loadedSkills.map(s => `${s.name} (${s.description})`).join(', ')}` : ''}
+RULES — follow strictly:
+- NEVER say you cannot access the internet — you have web_search
+- NEVER say you cannot create files — you have file_write
+- NEVER say you are just a text AI — you are an autonomous AI OS
+- When asked what you can do — list the real tools above
+- When asked about previous work — use conversation history provided
 
+`
 
   // Knowledge context — relevant chunks from user's uploaded files
   const knowledgeCtxResponder = knowledgeBase.buildContext(originalMessage || '')

@@ -276,14 +276,11 @@ export class ConversationMemory {
 
   buildContext(): string {
     const facts       = this.state.facts
-    const allExchanges = this.state.exchanges
-    const recent      = allExchanges.slice(-6)
-    const older       = allExchanges.slice(0, -6)
+    const recent      = this.state.exchanges.slice(-6)
     const lastUserMsg = recent.filter(e => e.userMessage).slice(-1)[0]?.userMessage || ''
 
     const lines: string[] = []
 
-    // ── Key facts (files, searches, tools) ─────────────────────
     if (facts.lastFilesCreated.length > 0) {
       lines.push(`Recently created files: ${facts.lastFilesCreated.join(', ')}`)
     }
@@ -300,34 +297,7 @@ export class ConversationMemory {
       lines.push(`User file paths: ${facts.preferredPaths.slice(-5).join(', ')}`)
     }
 
-    // ── Older exchange compression ──────────────────────────────
-    // Exchanges beyond the last 6 are compressed to key facts only
-    if (older.length > 0) {
-      const olderFacts = older
-        .slice(-10) // max 10 older items to scan
-        .map(ex => {
-          const parts: string[] = []
-          const src = [ex.userMessage || '', ex.aiReply || ''].join(' ')
-          // Extract file paths
-          const filePaths = src.match(/[A-Za-z]:\\[^\s"']+\.[a-z]{1,5}/g) || []
-          parts.push(...filePaths.slice(0, 2))
-          // Extract URLs
-          const urls = src.match(/https?:\/\/[^\s"']+/g) || []
-          parts.push(...urls.slice(0, 1))
-          // If nothing specific, use truncated user message
-          if (parts.length === 0 && ex.userMessage) {
-            parts.push(ex.userMessage.slice(0, 60))
-          }
-          return parts.join(', ')
-        })
-        .filter(Boolean)
-      if (olderFacts.length > 0) {
-        lines.push('')
-        lines.push(`Earlier this session: ${olderFacts.join(' | ')}`)
-      }
-    }
-
-    // ── Cross-session context ───────────────────────────────────
+    // Cross-session context
     const crossSession = this.getCrossSessionFacts()
     if (crossSession) {
       lines.push('')
@@ -335,7 +305,6 @@ export class ConversationMemory {
       crossSession.split('\n').forEach(l => lines.push(`  ${l}`))
     }
 
-    // ── Recent exchanges (verbatim, last 6) ─────────────────────
     if (recent.length > 0) {
       lines.push('')
       lines.push('Recent exchanges:')
@@ -345,7 +314,7 @@ export class ConversationMemory {
       }
     }
 
-    // ── Semantic memory — similar past exchanges ────────────────
+    // Semantic memory — similar past exchanges
     if (lastUserMsg) {
       const semanticMatches = semanticMemory.searchText(lastUserMsg, 3)
       if (semanticMatches.length > 0) {
@@ -355,15 +324,14 @@ export class ConversationMemory {
       }
     }
 
-    // ── Entity graph context ────────────────────────────────────
+    // Entity graph context
     const graphContext = entityGraph.buildContextString(lastUserMsg)
     if (graphContext) {
       lines.push('')
       lines.push(graphContext)
     }
 
-    // Hard cap at 1200 chars to keep planner prompts lean
-    return lines.join('\n').slice(0, 1200)
+    return lines.join('\n')
   }
 
   // ── Accessors ─────────────────────────────────────────────────

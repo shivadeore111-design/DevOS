@@ -518,6 +518,15 @@ function ApiKeysTab() {
 
 // ── KnowledgeBaseTab ──────────────────────────────────────────
 
+// Format badge colours: PDF=red, EPUB=purple, TXT=blue, MD=green
+const FORMAT_COLORS: Record<string, { bg: string; text: string; label: string }> = {
+  pdf:      { bg: 'rgba(239,68,68,0.15)',   text: '#ef4444', label: 'PDF'  },
+  epub:     { bg: 'rgba(168,85,247,0.15)',  text: '#a855f7', label: 'EPUB' },
+  txt:      { bg: 'rgba(59,130,246,0.15)',  text: '#3b82f6', label: 'TXT'  },
+  md:       { bg: 'rgba(34,197,94,0.15)',   text: '#22c55e', label: 'MD'   },
+  markdown: { bg: 'rgba(34,197,94,0.15)',   text: '#22c55e', label: 'MD'   },
+}
+
 function KnowledgeBaseTab() {
   const {
     knowledgeFiles, knowledgeStats, uploadingFile,
@@ -531,8 +540,8 @@ function KnowledgeBaseTab() {
         {knowledgeStats && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
             {[
-              { label: 'Files',    value: knowledgeStats.files    || 0 },
-              { label: 'Chunks',   value: knowledgeStats.chunks   || 0 },
+              { label: 'Files',  value: knowledgeStats.files  || 0 },
+              { label: 'Chunks', value: knowledgeStats.chunks || 0 },
             ].map(s => (
               <div key={s.label} style={{
                 background: 'var(--bg2)', border: '1px solid var(--border)',
@@ -545,7 +554,7 @@ function KnowledgeBaseTab() {
           </div>
         )}
 
-        {/* Upload */}
+        {/* Upload row */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
           <select
             value={uploadCategory}
@@ -571,14 +580,17 @@ function KnowledgeBaseTab() {
               opacity: uploadingFile ? 0.5 : 1,
             }}
           >
-            {uploadingFile ? 'Uploading...' : '+ Upload File'}
+            {uploadingFile ? 'Processing…' : '+ Upload File'}
           </button>
           <input
             ref={knowledgeInputRef}
-            type="file" accept=".txt,.md,.pdf,.csv"
+            type="file" accept=".txt,.md,.pdf,.epub,.markdown"
             style={{ display: 'none' }}
             onChange={handleKnowledgeUpload}
           />
+        </div>
+        <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'var(--mono)', marginBottom: 12 }}>
+          Supports PDF, EPUB, TXT, MD · max 50 MB · processed locally
         </div>
 
         {/* File list */}
@@ -587,29 +599,46 @@ function KnowledgeBaseTab() {
             No files in knowledge base yet
           </div>
         ) : (
-          knowledgeFiles.map((f: any) => (
-            <div key={f.id} style={{
-              background: 'var(--bg2)', border: '1px solid var(--border)',
-              borderRadius: 6, padding: '8px 12px', marginBottom: 6,
-              display: 'flex', alignItems: 'center', gap: 10,
-            }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 11, color: 'var(--text)', fontFamily: 'var(--mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {f.originalName || f.filename}
-                </div>
-                <div style={{ fontSize: 9, color: 'var(--muted)', fontFamily: 'var(--mono)', marginTop: 2 }}>
-                  {f.category} · {f.chunkCount} chunks
-                </div>
-              </div>
-              <button onClick={() => handleKnowledgeDelete(f.id)} style={{
-                background: 'transparent', border: '1px solid rgba(239,68,68,0.3)',
-                borderRadius: 4, padding: '2px 8px',
-                color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: 10, cursor: 'pointer',
+          knowledgeFiles.map((f: any) => {
+            const fmt      = FORMAT_COLORS[f.format] || FORMAT_COLORS['txt']
+            const sizePart = f.fileSizeMB  ? `${f.fileSizeMB} MB` : null
+            const wordPart = f.wordCount   ? `${f.wordCount.toLocaleString()} words` : null
+            const pagePart = f.pageCount   ? `${f.pageCount} pp` : null
+            const meta     = [f.category, f.chunkCount + ' chunks', wordPart, pagePart, sizePart].filter(Boolean).join(' · ')
+
+            return (
+              <div key={f.id} style={{
+                background: 'var(--bg2)', border: '1px solid var(--border)',
+                borderRadius: 6, padding: '8px 12px', marginBottom: 6,
+                display: 'flex', alignItems: 'center', gap: 10,
               }}>
-                ✕
-              </button>
-            </div>
-          ))
+                {/* Format badge */}
+                <div style={{
+                  background: fmt.bg, color: fmt.text,
+                  borderRadius: 4, padding: '2px 6px',
+                  fontFamily: 'var(--mono)', fontSize: 9,
+                  fontWeight: 700, letterSpacing: '0.05em', flexShrink: 0,
+                }}>
+                  {fmt.label}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 11, color: 'var(--text)', fontFamily: 'var(--mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {f.originalName || f.filename}
+                  </div>
+                  <div style={{ fontSize: 9, color: 'var(--muted)', fontFamily: 'var(--mono)', marginTop: 2 }}>
+                    {meta}
+                  </div>
+                </div>
+                <button onClick={() => handleKnowledgeDelete(f.id)} style={{
+                  background: 'transparent', border: '1px solid rgba(239,68,68,0.3)',
+                  borderRadius: 4, padding: '2px 8px',
+                  color: 'var(--red)', fontFamily: 'var(--mono)', fontSize: 10, cursor: 'pointer',
+                }}>
+                  ✕
+                </button>
+              </div>
+            )
+          })
         )}
       </SettingsSection>
     </div>
@@ -1059,7 +1088,7 @@ function ChatPanel() {
             >+</button>
           </div>
           <input
-            ref={kbInputRef} type="file" accept=".txt,.md,.pdf"
+            ref={kbInputRef} type="file" accept=".txt,.md,.pdf,.epub,.markdown"
             style={{ display: 'none' }} onChange={handleQuickUpload}
           />
 
@@ -1912,7 +1941,8 @@ function SettingsDrawer() {
                 <strong style={{ color: 'var(--muted3)' }}>Stays on your device:</strong>
                 <ul style={{ paddingLeft: 16, marginTop: 6 }}>
                   <li>All conversations and chat history</li>
-                  <li>Knowledge base files and embeddings</li>
+                  <li>Knowledge base files and embeddings (stored in <code style={codeStyle}>workspace/knowledge/</code>)</li>
+                  <li>PDF, EPUB, and document files you upload — text is extracted locally, no cloud OCR</li>
                   <li>Task history and execution logs</li>
                   <li>Memory, entity graph, semantic index</li>
                   <li>Screenshots and workspace files</li>
@@ -2339,22 +2369,33 @@ export default function Home() {
     const file = e.target.files?.[0]
     if (!file) return
     try {
-      const content = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload  = () => resolve(reader.result as string)
-        reader.onerror = reject
-        reader.readAsText(file)
-      })
-      const r = await fetch('http://localhost:4200/api/knowledge/upload', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content, filename: file.name, category: 'general' }),
-      })
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('category', 'general')
+
+      const r = await fetch('http://localhost:4200/api/knowledge/upload/async', { method: 'POST', body: fd })
       const d = await r.json() as any
-      if (d.success) {
+      if (!d.success) return
+
+      // Poll for completion
+      const jobId = d.jobId as string
+      const pollResult = await new Promise<any>((resolve) => {
+        const iv = setInterval(async () => {
+          try {
+            const pr = await fetch(`http://localhost:4200/api/knowledge/progress/${encodeURIComponent(jobId)}`).then(x => x.json()) as any
+            if (pr.status === 'done' || pr.status === 'error') { clearInterval(iv); resolve(pr) }
+          } catch { clearInterval(iv); resolve({ status: 'error', message: 'Poll failed' }) }
+        }, 700)
+      })
+
+      if (pollResult.status === 'done') {
+        const res = pollResult.result as any
+        const details = res
+          ? `${res.chunkCount} chunks${res.wordCount ? `, ${res.wordCount.toLocaleString()} words` : ''}${res.pageCount ? `, ${res.pageCount} pages` : ''}`
+          : ''
         setMessages(prev => [...prev, {
           id: `sys_${Date.now()}`, role: 'assistant' as const,
-          content: `📎 Added **${file.name}** to knowledge base (${d.chunkCount} chunks). You can now reference this file in your questions.`,
+          content: `📎 Added **${file.name}** to knowledge base (${details}). You can now reference this file in your questions.`,
           timestamp: Date.now(), isStreaming: false,
         }])
       }
@@ -2407,24 +2448,33 @@ export default function Home() {
     if (!file) return
     setUploadingFile(true)
     try {
-      const content = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload  = () => resolve(reader.result as string)
-        reader.onerror = reject
-        reader.readAsText(file)
-      })
-      const r = await fetch('http://localhost:4200/api/knowledge/upload', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content, filename: file.name, category: uploadCategory }),
-      })
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('category', uploadCategory)
+
+      // Start async upload — get jobId immediately
+      const r = await fetch('http://localhost:4200/api/knowledge/upload/async', { method: 'POST', body: fd })
       const d = await r.json() as any
-      if (d.success) {
-        const updated = await fetch('http://localhost:4200/api/knowledge').then(r2 => r2.json()) as any
-        setKnowledgeFiles(Array.isArray(updated.files) ? updated.files : [])
-        const stats = await fetch('http://localhost:4200/api/knowledge/stats').then(r2 => r2.json()) as any
-        setKnowledgeStats(stats)
-      }
+      if (!d.success) { setUploadingFile(false); return }
+
+      const jobId = d.jobId as string
+
+      // Poll until done or error
+      await new Promise<void>((resolve) => {
+        const iv = setInterval(async () => {
+          try {
+            const pr = await fetch(`http://localhost:4200/api/knowledge/progress/${encodeURIComponent(jobId)}`).then(x => x.json()) as any
+            if (pr.status === 'done' || pr.status === 'error') { clearInterval(iv); resolve() }
+          } catch { clearInterval(iv); resolve() }
+        }, 600)
+      })
+
+      // Refresh list + stats after completion
+      const updated = await fetch('http://localhost:4200/api/knowledge').then(r2 => r2.json()) as any
+      setKnowledgeFiles(Array.isArray(updated.files) ? updated.files : [])
+      const stats = await fetch('http://localhost:4200/api/knowledge/stats').then(r2 => r2.json()) as any
+      setKnowledgeStats(stats)
+
     } catch {}
     setUploadingFile(false)
     if (knowledgeInputRef.current) knowledgeInputRef.current.value = ''

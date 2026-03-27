@@ -53,6 +53,7 @@ import { semanticMemory }                               from '../core/semanticMe
 import { entityGraph }                                  from '../core/entityGraph'
 import { learningMemory }                               from '../core/learningMemory'
 import { knowledgeBase }                               from '../core/knowledgeBase'
+import multer                                           from 'multer'
 import { skillTeacher }                               from '../core/skillTeacher'
 
 // ── Chat error handler ────────────────────────────────────────
@@ -95,6 +96,33 @@ function handleChatError(
 
   send({ done: true })
 }
+
+// ── Knowledge upload — multer + progress tracking ─────────────
+
+const KB_UPLOAD_DIR = path.join(process.cwd(), 'workspace', 'knowledge', 'uploads')
+if (!fs.existsSync(KB_UPLOAD_DIR)) fs.mkdirSync(KB_UPLOAD_DIR, { recursive: true })
+
+const kbStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, KB_UPLOAD_DIR),
+  filename:    (_req, file, cb) => {
+    const safe = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 100)
+    cb(null, `${Date.now()}_${safe}`)
+  },
+})
+
+const kbUpload = multer({
+  storage:    kbStorage,
+  limits:     { fileSize: 50 * 1024 * 1024 },  // 50 MB
+  fileFilter: (_req, file, cb) => {
+    const allowed = ['.pdf', '.epub', '.txt', '.md', '.markdown']
+    const ext     = path.extname(file.originalname).toLowerCase()
+    if (allowed.includes(ext)) cb(null, true)
+    else cb(new Error(`Unsupported file type: ${ext}. Allowed: ${allowed.join(', ')}`))
+  },
+})
+
+// Progress map — jobId → status/progress (kept in memory, no persistence needed)
+const kbProgress = new Map<string, { status: 'processing' | 'done' | 'error'; progress: number; message: string; result?: object }>()
 
 // ── App factory ───────────────────────────────────────────────
 
@@ -501,29 +529,126 @@ export function createApiServer(): Express {
     } catch (e: any) { res.status(500).json({ error: e.message }) }
   })
 
-  // POST /api/knowledge/upload — accept JSON { content, filename, category, tags, privacy }
-  // (no multer needed — frontend sends text file content as JSON string)
+  // POST /api/knowledge/upload — binary file upload (PDF/EPUB/TXT/MD) via multipart/form-data
+  // Fields: file (binary), category (optional), tags (optional csv), privacy (optional)
   app.post('/api/knowledge/upload', (req: Request, res: Response) => {
-    try {
-      const { content, filename, category = 'general', tags = '', privacy = 'public' } = req.body as {
-        content?: string; filename?: string; category?: string; tags?: string; privacy?: string
+    kbUpload.single('file')(req, res, async (err) => {
+      if (err) { res.status(400).json({ error: err.message }); return }
+
+      const file = (req as any).file as Express.Multer.File | undefined
+
+      // Legacy JSON path — if no file but content string provided, fall back to ingestText
+      if (!file) {
+        const { content, filename, category = 'general', tags = '', privacy = 'public' } = req.body as {
+          content?: string; filename?: string; category?: string; tags?: string; privacy?: string
+        }
+        if (!content || !filename) {
+          res.status(400).json({ error: 'Provide either a file upload or { content, filename }' }); return
+        }
+        const tagList = tags ? tags.split(',').map((t: string) => t.trim()).filter(Boolean) : []
+        const result  = knowledgeBase.ingestText(
+          content, filename, category, tagList,
+          (privacy as 'public' | 'private' | 'sensitive') || 'public',
+        )
+        if (!result.success) { res.status(400).json({ error: result.error }); return }
+        res.json({ success: true, filename, chunkCount: result.chunkCount, message: `Ingested ${result.chunkCount} chunks` })
+        return
       }
-      if (!content || !filename) {
-        res.status(400).json({ error: 'content and filename required' }); return
+
+      try {
+        const { category = 'general', tags = '', privacy = 'public' } = req.body as {
+          category?: string; tags?: string; privacy?: string
+        }
+        const tagList = tags ? tags.split(',').map((t: string) => t.trim()).filter(Boolean) : []
+
+        const result = await knowledgeBase.ingestFile(
+          file.path,
+          category,
+          (privacy as 'public' | 'private' | 'sensitive') || 'public',
+          tagList,
+        )
+
+        // Clean up temp upload file (content is now in the KB store)
+        try { fs.unlinkSync(file.path) } catch {}
+
+        if (!result.success) { res.status(400).json({ error: result.error }); return }
+
+        res.json({
+          success:    true,
+          filename:   file.originalname,
+          format:     result.format,
+          chunkCount: result.chunkCount,
+          wordCount:  result.wordCount,
+          pageCount:  result.pageCount,
+          message:    `Ingested ${result.chunkCount} chunks from ${file.originalname}`,
+        })
+      } catch (e: any) {
+        try { if (file?.path) fs.unlinkSync(file.path) } catch {}
+        res.status(500).json({ error: e.message })
+      }
+    })
+  })
+
+  // POST /api/knowledge/upload/async — returns a jobId immediately, processes in background
+  app.post('/api/knowledge/upload/async', (req: Request, res: Response) => {
+    kbUpload.single('file')(req, res, async (err) => {
+      if (err) { res.status(400).json({ error: err.message }); return }
+
+      const file = (req as any).file as Express.Multer.File | undefined
+      if (!file) { res.status(400).json({ error: 'file required for async upload' }); return }
+
+      const jobId   = `job_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+      const { category = 'general', tags = '', privacy = 'public' } = req.body as {
+        category?: string; tags?: string; privacy?: string
       }
       const tagList = tags ? tags.split(',').map((t: string) => t.trim()).filter(Boolean) : []
-      const result  = knowledgeBase.ingestText(
-        content, filename, category, tagList,
-        (privacy as 'public' | 'private' | 'sensitive') || 'public',
-      )
-      if (!result.success) { res.status(400).json({ error: result.error }); return }
-      res.json({
-        success:    true,
-        filename,
-        chunkCount: result.chunkCount,
-        message:    `Ingested ${result.chunkCount} chunks from ${filename}`,
-      })
-    } catch (e: any) { res.status(500).json({ error: e.message }) }
+
+      kbProgress.set(jobId, { status: 'processing', progress: 10, message: 'Extracting text…' })
+
+      // Fire-and-forget background processing
+      ;(async () => {
+        try {
+          kbProgress.set(jobId, { status: 'processing', progress: 40, message: 'Chunking & embedding…' })
+
+          const result = await knowledgeBase.ingestFile(
+            file.path,
+            category,
+            (privacy as 'public' | 'private' | 'sensitive') || 'public',
+            tagList,
+          )
+
+          try { fs.unlinkSync(file.path) } catch {}
+
+          if (!result.success) {
+            kbProgress.set(jobId, { status: 'error', progress: 100, message: result.error || 'Ingestion failed' })
+            return
+          }
+
+          kbProgress.set(jobId, {
+            status:   'done',
+            progress: 100,
+            message:  `Done — ${result.chunkCount} chunks from ${file.originalname}`,
+            result:   { filename: file.originalname, format: result.format, chunkCount: result.chunkCount, wordCount: result.wordCount, pageCount: result.pageCount },
+          })
+
+          // Auto-expire progress entry after 5 minutes
+          setTimeout(() => kbProgress.delete(jobId), 5 * 60 * 1000)
+
+        } catch (e: any) {
+          try { if (file?.path) fs.unlinkSync(file.path) } catch {}
+          kbProgress.set(jobId, { status: 'error', progress: 100, message: e.message })
+        }
+      })()
+
+      res.json({ success: true, jobId, message: 'Upload started — poll /api/knowledge/progress/' + jobId })
+    })
+  })
+
+  // GET /api/knowledge/progress/:jobId — poll async upload progress
+  app.get('/api/knowledge/progress/:jobId', (req: Request, res: Response) => {
+    const entry = kbProgress.get(String(req.params.jobId))
+    if (!entry) { res.status(404).json({ error: 'Job not found or already expired' }); return }
+    res.json(entry)
   })
 
   // GET /api/knowledge/search?q= — search knowledge base

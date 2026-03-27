@@ -53,7 +53,6 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
-    "@nut-tree-fork/nut-js": "^4.2.6",
     "@slack/bolt": "^4.6.0",
     "@slack/web-api": "^7.15.0",
     "@types/bcrypt": "^6.0.0",
@@ -82,7 +81,10 @@
     "tar-stream": "^3.1.8",
     "uuid": "^9.0.0",
     "whatsapp-web.js": "^1.26.0",
-    "ws": "^8.20.0"
+    "ws": "^8.20.0",
+    "pdf-parse": "^1.1.1",
+    "epub2": "^3.0.2",
+    "multer": "^1.4.5-lts.2"
   },
   "devDependencies": {
     "@types/dockerode": "^4.0.1",
@@ -92,6 +94,8 @@
     "@types/qrcode-terminal": "^0.12.2",
     "@types/tar-stream": "^3.1.4",
     "@types/uuid": "^9.0.0",
+    "@types/pdf-parse": "^1.1.4",
+    "@types/multer": "^1.4.12",
     "@vitest/ui": "^1.6.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3",

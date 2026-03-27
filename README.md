@@ -60,49 +60,6 @@ The first run launches the onboarding wizard — choose a local Ollama model or 
 
 ---
 
-## Web Search Setup
-
-DevOS uses a **4-method fallback chain** to ensure search always works:
-
-1. **SearxNG** (self-hosted, unlimited, recommended) — Docker on port 8888
-2. **Brave Search API** (optional, 2,000 free queries/month)
-3. **DuckDuckGo** (Instant API + HTML scrape, no key required)
-4. **Wikipedia** (always available, good for factual queries)
-
-### Start SearxNG (recommended)
-
-Requires [Docker Desktop](https://www.docker.com/products/docker-desktop/).
-
-```powershell
-# Start SearxNG (one-time setup — runs in background)
-.\scripts\start-searxng.ps1
-
-# To stop:
-.\scripts\start-searxng.ps1 -Stop
-
-# To view logs:
-.\scripts\start-searxng.ps1 -Logs
-```
-
-Or manually:
-```bash
-docker-compose -f docker-compose.searxng.yml up -d
-```
-
-SearxNG will be available at `http://localhost:8888`. DevOS detects it automatically on startup.
-
-### Brave Search API (optional boost)
-
-1. Get a free key at [api.search.brave.com/register](https://api.search.brave.com/register)
-2. Add to your `.env`:
-```
-BRAVE_SEARCH_API_KEY=your_key_here
-```
-
-DevOS will automatically use Brave as the second fallback when SearxNG is unavailable.
-
----
-
 ## Providers
 
 DevOS supports multiple LLM providers simultaneously and rotates automatically on rate limits:
@@ -154,7 +111,6 @@ User message
 |------|---------|
 | `core/agentLoop.ts` | Three-step loop: plan → execute → respond |
 | `core/toolRegistry.ts` | All tool implementations |
-| `core/webSearch.ts` | Reliable web search — SearxNG → Brave → DDG → Wikipedia |
 | `core/computerControl.ts` | Mouse, keyboard, screenshot, vision loop |
 | `core/skillLoader.ts` | Loads SKILL.md files and injects context |
 | `core/skillTeacher.ts` | Self-learning: generates skills from task outcomes |
