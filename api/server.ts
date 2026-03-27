@@ -37,6 +37,7 @@ import { loadConfig, saveConfig, APIEntry } from '../providers/index'
 import { ollamaProvider } from '../providers/ollama'
 import { getSmartProvider, markRateLimited, incrementUsage } from '../providers/router'
 import { executeTool } from '../core/toolRegistry'
+import { getScreenSize, takeScreenshot as captureScreen } from '../core/computerControl'
 import { planWithLLM, executePlan, respondWithResults } from '../core/agentLoop'
 import type { AgentPlan, StepResult, ToolStep }        from '../core/agentLoop'
 import { planTool }                                     from '../core/planTool'
@@ -919,6 +920,26 @@ export function createApiServer(): Express {
       return res.json({ source: 'ddg', data })
     } catch {}
     res.status(500).json({ error: 'Stock data unavailable' })
+  })
+
+  // GET /api/screen/size — get primary screen dimensions
+  app.get('/api/screen/size', async (_req: Request, res: Response) => {
+    try {
+      const size = await getScreenSize()
+      res.json(size)
+    } catch {
+      res.json({ width: 1920, height: 1080 })
+    }
+  })
+
+  // POST /api/screenshot/capture — trigger a screenshot and return its path
+  app.post('/api/screenshot/capture', async (_req: Request, res: Response) => {
+    try {
+      const filepath = await captureScreen()
+      res.json({ success: true, path: filepath })
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
   })
 
   // GET /api/mcp/list — list connected MCP plugins (stub)

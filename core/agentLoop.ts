@@ -242,7 +242,7 @@ export async function planWithLLM(
     'file_list', 'shell_exec', 'run_python', 'run_node',
     'system_info', 'notify', 'deep_research', 'get_stocks',
     'mouse_move', 'mouse_click', 'keyboard_type', 'keyboard_press',
-    'screenshot', 'screen_read', 'vision_loop',
+    'screenshot', 'screen_read', 'vision_loop', 'wait',
   ]
 
   // Load any relevant skills to guide planning
@@ -299,6 +299,17 @@ TOOL INPUT RULES:
 - shell_exec: { "command": "actual powershell command" }
 - fetch_page: { "url": "https://exact-url.com" }
 - get_stocks: { "market": "NSE", "type": "gainers" }  — type: gainers | losers | active
+- wait: { "ms": 2000 }  — Pause execution. Use after open_browser, after clicks, after any UI action that needs time to complete. Max 5000ms.
+
+COMPUTER CONTROL RULES — follow strictly when controlling mouse/keyboard/browser:
+- ALWAYS use open_browser BEFORE keyboard_type or mouse_click on browser
+- ALWAYS add a wait step of 2000ms after open_browser before any interaction
+- For web searches: step 1 = open_browser(url), step 2 = wait(2000), step 3 = keyboard_press(ctrl+l), step 4 = keyboard_type(query), step 5 = keyboard_press(enter)
+- For clicking browser address bar: use keyboard_press(ctrl+l) to focus it first
+- After typing a URL: use keyboard_press(enter) to navigate
+- For vision_loop tasks: set max_steps to at least 5
+- Never assume the browser is already open — always open it first
+- After any mouse_click: add wait(800) to let UI respond
 
 URL RULES:
 - Always use COMPLETE URLs — never truncate a URL in a tool input

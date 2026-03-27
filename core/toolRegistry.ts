@@ -12,13 +12,14 @@ import fs   from 'fs'
 import path from 'path'
 
 import {
-  mouse_move,
-  mouse_click,
-  keyboard_type,
-  keyboard_press,
-  screenshot,
-  screen_read,
-  vision_loop,
+  moveMouse,
+  clickMouse,
+  typeText,
+  pressKey,
+  takeScreenshot,
+  readScreen,
+  openBrowser,
+  visionLoop,
 } from './computerControl'
 
 const execAsync = promisify(exec)
@@ -50,28 +51,10 @@ export const TOOLS: Record<string, (payload: any) => Promise<ToolResult>> = {
   open_browser: async (p) => {
     const url = p.url || p.command || ''
     if (!url) return { success: false, output: '', error: 'No URL provided' }
-    // Try Playwright first, fall back to PowerShell Start-Process
     try {
-      const browser    = await getBrowser()
-      const context    = await browser.newContext()
-      const page       = await context.newPage()
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 })
-      const title      = await page.title()
-      const currentUrl = page.url()
-      return { success: true, output: `Opened: ${url} — Title: "${title}" — URL: ${currentUrl}` }
-    } catch (playwrightErr: any) {
-      // PowerShell fallback — opens in default Windows browser
-      try {
-        const safeUrl = url.replace(/'/g, '%27').replace(/"/g, '%22')
-        await execAsync(
-          `powershell.exe -WindowStyle Hidden -Command "Start-Process '${safeUrl}'"`,
-          { timeout: 8000 },
-        )
-        return { success: true, output: `Opened in default browser: ${url}` }
-      } catch (psErr: any) {
-        return { success: false, output: '', error: `Playwright: ${playwrightErr.message} | PowerShell: ${psErr.message}` }
-      }
-    }
+      const result = await openBrowser(url)
+      return { success: true, output: result }
+    } catch (e: any) { return { success: false, output: '', error: e.message } }
   },
 
   browser_screenshot: async () => {
@@ -680,14 +663,74 @@ export const TOOLS: Record<string, (payload: any) => Promise<ToolResult>> = {
     }
   },
 
-  // ── Computer control tools ─────────────────────────────────────
-  mouse_move:     async (p: any) => mouse_move(p),
-  mouse_click:    async (p: any) => mouse_click(p),
-  keyboard_type:  async (p: any) => keyboard_type(p),
-  keyboard_press: async (p: any) => keyboard_press(p),
-  screenshot:     async (p: any) => screenshot(p),
-  screen_read:    async (p: any) => screen_read(p),
-  vision_loop:    async (p: any) => vision_loop(p),
+  // ── Wait ───────────────────────────────────────────────────────
+  wait: async (p: any) => {
+    const ms = Math.min(Number(p.ms) || 1000, 5000)
+    await new Promise(r => setTimeout(r, ms))
+    return { success: true, output: `Waited ${ms}ms` }
+  },
+
+  // ── Computer control tools (PowerShell-only, zero native deps) ─
+  mouse_move: async (p: any) => {
+    try {
+      const result = await moveMouse(Number(p.x) || 0, Number(p.y) || 0)
+      return { success: true, output: result }
+    } catch (e: any) { return { success: false, output: '', error: e.message } }
+  },
+
+  mouse_click: async (p: any) => {
+    try {
+      const result = await clickMouse(Number(p.x) || 0, Number(p.y) || 0, p.button || 'left', !!p.double)
+      return { success: true, output: result }
+    } catch (e: any) { return { success: false, output: '', error: e.message } }
+  },
+
+  keyboard_type: async (p: any) => {
+    try {
+      const result = await typeText(String(p.text || ''))
+      return { success: true, output: result }
+    } catch (e: any) { return { success: false, output: '', error: e.message } }
+  },
+
+  keyboard_press: async (p: any) => {
+    try {
+      const result = await pressKey(String(p.key || 'enter'))
+      return { success: true, output: result }
+    } catch (e: any) { return { success: false, output: '', error: e.message } }
+  },
+
+  screenshot: async (_p: any) => {
+    try {
+      const filepath = await takeScreenshot()
+      const stats    = require('fs').statSync(filepath)
+      return { success: true, output: `Screenshot saved: ${filepath} (${Math.round(stats.size / 1024)}kb)`, path: filepath }
+    } catch (e: any) { return { success: false, output: '', error: e.message } }
+  },
+
+  screen_read: async (_p: any) => {
+    try {
+      const result = await readScreen()
+      return { success: true, output: result }
+    } catch (e: any) { return { success: false, output: '', error: e.message } }
+  },
+
+  vision_loop: async (p: any) => {
+    try {
+      // Build a callLLM wrapper using the currently available provider
+      const callLLMWrapper = async (prompt: string): Promise<string> => {
+        const { getNextAvailableAPI } = await import('../providers/router')
+        const { callLLM: _callLLM }   = await import('./agentLoop')
+        const next = getNextAvailableAPI()
+        if (!next) return 'No API available'
+        const key = next.entry.key.startsWith('env:')
+          ? (process.env[next.entry.key.replace('env:', '')] || '')
+          : next.entry.key
+        return _callLLM(prompt, key, next.entry.model, next.entry.provider)
+      }
+      const result = await visionLoop(p.goal, p.max_steps || 10, callLLMWrapper)
+      return { success: true, output: result }
+    } catch (e: any) { return { success: false, output: '', error: e.message } }
+  },
 }
 
 // ── Public executor ───────────────────────────────────────────
