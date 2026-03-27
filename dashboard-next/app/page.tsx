@@ -43,6 +43,12 @@ interface ActivityLog {
   style?:  'ok' | 'err' | 'active' | 'default'
 }
 
+interface MiniPromptConfig { type: 'websearch' | 'research' | 'stocks'; placeholder: string }
+
+type MenuItem =
+  | { id: string; icon: string; label: string; action: () => void; children?: never }
+  | { id: string; icon: string; label: string; children: { id: string; icon: string; label: string; action: () => void }[]; action?: never }
+
 // ── Provider metadata ─────────────────────────────────────────
 
 const PROVIDER_INFO: Record<string, {
@@ -93,8 +99,22 @@ interface DevOSCtxType {
   // Live view data
   systemStats:    any
   recentTasks:    any[]
+  // Plus menu
+  plusMenuOpen:    boolean
+  setPlusMenuOpen: (v: boolean) => void
+  activeSubmenu:   string | null
+  setActiveSubmenu:(v: string | null) => void
+  channelStatuses: Record<string, boolean>
+  channelModal:    string | null
+  setChannelModal: (v: string | null) => void
+  miniPrompt:      MiniPromptConfig | null
+  setMiniPrompt:   (v: MiniPromptConfig | null) => void
+  miniPromptValue: string
+  setMiniPromptValue:(v: string) => void
   // Handlers
-  sendMessage:    () => void
+  sendMessage:     (text?: string) => void
+  takeScreenshot:  () => void
+  submitMiniPrompt:() => void
   startNewChat:   () => void
   loadConversation: (id: string) => void
   handleQuickUpload: (e: React.ChangeEvent<HTMLInputElement>) => void
@@ -778,6 +798,192 @@ function EmptyState() {
   )
 }
 
+// ── PlusMenu ──────────────────────────────────────────────────
+
+function PlusMenu() {
+  const {
+    plusMenuOpen, setPlusMenuOpen,
+    activeSubmenu, setActiveSubmenu,
+    channelStatuses, miniPrompt, setMiniPrompt,
+    miniPromptValue, setMiniPromptValue, submitMiniPrompt,
+    kbInputRef, takeScreenshot, setChannelModal,
+  } = useDevOS()
+
+  if (!plusMenuOpen) return null
+
+  const CHANNEL_IDS = ['telegram', 'whatsapp', 'discord', 'slack', 'email']
+
+  const PLUS_MENU: MenuItem[] = [
+    {
+      id: 'upload',
+      icon: '📎',
+      label: 'Upload to Knowledge Base',
+      action: () => { kbInputRef.current?.click(); setPlusMenuOpen(false) },
+    },
+    {
+      id: 'screenshot',
+      icon: '🖼️',
+      label: 'Take Screenshot',
+      action: () => { takeScreenshot(); setPlusMenuOpen(false) },
+    },
+    {
+      id: 'research',
+      icon: '🔍',
+      label: 'Research',
+      children: [
+        { id: 'websearch',    icon: '🌐', label: 'Web Search',    action: () => { setMiniPrompt({ type: 'websearch',  placeholder: 'Search for...' }) } },
+        { id: 'deepresearch', icon: '🔬', label: 'Deep Research', action: () => { setMiniPrompt({ type: 'research',   placeholder: 'Research topic...' }) } },
+        { id: 'stocks',       icon: '📊', label: 'Stock Data',    action: () => { setMiniPrompt({ type: 'stocks',     placeholder: 'e.g. NSE top gainers...' }) } },
+      ],
+    },
+    {
+      id: 'connect',
+      icon: '📡',
+      label: 'Connect',
+      children: [
+        { id: 'telegram',  icon: '💬', label: 'Telegram',  action: () => setChannelModal('telegram') },
+        { id: 'whatsapp',  icon: '📱', label: 'WhatsApp',  action: () => setChannelModal('whatsapp') },
+        { id: 'discord',   icon: '🎮', label: 'Discord',   action: () => setChannelModal('discord') },
+        { id: 'slack',     icon: '💼', label: 'Slack',     action: () => setChannelModal('slack') },
+        { id: 'email',     icon: '📧', label: 'Email',     action: () => setChannelModal('email') },
+      ],
+    },
+    {
+      id: 'skills',
+      icon: '⚡',
+      label: 'Skills',
+      children: [
+        { id: 'memory',       icon: '🧠', label: 'View Memory',   action: () => setChannelModal('memory') },
+        { id: 'skillsbrowse', icon: '📚', label: 'Browse Skills', action: () => setChannelModal('skills') },
+        { id: 'mcp',          icon: '🔌', label: 'MCP Plugins',   action: () => setChannelModal('mcp') },
+      ],
+    },
+  ]
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        onClick={() => { setPlusMenuOpen(false); setActiveSubmenu(null); setMiniPrompt(null) }}
+        style={{ position: 'fixed', inset: 0, zIndex: 90 }}
+      />
+
+      {/* Main menu */}
+      <div style={{
+        position: 'absolute', bottom: 52, left: 0,
+        background: 'var(--bg2)', border: '1px solid var(--border2)',
+        borderRadius: 10, padding: '6px 0', minWidth: 220,
+        zIndex: 91, boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+        animation: 'slideUpFade 0.15s ease-out',
+      }}>
+        {PLUS_MENU.map((item) => (
+          <div key={item.id} style={{ position: 'relative' }}>
+            {/* Divider before Research */}
+            {item.id === 'research' && (
+              <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
+            )}
+
+            {/* Menu row */}
+            <button
+              onMouseEnter={() => setActiveSubmenu('children' in item && item.children ? item.id : null)}
+              onClick={() => {
+                if ('action' in item && item.action) {
+                  item.action()
+                } else {
+                  setActiveSubmenu(activeSubmenu === item.id ? null : item.id)
+                }
+              }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                width: '100%', padding: '8px 14px',
+                background: activeSubmenu === item.id ? 'var(--bg3)' : 'transparent',
+                border: 'none', color: 'var(--muted2)',
+                fontFamily: 'var(--mono)', fontSize: 12,
+                cursor: 'pointer', textAlign: 'left', transition: 'all 0.1s',
+              }}
+            >
+              <span style={{ fontSize: 14, minWidth: 20 }}>{item.icon}</span>
+              <span style={{ flex: 1 }}>{item.label}</span>
+              {'children' in item && item.children && (
+                <span style={{ fontSize: 10, color: 'var(--muted)', marginLeft: 4 }}>›</span>
+              )}
+            </button>
+
+            {/* Submenu */}
+            {'children' in item && item.children && activeSubmenu === item.id && (
+              <div style={{
+                position: 'absolute', left: '100%', top: 0,
+                marginLeft: 4, background: 'var(--bg2)',
+                border: '1px solid var(--border2)', borderRadius: 10,
+                padding: '6px 0', minWidth: 200, zIndex: 92,
+                boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+                animation: 'slideUpFade 0.12s ease-out',
+              }}>
+                {item.children.map(child => (
+                  <button
+                    key={child.id}
+                    onClick={() => {
+                      child.action()
+                      if (!['websearch', 'deepresearch', 'stocks'].includes(child.id)) {
+                        setPlusMenuOpen(false)
+                        setActiveSubmenu(null)
+                      }
+                    }}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      width: '100%', padding: '8px 14px',
+                      background: 'transparent', border: 'none',
+                      color: 'var(--muted2)', fontFamily: 'var(--mono)',
+                      fontSize: 12, cursor: 'pointer', textAlign: 'left',
+                      transition: 'all 0.1s',
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg3)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    <span style={{ fontSize: 14, minWidth: 20 }}>{child.icon}</span>
+                    <span style={{ flex: 1 }}>{child.label}</span>
+                    {CHANNEL_IDS.includes(child.id) && (
+                      <span style={{
+                        width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+                        background: channelStatuses[child.id] ? 'var(--green)' : 'var(--muted)',
+                      }} />
+                    )}
+                  </button>
+                ))}
+
+                {/* Inline mini-prompt for Research submenu */}
+                {item.id === 'research' && miniPrompt && (
+                  <div style={{ padding: '8px 10px', borderTop: '1px solid var(--border)' }}>
+                    <input
+                      autoFocus
+                      value={miniPromptValue}
+                      onChange={e => setMiniPromptValue(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') { submitMiniPrompt() }
+                        if (e.key === 'Escape') { setMiniPrompt(null); setMiniPromptValue('') }
+                      }}
+                      placeholder={miniPrompt.placeholder}
+                      style={{
+                        width: '100%', background: 'var(--bg)',
+                        border: '1px solid var(--border2)', borderRadius: 5,
+                        padding: '7px 10px', fontFamily: 'var(--mono)',
+                        fontSize: 12, color: 'var(--text)', outline: 'none',
+                      }}
+                    />
+                    <div style={{ fontSize: 9, color: 'var(--muted)', marginTop: 4, fontFamily: 'var(--mono)' }}>
+                      Enter to run · Esc to cancel
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </>
+  )
+}
+
 // ── ChatPanel ─────────────────────────────────────────────────
 
 function ChatPanel() {
@@ -785,6 +991,7 @@ function ChatPanel() {
     messages, input, setInput, isStreaming, execMode, setExecMode,
     sendMessage, handleQuickUpload,
     inputRef, kbInputRef, messagesEndRef,
+    plusMenuOpen, setPlusMenuOpen,
   } = useDevOS()
 
   useEffect(() => {
@@ -824,19 +1031,24 @@ function ChatPanel() {
         padding: '12px 24px',
         background: 'var(--bg1)', flexShrink: 0,
       }}>
-        <div style={{ maxWidth: 720, margin: '0 auto', display: 'flex', gap: 8, alignItems: 'flex-end' }}>
-          {/* KB upload */}
-          <button
-            onClick={() => kbInputRef.current?.click()}
-            title="Add to Knowledge Base"
-            style={{
-              width: 36, height: 36, borderRadius: 6, flexShrink: 0,
-              background: 'var(--bg2)', border: '1px solid var(--border2)',
-              color: 'var(--muted2)', cursor: 'pointer', fontSize: 18,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              transition: 'all 0.15s',
-            }}
-          >+</button>
+        <div style={{ maxWidth: 720, margin: '0 auto', display: 'flex', gap: 8, alignItems: 'flex-end', position: 'relative' }}>
+          {/* Plus menu trigger */}
+          <div style={{ position: 'relative', flexShrink: 0 }}>
+            <PlusMenu />
+            <button
+              onClick={() => setPlusMenuOpen(!plusMenuOpen)}
+              title="Actions"
+              style={{
+                width: 36, height: 36, borderRadius: 6,
+                background: plusMenuOpen ? 'rgba(249,115,22,0.12)' : 'var(--bg2)',
+                border: plusMenuOpen ? '1px solid rgba(249,115,22,0.35)' : '1px solid var(--border2)',
+                color: plusMenuOpen ? 'var(--orange)' : 'var(--muted2)',
+                cursor: 'pointer', fontSize: 18,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                transition: 'all 0.15s',
+              }}
+            >+</button>
+          </div>
           <input
             ref={kbInputRef} type="file" accept=".txt,.md,.pdf"
             style={{ display: 'none' }} onChange={handleQuickUpload}
@@ -878,7 +1090,7 @@ function ChatPanel() {
 
           {/* Send */}
           <button
-            onClick={sendMessage}
+            onClick={() => sendMessage()}
             disabled={!input.trim() || isStreaming}
             style={{
               width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
@@ -1387,6 +1599,14 @@ export default function Home() {
   const [activityLogs,   setActivityLogs]   = useState<ActivityLog[]>([])
   const [screenshot,     setScreenshot]     = useState<string | null>(null)
 
+  // ── Plus menu state ─────────────────────────────────────────
+  const [plusMenuOpen,      setPlusMenuOpen]      = useState(false)
+  const [activeSubmenu,     setActiveSubmenu]     = useState<string | null>(null)
+  const [channelStatuses,   setChannelStatuses]   = useState<Record<string, boolean>>({})  // eslint-disable-line @typescript-eslint/no-unused-vars
+  const [channelModal,      setChannelModal]      = useState<string | null>(null)
+  const [miniPrompt,        setMiniPrompt]        = useState<MiniPromptConfig | null>(null)
+  const [miniPromptValue,   setMiniPromptValue]   = useState('')
+
   // ── Live view data ──────────────────────────────────────────
   const [systemStats,    setSystemStats]    = useState<any>(null)
   const [recentTasks,    setRecentTasks]    = useState<any[]>([])
@@ -1544,17 +1764,18 @@ export default function Home() {
   }, [currentConvId])
 
   // ── Send message ────────────────────────────────────────────
-  const sendMessage = useCallback(async () => {
-    if (!input.trim() || isStreaming) return
+  const sendMessage = useCallback(async (overrideText?: string) => {
+    const text = overrideText ?? input
+    if (!text.trim() || isStreaming) return
 
     const userMsg: Message = {
       id: `msg_${Date.now()}`, role: 'user',
-      content: input.trim(), timestamp: Date.now(),
+      content: text.trim(), timestamp: Date.now(),
     }
     const newMessages = [...messages, userMsg]
     setMessages(newMessages)
-    setInput('')
-    if (inputRef.current) inputRef.current.style.height = 'auto'
+    if (!overrideText) setInput('')
+    if (!overrideText && inputRef.current) inputRef.current.style.height = 'auto'
     setIsStreaming(true)
 
     const thinkingId = `thinking_${Date.now()}`
@@ -1749,6 +1970,27 @@ export default function Home() {
     setKnowledgeFiles(prev => prev.filter((f: any) => f.id !== fileId))
   }, [])
 
+  // ── Plus menu handlers ───────────────────────────────────────
+  const takeScreenshot = useCallback(() => {
+    setLiveViewOpen(true)
+    setUIMode(m => m === 'focus' ? 'power' : m)
+  }, [setLiveViewOpen, setUIMode])
+
+  const submitMiniPrompt = useCallback(() => {
+    if (!miniPromptValue.trim() || !miniPrompt) return
+    const prefixes: Record<string, string> = {
+      websearch: 'Search the web for:',
+      research:  'Do deep research on:',
+      stocks:    'Get stock data for:',
+    }
+    const text = `${prefixes[miniPrompt.type] ?? ''} ${miniPromptValue.trim()}`.trim()
+    setPlusMenuOpen(false)
+    setActiveSubmenu(null)
+    setMiniPrompt(null)
+    setMiniPromptValue('')
+    sendMessage(text)
+  }, [miniPromptValue, miniPrompt, sendMessage])
+
   // ── Context value ───────────────────────────────────────────
   const ctxValue: DevOSCtxType = {
     uiMode, setUIMode, execMode, setExecMode,
@@ -1763,6 +2005,14 @@ export default function Home() {
     sendMessage, startNewChat, loadConversation,
     handleQuickUpload,
     inputRef, kbInputRef, messagesEndRef, logsEndRef,
+    // Plus menu
+    plusMenuOpen, setPlusMenuOpen,
+    activeSubmenu, setActiveSubmenu,
+    channelStatuses,
+    channelModal, setChannelModal,
+    miniPrompt, setMiniPrompt,
+    miniPromptValue, setMiniPromptValue,
+    takeScreenshot, submitMiniPrompt,
     // API keys
     providers, routing, addingProvider, setAddingProvider,
     newKey, setNewKey, newModel, setNewModel,

@@ -884,22 +884,6 @@ export function createApiServer(): Express {
     res.json({ sessions: conversationMemory.getSessions() })
   })
 
-  // GET /api/screenshot — serve latest screenshot from workspace/screenshots/
-  app.get('/api/screenshot', (_req: Request, res: Response) => {
-    try {
-      const dir = path.join(process.cwd(), 'workspace', 'screenshots')
-      if (!fs.existsSync(dir)) { res.status(404).end(); return }
-      const files = fs.readdirSync(dir)
-        .filter((f: string) => f.endsWith('.png'))
-        .sort().reverse()
-      if (!files.length) { res.status(404).end(); return }
-      const imgPath = path.join(dir, files[0])
-      res.setHeader('Content-Type', 'image/png')
-      res.setHeader('Cache-Control', 'no-cache, no-store')
-      res.send(fs.readFileSync(imgPath))
-    } catch { res.status(500).end() }
-  })
-
   // ── 404 catch-all ─────────────────────────────────────────────
   app.use((_req: Request, res: Response) => {
     res.status(404).json({ error: 'Not found' })
