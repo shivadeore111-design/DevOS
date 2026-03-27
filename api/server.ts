@@ -39,6 +39,9 @@ import { getSmartProvider, markRateLimited, incrementUsage } from '../providers/
 import { executeTool } from '../core/toolRegistry'
 import { getScreenSize, takeScreenshot as captureScreen } from '../core/computerControl'
 import { planWithLLM, executePlan, respondWithResults } from '../core/agentLoop'
+import { AIDEN_STREAM_SYSTEM }                          from '../core/aidenPersonality'
+import { checkVoiceAvailable, recordAudio, transcribeAudio } from '../core/voiceInput'
+import { speak, checkTTSAvailable }                    from '../core/voiceOutput'
 import type { AgentPlan, StepResult, ToolStep }        from '../core/agentLoop'
 import { planTool }                                     from '../core/planTool'
 import type { Phase }                                   from '../core/planTool'
@@ -975,6 +978,53 @@ export function createApiServer(): Express {
     res.json({ success: true })
   })
 
+  // ── Voice endpoints ───────────────────────────────────────────
+
+  // GET /api/voice/status — check STT and TTS availability
+  app.get('/api/voice/status', async (_req: Request, res: Response) => {
+    const [stt, tts] = await Promise.all([checkVoiceAvailable(), checkTTSAvailable()])
+    res.json({ stt, tts })
+  })
+
+  // POST /api/voice/record — record audio from microphone
+  // body: { duration?: number }  (ms, default 5000)
+  app.post('/api/voice/record', async (req: Request, res: Response) => {
+    try {
+      const duration = Math.min(Number(req.body?.duration) || 5000, 15000)
+      const audioPath = await recordAudio(duration)
+      res.json({ success: true, path: audioPath })
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message })
+    }
+  })
+
+  // POST /api/voice/transcribe — transcribe a recorded audio file
+  // body: { path: string }
+  app.post('/api/voice/transcribe', async (req: Request, res: Response) => {
+    try {
+      const { path: audioPath } = req.body as { path?: string }
+      if (!audioPath) { res.status(400).json({ error: 'path required' }); return }
+      const text = await transcribeAudio(audioPath)
+      res.json({ success: true, text })
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message })
+    }
+  })
+
+  // POST /api/voice/speak — speak text aloud (non-blocking)
+  // body: { text: string, voice?: string }
+  app.post('/api/voice/speak', async (req: Request, res: Response) => {
+    try {
+      const { text, voice } = req.body as { text?: string; voice?: string }
+      if (!text) { res.status(400).json({ error: 'text required' }); return }
+      // Fire and forget — response returns immediately while audio plays
+      speak(text, voice).catch(e => console.error('[TTS] speak error:', e.message))
+      res.json({ success: true })
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message })
+    }
+  })
+
   // ── 404 catch-all ─────────────────────────────────────────────
   app.use((_req: Request, res: Response) => {
     res.status(404).json({ error: 'Not found' })
@@ -1186,44 +1236,9 @@ async function streamChat(
   apiName:  string,
   send:     (data: object) => void,
 ): Promise<void> {
-  const streamCapabilities = `YOU ARE AIDEN — DevOS Autonomous AI OS.
-Your REAL built-in tools (these actually work):
-- web_search: Search internet for real-time info
-- deep_research: Multi-pass deep research on any topic
-- file_write: Create and save files to disk
-- file_read: Read files from disk
-- open_browser: Open URLs in browser
-- shell_exec: Run PowerShell commands
-- run_python: Execute Python scripts
-- run_node: Execute Node.js scripts
-- run_powershell: Run PowerShell natively
-- notify: Send desktop notifications
-- system_info: Get CPU/RAM/disk info
-- fetch_url: Download from any URL
-- git_push: Commit and push to GitHub
-- vercel_deploy: Deploy to Vercel
-- mouse_move: Move cursor to coordinates
-- mouse_click: Click anywhere on screen
-- keyboard_type: Type text into any window
-- keyboard_press: Press keys (Enter, Tab, Escape etc)
-- screenshot: Capture full screen
-- screen_read: Screenshot + vision model describes screen
-- vision_loop: Autonomous UI control loop
-- get_stocks: NSE/BSE stock data
-- knowledge_search: Search your personal knowledge base
+  const chatPrompt = `${AIDEN_STREAM_SYSTEM}
 
-RULES:
-- NEVER say you cannot access the internet — you have web_search
-- NEVER say you cannot create files — you have file_write
-- NEVER say you cannot control the computer — you have mouse_move, mouse_click, keyboard_type
-- NEVER list fake capabilities like graphic design, music generation, video production
-- NEVER say you have 250+ skills — you have exactly 23 tools listed above
-- When asked what you can do — list ONLY the 23 real tools above
-- When asked how many skills — answer 23 tools
-`
-
-  const chatPrompt = streamCapabilities + `You are Aiden — a personal AI OS for ${userName}. Calm, direct, intelligent, slightly witty. Co-founder energy.
-Be concise for simple questions, thorough for complex ones. Use markdown when it helps.
+User: ${userName}
 Today: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.`
 
   const msgs = [

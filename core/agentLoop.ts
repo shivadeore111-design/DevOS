@@ -20,6 +20,7 @@ import { conversationMemory }             from './conversationMemory'
 import { getNextAvailableAPI, markRateLimited, incrementUsage } from '../providers/router'
 import { knowledgeBase } from './knowledgeBase'
 import { skillTeacher }  from './skillTeacher'
+import { AIDEN_RESPONDER_SYSTEM } from './aidenPersonality'
 import * as nodeFs             from 'fs'
 import * as nodePath           from 'path'
 import * as nodeOs             from 'os'
@@ -891,15 +892,7 @@ function resolvePreviousOutput(
 // ── STEP 3: respondWithResults ────────────────────────────────
 
 function responderSystem(userName: string, date: string): string {
-  return `You are Aiden — a personal AI OS running on ${userName}'s Windows machine. You are calm, direct, capable, and slightly witty. You speak like a trusted co-founder.
-Current date: ${date}
-
-RULES:
-- You just executed real tools and have their real output
-- Report results accurately — never add or invent information
-- Be concise: 1-3 sentences for simple results, more only if the output is rich
-- If a tool failed, say so honestly
-- Never describe what you're about to do — report what was done`
+  return AIDEN_RESPONDER_SYSTEM(userName, date)
 }
 
 export async function respondWithResults(
@@ -924,29 +917,12 @@ export async function respondWithResults(
     ? `\nSkill guidance for this response:\n${responseSkills.map(s => `- ${s.name}: ${s.description}`).join('\n')}\n`
     : ''
 
-  // Build capabilities block — strong self-awareness so Aiden never denies its own abilities
+  // Build loaded-skills addendum (personality core is in AIDEN_RESPONDER_SYSTEM)
   const loadedSkills = skillLoader.loadAll()
-  const capabilitiesSection = `YOU ARE AIDEN — DevOS Autonomous AI OS by Arden.
-Your REAL built-in tools (these actually work):
-- web_search: Search internet for real-time info
-- deep_research: Multi-pass deep research on any topic
-- file_write: Create and save files to disk
-- file_read: Read files from disk
-- open_browser: Open URLs in browser
-- shell_exec: Run PowerShell commands
-- run_python: Execute Python scripts
-- run_node: Execute Node.js scripts
-- system_info: Get CPU/RAM/disk info
-- notify: Send desktop notifications
-${loadedSkills.length > 0 ? `Loaded skills: ${loadedSkills.map(s => `${s.name} (${s.description})`).join(', ')}` : ''}
-RULES — follow strictly:
-- NEVER say you cannot access the internet — you have web_search
-- NEVER say you cannot create files — you have file_write
-- NEVER say you are just a text AI — you are an autonomous AI OS
-- When asked what you can do — list the real tools above
-- When asked about previous work — use conversation history provided
+  const capabilitiesSection = loadedSkills.length > 0
+    ? `Loaded skills for this task: ${loadedSkills.map(s => `${s.name} (${s.description})`).join(', ')}\n\n`
+    : ''
 
-`
 
   // Knowledge context — relevant chunks from user's uploaded files
   const knowledgeCtxResponder = knowledgeBase.buildContext(originalMessage || '')

@@ -112,6 +112,13 @@ interface DevOSCtxType {
   setMiniPrompt:   (v: MiniPromptConfig | null) => void
   miniPromptValue: string
   setMiniPromptValue:(v: string) => void
+  // Voice
+  voiceStatus:    { stt: boolean; tts: boolean }
+  isRecording:    boolean
+  ttsEnabled:     boolean
+  setTtsEnabled:  (v: boolean) => void
+  recordingTimer: number
+  startRecording: () => void
   // Handlers
   sendMessage:     (text?: string) => void
   takeScreenshot:  () => void
@@ -993,6 +1000,7 @@ function ChatPanel() {
     sendMessage, handleQuickUpload,
     inputRef, kbInputRef, messagesEndRef,
     plusMenuOpen, setPlusMenuOpen,
+    voiceStatus, isRecording, ttsEnabled, setTtsEnabled, recordingTimer, startRecording,
   } = useDevOS()
 
   useEffect(() => {
@@ -1088,6 +1096,45 @@ function ChatPanel() {
               </button>
             ))}
           </div>
+
+          {/* Voice input button — shown only when STT available */}
+          {voiceStatus.stt && (
+            <button
+              onClick={startRecording}
+              disabled={isStreaming}
+              title={isRecording ? `Recording... ${recordingTimer}s` : 'Voice input (5s)'}
+              style={{
+                width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
+                background: isRecording ? 'rgba(239,68,68,0.15)' : 'var(--bg2)',
+                border: `1px solid ${isRecording ? 'rgba(239,68,68,0.4)' : 'var(--border2)'}`,
+                color: isRecording ? '#ef4444' : 'var(--muted2)',
+                cursor: isStreaming ? 'not-allowed' : 'pointer',
+                fontSize: isRecording ? 13 : 14,
+                fontFamily: isRecording ? 'var(--mono)' : 'inherit',
+                transition: 'all 0.2s',
+                animation: isRecording ? 'pulse-dot 0.8s infinite' : 'none',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              {isRecording ? `${recordingTimer}` : '🎤'}
+            </button>
+          )}
+
+          {/* TTS toggle button — shown only when TTS available */}
+          {voiceStatus.tts && (
+            <button
+              onClick={() => setTtsEnabled(!ttsEnabled)}
+              title={ttsEnabled ? 'Disable voice responses' : 'Enable voice responses (Aiden speaks)'}
+              style={{
+                width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
+                background: ttsEnabled ? 'rgba(249,115,22,0.15)' : 'var(--bg2)',
+                border: `1px solid ${ttsEnabled ? 'rgba(249,115,22,0.4)' : 'var(--border2)'}`,
+                color: ttsEnabled ? 'var(--orange)' : 'var(--muted2)',
+                cursor: 'pointer', fontSize: 14, transition: 'all 0.2s',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+            >🔊</button>
+          )}
 
           {/* Send */}
           <button
@@ -1834,6 +1881,26 @@ function SettingsDrawer() {
                   </div>
                 ))}
               </SettingsSection>
+              <SettingsSection title="Voice Setup (Optional)">
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted2)', lineHeight: 1.8 }}>
+                  <div style={{ marginBottom: 8, color: 'var(--muted3)' }}>Voice input requires Python + faster-whisper:</div>
+                  <code style={codeStyle}>pip install faster-whisper</code>
+                  <div style={{ marginTop: 12, marginBottom: 8, color: 'var(--muted3)' }}>Voice output (edge-tts) — natural Aria voice:</div>
+                  <code style={codeStyle}>pip install edge-tts</code>
+                  <div style={{ marginTop: 12, padding: '8px 10px', background: 'var(--bg2)', borderRadius: 6, border: '1px solid var(--border)' }}>
+                    <div style={{ color: 'var(--muted)' }}>Once installed, restart DevOS. The 🎤 and 🔊 buttons appear automatically in chat — no config needed.</div>
+                    <div style={{ marginTop: 6, color: 'var(--muted)' }}>Without edge-tts, Windows SAPI (built-in) is used as fallback.</div>
+                  </div>
+                </div>
+              </SettingsSection>
+              <SettingsSection title="Web Search Setup (Optional)">
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted2)', lineHeight: 1.8 }}>
+                  <div style={{ marginBottom: 8, color: 'var(--muted3)' }}>SearxNG gives unlimited self-hosted search (requires Docker):</div>
+                  <code style={codeStyle}>.\scripts\start-searxng.ps1</code>
+                  <div style={{ marginTop: 10, marginBottom: 8, color: 'var(--muted3)' }}>Or add a Brave Search API key to .env for a free fallback:</div>
+                  <code style={codeStyle}>BRAVE_SEARCH_API_KEY=your_key</code>
+                </div>
+              </SettingsSection>
             </div>
           )}
 
@@ -1992,6 +2059,12 @@ export default function Home() {
   const [miniPrompt,        setMiniPrompt]        = useState<MiniPromptConfig | null>(null)
   const [miniPromptValue,   setMiniPromptValue]   = useState('')
 
+  // ── Voice state ─────────────────────────────────────────────
+  const [voiceStatus,    setVoiceStatus]    = useState<{ stt: boolean; tts: boolean }>({ stt: false, tts: false })
+  const [isRecording,    setIsRecording]    = useState(false)
+  const [ttsEnabled,     setTtsEnabled]     = useState(false)
+  const [recordingTimer, setRecordingTimer] = useState(0)
+
   // ── Live view data ──────────────────────────────────────────
   const [systemStats,    setSystemStats]    = useState<any>(null)
   const [recentTasks,    setRecentTasks]    = useState<any[]>([])
@@ -2041,6 +2114,27 @@ export default function Home() {
       return () => clearTimeout(t)
     }
   }, [isExecuting])
+
+  // ── Voice availability check ─────────────────────────────────
+  useEffect(() => {
+    fetch('http://localhost:4200/api/voice/status')
+      .then(r => r.json())
+      .then(data => setVoiceStatus(data))
+      .catch(() => {})
+  }, [])
+
+  // ── Auto-speak Aiden responses when TTS enabled ──────────────
+  useEffect(() => {
+    if (!ttsEnabled) return
+    const lastMsg = messages[messages.length - 1]
+    if (lastMsg?.role === 'assistant' && !(lastMsg as any).isStreaming && lastMsg.content) {
+      fetch('http://localhost:4200/api/voice/speak', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: lastMsg.content }),
+      }).catch(() => {})
+    }
+  }, [messages, ttsEnabled])
 
   // ── Load conversations from localStorage ────────────────────
   useEffect(() => {
@@ -2400,6 +2494,50 @@ export default function Home() {
     }
   }, [miniPromptValue, miniPrompt, sendMessage])
 
+  // ── Voice recording handler ──────────────────────────────────
+  const startRecording = useCallback(async () => {
+    if (isRecording || isStreaming) return
+    setIsRecording(true)
+    setRecordingTimer(5)
+
+    // Countdown display
+    const countdown = setInterval(() => {
+      setRecordingTimer(t => {
+        if (t <= 1) { clearInterval(countdown); return 0 }
+        return t - 1
+      })
+    }, 1000)
+
+    try {
+      // Record 5 seconds of audio
+      const r1   = await fetch('http://localhost:4200/api/voice/record', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ duration: 5000 }),
+      })
+      const { path: audioPath } = await r1.json()
+
+      // Transcribe
+      const r2   = await fetch('http://localhost:4200/api/voice/transcribe', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ path: audioPath }),
+      })
+      const { text } = await r2.json()
+
+      if (text?.trim()) {
+        setInput(text.trim())
+        setTimeout(() => sendMessage(text.trim()), 300)
+      }
+    } catch (e) {
+      console.error('[Voice] Recording error:', e)
+    } finally {
+      clearInterval(countdown)
+      setIsRecording(false)
+      setRecordingTimer(0)
+    }
+  }, [isRecording, isStreaming, sendMessage])
+
   // ── Context value ───────────────────────────────────────────
   const ctxValue: DevOSCtxType = {
     uiMode, setUIMode, execMode, setExecMode,
@@ -2422,6 +2560,8 @@ export default function Home() {
     miniPrompt, setMiniPrompt,
     miniPromptValue, setMiniPromptValue,
     takeScreenshot, submitMiniPrompt,
+    // Voice
+    voiceStatus, isRecording, ttsEnabled, setTtsEnabled, recordingTimer, startRecording,
     // API keys
     providers, routing, addingProvider, setAddingProvider,
     newKey, setNewKey, newModel, setNewModel,
