@@ -884,6 +884,53 @@ export function createApiServer(): Express {
     res.json({ sessions: conversationMemory.getSessions() })
   })
 
+  // GET /api/screenshot — serve latest screenshot from workspace/screenshots/
+  app.get('/api/screenshot', (_req: Request, res: Response) => {
+    try {
+      const dir = path.join(process.cwd(), 'workspace', 'screenshots')
+      if (!fs.existsSync(dir)) { res.status(404).end(); return }
+      const files = fs.readdirSync(dir)
+        .filter((f: string) => f.endsWith('.png'))
+        .sort().reverse()
+      if (!files.length) { res.status(404).end(); return }
+      const imgPath = path.join(dir, files[0])
+      res.setHeader('Content-Type', 'image/png')
+      res.setHeader('Cache-Control', 'no-cache, no-store')
+      res.send(fs.readFileSync(imgPath))
+    } catch { res.status(500).end() }
+  })
+
+  // GET /api/stocks — fetch stock data via Yahoo Finance or DuckDuckGo
+  app.get('/api/stocks', async (req: Request, res: Response) => {
+    const query = (req.query.q as string) || 'NSE top gainers'
+    try {
+      const yahooUrl = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=10&newsCount=0`
+      const r1 = await fetch(yahooUrl, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/122.0.0.0' }
+      })
+      if (r1.ok) {
+        const data = await r1.json()
+        return res.json({ source: 'yahoo', data })
+      }
+    } catch {}
+    try {
+      const r2 = await fetch(`https://api.duckduckgo.com/?q=${encodeURIComponent(query + ' stock price NSE BSE')}&format=json&no_html=1`)
+      const data = await r2.json()
+      return res.json({ source: 'ddg', data })
+    } catch {}
+    res.status(500).json({ error: 'Stock data unavailable' })
+  })
+
+  // GET /api/mcp/list — list connected MCP plugins (stub)
+  app.get('/api/mcp/list', (_req: Request, res: Response) => {
+    res.json({ plugins: [] })
+  })
+
+  // POST /api/mcp/connect — connect a new MCP plugin (stub)
+  app.post('/api/mcp/connect', (_req: Request, res: Response) => {
+    res.json({ success: true })
+  })
+
   // ── 404 catch-all ─────────────────────────────────────────────
   app.use((_req: Request, res: Response) => {
     res.status(404).json({ error: 'Not found' })

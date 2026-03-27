@@ -94,6 +94,7 @@ interface DevOSCtxType {
   activityLogs:   ActivityLog[]
   // Screenshot
   screenshot:     string | null
+  setScreenshot:  React.Dispatch<React.SetStateAction<string | null>>
   // Session
   sessionId:      string
   // Live view data
@@ -1111,12 +1112,58 @@ function ChatPanel() {
 // ── LiveViewPanel ─────────────────────────────────────────────
 
 function LiveViewPanel() {
-  const { isExecuting, screenshot, uiMode, setUIMode, systemStats, recentTasks } = useDevOS()
+  const { isExecuting, screenshot, setScreenshot, uiMode, setUIMode, systemStats, recentTasks } = useDevOS()
+  const [capturedAgo, setCapturedAgo]     = useState<number | null>(null)
+  const [lastCaptured, setLastCaptured]   = useState<number | null>(null)
+  const [refreshing, setRefreshing]       = useState(false)
+
+  // Adaptive polling: 800ms when executing, 3000ms when idle
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const r = await fetch('http://localhost:4200/api/screenshot?' + Date.now())
+        if (r.ok) {
+          const blob = await r.blob()
+          if (blob.size > 0) {
+            const url = URL.createObjectURL(blob)
+            setScreenshot((prev: string | null) => { if (prev) URL.revokeObjectURL(prev); return url })
+            setLastCaptured(Date.now())
+          }
+        }
+      } catch {}
+    }, isExecuting ? 800 : 3000)
+    return () => clearInterval(interval)
+  }, [isExecuting, setScreenshot])
+
+  // "captured Xs ago" ticker
+  useEffect(() => {
+    if (!lastCaptured) return
+    const t = setInterval(() => setCapturedAgo(Math.floor((Date.now() - lastCaptured) / 1000)), 1000)
+    return () => clearInterval(t)
+  }, [lastCaptured])
+
+  const manualRefresh = async () => {
+    setRefreshing(true)
+    try {
+      const r = await fetch('http://localhost:4200/api/screenshot?' + Date.now())
+      if (r.ok) {
+        const blob = await r.blob()
+        if (blob.size > 0) {
+          const url = URL.createObjectURL(blob)
+          setScreenshot((prev: string | null) => { if (prev) URL.revokeObjectURL(prev); return url })
+          setLastCaptured(Date.now())
+          setCapturedAgo(0)
+        }
+      }
+    } catch {}
+    setRefreshing(false)
+  }
 
   return (
     <aside style={{
       overflow: 'hidden', borderLeft: '1px solid var(--border)',
       background: 'var(--bg1)', display: 'flex', flexDirection: 'column',
+      minWidth: 420,
     }}>
       {/* Header */}
       <div style={{
@@ -1132,20 +1179,54 @@ function LiveViewPanel() {
           }} />
           Live View
         </div>
-        <NavBtn onClick={() => setUIMode(m => m === 'watch' ? 'focus' : 'watch')} title="Watch Mode">
-          {uiMode === 'watch' ? '✕' : '⤢'}
-        </NavBtn>
+        <div style={{ display: 'flex', gap: 4 }}>
+          <button
+            onClick={manualRefresh} title="Refresh screenshot"
+            style={{
+              width: 28, height: 28, borderRadius: 5,
+              background: refreshing ? 'rgba(249,115,22,0.1)' : 'transparent',
+              border: '1px solid transparent', color: 'var(--muted)',
+              cursor: 'pointer', fontSize: 13, transition: 'all 0.15s',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+          >{refreshing ? '…' : '↻'}</button>
+          <NavBtn onClick={() => setUIMode((m: UIMode) => m === 'watch' ? 'focus' : 'watch')} title="Watch Mode">
+            {uiMode === 'watch' ? '✕' : '⤢'}
+          </NavBtn>
+        </div>
       </div>
 
       {/* Content */}
       <div style={{ flex: 1, overflow: 'auto', padding: 14 }}>
-        {screenshot && (
+        {/* Screenshot — shown when available (idle OR executing) */}
+        {screenshot ? (
           <div style={{ marginBottom: 14 }}>
             <img src={screenshot} alt="Screen" style={{
               width: '100%', borderRadius: 6, border: '1px solid var(--border)',
+              objectFit: 'contain', maxHeight: 340, display: 'block',
             }} />
             <div style={{ fontSize: 9, color: 'var(--muted)', marginTop: 4, textAlign: 'center', fontFamily: 'var(--mono)' }}>
-              live · {new Date().toLocaleTimeString()}
+              {isExecuting ? 'live · ' : ''}{capturedAgo !== null ? `captured ${capturedAgo}s ago` : new Date().toLocaleTimeString()}
+            </div>
+          </div>
+        ) : (
+          /* Animated placeholder grid when no screenshot yet */
+          <div style={{ marginBottom: 14 }}>
+            <div style={{
+              borderRadius: 6, border: '1px solid var(--border)',
+              background: 'var(--bg2)', padding: 16, height: 220,
+              display: 'grid', gridTemplateColumns: 'repeat(6,1fr)',
+              gridTemplateRows: 'repeat(4,1fr)', gap: 6,
+            }}>
+              {Array.from({ length: 24 }).map((_, i) => (
+                <div key={i} style={{
+                  borderRadius: 4, background: 'var(--bg3)',
+                  animation: `pulse 1.6s ease-in-out ${(i * 0.08).toFixed(2)}s infinite`,
+                }} />
+              ))}
+            </div>
+            <div style={{ fontSize: 9, color: 'var(--muted)', marginTop: 4, textAlign: 'center', fontFamily: 'var(--mono)' }}>
+              waiting for screenshot
             </div>
           </div>
         )}
@@ -1166,7 +1247,7 @@ function LiveViewPanel() {
                   <div style={{ fontSize: 9, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4, fontFamily: 'var(--mono)' }}>
                     {stat.label}
                   </div>
-                  <div style={{ fontSize: 13, color: stat.color || 'var(--text)', fontFamily: 'var(--mono)', fontWeight: 500 }}>
+                  <div style={{ fontSize: 13, color: (stat as any).color || 'var(--text)', fontFamily: 'var(--mono)', fontWeight: 500 }}>
                     {stat.value}
                   </div>
                 </div>
@@ -1195,15 +1276,6 @@ function LiveViewPanel() {
                   </div>
                 ))}
               </>
-            )}
-
-            {!screenshot && recentTasks.length === 0 && (
-              <div style={{ textAlign: 'center', padding: 32, color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 11 }}>
-                No activity yet.<br />
-                <span style={{ fontSize: 9, marginTop: 4, display: 'block' }}>
-                  Live view activates when Aiden executes a task
-                </span>
-              </div>
             )}
           </>
         )}
@@ -1250,7 +1322,11 @@ function ActivityBar() {
 
       {activityOpen && (
         <div style={{ flex: 1, overflowY: 'auto', padding: '0 14px 8px' }}>
-          {activityLogs.slice(-100).map((log, i) => (
+          {activityLogs.length === 0 ? (
+            <div style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 10, padding: '6px 0', fontStyle: 'italic' }}>
+              No activity yet — send a message to get started
+            </div>
+          ) : activityLogs.slice(-100).map((log, i) => (
             <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '2px 0', fontFamily: 'var(--mono)', fontSize: 11 }}>
               <span style={{ color: 'var(--muted)', flexShrink: 0, fontSize: 9, paddingTop: 1 }}>{log.time}</span>
               <span style={{ flexShrink: 0 }}>{log.icon}</span>
@@ -1266,6 +1342,315 @@ function ActivityBar() {
         </div>
       )}
     </div>
+  )
+}
+
+// ── MemoryView ────────────────────────────────────────────────
+
+function MemoryView() {
+  const [data, setData] = useState<any>(null)
+  useEffect(() => {
+    fetch('http://localhost:4200/api/memory').then(r => r.json()).then(setData).catch(() => {})
+  }, [])
+  return (
+    <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted2)' }}>
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ fontSize: 9, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>Recent Facts</div>
+        {data?.recentHistory?.slice(0, 5).map((item: any, i: number) => (
+          <div key={i} style={{ padding: '5px 0', borderBottom: '1px solid var(--border)', color: 'var(--muted2)', fontSize: 11, lineHeight: 1.5 }}>
+            {typeof item === 'string' ? item.slice(0, 120) : JSON.stringify(item).slice(0, 120)}
+          </div>
+        )) || <div style={{ color: 'var(--muted)' }}>No memory yet</div>}
+      </div>
+      <div style={{ marginTop: 16 }}>
+        <div style={{ fontSize: 9, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>Stats</div>
+        <div>Semantic items: {data?.semanticItems || 0}</div>
+        <div>Sessions: {data?.sessions || 1}</div>
+      </div>
+      <button onClick={() => {
+        if (window.confirm('Clear all memory? Cannot be undone.')) {
+          fetch('http://localhost:4200/api/memory', { method: 'DELETE' }).catch(() => {})
+          setData(null)
+        }
+      }} style={{
+        marginTop: 16, width: '100%', padding: '8px',
+        background: 'transparent', border: '1px solid rgba(239,68,68,0.3)',
+        borderRadius: 6, color: 'var(--red)', fontFamily: 'var(--mono)',
+        fontSize: 11, cursor: 'pointer',
+      }}>Clear All Memory</button>
+    </div>
+  )
+}
+
+// ── SkillsView ────────────────────────────────────────────────
+
+function SkillsView() {
+  const [skills, setSkills] = useState<any[]>([])
+  useEffect(() => {
+    fetch('http://localhost:4200/api/skills').then(r => r.json()).then(d => setSkills(d.skills || [])).catch(() => {})
+  }, [])
+  return (
+    <div style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>
+      {skills.length === 0 && (
+        <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 20 }}>No skills loaded yet</div>
+      )}
+      {skills.map((skill: any, i: number) => (
+        <div key={i} style={{ padding: '10px 12px', marginBottom: 8, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 6 }}>
+          <div style={{ color: 'var(--text)', fontWeight: 600, marginBottom: 3 }}>{skill.name}</div>
+          <div style={{ color: 'var(--muted2)', fontSize: 11, lineHeight: 1.5 }}>{skill.description}</div>
+          {skill.confidence !== undefined && (
+            <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ flex: 1, height: 3, background: 'var(--border)', borderRadius: 2 }}>
+                <div style={{ width: `${skill.confidence * 100}%`, height: '100%', background: 'var(--orange)', borderRadius: 2 }} />
+              </div>
+              <span style={{ fontSize: 10, color: 'var(--muted)' }}>{Math.round(skill.confidence * 100)}%</span>
+            </div>
+          )}
+        </div>
+      ))}
+      <button
+        onClick={() => fetch('http://localhost:4200/api/skills/refresh', { method: 'POST' }).then(() => window.location.reload()).catch(() => {})}
+        style={{
+          width: '100%', padding: '8px', marginTop: 8,
+          background: 'var(--bg2)', border: '1px solid var(--border2)',
+          borderRadius: 6, color: 'var(--muted2)', fontFamily: 'var(--mono)',
+          fontSize: 11, cursor: 'pointer',
+        }}>⟲ Refresh Skills</button>
+    </div>
+  )
+}
+
+// ── MCPView ───────────────────────────────────────────────────
+
+function MCPView() {
+  const [url, setUrl] = useState('')
+  const [plugins, setPlugins] = useState<any[]>([])
+  useEffect(() => {
+    fetch('http://localhost:4200/api/mcp/list').then(r => r.json()).then(d => setPlugins(d.plugins || [])).catch(() => {})
+  }, [])
+  const connect = async () => {
+    if (!url.trim()) return
+    try {
+      await fetch('http://localhost:4200/api/mcp/connect', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: url.trim() }),
+      })
+      setUrl('')
+      fetch('http://localhost:4200/api/mcp/list').then(r => r.json()).then(d => setPlugins(d.plugins || [])).catch(() => {})
+    } catch {}
+  }
+  return (
+    <div style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: 9, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 }}>Add Plugin</div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input value={url} onChange={e => setUrl(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && connect()}
+            placeholder="Plugin URL or npm package..."
+            style={{
+              flex: 1, background: 'var(--bg)', border: '1px solid var(--border2)',
+              borderRadius: 5, padding: '7px 10px', fontFamily: 'var(--mono)',
+              fontSize: 11, color: 'var(--text)', outline: 'none',
+            }} />
+          <button onClick={connect} style={{
+            padding: '7px 14px', background: 'var(--orange)', border: 'none',
+            borderRadius: 5, color: '#000', fontFamily: 'var(--mono)',
+            fontSize: 11, fontWeight: 600, cursor: 'pointer',
+          }}>Add</button>
+        </div>
+      </div>
+      {plugins.length === 0
+        ? <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 20 }}>No plugins connected</div>
+        : plugins.map((p: any, i: number) => (
+          <div key={i} style={{
+            padding: '8px 12px', marginBottom: 6,
+            background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 6,
+            display: 'flex', alignItems: 'center', gap: 8,
+          }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--green)', flexShrink: 0 }} />
+            <span style={{ flex: 1, color: 'var(--muted2)' }}>{p.name || p.url}</span>
+          </div>
+        ))
+      }
+    </div>
+  )
+}
+
+// ── ChannelModal ──────────────────────────────────────────────
+
+const CHANNEL_IDS_LIST = ['telegram', 'whatsapp', 'discord', 'slack', 'email']
+
+const CHANNEL_CONFIG: Record<string, any> = {
+  telegram: {
+    title: '💬 Telegram',
+    fields: [{ id: 'token', label: 'Bot Token', placeholder: 'Your Telegram bot token...', type: 'password' }],
+    help: 'Create a bot via @BotFather on Telegram. Copy the token and paste it here.',
+  },
+  whatsapp: { title: '📱 WhatsApp', fields: [], help: '' },
+  discord: {
+    title: '🎮 Discord',
+    fields: [
+      { id: 'token', label: 'Bot Token', placeholder: 'Discord bot token...', type: 'password' },
+      { id: 'channel', label: 'Channel ID', placeholder: 'Channel ID...', type: 'text' },
+    ],
+    help: 'Create a bot at discord.com/developers. Enable MESSAGE_CONTENT intent.',
+  },
+  slack: {
+    title: '💼 Slack',
+    fields: [{ id: 'token', label: 'Bot Token', placeholder: 'xoxb-...', type: 'password' }],
+    help: 'Create a Slack app at api.slack.com. Add the bot token (xoxb-...) here.',
+  },
+  email: {
+    title: '📧 Email',
+    fields: [
+      { id: 'token', label: 'SMTP Password / App Password', placeholder: 'App password...', type: 'password' },
+      { id: 'channel', label: 'Email Address', placeholder: 'your@email.com', type: 'text' },
+    ],
+    help: 'Use a Gmail App Password (2FA required). DevOS sends and receives email on your behalf.',
+  },
+  memory: { title: '🧠 Memory', renderContent: () => <MemoryView />, fields: [], help: '' },
+  skills: { title: '📚 Skills', renderContent: () => <SkillsView />, fields: [], help: '' },
+  mcp:    { title: '🔌 MCP Plugins', renderContent: () => <MCPView />, fields: [], help: '' },
+}
+
+function ChannelModal() {
+  const { channelModal, setChannelModal, channelStatuses, setSettingsOpen, setSettingsTab } = useDevOS()
+  const [token, setToken]   = useState('')
+  const [extra, setExtra]   = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saved,  setSaved]  = useState(false)
+
+  useEffect(() => { setToken(''); setExtra(''); setSaving(false); setSaved(false) }, [channelModal])
+
+  if (!channelModal) return null
+  const config = CHANNEL_CONFIG[channelModal]
+  if (!config) return null
+
+  const saveChannel = async () => {
+    setSaving(true)
+    try {
+      await fetch('http://localhost:4200/api/channels/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channel: channelModal, token, extra }),
+      })
+      setSaved(true)
+      setTimeout(() => { setChannelModal(null); setSaved(false) }, 1400)
+    } catch {
+      setSaving(false)
+    }
+  }
+
+  const isChannel = CHANNEL_IDS_LIST.includes(channelModal)
+
+  return (
+    <>
+      <div onClick={() => setChannelModal(null)} style={{
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
+        zIndex: 300, backdropFilter: 'blur(4px)',
+      }} />
+      <div style={{
+        position: 'fixed', top: '50%', left: '50%',
+        transform: 'translate(-50%,-50%)',
+        background: 'var(--bg2)', border: '1px solid var(--border2)',
+        borderRadius: 12, padding: 24, width: 380,
+        maxHeight: '80vh', overflowY: 'auto',
+        zIndex: 301, animation: 'fadeInUp 0.2s ease-out',
+      }}>
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 14, color: 'var(--text)', fontWeight: 600 }}>
+            {config.title}
+          </span>
+          <button onClick={() => setChannelModal(null)} style={{
+            background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 18,
+          }}>✕</button>
+        </div>
+
+        {/* Custom render content (memory, skills, mcp) */}
+        {'renderContent' in config && config.renderContent
+          ? config.renderContent()
+          : (
+            <>
+              {/* Status badge for channels */}
+              {isChannel && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 16, fontFamily: 'var(--mono)', fontSize: 11 }}>
+                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: channelStatuses[channelModal] ? 'var(--green)' : 'var(--muted)' }} />
+                  <span style={{ color: 'var(--muted)' }}>{channelStatuses[channelModal] ? 'Connected' : 'Not connected'}</span>
+                </div>
+              )}
+
+              {/* WhatsApp QR special case */}
+              {channelModal === 'whatsapp' ? (
+                <div style={{ textAlign: 'center', padding: '12px 0' }}>
+                  <div style={{ fontSize: 40, marginBottom: 12 }}>📱</div>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted2)', lineHeight: 1.8 }}>
+                    WhatsApp connects via QR code.<br />
+                    Open your DevOS terminal and<br />
+                    scan the QR code that appears.
+                  </div>
+                  <div style={{ marginTop: 12, padding: '8px 12px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 6, fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>
+                    {channelStatuses['whatsapp'] ? '● Connected' : '○ Scan QR to connect'}
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {/* Input fields */}
+                  {config.fields?.map((field: any, i: number) => (
+                    <div key={field.id} style={{ marginBottom: 12 }}>
+                      <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'var(--mono)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                        {field.label}
+                      </div>
+                      <input
+                        type={field.type || 'text'}
+                        placeholder={field.placeholder}
+                        onChange={e => i === 0 ? setToken(e.target.value) : setExtra(e.target.value)}
+                        style={{
+                          width: '100%', background: 'var(--bg)',
+                          border: '1px solid var(--border2)', borderRadius: 6,
+                          padding: '8px 12px', fontFamily: 'var(--mono)',
+                          fontSize: 12, color: 'var(--text)', outline: 'none',
+                        }}
+                      />
+                    </div>
+                  ))}
+
+                  {/* Help text */}
+                  {config.help && (
+                    <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'var(--mono)', lineHeight: 1.6, marginBottom: 16, padding: '8px 12px', background: 'var(--bg)', borderRadius: 6, border: '1px solid var(--border)' }}>
+                      {config.help}
+                    </div>
+                  )}
+
+                  {/* Save button */}
+                  {config.fields?.length > 0 && (
+                    <button onClick={saveChannel} disabled={saving || saved} style={{
+                      width: '100%', padding: '10px',
+                      background: saved ? 'rgba(34,197,94,0.15)' : 'var(--orange)',
+                      border: saved ? '1px solid rgba(34,197,94,0.3)' : 'none',
+                      borderRadius: 6, color: saved ? 'var(--green)' : '#000',
+                      fontFamily: 'var(--mono)', fontSize: 12, fontWeight: 600,
+                      cursor: saving ? 'not-allowed' : 'pointer',
+                    }}>
+                      {saved ? '✓ Saved!' : saving ? 'Saving...' : 'Save & Connect'}
+                    </button>
+                  )}
+                </>
+              )}
+
+              {/* View Setup Guide link */}
+              <div style={{ marginTop: 16, textAlign: 'center' }}>
+                <button onClick={() => { setChannelModal(null); setSettingsTab('setup'); setSettingsOpen(true) }} style={{
+                  background: 'none', border: 'none', color: 'var(--muted)',
+                  fontFamily: 'var(--mono)', fontSize: 10, cursor: 'pointer',
+                  textDecoration: 'underline',
+                }}>View Setup Guide →</button>
+              </div>
+            </>
+          )
+        }
+      </div>
+    </>
   )
 }
 
@@ -1670,21 +2055,7 @@ export default function Home() {
     try { localStorage.setItem('devos_conversations', JSON.stringify(conversations)) } catch {}
   }, [conversations])
 
-  // ── Screenshot polling when live view open ──────────────────
-  useEffect(() => {
-    if (!liveViewOpen) return
-    const interval = setInterval(async () => {
-      try {
-        const r = await fetch('http://localhost:4200/api/screenshot')
-        if (r.ok) {
-          const blob = await r.blob()
-          const url  = URL.createObjectURL(blob)
-          setScreenshot(prev => { if (prev) URL.revokeObjectURL(prev); return url })
-        }
-      } catch {}
-    }, 1000)
-    return () => clearInterval(interval)
-  }, [liveViewOpen])
+  // Screenshot polling is handled inside LiveViewPanel (adaptive 800ms/3000ms)
 
   // ── Load system stats + recent tasks (idle) ─────────────────
   useEffect(() => {
@@ -1722,6 +2093,7 @@ export default function Home() {
       if (e.key === 'Escape') {
         if (uiMode === 'watch') setUIMode('focus')
         if (settingsOpen) setSettingsOpen(false)
+        if (plusMenuOpen) { setPlusMenuOpen(false); setActiveSubmenu(null); setMiniPrompt(null) }
       }
       if ((e.metaKey || e.ctrlKey) && e.key === 'p') {
         e.preventDefault()
@@ -1735,8 +2107,8 @@ export default function Home() {
   // ── Grid columns ────────────────────────────────────────────
   const gridColumns = useMemo(() => {
     if (uiMode === 'watch')     return '0px 1fr 0px'
-    if (uiMode === 'power')     return '260px 1fr 380px'
-    if (uiMode === 'execution') return '0px 1fr 380px'
+    if (uiMode === 'power')     return '260px 1fr 420px'
+    if (uiMode === 'execution') return '0px 1fr 420px'
     const left  = historyOpen  ? '260px' : '0px'
     const right = liveViewOpen ? '380px' : '0px'
     return `${left} 1fr ${right}`
@@ -1971,24 +2343,61 @@ export default function Home() {
   }, [])
 
   // ── Plus menu handlers ───────────────────────────────────────
-  const takeScreenshot = useCallback(() => {
-    setLiveViewOpen(true)
-    setUIMode(m => m === 'focus' ? 'power' : m)
-  }, [setLiveViewOpen, setUIMode])
+  const takeScreenshot = useCallback(async () => {
+    setPlusMenuOpen(false)
+    setActiveSubmenu(null)
+
+    const now = new Date().toLocaleTimeString('en', { hour12: false })
+    setActivityLogs(prev => [...prev, { time: now, icon: '📷', agent: 'System', message: 'Taking screenshot...', style: 'active' }])
+
+    try {
+      await fetch('http://localhost:4200/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: 'take a screenshot of the current screen and save it', mode: 'auto', sessionId }),
+      })
+    } catch {}
+
+    let attempts = 0
+    const poll = setInterval(async () => {
+      attempts++
+      try {
+        const r = await fetch('http://localhost:4200/api/screenshot?' + Date.now())
+        if (r.ok) {
+          const blob = await r.blob()
+          if (blob.size > 0) {
+            const url = URL.createObjectURL(blob)
+            setScreenshot(url)
+            setLiveViewOpen(true)
+            clearInterval(poll)
+            const t = new Date().toLocaleTimeString('en', { hour12: false })
+            setActivityLogs(prev => [...prev, { time: t, icon: '✓', agent: 'System', message: 'Screenshot captured', style: 'ok' }])
+          }
+        }
+      } catch {}
+      if (attempts > 10) clearInterval(poll)
+    }, 800)
+  }, [sessionId, setPlusMenuOpen, setActiveSubmenu, setActivityLogs, setScreenshot, setLiveViewOpen])
 
   const submitMiniPrompt = useCallback(() => {
     if (!miniPromptValue.trim() || !miniPrompt) return
-    const prefixes: Record<string, string> = {
-      websearch: 'Search the web for:',
-      research:  'Do deep research on:',
-      stocks:    'Get stock data for:',
-    }
-    const text = `${prefixes[miniPrompt.type] ?? ''} ${miniPromptValue.trim()}`.trim()
+
+    const val = miniPromptValue.trim()
     setPlusMenuOpen(false)
     setActiveSubmenu(null)
     setMiniPrompt(null)
     setMiniPromptValue('')
-    sendMessage(text)
+
+    if (miniPrompt.type === 'stocks') {
+      // Stocks: use direct phrasing and send
+      sendMessage(`get stock data for ${val}`)
+    } else {
+      const prefixes: Record<string, string> = {
+        websearch: 'Search the web for:',
+        research:  'Do deep research on:',
+      }
+      sendMessage(`${prefixes[miniPrompt.type] ?? ''} ${val}`.trim())
+    }
   }, [miniPromptValue, miniPrompt, sendMessage])
 
   // ── Context value ───────────────────────────────────────────
@@ -2000,7 +2409,7 @@ export default function Home() {
     isExecuting, isStreaming,
     messages, setMessages, conversations, setConversations, currentConvId,
     input, setInput,
-    activityLogs, screenshot, sessionId,
+    activityLogs, screenshot, setScreenshot, sessionId,
     systemStats, recentTasks,
     sendMessage, startNewChat, loadConversation,
     handleQuickUpload,
@@ -2059,6 +2468,7 @@ export default function Home() {
         <ActivityBar />
         <DisclaimerBar />
         {settingsOpen && <SettingsDrawer />}
+        {channelModal && <ChannelModal />}
       </div>
     </DevOSCtx.Provider>
   )
