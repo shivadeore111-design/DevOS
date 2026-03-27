@@ -52,6 +52,47 @@ import { learningMemory }                               from '../core/learningMe
 import { knowledgeBase }                               from '../core/knowledgeBase'
 import { skillTeacher }                               from '../core/skillTeacher'
 
+// ── Chat error handler ────────────────────────────────────────
+// Centralised error formatting for /api/chat catch blocks.
+// Returns user-facing tokens and activity events via the SSE send fn.
+
+function handleChatError(
+  err:     any,
+  apiName: string,
+  send:    (data: object) => void,
+): void {
+  const msg = err?.message || String(err) || 'Unknown error'
+  console.error('[Chat] Error:', msg)
+  if (err?.stack) {
+    console.error('[Chat] Stack:', err.stack.split('\n').slice(0, 5).join('\n'))
+  }
+
+  const is429       = msg.includes('429') || msg.toLowerCase().includes('rate limit')
+  const isTimeout   = msg.includes('timeout') || msg.includes('ETIMEDOUT') || msg.includes('aborted')
+  const isNetwork   = msg.includes('ECONNREFUSED') || msg.includes('ENOTFOUND') || msg.includes('fetch failed')
+  const isSearchErr = msg.toLowerCase().includes('web search failed') || msg.toLowerCase().includes('search failed')
+
+  if (is429 && apiName !== 'ollama') {
+    markRateLimited(apiName)
+    send({ activity: { icon: '⚡', agent: 'Aiden', message: `${apiName} rate limited — switching provider`, style: 'error' }, done: false })
+    send({ token: `\n⚡ **${apiName} is rate limited.** Try again in a moment — DevOS will switch to a different provider.\n`, done: false })
+  } else if (isTimeout) {
+    send({ activity: { icon: '⏱️', agent: 'Aiden', message: 'Request timed out', style: 'error' }, done: false })
+    send({ token: `\n⏱️ **Request timed out.** The operation took too long. Try a simpler query or check your network.\n`, done: false })
+  } else if (isNetwork) {
+    send({ activity: { icon: '🔌', agent: 'Aiden', message: 'Network error — check connection', style: 'error' }, done: false })
+    send({ token: `\n🔌 **Network error.** Could not reach the required service. Check that Ollama and your network are running.\n`, done: false })
+  } else if (isSearchErr) {
+    send({ activity: { icon: '🔍', agent: 'Aiden', message: 'Web search unavailable — using knowledge base', style: 'error' }, done: false })
+    send({ token: `\n🔍 **Web search is unavailable right now.** I'll answer from my knowledge base instead. To enable live search, start SearxNG: \`npm run searxng\` or run \`scripts\\start-searxng.ps1\`.\n`, done: false })
+  } else {
+    send({ activity: { icon: '❌', agent: 'Aiden', message: `Error: ${msg.slice(0, 120)}`, style: 'error' }, done: false })
+    send({ token: `\n❌ **Something went wrong:** ${msg.slice(0, 200)}\n`, done: false })
+  }
+
+  send({ done: true })
+}
+
 // ── App factory ───────────────────────────────────────────────
 
 export function createApiServer(): Express {
@@ -274,25 +315,7 @@ export function createApiServer(): Express {
       memoryLayers.write(`User: ${resolvedMessage}`, ['chat'])
 
     } catch (err: any) {
-      console.error('[Chat] Execution error:', err.message)
-      console.error('[Chat] Stack:', err.stack?.split('\n').slice(0, 5).join('\n'))
-
-      const is429 = err.message?.includes('429') || err.message?.toLowerCase().includes('rate')
-      if (is429 && apiName !== 'ollama') {
-        markRateLimited(apiName)
-        send({
-          activity: { icon: '⚡', agent: 'Aiden', message: `${apiName} rate limited — switching provider`, style: 'error' },
-          done: false,
-        })
-        send({ token: `\n⚡ ${apiName} rate limited — try again in a moment.\n`, done: false })
-      } else {
-        send({
-          activity: { icon: '❌', agent: 'Aiden', message: `Failed: ${err.message}`, style: 'error' },
-          done: false,
-        })
-        send({ token: `\nSorry, something went wrong: ${err.message}`, done: false })
-      }
-      send({ done: true })
+      handleChatError(err, apiName, send)
       res.end()
     }
 

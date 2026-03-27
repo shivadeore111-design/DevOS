@@ -22,6 +22,8 @@ import {
   visionLoop,
 } from './computerControl'
 
+import { reliableWebSearch, deepResearch as deepResearchFn } from './webSearch'
+
 const execAsync = promisify(exec)
 
 // ── Types ─────────────────────────────────────────────────────
@@ -228,7 +230,13 @@ export const TOOLS: Record<string, (payload: any) => Promise<ToolResult>> = {
   web_search: async (p: any) => {
     const query = p.query || p.command || p.topic || ''
     if (!query) return { success: false, output: '', error: 'No query provided' }
-    console.log(`[web_search] Searching: "${query}"`)
+    return reliableWebSearch(query)
+  },
+
+  _web_search_legacy_unused: async (p: any) => {
+    // Legacy implementation preserved for reference — no longer called
+    const query = p.query || ''
+    if (!query) return { success: false, output: '', error: 'No query provided' }
 
     // ── Weather detection ────────────────────────────────────────
     if (/weather|temperature|forecast|rain|snow|sunny|cloudy|humidity|wind/i.test(query)) {
@@ -453,47 +461,19 @@ export const TOOLS: Record<string, (payload: any) => Promise<ToolResult>> = {
     } catch (e: any) { return { success: false, output: '', error: e.message } }
   },
 
-  // 3-pass deep research: broad → latest → comparison (no LLM entity extraction)
+  // 3-pass deep research using reliableWebSearch fallback chain
   deep_research: async (p: any) => {
     const topic = p.topic || p.query || p.command || ''
     if (!topic) return { success: false, output: '', error: 'No topic provided' }
+    return deepResearchFn(topic)
+  },
+
+  _deep_research_legacy_unused: async (p: any) => {
+    // Legacy implementation preserved for reference — no longer called
+    const topic = p.topic || ''
+    if (!topic) return { success: false, output: '', error: 'No topic provided' }
 
     const results: string[] = []
-
-    // PASS 1: Broad search on topic
-    console.log(`[deep_research] Pass 1: broad — "${topic}"`)
-    try {
-      const broad = await (TOOLS as any).web_search({ query: topic })
-      if (broad.success && broad.output.length > 100) {
-        results.push(`=== PASS 1: BROAD RESEARCH ===\n${broad.output}`)
-      }
-    } catch (e: any) {
-      console.warn(`[deep_research] Pass 1 failed: ${e.message}`)
-    }
-
-    // PASS 2: Year-specific search for latest info
-    const latestQuery = `${topic} 2025 latest`
-    console.log(`[deep_research] Pass 2: latest — "${latestQuery}"`)
-    try {
-      const latest = await (TOOLS as any).web_search({ query: latestQuery })
-      if (latest.success && latest.output.length > 100) {
-        results.push(`=== PASS 2: LATEST (2025) ===\n${latest.output}`)
-      }
-    } catch (e: any) {
-      console.warn(`[deep_research] Pass 2 failed: ${e.message}`)
-    }
-
-    // PASS 3: Comparison/review angle
-    const compareQuery = `best top ${topic} comparison review`
-    console.log(`[deep_research] Pass 3: comparison — "${compareQuery}"`)
-    try {
-      const compare = await (TOOLS as any).web_search({ query: compareQuery })
-      if (compare.success && compare.output.length > 100) {
-        results.push(`=== PASS 3: COMPARISON & REVIEWS ===\n${compare.output}`)
-      }
-    } catch (e: any) {
-      console.warn(`[deep_research] Pass 3 failed: ${e.message}`)
-    }
 
     if (results.length === 0) {
       return { success: false, output: '', error: `No research results for: ${topic}` }

@@ -438,7 +438,7 @@ Output ONLY valid JSON, nothing else:`
   const workspace = new WorkspaceMemory(taskPlan.id)
   workspace.write('goal.txt', message)
 
-  return {
+  const candidatePlan: AgentPlan = {
     goal:               parsed.goal || message,
     requires_execution: parsed.requires_execution === true && orderedPlan.length > 0,
     plan:               orderedPlan,
@@ -446,6 +446,164 @@ Output ONLY valid JSON, nothing else:`
     planId:             taskPlan.id,
     workspaceDir:       taskPlan.workspaceDir,
     phases:             taskPlan.phases,
+  }
+
+  // Validate before returning — log warnings, strip hard-invalid steps
+  const validation = validatePlan(candidatePlan)
+  if (validation.warnings.length > 0) {
+    console.warn(`[Planner] Validation warnings:\n  ${validation.warnings.join('\n  ')}`)
+  }
+  if (!validation.valid) {
+    console.warn(`[Planner] Plan has validation errors:\n  ${validation.errors.join('\n  ')}`)
+
+    // One retry — ask the LLM to fix the plan
+    console.log('[Planner] Retrying with validation errors injected into prompt...')
+    const retryMessages = [
+      ...messages,
+      {
+        role:    'assistant',
+        content: raw.slice(0, 500),
+      },
+      {
+        role:    'user',
+        content: `The plan you produced has errors:\n${validation.errors.join('\n')}\n\nFix these issues and output a corrected JSON plan.`,
+      },
+    ]
+    try {
+      const retryRaw = await callLLM(
+        retryMessages.map(m => `${m.role}: ${m.content}`).join('\n'),
+        curApiKey, curModel, curProvider,
+      )
+      const retryMatch = retryRaw.replace(/```json\s*/g, '').replace(/```\s*/g, '').match(/\{[\s\S]*\}/)
+      if (retryMatch) {
+        const retryParsed = JSON.parse(retryMatch[0])
+        const retryRaw2   = (retryParsed.plan || retryParsed.steps || []) as any[]
+        const retryValid  = retryRaw2.filter((s: any) => ALLOWED_TOOLS.includes(s.tool))
+        const retryNorm   = retryValid.map((s: any, idx: number) => ({
+          step:        s.step        ?? (idx + 1),
+          tool:        s.tool        || '',
+          input:       s.input       || s.args || {},
+          description: s.description || '',
+        }))
+        const retryOrdered = fixStepOrdering(retryNorm)
+        if (retryOrdered.length > 0) {
+          candidatePlan.plan = retryOrdered
+          console.log(`[Planner] Retry succeeded: ${retryOrdered.length} valid steps`)
+        }
+      }
+    } catch (e: any) {
+      console.warn(`[Planner] Retry failed: ${e.message}`)
+    }
+  }
+
+  return candidatePlan
+}
+
+// ── Plan validation ────────────────────────────────────────────
+// Called after planWithLLM — rejects structurally bad plans before execution.
+
+const VALID_TOOLS = [
+  'web_search', 'fetch_page', 'fetch_url', 'open_browser', 'browser_extract',
+  'browser_click', 'browser_type', 'browser_screenshot', 'file_write', 'file_read',
+  'file_list', 'shell_exec', 'run_python', 'run_node', 'run_powershell',
+  'system_info', 'notify', 'deep_research', 'get_stocks', 'run_agent', 'git_commit',
+  'git_push', 'mouse_move', 'mouse_click', 'keyboard_type', 'keyboard_press',
+  'screenshot', 'screen_read', 'vision_loop', 'wait',
+]
+
+interface ValidationResult {
+  valid:    boolean
+  errors:   string[]
+  warnings: string[]
+}
+
+export function validatePlan(plan: AgentPlan): ValidationResult {
+  const errors:   string[] = []
+  const warnings: string[] = []
+
+  if (!plan.requires_execution || plan.plan.length === 0) {
+    return { valid: true, errors, warnings }
+  }
+
+  for (const step of plan.plan) {
+    // Check tool name is valid
+    if (!VALID_TOOLS.includes(step.tool)) {
+      errors.push(`Step ${step.step}: unknown tool "${step.tool}"`)
+      continue
+    }
+
+    const input = step.input || {}
+
+    // Tool-specific required field checks
+    switch (step.tool) {
+      case 'web_search':
+        if (!input.query && !input.topic && !input.command) {
+          errors.push(`Step ${step.step}: web_search requires a "query" field`)
+        }
+        break
+      case 'deep_research':
+        if (!input.topic && !input.query && !input.command) {
+          errors.push(`Step ${step.step}: deep_research requires a "topic" field`)
+        }
+        break
+      case 'file_write':
+        if (!input.path && !input.file) {
+          errors.push(`Step ${step.step}: file_write requires a "path" field`)
+        }
+        if (input.content === undefined && input.content !== '') {
+          warnings.push(`Step ${step.step}: file_write has no "content" — will write empty file`)
+        }
+        break
+      case 'file_read':
+        if (!input.path && !input.file) {
+          errors.push(`Step ${step.step}: file_read requires a "path" field`)
+        }
+        break
+      case 'open_browser':
+        if (!input.url && !input.command) {
+          errors.push(`Step ${step.step}: open_browser requires a "url" field`)
+        }
+        break
+      case 'shell_exec':
+        if (!input.command && !input.cmd) {
+          errors.push(`Step ${step.step}: shell_exec requires a "command" field`)
+        }
+        break
+      case 'run_python':
+      case 'run_node':
+        if (!input.script && !input.code && !input.command) {
+          errors.push(`Step ${step.step}: ${step.tool} requires a "script" field`)
+        }
+        break
+      case 'fetch_page':
+      case 'fetch_url':
+        if (!input.url && !input.command) {
+          errors.push(`Step ${step.step}: ${step.tool} requires a "url" field`)
+        }
+        break
+      case 'vision_loop':
+        if (!input.goal) {
+          errors.push(`Step ${step.step}: vision_loop requires a "goal" field`)
+        }
+        break
+      case 'wait':
+        if (!input.ms && input.ms !== 0) {
+          warnings.push(`Step ${step.step}: wait has no "ms" — will default to 1000ms`)
+        }
+        break
+    }
+
+    // Reject residual placeholder patterns that were not caught by planner
+    const inputStr = JSON.stringify(input)
+    if (/\{\{|\{result|\{output|\bPREVIOUS_OUTPUT\b/.test(inputStr) && step.tool !== 'file_write') {
+      warnings.push(`Step ${step.step}: input contains placeholder — may fail at runtime`)
+    }
+  }
+
+  return {
+    valid:  errors.length === 0,
+    errors,
+    warnings,
   }
 }
 

@@ -27,6 +27,7 @@ import { visionLoop }                      from './integrations/computerUse/visi
 import { executor }                        from './core/executor'
 import { memoryStrategy }                  from './core/memoryStrategy'
 import { startApiServer }                  from './api/server'
+import { checkSearxNG }                   from './core/webSearch'
 
 // ── Bootstrap ─────────────────────────────────────────────────
 
@@ -51,6 +52,17 @@ async function main(): Promise<void> {
           console.log('[DevOS] First boot — running setup wizard...')
           await runSetupWizard()
         }
+
+        // ── SearxNG startup check ─────────────────────────────
+        const searxOk = await checkSearxNG()
+        if (searxOk) {
+          console.log('[DevOS] ✓ SearxNG is running — web search fully operational')
+        } else {
+          console.log('[DevOS] ⚠  SearxNG not detected on http://localhost:8888')
+          console.log('           Web search will fall back to: Brave API → DuckDuckGo → Wikipedia')
+          console.log('           For best results, start SearxNG: .\\scripts\\start-searxng.ps1')
+        }
+
         startApiServer()
         console.log('DevOS v1.0 running at http://localhost:4200')
       } catch (err: any) {
