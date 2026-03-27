@@ -37,7 +37,11 @@ import { loadConfig, saveConfig, APIEntry } from '../providers/index'
 import { ollamaProvider } from '../providers/ollama'
 import { getSmartProvider, markRateLimited, incrementUsage } from '../providers/router'
 import { executeTool } from '../core/toolRegistry'
+import { getScreenSize, takeScreenshot as captureScreen } from '../core/computerControl'
 import { planWithLLM, executePlan, respondWithResults } from '../core/agentLoop'
+import { AIDEN_STREAM_SYSTEM }                          from '../core/aidenPersonality'
+import { checkVoiceAvailable, recordAudio, transcribeAudio } from '../core/voiceInput'
+import { speak, checkTTSAvailable }                    from '../core/voiceOutput'
 import type { AgentPlan, StepResult, ToolStep }        from '../core/agentLoop'
 import { planTool }                                     from '../core/planTool'
 import type { Phase }                                   from '../core/planTool'
@@ -49,7 +53,77 @@ import { semanticMemory }                               from '../core/semanticMe
 import { entityGraph }                                  from '../core/entityGraph'
 import { learningMemory }                               from '../core/learningMemory'
 import { knowledgeBase }                               from '../core/knowledgeBase'
+import multer                                           from 'multer'
 import { skillTeacher }                               from '../core/skillTeacher'
+import { isPro, validateLicense, getCurrentLicense, clearLicense, startLicenseRefresh } from '../core/licenseManager'
+
+// ── Chat error handler ────────────────────────────────────────
+// Centralised error formatting for /api/chat catch blocks.
+// Returns user-facing tokens and activity events via the SSE send fn.
+
+function handleChatError(
+  err:     any,
+  apiName: string,
+  send:    (data: object) => void,
+): void {
+  const msg = err?.message || String(err) || 'Unknown error'
+  console.error('[Chat] Error:', msg)
+  if (err?.stack) {
+    console.error('[Chat] Stack:', err.stack.split('\n').slice(0, 5).join('\n'))
+  }
+
+  const is429       = msg.includes('429') || msg.toLowerCase().includes('rate limit')
+  const isTimeout   = msg.includes('timeout') || msg.includes('ETIMEDOUT') || msg.includes('aborted')
+  const isNetwork   = msg.includes('ECONNREFUSED') || msg.includes('ENOTFOUND') || msg.includes('fetch failed')
+  const isSearchErr = msg.toLowerCase().includes('web search failed') || msg.toLowerCase().includes('search failed')
+
+  if (is429 && apiName !== 'ollama') {
+    markRateLimited(apiName)
+    send({ activity: { icon: '⚡', agent: 'Aiden', message: `${apiName} rate limited — switching provider`, style: 'error' }, done: false })
+    send({ token: `\n⚡ **${apiName} is rate limited.** Try again in a moment — DevOS will switch to a different provider.\n`, done: false })
+  } else if (isTimeout) {
+    send({ activity: { icon: '⏱️', agent: 'Aiden', message: 'Request timed out', style: 'error' }, done: false })
+    send({ token: `\n⏱️ **Request timed out.** The operation took too long. Try a simpler query or check your network.\n`, done: false })
+  } else if (isNetwork) {
+    send({ activity: { icon: '🔌', agent: 'Aiden', message: 'Network error — check connection', style: 'error' }, done: false })
+    send({ token: `\n🔌 **Network error.** Could not reach the required service. Check that Ollama and your network are running.\n`, done: false })
+  } else if (isSearchErr) {
+    send({ activity: { icon: '🔍', agent: 'Aiden', message: 'Web search unavailable — using knowledge base', style: 'error' }, done: false })
+    send({ token: `\n🔍 **Web search is unavailable right now.** I'll answer from my knowledge base instead. To enable live search, start SearxNG: \`npm run searxng\` or run \`scripts\\start-searxng.ps1\`.\n`, done: false })
+  } else {
+    send({ activity: { icon: '❌', agent: 'Aiden', message: `Error: ${msg.slice(0, 120)}`, style: 'error' }, done: false })
+    send({ token: `\n❌ **Something went wrong:** ${msg.slice(0, 200)}\n`, done: false })
+  }
+
+  send({ done: true })
+}
+
+// ── Knowledge upload — multer + progress tracking ─────────────
+
+const KB_UPLOAD_DIR = path.join(process.cwd(), 'workspace', 'knowledge', 'uploads')
+if (!fs.existsSync(KB_UPLOAD_DIR)) fs.mkdirSync(KB_UPLOAD_DIR, { recursive: true })
+
+const kbStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, KB_UPLOAD_DIR),
+  filename:    (_req, file, cb) => {
+    const safe = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 100)
+    cb(null, `${Date.now()}_${safe}`)
+  },
+})
+
+const kbUpload = multer({
+  storage:    kbStorage,
+  limits:     { fileSize: 50 * 1024 * 1024 },  // 50 MB
+  fileFilter: (_req, file, cb) => {
+    const allowed = ['.pdf', '.epub', '.txt', '.md', '.markdown']
+    const ext     = path.extname(file.originalname).toLowerCase()
+    if (allowed.includes(ext)) cb(null, true)
+    else cb(new Error(`Unsupported file type: ${ext}. Allowed: ${allowed.join(', ')}`))
+  },
+})
+
+// Progress map — jobId → status/progress (kept in memory, no persistence needed)
+const kbProgress = new Map<string, { status: 'processing' | 'done' | 'error'; progress: number; message: string; result?: object }>()
 
 // ── App factory ───────────────────────────────────────────────
 
@@ -81,7 +155,42 @@ export function createApiServer(): Express {
 
   // GET /api/health — liveness probe (no auth required)
   app.get('/api/health', (_req: Request, res: Response) => {
-    res.json({ status: 'ok', version: '1.0.0', timestamp: new Date().toISOString() })
+    res.json({ status: 'ok', version: '2.0.0', timestamp: new Date().toISOString() })
+  })
+
+  // ── License endpoints ─────────────────────────────────────────
+
+  // POST /api/license/validate — activate a license key
+  app.post('/api/license/validate', async (req: Request, res: Response) => {
+    const { key } = req.body as { key?: string }
+    if (!key) { res.status(400).json({ error: 'key required' }); return }
+    try {
+      const result = await validateLicense(key)
+      if (!result.valid) {
+        res.status(400).json({ valid: false, error: result.error || 'Invalid license' }); return
+      }
+      res.json({ valid: true, tier: result.tier, email: result.email, expiry: result.expiry })
+    } catch (e: any) {
+      res.status(500).json({ valid: false, error: `Server unreachable: ${e.message}` })
+    }
+  })
+
+  // GET /api/license/status — current license state (from cache, no network)
+  app.get('/api/license/status', (_req: Request, res: Response) => {
+    const license = getCurrentLicense()
+    res.json({
+      active: isPro(),
+      tier:   license.tier   || 'free',
+      email:  license.email  || '',
+      expiry: license.expiry || 0,
+      key:    license.key    ? license.key.replace(/[A-Z0-9]{5}-[A-Z0-9]{5}-/, '****-****-') : '',
+    })
+  })
+
+  // POST /api/license/clear — deactivate / log out of Pro
+  app.post('/api/license/clear', (_req: Request, res: Response) => {
+    clearLicense()
+    res.json({ success: true })
   })
 
   // POST /api/chat — PLAN → EXECUTE → RESPOND with mode support
@@ -273,25 +382,7 @@ export function createApiServer(): Express {
       memoryLayers.write(`User: ${resolvedMessage}`, ['chat'])
 
     } catch (err: any) {
-      console.error('[Chat] Execution error:', err.message)
-      console.error('[Chat] Stack:', err.stack?.split('\n').slice(0, 5).join('\n'))
-
-      const is429 = err.message?.includes('429') || err.message?.toLowerCase().includes('rate')
-      if (is429 && apiName !== 'ollama') {
-        markRateLimited(apiName)
-        send({
-          activity: { icon: '⚡', agent: 'Aiden', message: `${apiName} rate limited — switching provider`, style: 'error' },
-          done: false,
-        })
-        send({ token: `\n⚡ ${apiName} rate limited — try again in a moment.\n`, done: false })
-      } else {
-        send({
-          activity: { icon: '❌', agent: 'Aiden', message: `Failed: ${err.message}`, style: 'error' },
-          done: false,
-        })
-        send({ token: `\nSorry, something went wrong: ${err.message}`, done: false })
-      }
-      send({ done: true })
+      handleChatError(err, apiName, send)
       res.end()
     }
 
@@ -474,29 +565,154 @@ export function createApiServer(): Express {
     } catch (e: any) { res.status(500).json({ error: e.message }) }
   })
 
-  // POST /api/knowledge/upload — accept JSON { content, filename, category, tags, privacy }
-  // (no multer needed — frontend sends text file content as JSON string)
+  // POST /api/knowledge/upload — binary file upload (PDF/EPUB/TXT/MD) via multipart/form-data
+  // Fields: file (binary), category (optional), tags (optional csv), privacy (optional)
+  // PDF and EPUB require a Pro license.
   app.post('/api/knowledge/upload', (req: Request, res: Response) => {
-    try {
-      const { content, filename, category = 'general', tags = '', privacy = 'public' } = req.body as {
-        content?: string; filename?: string; category?: string; tags?: string; privacy?: string
+    kbUpload.single('file')(req, res, async (err) => {
+      if (err) { res.status(400).json({ error: err.message }); return }
+
+      const file = (req as any).file as Express.Multer.File | undefined
+
+      // Pro gate — PDF and EPUB require an active Pro license
+      if (file) {
+        const ext = path.extname(file.originalname).toLowerCase()
+        if ((ext === '.pdf' || ext === '.epub') && !isPro()) {
+          try { fs.unlinkSync(file.path) } catch {}
+          res.status(403).json({
+            error:   'Pro license required',
+            message: 'PDF and EPUB uploads are a Pro feature. Upgrade at DevOS Settings → Pro License.',
+            upgrade: true,
+          })
+          return
+        }
       }
-      if (!content || !filename) {
-        res.status(400).json({ error: 'content and filename required' }); return
+
+      // Legacy JSON path — if no file but content string provided, fall back to ingestText
+      if (!file) {
+        const { content, filename, category = 'general', tags = '', privacy = 'public' } = req.body as {
+          content?: string; filename?: string; category?: string; tags?: string; privacy?: string
+        }
+        if (!content || !filename) {
+          res.status(400).json({ error: 'Provide either a file upload or { content, filename }' }); return
+        }
+        const tagList = tags ? tags.split(',').map((t: string) => t.trim()).filter(Boolean) : []
+        const result  = knowledgeBase.ingestText(
+          content, filename, category, tagList,
+          (privacy as 'public' | 'private' | 'sensitive') || 'public',
+        )
+        if (!result.success) { res.status(400).json({ error: result.error }); return }
+        res.json({ success: true, filename, chunkCount: result.chunkCount, message: `Ingested ${result.chunkCount} chunks` })
+        return
+      }
+
+      try {
+        const { category = 'general', tags = '', privacy = 'public' } = req.body as {
+          category?: string; tags?: string; privacy?: string
+        }
+        const tagList = tags ? tags.split(',').map((t: string) => t.trim()).filter(Boolean) : []
+
+        const result = await knowledgeBase.ingestFile(
+          file.path,
+          category,
+          (privacy as 'public' | 'private' | 'sensitive') || 'public',
+          tagList,
+        )
+
+        // Clean up temp upload file (content is now in the KB store)
+        try { fs.unlinkSync(file.path) } catch {}
+
+        if (!result.success) { res.status(400).json({ error: result.error }); return }
+
+        res.json({
+          success:    true,
+          filename:   file.originalname,
+          format:     result.format,
+          chunkCount: result.chunkCount,
+          wordCount:  result.wordCount,
+          pageCount:  result.pageCount,
+          message:    `Ingested ${result.chunkCount} chunks from ${file.originalname}`,
+        })
+      } catch (e: any) {
+        try { if (file?.path) fs.unlinkSync(file.path) } catch {}
+        res.status(500).json({ error: e.message })
+      }
+    })
+  })
+
+  // POST /api/knowledge/upload/async — returns a jobId immediately, processes in background
+  // PDF and EPUB require a Pro license.
+  app.post('/api/knowledge/upload/async', (req: Request, res: Response) => {
+    kbUpload.single('file')(req, res, async (err) => {
+      if (err) { res.status(400).json({ error: err.message }); return }
+
+      const file = (req as any).file as Express.Multer.File | undefined
+      if (!file) { res.status(400).json({ error: 'file required for async upload' }); return }
+
+      // Pro gate — PDF and EPUB require an active Pro license
+      const extAsync = path.extname(file.originalname).toLowerCase()
+      if ((extAsync === '.pdf' || extAsync === '.epub') && !isPro()) {
+        try { fs.unlinkSync(file.path) } catch {}
+        res.status(403).json({
+          error:   'Pro license required',
+          message: 'PDF and EPUB uploads are a Pro feature. Upgrade at DevOS Settings → Pro License.',
+          upgrade: true,
+        })
+        return
+      }
+
+      const jobId   = `job_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+      const { category = 'general', tags = '', privacy = 'public' } = req.body as {
+        category?: string; tags?: string; privacy?: string
       }
       const tagList = tags ? tags.split(',').map((t: string) => t.trim()).filter(Boolean) : []
-      const result  = knowledgeBase.ingestText(
-        content, filename, category, tagList,
-        (privacy as 'public' | 'private' | 'sensitive') || 'public',
-      )
-      if (!result.success) { res.status(400).json({ error: result.error }); return }
-      res.json({
-        success:    true,
-        filename,
-        chunkCount: result.chunkCount,
-        message:    `Ingested ${result.chunkCount} chunks from ${filename}`,
-      })
-    } catch (e: any) { res.status(500).json({ error: e.message }) }
+
+      kbProgress.set(jobId, { status: 'processing', progress: 10, message: 'Extracting text…' })
+
+      // Fire-and-forget background processing
+      ;(async () => {
+        try {
+          kbProgress.set(jobId, { status: 'processing', progress: 40, message: 'Chunking & embedding…' })
+
+          const result = await knowledgeBase.ingestFile(
+            file.path,
+            category,
+            (privacy as 'public' | 'private' | 'sensitive') || 'public',
+            tagList,
+          )
+
+          try { fs.unlinkSync(file.path) } catch {}
+
+          if (!result.success) {
+            kbProgress.set(jobId, { status: 'error', progress: 100, message: result.error || 'Ingestion failed' })
+            return
+          }
+
+          kbProgress.set(jobId, {
+            status:   'done',
+            progress: 100,
+            message:  `Done — ${result.chunkCount} chunks from ${file.originalname}`,
+            result:   { filename: file.originalname, format: result.format, chunkCount: result.chunkCount, wordCount: result.wordCount, pageCount: result.pageCount },
+          })
+
+          // Auto-expire progress entry after 5 minutes
+          setTimeout(() => kbProgress.delete(jobId), 5 * 60 * 1000)
+
+        } catch (e: any) {
+          try { if (file?.path) fs.unlinkSync(file.path) } catch {}
+          kbProgress.set(jobId, { status: 'error', progress: 100, message: e.message })
+        }
+      })()
+
+      res.json({ success: true, jobId, message: 'Upload started — poll /api/knowledge/progress/' + jobId })
+    })
+  })
+
+  // GET /api/knowledge/progress/:jobId — poll async upload progress
+  app.get('/api/knowledge/progress/:jobId', (req: Request, res: Response) => {
+    const entry = kbProgress.get(String(req.params.jobId))
+    if (!entry) { res.status(404).json({ error: 'Job not found or already expired' }); return }
+    res.json(entry)
   })
 
   // GET /api/knowledge/search?q= — search knowledge base
@@ -884,6 +1100,126 @@ export function createApiServer(): Express {
     res.json({ sessions: conversationMemory.getSessions() })
   })
 
+  // GET /api/screenshot — serve latest screenshot from workspace/screenshots/
+  app.get('/api/screenshot', (_req: Request, res: Response) => {
+    try {
+      const dir = path.join(process.cwd(), 'workspace', 'screenshots')
+      if (!fs.existsSync(dir)) { res.status(404).end(); return }
+      const files = fs.readdirSync(dir)
+        .filter((f: string) => f.endsWith('.png'))
+        .sort().reverse()
+      if (!files.length) { res.status(404).end(); return }
+      const imgPath = path.join(dir, files[0])
+      res.setHeader('Content-Type', 'image/png')
+      res.setHeader('Cache-Control', 'no-cache, no-store')
+      res.send(fs.readFileSync(imgPath))
+    } catch { res.status(500).end() }
+  })
+
+  // GET /api/stocks — fetch stock data via Yahoo Finance or DuckDuckGo
+  app.get('/api/stocks', async (req: Request, res: Response) => {
+    const query = (req.query.q as string) || 'NSE top gainers'
+    try {
+      const yahooUrl = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=10&newsCount=0`
+      const r1 = await fetch(yahooUrl, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/122.0.0.0' }
+      })
+      if (r1.ok) {
+        const data = await r1.json()
+        return res.json({ source: 'yahoo', data })
+      }
+    } catch {}
+    try {
+      const r2 = await fetch(`https://api.duckduckgo.com/?q=${encodeURIComponent(query + ' stock price NSE BSE')}&format=json&no_html=1`)
+      const data = await r2.json()
+      return res.json({ source: 'ddg', data })
+    } catch {}
+    res.status(500).json({ error: 'Stock data unavailable' })
+  })
+
+  // GET /api/screen/size — get primary screen dimensions
+  app.get('/api/screen/size', async (_req: Request, res: Response) => {
+    try {
+      const size = await getScreenSize()
+      res.json(size)
+    } catch {
+      res.json({ width: 1920, height: 1080 })
+    }
+  })
+
+  // POST /api/screenshot/capture — trigger a screenshot and return its path
+  app.post('/api/screenshot/capture', async (_req: Request, res: Response) => {
+    try {
+      const filepath = await captureScreen()
+      res.json({ success: true, path: filepath })
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
+  // GET /api/mcp/list — list connected MCP plugins (stub)
+  app.get('/api/mcp/list', (_req: Request, res: Response) => {
+    res.json({ plugins: [] })
+  })
+
+  // POST /api/mcp/connect — connect a new MCP plugin (stub)
+  app.post('/api/mcp/connect', (_req: Request, res: Response) => {
+    res.json({ success: true })
+  })
+
+  // ── Voice endpoints ───────────────────────────────────────────
+
+  // GET /api/voice/status — check STT and TTS availability
+  app.get('/api/voice/status', async (_req: Request, res: Response) => {
+    const [stt, tts] = await Promise.all([checkVoiceAvailable(), checkTTSAvailable()])
+    res.json({ stt, tts })
+  })
+
+  // POST /api/voice/record — record audio from microphone (Pro only)
+  // body: { duration?: number }  (ms, default 5000)
+  app.post('/api/voice/record', async (req: Request, res: Response) => {
+    if (!isPro()) {
+      res.status(403).json({ success: false, error: 'Pro license required', upgrade: true }); return
+    }
+    try {
+      const duration = Math.min(Number(req.body?.duration) || 5000, 15000)
+      const audioPath = await recordAudio(duration)
+      res.json({ success: true, path: audioPath })
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message })
+    }
+  })
+
+  // POST /api/voice/transcribe — transcribe a recorded audio file
+  // body: { path: string }
+  app.post('/api/voice/transcribe', async (req: Request, res: Response) => {
+    try {
+      const { path: audioPath } = req.body as { path?: string }
+      if (!audioPath) { res.status(400).json({ error: 'path required' }); return }
+      const text = await transcribeAudio(audioPath)
+      res.json({ success: true, text })
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message })
+    }
+  })
+
+  // POST /api/voice/speak — speak text aloud (non-blocking) (Pro only)
+  // body: { text: string, voice?: string }
+  app.post('/api/voice/speak', async (req: Request, res: Response) => {
+    if (!isPro()) {
+      res.status(403).json({ success: false, error: 'Pro license required', upgrade: true }); return
+    }
+    try {
+      const { text, voice } = req.body as { text?: string; voice?: string }
+      if (!text) { res.status(400).json({ error: 'text required' }); return }
+      // Fire and forget — response returns immediately while audio plays
+      speak(text, voice).catch(e => console.error('[TTS] speak error:', e.message))
+      res.json({ success: true })
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message })
+    }
+  })
+
   // ── 404 catch-all ─────────────────────────────────────────────
   app.use((_req: Request, res: Response) => {
     res.status(404).json({ error: 'Not found' })
@@ -1075,8 +1411,11 @@ export function startApiServer(portArg?: number): Express {
   // Run crash recovery on startup — non-blocking, finds 'running' tasks from prior session
   recoverTasks().catch(e => console.error('[Startup] Recovery error:', e.message))
 
+  // Start background license refresh (12-hour interval, silent)
+  startLicenseRefresh()
+
   server.listen(port, host, () => {
-    console.log(`[API] DevOS API running at http://${host}:${port}`)
+    console.log(`[API] DevOS v2.0 · Aiden running at http://${host}:${port}`)
     console.log(`[API] Health: http://${host}:${port}/api/health`)
     console.log(`[API] Terminal: ws://${host}:${port}/terminal`)
   })
@@ -1095,44 +1434,9 @@ async function streamChat(
   apiName:  string,
   send:     (data: object) => void,
 ): Promise<void> {
-  const streamCapabilities = `YOU ARE AIDEN — DevOS Autonomous AI OS.
-Your REAL built-in tools (these actually work):
-- web_search: Search internet for real-time info
-- deep_research: Multi-pass deep research on any topic
-- file_write: Create and save files to disk
-- file_read: Read files from disk
-- open_browser: Open URLs in browser
-- shell_exec: Run PowerShell commands
-- run_python: Execute Python scripts
-- run_node: Execute Node.js scripts
-- run_powershell: Run PowerShell natively
-- notify: Send desktop notifications
-- system_info: Get CPU/RAM/disk info
-- fetch_url: Download from any URL
-- git_push: Commit and push to GitHub
-- vercel_deploy: Deploy to Vercel
-- mouse_move: Move cursor to coordinates
-- mouse_click: Click anywhere on screen
-- keyboard_type: Type text into any window
-- keyboard_press: Press keys (Enter, Tab, Escape etc)
-- screenshot: Capture full screen
-- screen_read: Screenshot + vision model describes screen
-- vision_loop: Autonomous UI control loop
-- get_stocks: NSE/BSE stock data
-- knowledge_search: Search your personal knowledge base
+  const chatPrompt = `${AIDEN_STREAM_SYSTEM}
 
-RULES:
-- NEVER say you cannot access the internet — you have web_search
-- NEVER say you cannot create files — you have file_write
-- NEVER say you cannot control the computer — you have mouse_move, mouse_click, keyboard_type
-- NEVER list fake capabilities like graphic design, music generation, video production
-- NEVER say you have 250+ skills — you have exactly 23 tools listed above
-- When asked what you can do — list ONLY the 23 real tools above
-- When asked how many skills — answer 23 tools
-`
-
-  const chatPrompt = streamCapabilities + `You are Aiden — a personal AI OS for ${userName}. Calm, direct, intelligent, slightly witty. Co-founder energy.
-Be concise for simple questions, thorough for complex ones. Use markdown when it helps.
+User: ${userName}
 Today: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.`
 
   const msgs = [
