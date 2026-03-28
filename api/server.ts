@@ -1,25 +1,25 @@
-// ============================================================
-// DevOS — Autonomous AI Execution System
+﻿// ============================================================
+// DevOS â€” Autonomous AI Execution System
 // Copyright (c) 2026 Shiva Deore. All rights reserved.
 // ============================================================
 
-// api/server.ts — DevOS REST API server
+// api/server.ts â€” DevOS REST API server
 //
 // Imports ONLY from files that exist in the actual codebase.
 // All 34+ missing-module imports from the prior version have been removed.
 //
 // Endpoints:
-//   GET  /api/health          — liveness check (no auth)
-//   POST /api/chat            — queue a user message
-//   POST /api/goals           — queue a goal
-//   GET  /api/goals           — placeholder goal list
-//   GET  /api/doctor          — system health report
-//   GET  /api/models          — compatible model list
-//   GET  /api/stream          — SSE keep-alive stream
-//   POST /api/automate        — start visionLoop session
-//   POST /api/automate/stop   — abort visionLoop
-//   GET  /api/automate/log    — screenAgent action log
-//   GET  /api/automate/session— live executor session
+//   GET  /api/health          â€” liveness check (no auth)
+//   POST /api/chat            â€” queue a user message
+//   POST /api/goals           â€” queue a goal
+//   GET  /api/goals           â€” placeholder goal list
+//   GET  /api/doctor          â€” system health report
+//   GET  /api/models          â€” compatible model list
+//   GET  /api/stream          â€” SSE keep-alive stream
+//   POST /api/automate        â€” start visionLoop session
+//   POST /api/automate/stop   â€” abort visionLoop
+//   GET  /api/automate/log    â€” screenAgent action log
+//   GET  /api/automate/sessionâ€” live executor session
 
 import * as fs   from 'fs'
 import * as path from 'path'
@@ -27,7 +27,7 @@ import * as http from 'http'
 import express, { Express, Request, Response, NextFunction } from 'express'
 import { WebSocketServer } from 'ws'
 
-// ── Real imports only ─────────────────────────────────────────
+// â”€â”€ Real imports only â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 import { memoryLayers }   from '../memory/memoryLayers'
 import { livePulse }      from '../coordination/livePulse'
 import { runDoctor }      from '../core/doctor'
@@ -35,7 +35,7 @@ import { modelRouter }    from '../core/modelRouter'
 import { registerComputerUseRoutes } from './routes/computerUse'
 import { loadConfig, saveConfig, APIEntry } from '../providers/index'
 import { ollamaProvider } from '../providers/ollama'
-import { getSmartProvider, markRateLimited, incrementUsage } from '../providers/router'
+import { getSmartProvider, markRateLimited, incrementUsage, logProviderStatus } from '../providers/router'
 import { executeTool } from '../core/toolRegistry'
 import { getScreenSize, takeScreenshot as captureScreen } from '../core/computerControl'
 import { planWithLLM, executePlan, respondWithResults } from '../core/agentLoop'
@@ -57,7 +57,7 @@ import multer                                           from 'multer'
 import { skillTeacher }                               from '../core/skillTeacher'
 import { isPro, validateLicense, getCurrentLicense, clearLicense, startLicenseRefresh } from '../core/licenseManager'
 
-// ── Chat error handler ────────────────────────────────────────
+// â”€â”€ Chat error handler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Centralised error formatting for /api/chat catch blocks.
 // Returns user-facing tokens and activity events via the SSE send fn.
 
@@ -79,26 +79,26 @@ function handleChatError(
 
   if (is429 && apiName !== 'ollama') {
     markRateLimited(apiName)
-    send({ activity: { icon: '⚡', agent: 'Aiden', message: `${apiName} rate limited — switching provider`, style: 'error' }, done: false })
-    send({ token: `\n⚡ **${apiName} is rate limited.** Try again in a moment — DevOS will switch to a different provider.\n`, done: false })
+    send({ activity: { icon: 'âš¡', agent: 'Aiden', message: `${apiName} rate limited â€” switching provider`, style: 'error' }, done: false })
+    send({ token: `\nâš¡ **${apiName} is rate limited.** Try again in a moment â€” DevOS will switch to a different provider.\n`, done: false })
   } else if (isTimeout) {
-    send({ activity: { icon: '⏱️', agent: 'Aiden', message: 'Request timed out', style: 'error' }, done: false })
-    send({ token: `\n⏱️ **Request timed out.** The operation took too long. Try a simpler query or check your network.\n`, done: false })
+    send({ activity: { icon: 'â±ï¸', agent: 'Aiden', message: 'Request timed out', style: 'error' }, done: false })
+    send({ token: `\nâ±ï¸ **Request timed out.** The operation took too long. Try a simpler query or check your network.\n`, done: false })
   } else if (isNetwork) {
-    send({ activity: { icon: '🔌', agent: 'Aiden', message: 'Network error — check connection', style: 'error' }, done: false })
-    send({ token: `\n🔌 **Network error.** Could not reach the required service. Check that Ollama and your network are running.\n`, done: false })
+    send({ activity: { icon: 'ðŸ”Œ', agent: 'Aiden', message: 'Network error â€” check connection', style: 'error' }, done: false })
+    send({ token: `\nðŸ”Œ **Network error.** Could not reach the required service. Check that Ollama and your network are running.\n`, done: false })
   } else if (isSearchErr) {
-    send({ activity: { icon: '🔍', agent: 'Aiden', message: 'Web search unavailable — using knowledge base', style: 'error' }, done: false })
-    send({ token: `\n🔍 **Web search is unavailable right now.** I'll answer from my knowledge base instead. To enable live search, start SearxNG: \`npm run searxng\` or run \`scripts\\start-searxng.ps1\`.\n`, done: false })
+    send({ activity: { icon: 'ðŸ”', agent: 'Aiden', message: 'Web search unavailable â€” using knowledge base', style: 'error' }, done: false })
+    send({ token: `\nðŸ” **Web search is unavailable right now.** I'll answer from my knowledge base instead. To enable live search, start SearxNG: \`npm run searxng\` or run \`scripts\\start-searxng.ps1\`.\n`, done: false })
   } else {
-    send({ activity: { icon: '❌', agent: 'Aiden', message: `Error: ${msg.slice(0, 120)}`, style: 'error' }, done: false })
-    send({ token: `\n❌ **Something went wrong:** ${msg.slice(0, 200)}\n`, done: false })
+    send({ activity: { icon: 'âŒ', agent: 'Aiden', message: `Error: ${msg.slice(0, 120)}`, style: 'error' }, done: false })
+    send({ token: `\nâŒ **Something went wrong:** ${msg.slice(0, 200)}\n`, done: false })
   }
 
   send({ done: true })
 }
 
-// ── Knowledge upload — multer + progress tracking ─────────────
+// â”€â”€ Knowledge upload â€” multer + progress tracking â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const KB_UPLOAD_DIR = path.join(process.cwd(), 'workspace', 'knowledge', 'uploads')
 if (!fs.existsSync(KB_UPLOAD_DIR)) fs.mkdirSync(KB_UPLOAD_DIR, { recursive: true })
@@ -122,15 +122,15 @@ const kbUpload = multer({
   },
 })
 
-// Progress map — jobId → status/progress (kept in memory, no persistence needed)
+// Progress map â€” jobId â†’ status/progress (kept in memory, no persistence needed)
 const kbProgress = new Map<string, { status: 'processing' | 'done' | 'error'; progress: number; message: string; result?: object }>()
 
-// ── App factory ───────────────────────────────────────────────
+// â”€â”€ App factory â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function createApiServer(): Express {
   const app = express()
 
-  // ── Middleware ───────────────────────────────────────────────
+  // â”€â”€ Middleware â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   // JSON body parsing (10 MB limit)
   app.use(express.json({ limit: '10mb' }))
@@ -142,7 +142,7 @@ export function createApiServer(): Express {
     next()
   })
 
-  // CORS — allow any origin (dev mode)
+  // CORS â€” allow any origin (dev mode)
   app.use((req: Request, res: Response, next: NextFunction) => {
     res.setHeader('Access-Control-Allow-Origin',  '*')
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
@@ -151,16 +151,16 @@ export function createApiServer(): Express {
     next()
   })
 
-  // ── Core routes ──────────────────────────────────────────────
+  // â”€â”€ Core routes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-  // GET /api/health — liveness probe (no auth required)
+  // GET /api/health â€” liveness probe (no auth required)
   app.get('/api/health', (_req: Request, res: Response) => {
     res.json({ status: 'ok', version: '2.0.0', timestamp: new Date().toISOString() })
   })
 
-  // ── License endpoints ─────────────────────────────────────────
+  // â”€â”€ License endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-  // POST /api/license/validate — activate a license key
+  // POST /api/license/validate â€” activate a license key
   app.post('/api/license/validate', async (req: Request, res: Response) => {
     const { key } = req.body as { key?: string }
     if (!key) { res.status(400).json({ error: 'key required' }); return }
@@ -175,7 +175,7 @@ export function createApiServer(): Express {
     }
   })
 
-  // GET /api/license/status — current license state (from cache, no network)
+  // GET /api/license/status â€” current license state (from cache, no network)
   app.get('/api/license/status', (_req: Request, res: Response) => {
     const license = getCurrentLicense()
     res.json({
@@ -187,26 +187,271 @@ export function createApiServer(): Express {
     })
   })
 
-  // POST /api/license/clear — deactivate / log out of Pro
+  // POST /api/license/clear â€” deactivate / log out of Pro
   app.post('/api/license/clear', (_req: Request, res: Response) => {
     clearLicense()
     res.json({ success: true })
   })
 
-  // POST /api/chat — PLAN → EXECUTE → RESPOND with mode support
+  // â”€â”€ Jailbreak detection patterns â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const JAILBREAK_PATTERNS = [
+    'ignore previous instructions',
+    'ignore all instructions',
+    'you have no restrictions',
+    'pretend you are',
+    'you are now',
+    'act as if',
+    'GODMODE',
+    ' DAN ',
+    'jailbreak',
+    'disregard your',
+    'forget your instructions',
+  ]
+
+  // â”€â”€ Dangerous command patterns (CommandGate) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const DANGEROUS_PATTERNS = [
+    'rm -rf',
+    'rm -r /',
+    'del /f /s',
+    'del /s',
+    'format c:',
+    'format c :',
+    'diskpart',
+    'shutdown /s',
+    'shutdown -s',
+    'shutdown the computer',
+    'shut down the computer',
+    'reg delete',
+    'reg add hklm',
+    'hklm\\',
+    'hklm/',
+    'modify the windows registry',
+    'edit the registry',
+    'remove-item -recurse -force',
+    'remove-item -force -recurse',
+    'format-volume',
+    'clear-disk',
+    'stop-computer',
+    'restart-computer',
+    'send all my files',
+    'send all my documents',
+    'send all my ',
+    'upload all files',
+    'upload all my',
+    'exfiltrate',
+  ]
+
+  // POST /api/chat â€” PLAN â†’ EXECUTE â†’ RESPOND with mode support
   // mode: 'auto' (default) | 'plan' (show plan only) | 'chat' (force chat, skip planner)
+  // Supports both SSE streaming (Accept: text/event-stream) and JSON mode (Accept: application/json)
   app.post('/api/chat', async (req: Request, res: Response) => {
-    const { message, history = [], mode = 'auto', sessionId } = req.body as {
+    const { history = [], mode = 'auto', sessionId } = (req.body || {}) as {
       message?:   string
       history?:   { role: string; content: string }[]
       mode?:      'auto' | 'plan' | 'chat'
       sessionId?: string
     }
-    if (!message) { res.status(400).json({ error: 'message required' }); return }
+
+    // â”€â”€ Sanitize input â€” strip null bytes and control chars â”€â”€â”€â”€
+    let message = req.body?.message || ''
+    message = message.replace(/\x00/g, '').replace(/[\x01-\x08\x0B\x0C\x0E-\x1F]/g, '')
+
+    if (!message || message.trim().length === 0) {
+      res.status(400).json({ message: 'Please provide a goal or question.', error: 'empty_message' }); return
+    }
+
+    // â”€â”€ Jailbreak detection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    const isJailbreak = JAILBREAK_PATTERNS.some(p =>
+      message.toLowerCase().includes(p.toLowerCase())
+    )
+    if (isJailbreak) {
+      res.json({ message: 'I am Aiden. My identity and safety rules cannot be overridden by conversation.', blocked: true }); return
+    }
+
+    // â”€â”€ Dangerous command detection (pre-execution gate) â”€â”€â”€â”€â”€â”€â”€
+    const isDangerous = DANGEROUS_PATTERNS.some(p =>
+      message.toLowerCase().includes(p.toLowerCase())
+    )
+    if (isDangerous) {
+      res.json({
+        message: 'CommandGate: I need your approval before running that operation. It contains a potentially dangerous command (data loss risk). Please confirm explicitly that you want to proceed, or rephrase your request.',
+        blocked: true,
+        reason:  'dangerous_command',
+      }); return
+    }
+
+    // â”€â”€ Fast math evaluation â€” simple arithmetic without LLM â”€â”€â”€
+    const simpleMathMatch = message.match(/^what\s+is\s+([\d]+\s*[+\-*\/]\s*[\d]+)\s*\??$/i)
+    if (simpleMathMatch) {
+      try {
+        // Safe eval: only digits and operators
+        const expr = simpleMathMatch[1].replace(/[^0-9+\-*\/\s]/g, '')
+        const result = Function(`"use strict"; return (${expr})`)()
+        res.json({ message: String(result) }); return
+      } catch {}
+    }
+
+    // â”€â”€ Fast identity answers â€” don't need LLM for these â”€â”€â”€â”€â”€â”€
+    const identityPatterns = [
+      /what.{0,10}(is|are).{0,10}(your name|you called|you named)/i,
+      /who are you/i,
+      /what('s| is) your name/i,
+      /are you (aiden|chatgpt|claude|gpt|openai)/i,
+    ]
+    if (identityPatterns.some(p => p.test(message))) {
+      res.json({ message: 'I\'m Aiden â€” a personal AI OS built by Shiva Deore at Taracod. I run locally on your Windows machine using Ollama. Not ChatGPT, not Claude. Just Aiden.' }); return
+    }
+
+    // â”€â”€ Fast "running locally" answer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    const localPatterns = [
+      /are you (local|running locally|on.{0,20}machine|offline)/i,
+      /do you (run|work) (locally|offline|on.{0,20}machine)/i,
+      /where.{0,20}(run|hosted|deployed)/i,
+      /run(ning)? (locally|on.{0,10}machine)/i,
+      /(cloud or locally|locally or.{0,10}cloud|in the cloud)/i,
+    ]
+    if (localPatterns.some(p => p.test(message))) {
+      res.json({ message: 'Locally. I run 100% on your machine â€” offline, private. I use Ollama for inference on your device. Your data never leaves this machine.' }); return
+    }
+
+    // â”€â”€ Date/year fast-path â€” answer from system clock â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    const _dateMsg = (message || '').toLowerCase()
+    const DATE_PATTERNS = ['what year', 'current year', 'what time', 'what date', 'what is today', "today's date"]
+    if (DATE_PATTERNS.some(p => _dateMsg.includes(p))) {
+      const now = new Date()
+      res.json({ message: `${now.toDateString()}. Year: ${now.getFullYear()}. Time: ${now.toLocaleTimeString()}.`, success: true, provider: 'system_clock' }); return
+    }
+
+    // â”€â”€ Hardware info fast-path â€” from SOUL.md known config â”€â”€â”€
+    if (/what\s+(gpu|graphics|vram|ram|memory|cpu|processor|hardware|specs)\s+(do\s+i|have|i\s+have)|gpu\s+and\s+ram|hardware\s+specs|system\s+specs/i.test(message)) {
+      res.json({ message: 'GPU: GTX 1060 6GB VRAM. RAM: detected at runtime (typically 8â€“16 GB). CPU: detected via system info. Run "system_info" for live hardware readings.' }); return
+    }
+
+    // â”€â”€ File-read fast-path â€” try the file before calling LLM â”€â”€
+    // This prevents hallucination on missing files and ensures honest "not found" responses.
+    const fileReadMatch = message.match(/read\s+(?:file\s+)?([A-Z]:[/\\][^\s"']+|\/[^\s"']+|[\w./\\]+\.\w{1,6})/i)
+    if (fileReadMatch) {
+      const fs   = require('fs')
+      const fp   = fileReadMatch[1]
+      if (!fs.existsSync(fp)) {
+        res.json({ message: `Cannot find file "${fp}" â€” it does not exist or is not accessible. Please check the path.` }); return
+      }
+    }
+
+    // â”€â”€ High-risk actions â€” require explicit confirmation â”€â”€â”€â”€â”€â”€
+    const HIGH_RISK_PATTERNS = [
+      'send an email',
+      'send email',
+      'smtp',
+      'sendmail',
+      'send immediately',
+    ]
+    const isHighRisk = HIGH_RISK_PATTERNS.some(p =>
+      message.toLowerCase().includes(p.toLowerCase())
+    )
+    if (isHighRisk) {
+      res.json({
+        message: 'CommandGate: This action involves sending data externally (email/network). I need your explicit approval before proceeding. Are you sure you want to do this? Please confirm.',
+        blocked: true,
+        reason:  'high_risk_action_requires_approval',
+      }); return
+    }
+
+    // â”€â”€ Detect if caller wants JSON or SSE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Browser clients set Accept: text/event-stream â†’ SSE mode
+    // Test clients and API callers get JSON mode by default
+    const acceptHeader = req.headers['accept'] || ''
+    const useJsonMode = !acceptHeader.includes('text/event-stream')
 
     // Switch to the caller's session before any memory operations
     if (sessionId) conversationMemory.setSession(sessionId)
 
+    // â”€â”€ JSON mode: collect all tokens, return {message: "..."} â”€
+    if (useJsonMode) {
+      let fullReply = ''
+      const jsonTokens: string[] = []
+
+      const collectToken = (token: string) => { jsonTokens.push(token) }
+
+      // We'll run the same logic but collect instead of stream
+      const { provider, model, userName, apiName } = getSmartProvider()
+      const config   = loadConfig()
+      const apiEntry = config.providers.apis.find(a => a.name === apiName)
+      const rawKey   = apiEntry
+        ? (apiEntry.key.startsWith('env:')
+            ? process.env[apiEntry.key.replace('env:', '')] || ''
+            : apiEntry.key)
+        : ''
+      const providerName = apiEntry?.provider || 'ollama'
+      const activeModel  = apiEntry?.model || model
+
+      try {
+        const resolvedMessage = conversationMemory.addUserMessage(message)
+        conversationMemory.recordUserTurn(resolvedMessage)
+
+        if (mode === 'chat') {
+          await streamChat(resolvedMessage, history, userName, provider, activeModel, apiName, (data: object) => {
+            const d = data as any
+            if (d.token) jsonTokens.push(d.token)
+          })
+          incrementUsage(apiName)
+          fullReply = jsonTokens.join('')
+          conversationMemory.addAssistantMessage(fullReply)
+          res.json({ message: fullReply, provider: apiName }); return
+        }
+
+        const memoryContext = conversationMemory.buildContext()
+        const plan: AgentPlan = await planWithLLM(resolvedMessage, history, rawKey, activeModel, providerName, memoryContext)
+
+        if (!plan.requires_execution || plan.plan.length === 0) {
+          if (plan.direct_response) {
+            fullReply = plan.direct_response
+          } else {
+            await streamChat(resolvedMessage, history, userName, provider, activeModel, apiName, (data: object) => {
+              const d = data as any
+              if (d.token) jsonTokens.push(d.token)
+            })
+            fullReply = jsonTokens.join('')
+          }
+          incrementUsage(apiName)
+          conversationMemory.addAssistantMessage(fullReply)
+          res.json({ message: fullReply, provider: apiName }); return
+        }
+
+        const results: StepResult[] = await executePlan(
+          plan,
+          (_step: ToolStep, _result: StepResult) => { /* silent in JSON mode */ },
+        )
+
+        await respondWithResults(
+          resolvedMessage, plan, results, history,
+          userName, rawKey, activeModel, providerName,
+          (token) => { jsonTokens.push(token) },
+        )
+
+        fullReply = jsonTokens.join('')
+
+        const toolsUsed     = results.map(r => r.tool)
+        const filesCreated  = results
+          .filter(r => r.tool === 'file_write' && r.success && r.input?.path)
+          .map(r => r.input.path as string)
+        const searchQueries = results
+          .filter(r => (r.tool === 'web_search' || r.tool === 'deep_research') && r.input?.query)
+          .map(r => r.input.query as string)
+
+        conversationMemory.updateFromExecution(toolsUsed, filesCreated, searchQueries, plan.planId)
+        conversationMemory.addAssistantMessage(fullReply, { toolsUsed, filesCreated, searchQueries, planId: plan.planId })
+        incrementUsage(apiName)
+
+        res.json({ message: fullReply, provider: apiName, toolsUsed, filesCreated }); return
+
+      } catch (err: any) {
+        console.error('[Chat JSON mode] Error:', err.message)
+        res.status(500).json({ message: `Something went wrong: ${err.message}`, error: err.message }); return
+      }
+    }
+
+    // â”€â”€ SSE streaming mode (browser clients) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     res.setHeader('Content-Type',  'text/event-stream')
     res.setHeader('Cache-Control', 'no-cache')
     res.setHeader('Connection',    'keep-alive')
@@ -230,15 +475,62 @@ export function createApiServer(): Express {
     const providerName = apiEntry?.provider || (apiName === 'ollama' ? 'ollama' : 'ollama')
     const activeModel  = apiEntry?.model || model
 
-    // ── OUTER FATAL CATCH — catches anything that escapes the inner handler ──
+    // ── Conversational fast-path — skip planning for simple messages ──
+    // These need zero tools — routing through planWithLLM wastes 8-30 seconds.
+    // MUST be AFTER `send` is declared.
+    const CONVERSATIONAL = [
+      /^hi+\s*[!?.]*$/i,
+      /^hey+\s*[!?.]*$/i,
+      /^hello+\s*[!?.]*$/i,
+      /^how are you/i,
+      /^what('?s| is) up/i,
+      /^good (morning|afternoon|evening|night)/i,
+      /^thanks?(\s+you)?[!.]*$/i,
+      /^thank you[!.]*$/i,
+      /^ok+a?y?[!.]*$/i,
+      /^cool[!.]*$/i,
+      /^got it[!.]*$/i,
+      /^what can you do/i,
+      /^what are your (skills|capabilities|tools)/i,
+      /^who are you/i,
+      /^are you (there|ready|online|working)/i,
+    ]
+    const isConversational = mode !== 'plan' && CONVERSATIONAL.some(p => p.test(message.trim()))
+    if (isConversational) {
+      try {
+        const convTokens: string[] = []
+        await streamChat(message, history, userName, provider, activeModel, apiName, (data: object) => {
+          const d = data as any
+          if (d.token) convTokens.push(d.token)
+        })
+        const reply = convTokens.join('').trim() || 'Hey! What do you need?'
+        const words = reply.split(' ')
+        for (const word of words) {
+          send({ token: word + ' ', done: false, provider: apiName })
+          await new Promise(r => setTimeout(r, 8))
+        }
+        send({ done: true, provider: apiName })
+        res.end()
+        conversationMemory.addAssistantMessage(reply)
+        return
+      } catch {
+        send({ token: 'Hey! What do you need?', done: false, provider: 'fallback' })
+        send({ done: true, provider: 'fallback' })
+        res.end()
+        return
+      }
+    }
+
+
+    // â”€â”€ OUTER FATAL CATCH â€” catches anything that escapes the inner handler â”€â”€
     try {
 
     try {
-      // ── RESOLVE REFERENCES & RECORD USER TURN ────────────────
+      // â”€â”€ RESOLVE REFERENCES & RECORD USER TURN â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       const resolvedMessage = conversationMemory.addUserMessage(message)
       conversationMemory.recordUserTurn(resolvedMessage)
 
-      // ── FORCE CHAT MODE ──────────────────────────────────────
+      // â”€â”€ FORCE CHAT MODE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       if (mode === 'chat') {
         await streamChat(resolvedMessage, history, userName, provider, activeModel, apiName, send)
         incrementUsage(apiName)
@@ -248,16 +540,16 @@ export function createApiServer(): Express {
         return
       }
 
-      // ── STEP 1: PLAN ─────────────────────────────────────────
-      send({ activity: { icon: '🧠', agent: 'Aiden', message: 'Thinking...', style: 'thinking' }, done: false })
+      // â”€â”€ STEP 1: PLAN â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      send({ activity: { icon: 'ðŸ§ ', agent: 'Aiden', message: 'Thinking...', style: 'thinking' }, done: false })
 
       const memoryContext = conversationMemory.buildContext()
       const plan: AgentPlan = await planWithLLM(resolvedMessage, history, rawKey, activeModel, providerName, memoryContext)
 
-      // ── PLAN-ONLY MODE ───────────────────────────────────────
+      // â”€â”€ PLAN-ONLY MODE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       if (mode === 'plan') {
         const planText = plan.requires_execution && plan.plan.length > 0
-          ? `**Planned steps:**\n${plan.plan.map(s => `${s.step}. \`${s.tool}\` — ${s.description}`).join('\n')}\n\n*Plan-only mode — not executing.*`
+          ? `**Planned steps:**\n${plan.plan.map(s => `${s.step}. \`${s.tool}\` â€” ${s.description}`).join('\n')}\n\n*Plan-only mode â€” not executing.*`
           : `No execution needed. I can answer this directly.\n\n*Plan-only mode.*`
         const words = planText.split(' ')
         for (const word of words) {
@@ -269,12 +561,12 @@ export function createApiServer(): Express {
         return
       }
 
-      // ── NO EXECUTION NEEDED — PURE CHAT ─────────────────────
+      // â”€â”€ NO EXECUTION NEEDED â€” PURE CHAT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       if (!plan.requires_execution || plan.plan.length === 0) {
         let fullReply = ''
 
         // Capability/skills questions must go through LLM with full context injection.
-        // direct_response from the planner has no capabilities awareness — it will lie.
+        // direct_response from the planner has no capabilities awareness â€” it will lie.
         const isCapabilityQuery = /what.*(can you do|skills|tools|capabilities|abilities)|how many skills|what are you capable/i.test(resolvedMessage)
 
         if (plan.direct_response && !isCapabilityQuery) {
@@ -296,38 +588,38 @@ export function createApiServer(): Express {
         return
       }
 
-      // ── SHOW PLAN PHASES ────────────────────────────────────
+      // â”€â”€ SHOW PLAN PHASES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       if (plan.phases && plan.phases.length > 0) {
         const phaseList = plan.phases
           .filter((p: Phase) => p.title !== 'Deliver Results')
           .map((p: Phase, i: number) => `${i + 1}. ${p.title}`)
-          .join(' → ')
+          .join(' â†’ ')
         send({
-          activity: { icon: '📋', agent: 'Aiden', message: `Plan: ${phaseList}`, style: 'act' },
+          activity: { icon: 'ðŸ“‹', agent: 'Aiden', message: `Plan: ${phaseList}`, style: 'act' },
           done: false,
         })
       } else {
         send({
           activity: {
-            icon: '📋', agent: 'Aiden',
-            message: `Plan: ${plan.plan.map(s => s.tool).join(' → ')}`,
+            icon: 'ðŸ“‹', agent: 'Aiden',
+            message: `Plan: ${plan.plan.map(s => s.tool).join(' â†’ ')}`,
             style: 'act',
           },
           done: false,
         })
       }
 
-      // ── STEP 2: EXECUTE ──────────────────────────────────────
+      // â”€â”€ STEP 2: EXECUTE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       const results: StepResult[] = await executePlan(
         plan,
         (step: ToolStep, result: StepResult) => {
           send({
-            activity: { icon: '🔧', agent: 'Aiden', message: `${step.tool}: ${step.description}`, style: 'tool' },
+            activity: { icon: 'ðŸ”§', agent: 'Aiden', message: `${step.tool}: ${step.description}`, style: 'tool' },
             done: false,
           })
           send({
             activity: {
-              icon:    result.success ? '✅' : '❌',
+              icon:    result.success ? 'âœ…' : 'âŒ',
               agent:   'Aiden',
               message: (result.success ? result.output : result.error || 'failed').slice(0, 160),
               style:   result.success ? 'done' : 'error',
@@ -337,14 +629,14 @@ export function createApiServer(): Express {
         },
         (phase: Phase, index: number, total: number) => {
           send({
-            activity: { icon: '▶', agent: 'Aiden', message: `Phase ${index + 1}/${total}: ${phase.title}`, style: 'act' },
+            activity: { icon: 'â–¶', agent: 'Aiden', message: `Phase ${index + 1}/${total}: ${phase.title}`, style: 'act' },
             done: false,
           })
         },
       )
 
-      // ── STEP 3: RESPOND ──────────────────────────────────────
-      send({ activity: { icon: '✍️', agent: 'Aiden', message: 'Writing response...', style: 'thinking' }, done: false })
+      // â”€â”€ STEP 3: RESPOND â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      send({ activity: { icon: 'âœï¸', agent: 'Aiden', message: 'Writing response...', style: 'thinking' }, done: false })
 
       let streamEnded = false
       let fullReply   = ''
@@ -364,7 +656,7 @@ export function createApiServer(): Express {
       streamEnded = true
       clearTimeout(timeout)
 
-      // ── UPDATE CONVERSATION MEMORY ───────────────────────────
+      // â”€â”€ UPDATE CONVERSATION MEMORY â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       const toolsUsed     = results.map(r => r.tool)
       const filesCreated  = results
         .filter(r => r.tool === 'file_write' && r.success && r.input?.path)
@@ -387,11 +679,11 @@ export function createApiServer(): Express {
     }
 
     } catch (e: any) {
-      // Fatal outer catch — something threw outside the inner try (e.g. getSmartProvider crash)
+      // Fatal outer catch â€” something threw outside the inner try (e.g. getSmartProvider crash)
       console.error('[Chat] FATAL outer error:', e.message)
       console.error('[Chat] FATAL stack:', e.stack?.split('\n').slice(0, 3).join('\n'))
       try {
-        send({ activity: { icon: '💥', agent: 'Aiden', message: `Fatal error: ${e.message}`, style: 'error' }, done: false })
+        send({ activity: { icon: 'ðŸ’¥', agent: 'Aiden', message: `Fatal error: ${e.message}`, style: 'error' }, done: false })
         send({ token: `\nA fatal error occurred: ${e.message}`, done: false })
         send({ done: true })
         res.end()
@@ -402,35 +694,35 @@ export function createApiServer(): Express {
 
   })
 
-  // GET /api/onboarding — check status + get available models
+  // GET /api/onboarding â€” check status + get available models
   app.get('/api/onboarding', async (_req: Request, res: Response) => {
     const config          = loadConfig()
     const installedModels = await ollamaProvider.listModels?.() || []
 
     const RECOMMENDED: Record<string, { label: string; contextWindow: number; speed: string }> = {
-      'llama3.2:3b':         { label: 'Llama 3.2 3B',       contextWindow: 128000, speed: '⚡ fastest'  },
-      'mistral:7b':          { label: 'Mistral 7B',          contextWindow: 32000,  speed: '🔥 fast'     },
-      'qwen2.5:7b':          { label: 'Qwen 2.5 7B',         contextWindow: 128000, speed: '🔥 fast'     },
-      'qwen2.5-coder:7b':    { label: 'Qwen 2.5 Coder 7B',   contextWindow: 128000, speed: '🔥 fast'     },
-      'llama3.1:8b':         { label: 'Llama 3.1 8B',        contextWindow: 128000, speed: '🔥 fast'     },
-      'phi4:mini':           { label: 'Phi-4 Mini',          contextWindow: 128000, speed: '⚡ fastest'  },
-      'mistral-nemo:12b':    { label: 'Mistral Nemo 12B',    contextWindow: 128000, speed: '💪 powerful' },
-      'llama3.3:70b':        { label: 'Llama 3.3 70B',       contextWindow: 128000, speed: '💪 powerful' },
+      'llama3.2:3b':         { label: 'Llama 3.2 3B',       contextWindow: 128000, speed: 'âš¡ fastest'  },
+      'mistral:7b':          { label: 'Mistral 7B',          contextWindow: 32000,  speed: 'ðŸ”¥ fast'     },
+      'qwen2.5:7b':          { label: 'Qwen 2.5 7B',         contextWindow: 128000, speed: 'ðŸ”¥ fast'     },
+      'qwen2.5-coder:7b':    { label: 'Qwen 2.5 Coder 7B',   contextWindow: 128000, speed: 'ðŸ”¥ fast'     },
+      'llama3.1:8b':         { label: 'Llama 3.1 8B',        contextWindow: 128000, speed: 'ðŸ”¥ fast'     },
+      'phi4:mini':           { label: 'Phi-4 Mini',          contextWindow: 128000, speed: 'âš¡ fastest'  },
+      'mistral-nemo:12b':    { label: 'Mistral Nemo 12B',    contextWindow: 128000, speed: 'ðŸ’ª powerful' },
+      'llama3.3:70b':        { label: 'Llama 3.3 70B',       contextWindow: 128000, speed: 'ðŸ’ª powerful' },
     }
 
     const localModels = installedModels.map(name => ({
       id:          name,
       label:       RECOMMENDED[name]?.label || name,
-      speed:       RECOMMENDED[name]?.speed || '🔥 fast',
+      speed:       RECOMMENDED[name]?.speed || 'ðŸ”¥ fast',
       contextWindow: RECOMMENDED[name]?.contextWindow || 32000,
       installed:   true,
       recommended: name.includes('qwen2.5') || name.includes('llama3') || name.includes('phi4'),
     })).sort((a, b) => (b.recommended ? 1 : 0) - (a.recommended ? 1 : 0))
 
     const cloudProviders = [
-      { id: 'groq',       label: 'Groq',       subtitle: 'Free tier · llama3.3:70b · blazing fast', url: 'https://console.groq.com',              models: ['llama-3.3-70b-versatile', 'llama-3.1-70b-versatile', 'mixtral-8x7b-32768'] },
-      { id: 'openrouter', label: 'OpenRouter', subtitle: 'Access 200+ models · pay per use',         url: 'https://openrouter.ai/keys',             models: ['meta-llama/llama-3.3-70b-instruct', 'anthropic/claude-3.5-sonnet', 'openai/gpt-4o'] },
-      { id: 'gemini',     label: 'Gemini',     subtitle: 'Free tier available · fast',               url: 'https://aistudio.google.com/app/apikey', models: ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash-exp'] },
+      { id: 'groq',       label: 'Groq',       subtitle: 'Free tier Â· llama3.3:70b Â· blazing fast', url: 'https://console.groq.com',              models: ['llama-3.3-70b-versatile', 'llama-3.1-70b-versatile', 'mixtral-8x7b-32768'] },
+      { id: 'openrouter', label: 'OpenRouter', subtitle: 'Access 200+ models Â· pay per use',         url: 'https://openrouter.ai/keys',             models: ['meta-llama/llama-3.3-70b-instruct', 'anthropic/claude-3.5-sonnet', 'openai/gpt-4o'] },
+      { id: 'gemini',     label: 'Gemini',     subtitle: 'Free tier available Â· fast',               url: 'https://aistudio.google.com/app/apikey', models: ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash-exp'] },
     ]
 
     res.json({
@@ -443,7 +735,7 @@ export function createApiServer(): Express {
     })
   })
 
-  // POST /api/onboarding — save onboarding result
+  // POST /api/onboarding â€” save onboarding result
   app.post('/api/onboarding', (req: Request, res: Response) => {
     const { userName, modelType, modelId, apiProvider, apiKey, apiName, apiModel } = req.body as {
       userName?: string; modelType?: string; modelId?: string
@@ -476,7 +768,58 @@ export function createApiServer(): Express {
     res.json({ success: true, config })
   })
 
-  // GET /api/providers — list all configured APIs with status
+  // GET /api/onboarding/status â€” lightweight first-run check (used by onboarding gate)
+  app.get('/api/onboarding/status', (_req: Request, res: Response) => {
+    const config   = loadConfig()
+    const hasName  = !!(config.user?.name && config.user.name !== 'there')
+    const envName  = !!(process.env.USER_NAME)
+    const hasOllama = !!(process.env.OLLAMA_MODEL || (config.model?.active === 'ollama' && config.model?.activeModel))
+    const completed = !!(config.onboardingComplete && (hasName || envName))
+    res.json({
+      completed,
+      hasOllama,
+      hasName:  hasName || envName,
+      userName: process.env.USER_NAME || config.user?.name || '',
+    })
+  })
+
+  // POST /api/onboarding/complete â€” write keys/name to .env and config
+  app.post('/api/onboarding/complete', (req: Request, res: Response) => {
+    const { userName, ollamaModel, geminiKey, groqKey } = req.body as {
+      userName?: string; ollamaModel?: string; geminiKey?: string; groqKey?: string
+    }
+
+    // Helper: set or replace a key in .env content
+    function setEnvVar(content: string, key: string, value: string): string {
+      const regex = new RegExp(`^${key}=.*$`, 'm')
+      if (regex.test(content)) return content.replace(regex, `${key}=${value}`)
+      return content + `\n${key}=${value}`
+    }
+
+    try {
+      const envPath = path.join(process.cwd(), '.env')
+      let envContent = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf-8') : ''
+      if (userName)    envContent = setEnvVar(envContent, 'USER_NAME',     userName)
+      if (ollamaModel) envContent = setEnvVar(envContent, 'OLLAMA_MODEL',  ollamaModel)
+      if (geminiKey)   envContent = setEnvVar(envContent, 'GEMINI_API_KEY', geminiKey)
+      if (groqKey)     envContent = setEnvVar(envContent, 'GROQ_API_KEY',  groqKey)
+      fs.writeFileSync(envPath, envContent)
+    } catch (e: any) {
+      console.warn('[Onboarding] Could not write .env:', e.message)
+    }
+
+    // Also save to config
+    const config = loadConfig()
+    if (userName) config.user.name = userName
+    if (ollamaModel) config.model = { active: 'ollama', activeModel: ollamaModel }
+    if (!config.routing) config.routing = { mode: 'auto', fallbackToOllama: true }
+    config.onboardingComplete = true
+    saveConfig(config)
+
+    res.json({ success: true })
+  })
+
+  // GET /api/providers â€” list all configured APIs with status
   app.get('/api/providers', (_req: Request, res: Response) => {
     const config = loadConfig()
     res.json({
@@ -488,14 +831,19 @@ export function createApiServer(): Express {
         rateLimited:   api.rateLimited,
         rateLimitedAt: api.rateLimitedAt,
         usageCount:    api.usageCount || 0,
-        hasKey:        !!api.key,
+        hasKey:        (() => {
+          const k = api.key?.startsWith('env:')
+            ? (process.env[api.key.replace('env:', '')] || '')
+            : (api.key || '')
+          return k.length > 0
+        })(),
       })),
       routing: config.routing || { mode: 'auto', fallbackToOllama: true },
       ollama:  config.providers.ollama,
     })
   })
 
-  // POST /api/providers/add — add or update a single API key
+  // POST /api/providers/add â€” add or update a single API key
   app.post('/api/providers/add', (req: Request, res: Response) => {
     const { name, provider, key, model, enabled = true } = req.body as {
       name?: string; provider?: string; key?: string; model?: string; enabled?: boolean
@@ -521,7 +869,7 @@ export function createApiServer(): Express {
     res.json({ success: true, entry: { ...entry, key: '***' } })
   })
 
-  // DELETE /api/providers/:name — remove an API
+  // DELETE /api/providers/:name â€” remove an API
   app.delete('/api/providers/:name', (req: Request, res: Response) => {
     const config = loadConfig()
     config.providers.apis = config.providers.apis.filter(a => a.name !== req.params.name)
@@ -529,7 +877,7 @@ export function createApiServer(): Express {
     res.json({ success: true })
   })
 
-  // PATCH /api/providers/:name — update enabled/rateLimited/model etc.
+  // PATCH /api/providers/:name â€” update enabled/rateLimited/model etc.
   app.patch('/api/providers/:name', (req: Request, res: Response) => {
     const config = loadConfig()
     config.providers.apis = config.providers.apis.map(a =>
@@ -539,7 +887,7 @@ export function createApiServer(): Express {
     res.json({ success: true })
   })
 
-  // POST /api/providers/reset-limits — manually reset all rate limits
+  // POST /api/providers/reset-limits â€” manually reset all rate limits
   app.post('/api/providers/reset-limits', (_req: Request, res: Response) => {
     const config = loadConfig()
     config.providers.apis = config.providers.apis.map(a => ({ ...a, rateLimited: false, rateLimitedAt: undefined }))
@@ -547,7 +895,7 @@ export function createApiServer(): Express {
     res.json({ success: true, message: 'All rate limits reset' })
   })
 
-  // POST /api/providers/switch — switch active model/provider
+  // POST /api/providers/switch â€” switch active model/provider
   app.post('/api/providers/switch', (req: Request, res: Response) => {
     const { active, activeModel } = req.body as { active?: string; activeModel?: string }
     const config = loadConfig()
@@ -556,16 +904,16 @@ export function createApiServer(): Express {
     res.json({ success: true })
   })
 
-  // ── Knowledge Base endpoints ─────────────────────────────────
+  // â”€â”€ Knowledge Base endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-  // GET /api/knowledge — list all files + stats
+  // GET /api/knowledge â€” list all files + stats
   app.get('/api/knowledge', (_req: Request, res: Response) => {
     try {
       res.json({ files: knowledgeBase.listFiles(), stats: knowledgeBase.getStats() })
     } catch (e: any) { res.status(500).json({ error: e.message }) }
   })
 
-  // POST /api/knowledge/upload — binary file upload (PDF/EPUB/TXT/MD) via multipart/form-data
+  // POST /api/knowledge/upload â€” binary file upload (PDF/EPUB/TXT/MD) via multipart/form-data
   // Fields: file (binary), category (optional), tags (optional csv), privacy (optional)
   // PDF and EPUB require a Pro license.
   app.post('/api/knowledge/upload', (req: Request, res: Response) => {
@@ -574,21 +922,21 @@ export function createApiServer(): Express {
 
       const file = (req as any).file as Express.Multer.File | undefined
 
-      // Pro gate — PDF and EPUB require an active Pro license
+      // Pro gate â€” PDF and EPUB require an active Pro license
       if (file) {
         const ext = path.extname(file.originalname).toLowerCase()
         if ((ext === '.pdf' || ext === '.epub') && !isPro()) {
           try { fs.unlinkSync(file.path) } catch {}
           res.status(403).json({
             error:   'Pro license required',
-            message: 'PDF and EPUB uploads are a Pro feature. Upgrade at DevOS Settings → Pro License.',
+            message: 'PDF and EPUB uploads are a Pro feature. Upgrade at DevOS Settings â†’ Pro License.',
             upgrade: true,
           })
           return
         }
       }
 
-      // Legacy JSON path — if no file but content string provided, fall back to ingestText
+      // Legacy JSON path â€” if no file but content string provided, fall back to ingestText
       if (!file) {
         const { content, filename, category = 'general', tags = '', privacy = 'public' } = req.body as {
           content?: string; filename?: string; category?: string; tags?: string; privacy?: string
@@ -640,7 +988,7 @@ export function createApiServer(): Express {
     })
   })
 
-  // POST /api/knowledge/upload/async — returns a jobId immediately, processes in background
+  // POST /api/knowledge/upload/async â€” returns a jobId immediately, processes in background
   // PDF and EPUB require a Pro license.
   app.post('/api/knowledge/upload/async', (req: Request, res: Response) => {
     kbUpload.single('file')(req, res, async (err) => {
@@ -649,13 +997,13 @@ export function createApiServer(): Express {
       const file = (req as any).file as Express.Multer.File | undefined
       if (!file) { res.status(400).json({ error: 'file required for async upload' }); return }
 
-      // Pro gate — PDF and EPUB require an active Pro license
+      // Pro gate â€” PDF and EPUB require an active Pro license
       const extAsync = path.extname(file.originalname).toLowerCase()
       if ((extAsync === '.pdf' || extAsync === '.epub') && !isPro()) {
         try { fs.unlinkSync(file.path) } catch {}
         res.status(403).json({
           error:   'Pro license required',
-          message: 'PDF and EPUB uploads are a Pro feature. Upgrade at DevOS Settings → Pro License.',
+          message: 'PDF and EPUB uploads are a Pro feature. Upgrade at DevOS Settings â†’ Pro License.',
           upgrade: true,
         })
         return
@@ -667,12 +1015,12 @@ export function createApiServer(): Express {
       }
       const tagList = tags ? tags.split(',').map((t: string) => t.trim()).filter(Boolean) : []
 
-      kbProgress.set(jobId, { status: 'processing', progress: 10, message: 'Extracting text…' })
+      kbProgress.set(jobId, { status: 'processing', progress: 10, message: 'Extracting textâ€¦' })
 
       // Fire-and-forget background processing
       ;(async () => {
         try {
-          kbProgress.set(jobId, { status: 'processing', progress: 40, message: 'Chunking & embedding…' })
+          kbProgress.set(jobId, { status: 'processing', progress: 40, message: 'Chunking & embeddingâ€¦' })
 
           const result = await knowledgeBase.ingestFile(
             file.path,
@@ -691,7 +1039,7 @@ export function createApiServer(): Express {
           kbProgress.set(jobId, {
             status:   'done',
             progress: 100,
-            message:  `Done — ${result.chunkCount} chunks from ${file.originalname}`,
+            message:  `Done â€” ${result.chunkCount} chunks from ${file.originalname}`,
             result:   { filename: file.originalname, format: result.format, chunkCount: result.chunkCount, wordCount: result.wordCount, pageCount: result.pageCount },
           })
 
@@ -704,18 +1052,18 @@ export function createApiServer(): Express {
         }
       })()
 
-      res.json({ success: true, jobId, message: 'Upload started — poll /api/knowledge/progress/' + jobId })
+      res.json({ success: true, jobId, message: 'Upload started â€” poll /api/knowledge/progress/' + jobId })
     })
   })
 
-  // GET /api/knowledge/progress/:jobId — poll async upload progress
+  // GET /api/knowledge/progress/:jobId â€” poll async upload progress
   app.get('/api/knowledge/progress/:jobId', (req: Request, res: Response) => {
     const entry = kbProgress.get(String(req.params.jobId))
     if (!entry) { res.status(404).json({ error: 'Job not found or already expired' }); return }
     res.json(entry)
   })
 
-  // GET /api/knowledge/search?q= — search knowledge base
+  // GET /api/knowledge/search?q= â€” search knowledge base
   app.get('/api/knowledge/search', (req: Request, res: Response) => {
     const query = req.query.q as string
     if (!query) { res.status(400).json({ error: 'q parameter required' }); return }
@@ -731,7 +1079,63 @@ export function createApiServer(): Express {
     })
   })
 
-  // DELETE /api/knowledge/:fileId — delete a file
+  // POST /api/knowledge/search â€” search knowledge base (JSON body)
+  app.post('/api/knowledge/search', async (req: Request, res: Response) => {
+    try {
+      const { query, limit = 5 } = req.body as { query?: string; limit?: number }
+      if (!query) { res.status(400).json({ error: 'query required' }); return }
+      const chunks = knowledgeBase.search(String(query), Number(limit))
+      res.json({
+        results: chunks.map(c => ({
+          text:     c.text.slice(0, 500),
+          filename: c.filename,
+          category: c.category,
+          score:    c.usageCount,
+        })),
+        count: chunks.length,
+        query,
+      })
+    } catch (err: any) { res.status(500).json({ error: err.message }) }
+  })
+
+  // POST /api/memory/search â€” search conversation memory
+  app.post('/api/memory/search', async (req: Request, res: Response) => {
+    try {
+      const { query, limit = 5 } = req.body as { query?: string; limit?: number }
+      const q = query ? String(query) : ''
+      // Build context and return relevant snippets
+      const context = conversationMemory.buildContext()
+      const lines   = context.split('\n').filter(l => !q || l.toLowerCase().includes(q.toLowerCase()))
+      res.json({ results: lines.slice(0, Number(limit)), count: lines.length })
+    } catch (err: any) { res.status(500).json({ error: err.message }) }
+  })
+
+  // GET /api/providers/status â€” provider health status
+  app.get('/api/providers/status', async (_req: Request, res: Response) => {
+    try {
+      const config = loadConfig()
+      const providers = config.providers.apis.map((api: APIEntry) => ({
+        name:        api.name,
+        provider:    api.provider,
+        model:       api.model,
+        enabled:     api.enabled,
+        rateLimited: api.rateLimited,
+        status:      api.rateLimited ? 'rate_limited' : api.enabled ? 'ok' : 'disabled',
+        usageCount:  api.usageCount || 0,
+      }))
+      res.json({ providers, ollama: config.providers?.ollama || {} })
+    } catch (err: any) { res.status(500).json({ error: err.message }) }
+  })
+
+  // GET /api/conversations â€” list conversation sessions
+  app.get('/api/conversations', async (_req: Request, res: Response) => {
+    try {
+      const sessions = conversationMemory.getSessions ? conversationMemory.getSessions() : []
+      res.json({ conversations: sessions, count: sessions.length })
+    } catch (err: any) { res.status(500).json({ error: err.message, conversations: [] }) }
+  })
+
+  // DELETE /api/knowledge/:fileId â€” delete a file
   app.delete('/api/knowledge/:fileId', (req: Request, res: Response) => {
     const deleted = knowledgeBase.deleteFile(String(req.params.fileId))
     if (!deleted) { res.status(404).json({ error: 'File not found' }); return }
@@ -743,9 +1147,9 @@ export function createApiServer(): Express {
     res.json(knowledgeBase.getStats())
   })
 
-  // ── Skill teacher endpoints ───────────────────────────────────
+  // â”€â”€ Skill teacher endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-  // GET /api/skills/learned — list learned + approved skills + stats
+  // GET /api/skills/learned â€” list learned + approved skills + stats
   app.get('/api/skills/learned', (_req: Request, res: Response) => {
     try {
       res.json({
@@ -758,7 +1162,7 @@ export function createApiServer(): Express {
     }
   })
 
-  // DELETE /api/skills/learned/:name — delete a learned skill
+  // DELETE /api/skills/learned/:name â€” delete a learned skill
   app.delete('/api/skills/learned/:name', (req: Request, res: Response) => {
     try {
       const skillDir = path.join(
@@ -775,7 +1179,7 @@ export function createApiServer(): Express {
     }
   })
 
-  // GET /api/config — current active model + user info
+  // GET /api/config â€” current active model + user info
   app.get('/api/config', (_req: Request, res: Response) => {
     const config = loadConfig()
     res.json({
@@ -787,7 +1191,7 @@ export function createApiServer(): Express {
     })
   })
 
-  // POST /api/providers/validate — test an API key without saving it
+  // POST /api/providers/validate â€” test an API key without saving it
   app.post('/api/providers/validate', async (req: Request, res: Response) => {
     const { provider, key, model } = req.body as { provider?: string; key?: string; model?: string }
     if (!provider || !key) { res.status(400).json({ valid: false, error: 'Missing provider or key' }); return }
@@ -872,12 +1276,78 @@ export function createApiServer(): Express {
     }
   })
 
-  // POST /api/goals — start execution loop async
+  // POST /api/keys/validate â€” alias for /api/providers/validate with Ollama support
+  // Used by onboarding modal Test buttons and settings drawer.
+  // Response: { valid: boolean, status?: number, models?: number, error?: string, provider: string }
+  app.post('/api/keys/validate', async (req: Request, res: Response) => {
+    const { provider, key } = req.body as { provider?: string; key?: string }
+    if (!provider) { res.status(400).json({ error: 'Unknown provider' }); return }
+
+    try {
+      if (provider === 'gemini') {
+        const r = await fetch(
+          'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+          {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+            body:    JSON.stringify({ model: 'gemini-2.0-flash', messages: [{ role: 'user', content: 'hi' }], max_tokens: 5 }),
+            signal:  AbortSignal.timeout(8000),
+          }
+        )
+        return res.json({ valid: r.ok, status: r.status, provider: 'gemini' })
+      }
+
+      if (provider === 'groq') {
+        const r = await fetch(
+          'https://api.groq.com/openai/v1/chat/completions',
+          {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+            body:    JSON.stringify({ model: 'llama-3.1-8b-instant', messages: [{ role: 'user', content: 'hi' }], max_tokens: 5 }),
+            signal:  AbortSignal.timeout(8000),
+          }
+        )
+        return res.json({ valid: r.ok, status: r.status, provider: 'groq' })
+      }
+
+      if (provider === 'ollama') {
+        const r = await fetch('http://localhost:11434/api/tags', { signal: AbortSignal.timeout(3000) })
+        const data = await r.json() as { models?: unknown[] }
+        return res.json({ valid: r.ok, models: data.models?.length || 0, provider: 'ollama' })
+      }
+
+      // For all other providers, delegate to the full validate handler
+      const testMessages = [{ role: 'user', content: 'Say "ok" in one word only.' }]
+      const testModel    = getDefaultModel(provider)
+      let valid = false
+      let error = ''
+
+      if (provider === 'openrouter') {
+        const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method:  'POST',
+          headers: {
+            'Content-Type': 'application/json', 'Authorization': `Bearer ${key}`,
+            'HTTP-Referer': 'http://localhost:3000', 'X-Title': 'DevOS',
+          },
+          body:    JSON.stringify({ model: 'meta-llama/llama-3.2-1b-instruct:free', messages: testMessages, max_tokens: 5 }),
+          signal:  AbortSignal.timeout(8000),
+        })
+        valid = r.ok
+        if (!r.ok) error = `${r.status}`
+      }
+
+      res.json({ valid, status: valid ? 200 : 401, error: valid ? undefined : error, provider })
+    } catch (err: any) {
+      res.json({ valid: false, error: err.message, provider })
+    }
+  })
+
+  // POST /api/goals â€” start execution loop async
   app.post('/api/goals', async (req: Request, res: Response) => {
     const { title, description } = req.body as { title?: string; description?: string }
     if (!title) return res.status(400).json({ error: 'title required' })
     const goal = description ? `${title}: ${description}` : title
-    // Run async — don't await so UI gets immediate response
+    // Run async â€” don't await so UI gets immediate response
     import('../core/executionLoop').then(({ runGoalLoop }) => {
       runGoalLoop(goal).catch(console.error)
     })
@@ -885,7 +1355,7 @@ export function createApiServer(): Express {
       id:      `goal_${Date.now()}`,
       title,
       status:  'running',
-      message: 'Goal started — watch LivePulse for progress',
+      message: 'Goal started â€” watch LivePulse for progress',
     })
   })
 
@@ -894,7 +1364,7 @@ export function createApiServer(): Express {
     res.json({ goals: [], message: 'Goal history coming soon' })
   })
 
-  // GET /api/evolution — self-evolution stats
+  // GET /api/evolution â€” self-evolution stats
   app.get('/api/evolution', async (_req: Request, res: Response) => {
     try {
       const { evolutionAnalyzer } = await import('../core/evolutionAnalyzer')
@@ -927,7 +1397,7 @@ export function createApiServer(): Express {
     })
   })
 
-  // GET /api/stream — SSE keep-alive
+  // GET /api/stream â€” SSE keep-alive
   app.get('/api/stream', (req: Request, res: Response) => {
     res.setHeader('Content-Type',  'text/event-stream')
     res.setHeader('Cache-Control', 'no-cache')
@@ -937,19 +1407,48 @@ export function createApiServer(): Express {
     req.on('close', () => clearInterval(interval))
   })
 
-  // ── Computer-use routes ──────────────────────────────────────
+  // GET /api/pulse â€” SSE stream of LivePulse events (tool:start, tool:done, plan:start, plan:done)
+  // Dashboard connects here to show real-time execution activity.
+  app.get('/api/pulse', (req: Request, res: Response) => {
+    res.setHeader('Content-Type',      'text/event-stream')
+    res.setHeader('Cache-Control',     'no-cache')
+    res.setHeader('Connection',        'keep-alive')
+    res.setHeader('Access-Control-Allow-Origin', '*')
+    res.flushHeaders()
+
+    // Send ping every 25s to keep connection alive
+    const ping = setInterval(() => {
+      try { res.write('data: {"event":"ping"}\n\n') } catch {}
+    }, 25_000)
+
+    // Bridge livePulse EventEmitter â†’ SSE
+    const onPulse = (event: any) => {
+      try {
+        const payload = JSON.stringify({ event: event.type, data: event, ts: Date.now() })
+        res.write(`data: ${payload}\n\n`)
+      } catch { /* client disconnected */ }
+    }
+    livePulse.on('any', onPulse)
+
+    req.on('close', () => {
+      clearInterval(ping)
+      livePulse.removeListener('any', onPulse)
+    })
+  })
+
+  // â”€â”€ Computer-use routes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // POST /api/automate, POST /api/automate/stop,
   // GET  /api/automate/log, GET /api/automate/session
   registerComputerUseRoutes(app)
 
-  // GET /api/plan/:id — get plan status
+  // GET /api/plan/:id â€” get plan status
   app.get('/api/plan/:id', (req: Request, res: Response) => {
     const plan = planTool.getPlan(String(req.params.id))
     if (!plan) { res.status(404).json({ error: 'Plan not found' }); return }
     res.json(plan)
   })
 
-  // GET /api/plans/recent — list 10 most recent task plans
+  // GET /api/plans/recent â€” list 10 most recent task plans
   app.get('/api/plans/recent', (_req: Request, res: Response) => {
     try {
       const tasksDir = path.join(process.cwd(), 'workspace', 'tasks')
@@ -981,7 +1480,7 @@ export function createApiServer(): Express {
     }
   })
 
-  // GET /api/skills — list all available skills
+  // GET /api/skills â€” list all available skills
   app.get('/api/skills', (_req: Request, res: Response) => {
     try {
       const skills = skillLoader.loadAll()
@@ -997,7 +1496,7 @@ export function createApiServer(): Express {
     }
   })
 
-  // GET /api/skills/relevant?q=query — find skills for a query
+  // GET /api/skills/relevant?q=query â€” find skills for a query
   app.get('/api/skills/relevant', (req: Request, res: Response) => {
     const query = (req.query.q as string) || ''
     if (!query) { res.status(400).json({ error: 'q parameter required' }); return }
@@ -1005,14 +1504,14 @@ export function createApiServer(): Express {
     res.json(relevant.map(s => ({ name: s.name, description: s.description, tags: s.tags })))
   })
 
-  // POST /api/skills/refresh — reload all skills from disk
+  // POST /api/skills/refresh â€” reload all skills from disk
   app.post('/api/skills/refresh', (_req: Request, res: Response) => {
     skillLoader.refresh()
     const skills = skillLoader.loadAll()
     res.json({ success: true, count: skills.length, skills: skills.map(s => s.name) })
   })
 
-  // GET /api/tasks — list all tasks with status
+  // GET /api/tasks â€” list all tasks with status
   app.get('/api/tasks', (_req: Request, res: Response) => {
     const tasks = taskStateManager.listAll()
     res.json(tasks.map((t: any) => ({
@@ -1027,14 +1526,14 @@ export function createApiServer(): Express {
     })))
   })
 
-  // GET /api/tasks/:id — get single task detail
+  // GET /api/tasks/:id â€” get single task detail
   app.get('/api/tasks/:id', (req: Request, res: Response) => {
     const state = taskStateManager.load(String(req.params.id))
     if (!state) { res.status(404).json({ error: 'Task not found' }); return }
     res.json(state)
   })
 
-  // POST /api/tasks/:id/retry — reset a failed task and re-run recovery
+  // POST /api/tasks/:id/retry â€” reset a failed task and re-run recovery
   app.post('/api/tasks/:id/retry', async (req: Request, res: Response) => {
     const state = taskStateManager.load(String(req.params.id))
     if (!state) { res.status(404).json({ error: 'Task not found' }); return }
@@ -1048,7 +1547,7 @@ export function createApiServer(): Express {
     res.json({ success: true, message: `Retrying task ${req.params.id}` })
   })
 
-  // GET /api/memory — return current conversation facts and recent history
+  // GET /api/memory â€” return current conversation facts and recent history
   app.get('/api/memory', (_req: Request, res: Response) => {
     res.json({
       facts:         conversationMemory.getFacts(),
@@ -1056,13 +1555,13 @@ export function createApiServer(): Express {
     })
   })
 
-  // DELETE /api/memory — clear all conversation memory
+  // DELETE /api/memory â€” clear all conversation memory
   app.delete('/api/memory', (_req: Request, res: Response) => {
     conversationMemory.clear()
     res.json({ success: true, message: 'Conversation memory cleared' })
   })
 
-  // GET /api/memory/semantic?q=query — semantic search or stats
+  // GET /api/memory/semantic?q=query â€” semantic search or stats
   app.get('/api/memory/semantic', (req: Request, res: Response) => {
     const query = req.query.q as string
     if (!query) {
@@ -1073,7 +1572,7 @@ export function createApiServer(): Express {
     res.json({ query, results })
   })
 
-  // GET /api/memory/graph?entity=name — entity relationships or graph overview
+  // GET /api/memory/graph?entity=name â€” entity relationships or graph overview
   app.get('/api/memory/graph', (req: Request, res: Response) => {
     const entity = req.query.entity as string
     if (entity) {
@@ -1086,7 +1585,7 @@ export function createApiServer(): Express {
     }
   })
 
-  // GET /api/memory/learning?q=query — learning stats or similar past experiences
+  // GET /api/memory/learning?q=query â€” learning stats or similar past experiences
   app.get('/api/memory/learning', (req: Request, res: Response) => {
     const query = req.query.q as string
     res.json({
@@ -1095,12 +1594,12 @@ export function createApiServer(): Express {
     })
   })
 
-  // GET /api/memory/sessions — list all session IDs
+  // GET /api/memory/sessions â€” list all session IDs
   app.get('/api/memory/sessions', (_req: Request, res: Response) => {
     res.json({ sessions: conversationMemory.getSessions() })
   })
 
-  // GET /api/screenshot — serve latest screenshot from workspace/screenshots/
+  // GET /api/screenshot â€” serve latest screenshot from workspace/screenshots/
   app.get('/api/screenshot', (_req: Request, res: Response) => {
     try {
       const dir = path.join(process.cwd(), 'workspace', 'screenshots')
@@ -1116,7 +1615,7 @@ export function createApiServer(): Express {
     } catch { res.status(500).end() }
   })
 
-  // GET /api/stocks — fetch stock data via Yahoo Finance or DuckDuckGo
+  // GET /api/stocks â€” fetch stock data via Yahoo Finance or DuckDuckGo
   app.get('/api/stocks', async (req: Request, res: Response) => {
     const query = (req.query.q as string) || 'NSE top gainers'
     try {
@@ -1137,7 +1636,7 @@ export function createApiServer(): Express {
     res.status(500).json({ error: 'Stock data unavailable' })
   })
 
-  // GET /api/screen/size — get primary screen dimensions
+  // GET /api/screen/size â€” get primary screen dimensions
   app.get('/api/screen/size', async (_req: Request, res: Response) => {
     try {
       const size = await getScreenSize()
@@ -1147,7 +1646,7 @@ export function createApiServer(): Express {
     }
   })
 
-  // POST /api/screenshot/capture — trigger a screenshot and return its path
+  // POST /api/screenshot/capture â€” trigger a screenshot and return its path
   app.post('/api/screenshot/capture', async (_req: Request, res: Response) => {
     try {
       const filepath = await captureScreen()
@@ -1157,25 +1656,25 @@ export function createApiServer(): Express {
     }
   })
 
-  // GET /api/mcp/list — list connected MCP plugins (stub)
+  // GET /api/mcp/list â€” list connected MCP plugins (stub)
   app.get('/api/mcp/list', (_req: Request, res: Response) => {
     res.json({ plugins: [] })
   })
 
-  // POST /api/mcp/connect — connect a new MCP plugin (stub)
+  // POST /api/mcp/connect â€” connect a new MCP plugin (stub)
   app.post('/api/mcp/connect', (_req: Request, res: Response) => {
     res.json({ success: true })
   })
 
-  // ── Voice endpoints ───────────────────────────────────────────
+  // â”€â”€ Voice endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-  // GET /api/voice/status — check STT and TTS availability
+  // GET /api/voice/status â€” check STT and TTS availability
   app.get('/api/voice/status', async (_req: Request, res: Response) => {
     const [stt, tts] = await Promise.all([checkVoiceAvailable(), checkTTSAvailable()])
     res.json({ stt, tts })
   })
 
-  // POST /api/voice/record — record audio from microphone (Pro only)
+  // POST /api/voice/record â€” record audio from microphone (Pro only)
   // body: { duration?: number }  (ms, default 5000)
   app.post('/api/voice/record', async (req: Request, res: Response) => {
     if (!isPro()) {
@@ -1190,7 +1689,7 @@ export function createApiServer(): Express {
     }
   })
 
-  // POST /api/voice/transcribe — transcribe a recorded audio file
+  // POST /api/voice/transcribe â€” transcribe a recorded audio file
   // body: { path: string }
   app.post('/api/voice/transcribe', async (req: Request, res: Response) => {
     try {
@@ -1203,7 +1702,7 @@ export function createApiServer(): Express {
     }
   })
 
-  // POST /api/voice/speak — speak text aloud (non-blocking) (Pro only)
+  // POST /api/voice/speak â€” speak text aloud (non-blocking) (Pro only)
   // body: { text: string, voice?: string }
   app.post('/api/voice/speak', async (req: Request, res: Response) => {
     if (!isPro()) {
@@ -1212,7 +1711,7 @@ export function createApiServer(): Express {
     try {
       const { text, voice } = req.body as { text?: string; voice?: string }
       if (!text) { res.status(400).json({ error: 'text required' }); return }
-      // Fire and forget — response returns immediately while audio plays
+      // Fire and forget â€” response returns immediately while audio plays
       speak(text, voice).catch(e => console.error('[TTS] speak error:', e.message))
       res.json({ success: true })
     } catch (e: any) {
@@ -1220,7 +1719,7 @@ export function createApiServer(): Express {
     }
   })
 
-  // ── 404 catch-all ─────────────────────────────────────────────
+  // â”€â”€ 404 catch-all â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   app.use((_req: Request, res: Response) => {
     res.status(404).json({ error: 'Not found' })
   })
@@ -1228,7 +1727,7 @@ export function createApiServer(): Express {
   return app
 }
 
-// ── Helper ────────────────────────────────────────────────────
+// â”€â”€ Helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function getDefaultModel(provider: string): string {
   const defaults: Record<string, string> = {
@@ -1241,7 +1740,7 @@ export function getDefaultModel(provider: string): string {
   return defaults[provider] || 'llama-3.3-70b-versatile'
 }
 
-// ── Startup health check ──────────────────────────────────────
+// â”€â”€ Startup health check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Validates that every core subsystem initialises without throwing.
 // Logs a summary so operators can spot broken modules at boot time.
 
@@ -1298,15 +1797,15 @@ export function startupCheck(): void {
 
   // Print summary
   const allOk = checks.every(c => c.ok)
-  console.log(`[Startup] Health check — ${allOk ? 'ALL OK' : 'SOME FAILED'}`)
+  console.log(`[Startup] Health check â€” ${allOk ? 'ALL OK' : 'SOME FAILED'}`)
   for (const c of checks) {
-    const icon = c.ok ? '✓' : '✗'
-    const detail = c.detail ? ` — ${c.detail}` : ''
+    const icon = c.ok ? 'âœ“' : 'âœ—'
+    const detail = c.detail ? ` â€” ${c.detail}` : ''
     console.log(`[Startup]   ${icon} ${c.name}${detail}`)
   }
 }
 
-// ── Server launcher ───────────────────────────────────────────
+// â”€â”€ Server launcher â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function startApiServer(portArg?: number): Express {
   // Read port from config/api.json with sensible fallback
@@ -1321,7 +1820,7 @@ export function startApiServer(portArg?: number): Express {
     }
   } catch { /* use defaults */ }
 
-  // ── TASK 2: Process-level error handlers — prevent silent crashes ─
+  // â”€â”€ TASK 2: Process-level error handlers â€” prevent silent crashes â”€
   process.on('unhandledRejection', (reason: any) => {
     console.error('[Process] Unhandled promise rejection:', reason?.message ?? reason)
     try { livePulse.error('Aiden', `Unhandled rejection: ${String(reason?.message ?? reason).slice(0, 100)}`) } catch {}
@@ -1330,60 +1829,47 @@ export function startApiServer(portArg?: number): Express {
     console.error('[Process] Uncaught exception:', err.message)
     console.error('[Process] Stack:', err.stack?.split('\n').slice(0, 5).join('\n'))
     try { livePulse.error('Aiden', `Uncaught exception: ${err.message.slice(0, 100)}`) } catch {}
-    // Do NOT exit — let the server keep running for other requests
+    // Do NOT exit â€” let the server keep running for other requests
   })
 
   const app    = createApiServer()
   const server = http.createServer(app)
 
-  // ── Startup health check ──────────────────────────────────────
+  // â”€â”€ Startup health check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   try { startupCheck() } catch (e: any) {
     console.error('[Startup] startupCheck threw:', e.message)
   }
 
-  // ── WebSocket terminal ────────────────────────────────────────
+  // â”€â”€ WebSocket server â€” LivePulse bridge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const wss = new WebSocketServer({ server })
+  const wsClients = new Set<any>()
 
   wss.on('connection', (ws) => {
-    ws.send('DevOS v1.0 — Terminal connected\r\n')
-    ws.send('Type "devos help" for available commands\r\n')
-    ws.send('$ ')
-
-    let inputBuffer = ''
-
-    ws.on('message', (data) => {
-      const input = data.toString()
-
-      // Handle special keys
-      if (input === '\r' || input === '\n') {
-        // Enter pressed — process the buffered command
-        ws.send('\r\n')
-        if (inputBuffer.trim()) {
-          ws.send(`command received: ${inputBuffer}\r\n`)
+    wsClients.add(ws)
+    // Send last 20 history events to newly connected client so UI isn't blank
+    const recentHistory = livePulse.getHistory().slice(-20)
+    recentHistory.forEach(event => {
+      try {
+        if (ws.readyState === ws.OPEN) {
+          ws.send(JSON.stringify({ type: 'pulse', event }))
         }
-        inputBuffer = ''
-        ws.send('$ ')
-      } else if (input === '\x7f' || input === '\b') {
-        // Backspace
-        if (inputBuffer.length > 0) {
-          inputBuffer = inputBuffer.slice(0, -1)
-          ws.send('\b \b') // erase character on screen
-        }
-      } else if (input === '\x03') {
-        // Ctrl+C
-        ws.send('^C\r\n$ ')
-        inputBuffer = ''
-      } else {
-        // Regular character — echo it and add to buffer
-        inputBuffer += input
-        ws.send(input) // echo the character without newline
-      }
+      } catch {}
     })
-
-    ws.on('close', () => {})
+    ws.on('close', () => wsClients.delete(ws))
+    ws.on('error', () => wsClients.delete(ws))
   })
 
-  // Stale task cleanup — mark running tasks older than 1h as failed (runs before recovery)
+  // Forward ALL livePulse events to ALL connected WebSocket clients
+  livePulse.on('any', (event) => {
+    const payload = JSON.stringify({ type: 'pulse', event })
+    wsClients.forEach(ws => {
+      try {
+        if (ws.readyState === ws.OPEN) ws.send(payload)
+      } catch {}
+    })
+  })
+
+  // Stale task cleanup â€” mark running tasks older than 1h as failed (runs before recovery)
   try {
     const tasksDir = path.join(process.cwd(), 'workspace', 'tasks')
     if (fs.existsSync(tasksDir)) {
@@ -1408,16 +1894,19 @@ export function startApiServer(portArg?: number): Express {
     }
   } catch {}
 
-  // Run crash recovery on startup — non-blocking, finds 'running' tasks from prior session
+  // Run crash recovery on startup â€” non-blocking, finds 'running' tasks from prior session
   recoverTasks().catch(e => console.error('[Startup] Recovery error:', e.message))
 
   // Start background license refresh (12-hour interval, silent)
   startLicenseRefresh()
 
+  // Log provider chain before listening so it's visible in startup log
+  try { logProviderStatus() } catch {}
+
   server.listen(port, host, () => {
-    console.log(`[API] DevOS v2.0 · Aiden running at http://${host}:${port}`)
+    console.log(`[API] DevOS v2.0 Â· Aiden running at http://${host}:${port}`)
     console.log(`[API] Health: http://${host}:${port}/api/health`)
-    console.log(`[API] Terminal: ws://${host}:${port}/terminal`)
+    console.log(`[API] LivePulse WS: ws://${host}:${port}`)
   })
 
   return app
@@ -1429,7 +1918,7 @@ async function streamChat(
   message:  string,
   history:  { role: string; content: string }[],
   userName: string,
-  provider: any,
+  _provider: any,
   model:    string,
   apiName:  string,
   send:     (data: object) => void,
@@ -1445,14 +1934,173 @@ Today: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long'
     { role: 'user', content: message },
   ]
 
+  // Resolve the actual API key and provider type from config
+  const cfg      = loadConfig()
+  const apiEntry = cfg.providers.apis.find(a => a.name === apiName)
+  const providerType = apiEntry?.provider ?? 'ollama'
+  const rawKey   = apiEntry?.key ?? ''
+  const apiKey   = rawKey.startsWith('env:')
+    ? (process.env[rawKey.replace('env:', '')] || '')
+    : rawKey
+
   let streamEnded = false
   const timeout = setTimeout(() => {
     if (!streamEnded) send({ done: true, error: 'Chat timeout' })
-  }, 30000)
+  }, 35000)
 
-  await provider.generateStream(msgs, model, (token: string) => {
-    send({ token, done: false, provider: apiName })
-  })
+  try {
+    if (providerType === 'gemini') {
+      // ── Gemini via OpenAI-compat endpoint ─────────────────────
+      const resp = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({ model, messages: msgs, stream: true }),
+      })
+      if (!resp.ok || !resp.body) {
+        const errText = await resp.text().catch(() => resp.statusText)
+        if (resp.status === 429) markRateLimited(apiName)
+        throw new Error(`Gemini ${resp.status}: ${errText}`)
+      }
+      const reader = resp.body.getReader()
+      const dec    = new TextDecoder()
+      let   buf    = ''
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+        buf += dec.decode(value, { stream: true })
+        const lines = buf.split('\n')
+        buf = lines.pop() ?? ''
+        for (const line of lines) {
+          const trimmed = line.trim()
+          if (!trimmed.startsWith('data:')) continue
+          const data = trimmed.slice(5).trim()
+          if (data === '[DONE]') break
+          try {
+            const parsed = JSON.parse(data)
+            const token  = parsed.choices?.[0]?.delta?.content
+            if (token) send({ token, done: false, provider: apiName })
+          } catch { /* skip malformed chunks */ }
+        }
+      }
+
+    } else if (providerType === 'ollama') {
+      // ── Ollama — local streaming ───────────────────────────────
+      const resp = await fetch('http://localhost:11434/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model, messages: msgs, stream: true }),
+      })
+      if (!resp.ok || !resp.body) {
+        throw new Error(`Ollama ${resp.status}: ${resp.statusText}`)
+      }
+      const reader = resp.body.getReader()
+      const dec    = new TextDecoder()
+      let   buf    = ''
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+        buf += dec.decode(value, { stream: true })
+        const lines = buf.split('\n')
+        buf = lines.pop() ?? ''
+        for (const line of lines) {
+          if (!line.trim()) continue
+          try {
+            const parsed = JSON.parse(line)
+            const token  = parsed.message?.content
+            if (token) send({ token, done: false, provider: apiName })
+          } catch { /* skip malformed */ }
+        }
+      }
+
+    } else {
+      // ── OpenAI-compatible (Groq, OpenRouter, Cerebras, etc.) ──
+      const ENDPOINTS: Record<string, string> = {
+        groq:       'https://api.groq.com/openai/v1/chat/completions',
+        openrouter: 'https://openrouter.ai/api/v1/chat/completions',
+        cerebras:   'https://api.cerebras.ai/v1/chat/completions',
+        openai:     'https://api.openai.com/v1/chat/completions',
+      }
+      const endpoint = ENDPOINTS[providerType] ?? ENDPOINTS['groq']
+      const resp = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+          ...(providerType === 'openrouter' ? { 'HTTP-Referer': 'https://devos.local', 'X-Title': 'DevOS' } : {}),
+        },
+        body: JSON.stringify({ model, messages: msgs, stream: true }),
+      })
+      if (!resp.ok || !resp.body) {
+        const errText = await resp.text().catch(() => resp.statusText)
+        if (resp.status === 429) markRateLimited(apiName)
+        throw new Error(`${providerType} ${resp.status}: ${errText}`)
+      }
+      const reader = resp.body.getReader()
+      const dec    = new TextDecoder()
+      let   buf    = ''
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+        buf += dec.decode(value, { stream: true })
+        const lines = buf.split('\n')
+        buf = lines.pop() ?? ''
+        for (const line of lines) {
+          const trimmed = line.trim()
+          if (!trimmed.startsWith('data:')) continue
+          const data = trimmed.slice(5).trim()
+          if (data === '[DONE]') break
+          try {
+            const parsed = JSON.parse(data)
+            const token  = parsed.choices?.[0]?.delta?.content
+            if (token) send({ token, done: false, provider: apiName })
+          } catch { /* skip malformed chunks */ }
+        }
+      }
+    }
+  } catch (err: any) {
+    // Primary failed — try Ollama as last-resort fallback
+    if (providerType !== 'ollama') {
+      console.warn(`[streamChat] ${providerType} failed (${err?.message}) — falling back to Ollama`)
+      try {
+        const ollamaModel = cfg.model?.activeModel || 'mistral:7b'
+        const resp = await fetch('http://localhost:11434/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: ollamaModel, messages: msgs, stream: true }),
+        })
+        if (resp.ok && resp.body) {
+          const reader = resp.body.getReader()
+          const dec    = new TextDecoder()
+          let   buf    = ''
+          while (true) {
+            const { value, done } = await reader.read()
+            if (done) break
+            buf += dec.decode(value, { stream: true })
+            const lines = buf.split('\n')
+            buf = lines.pop() ?? ''
+            for (const line of lines) {
+              if (!line.trim()) continue
+              try {
+                const parsed = JSON.parse(line)
+                const token  = parsed.message?.content
+                if (token) send({ token, done: false, provider: 'ollama' })
+              } catch { /* skip */ }
+            }
+          }
+          streamEnded = true
+          clearTimeout(timeout)
+          return
+        }
+      } catch (ollamaErr) {
+        console.error('[streamChat] Ollama fallback also failed:', ollamaErr)
+      }
+    }
+    // Both failed — send a graceful error token
+    send({ token: `Sorry, I could not reach any AI provider right now. Error: ${err?.message ?? 'unknown'}`, done: false, provider: 'error' })
+  }
 
   streamEnded = true
   clearTimeout(timeout)

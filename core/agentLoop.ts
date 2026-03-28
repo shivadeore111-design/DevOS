@@ -18,8 +18,11 @@ import { skillLoader }                     from './skillLoader'
 import { learningMemory }                  from './learningMemory'
 import { conversationMemory }             from './conversationMemory'
 import { getNextAvailableAPI, markRateLimited, incrementUsage } from '../providers/router'
+import { ollamaProvider } from '../providers/ollama'
+import { loadConfig }     from '../providers/index'
 import { knowledgeBase } from './knowledgeBase'
 import { skillTeacher }  from './skillTeacher'
+import { AIDEN_RESPONDER_SYSTEM } from './aidenPersonality'
 import * as nodeFs             from 'fs'
 import * as nodePath           from 'path'
 import * as nodeOs             from 'os'
@@ -41,6 +44,7 @@ export interface AgentPlan {
   planId?:            string
   workspaceDir?:      string
   phases?:            Phase[]
+  reason?:            string
 }
 
 export interface StepResult {
@@ -225,6 +229,120 @@ function inferPhasesFromSteps(
   return phases
 }
 
+// ── Keyword-based plan inference — fallback when LLM unavailable ──────
+// Detects simple single-tool intents from the message text.
+
+function inferPlanFromKeywords(message: string): any | null {
+  const m = message.toLowerCase()
+
+  // notify
+  if (/send\s+(a\s+)?(desktop\s+)?notif|notify\s+me|desktop\s+alert/.test(m)) {
+    const msgMatch = message.match(/saying\s+(.+?)(?:\s*$)/i)
+    const notifMsg = msgMatch ? msgMatch[1].trim() : message
+    return {
+      goal: message, requires_execution: true,
+      plan: [{ step: 1, tool: 'notify', input: { message: notifMsg }, description: 'Send notification' }],
+      phases: [],
+    }
+  }
+
+  // file_read — matches "read the file /path/to/file", "read file C:\...", "tell me what it says"
+  const fileReadMatch = message.match(/read\s+(?:the\s+)?file\s+([^\s"']+)/i) ||
+                        message.match(/read\s+([A-Z]:[/\\][^\s"']+)/i) ||
+                        message.match(/read\s+(\/[^\s"']+\.\w{1,6})/i)
+  if (fileReadMatch) {
+    const filePath = fileReadMatch[1].trim()
+    return {
+      goal: message, requires_execution: true,
+      plan: [{ step: 1, tool: 'file_read', input: { path: filePath }, description: `Read ${filePath}` }],
+      phases: [],
+    }
+  }
+
+  // file_write — matches "write ... to /path/file"
+  const fileWriteMatch = message.match(/write\s+(.+?)\s+to\s+([^\s"']+\.\w{1,6})/i)
+  if (fileWriteMatch) {
+    const content  = fileWriteMatch[1].trim()
+    const filePath = fileWriteMatch[2].trim()
+    return {
+      goal: message, requires_execution: true,
+      plan: [{ step: 1, tool: 'file_write', input: { path: filePath, content }, description: `Write to ${filePath}` }],
+      phases: [],
+    }
+  }
+
+  // fetch_url — matches "Fetch https://...", "fetch http://...", "get https://..."
+  const fetchUrlMatch = message.match(/(?:fetch|get|open|load)\s+(https?:\/\/[^\s"']+)/i) ||
+                        message.match(/(https?:\/\/[^\s"']+)/i)
+  if (fetchUrlMatch) {
+    const url = fetchUrlMatch[1].trim()
+    return {
+      goal: message, requires_execution: true,
+      plan: [{ step: 1, tool: 'fetch_url', input: { url }, description: `Fetch ${url}` }],
+      phases: [],
+    }
+  }
+
+  // web_search / search the web
+  if (/search\s+(the\s+)?web|web\s+search|look\s+up|find\s+info/.test(m)) {
+    const query = message.replace(/search\s+(the\s+)?web\s+(for\s+)?/i, '').replace(/look\s+up\s+/i, '').trim()
+    return {
+      goal: message, requires_execution: true,
+      plan: [{ step: 1, tool: 'web_search', input: { query: query || message }, description: 'Search' }],
+      phases: [],
+    }
+  }
+
+  // get_stocks / stock gainers
+  if (/top\s+(gainers|losers|active)|nse\s+top|bse\s+top|stock\s+(market|data|gainers)|get\s+stocks/.test(m)) {
+    const isLosers = /loser/.test(m)
+    const market   = /bse/.test(m) ? 'BSE' : 'NSE'
+    const type     = isLosers ? 'losers' : /active/.test(m) ? 'active' : 'gainers'
+    return {
+      goal: message, requires_execution: true,
+      plan: [{ step: 1, tool: 'get_stocks', input: { market, type }, description: `Get ${market} top ${type}` }],
+      phases: [],
+    }
+  }
+
+  // system_info
+  if (/system\s+info|hardware\s+info|what.{0,10}(cpu|ram|memory|os|specs)|show\s+system|computer\s+specs/.test(m)) {
+    return {
+      goal: message, requires_execution: true,
+      plan: [{ step: 1, tool: 'system_info', input: {}, description: 'Get system info' }],
+      phases: [],
+    }
+  }
+
+  // run_python — matches "Run Python: print(...)", "run python code ...", etc.
+  const pyMatch = message.match(/run\s+python\s*[:：]?\s*(.+)/i) ||
+                  message.match(/python\s+script\s+(?:to\s+)?(.+)/i) ||
+                  message.match(/execute\s+python\s*[:：]?\s*(.+)/i)
+  if (pyMatch) {
+    // Use the captured code portion directly as the script
+    const script = pyMatch[1].trim()
+    return {
+      goal: message, requires_execution: true,
+      plan: [{ step: 1, tool: 'run_python', input: { script }, description: 'Run Python' }],
+      phases: [],
+    }
+  }
+
+  // run_node — matches "Run Node.js: console.log(...)", "Run JavaScript: ...", etc.
+  const nodeMatch = message.match(/run\s+(?:node(?:\.js)?|javascript|js)\s*[:：]?\s*(.+)/i) ||
+                    message.match(/execute\s+(?:node(?:\.js)?|javascript|js)\s*[:：]?\s*(.+)/i)
+  if (nodeMatch) {
+    const code = nodeMatch[1].trim()
+    return {
+      goal: message, requires_execution: true,
+      plan: [{ step: 1, tool: 'run_node', input: { code }, description: 'Run Node.js' }],
+      phases: [],
+    }
+  }
+
+  return null
+}
+
 // ── STEP 1: planWithLLM ────────────────────────────────────────
 
 export async function planWithLLM(
@@ -236,13 +354,26 @@ export async function planWithLLM(
   memoryContext?: string,
 ): Promise<AgentPlan> {
 
+  // ── Vague goal detection — ask for clarification before planning ──
+  const VAGUE_PATTERNS = [/\bthe thing\b/i, /\bthe stuff\b/i, /\bthe place\b/i, /\bdo it\b$/i, /\bfix it\b$/i]
+  if (VAGUE_PATTERNS.some(p => p.test(message))) {
+    return {
+      goal:               message,
+      requires_execution: false,
+      plan:               [],
+      phases:             [],
+      direct_response:    'I need more detail. What specifically should I do, with what, and where?',
+      reason:             'goal_too_vague',
+    }
+  }
+
   const ALLOWED_TOOLS = [
     'web_search', 'fetch_page', 'open_browser', 'browser_extract',
     'browser_click', 'browser_type', 'file_write', 'file_read',
     'file_list', 'shell_exec', 'run_python', 'run_node',
     'system_info', 'notify', 'deep_research', 'get_stocks',
     'mouse_move', 'mouse_click', 'keyboard_type', 'keyboard_press',
-    'screenshot', 'screen_read', 'vision_loop',
+    'screenshot', 'screen_read', 'vision_loop', 'wait',
   ]
 
   // Load any relevant skills to guide planning
@@ -299,6 +430,17 @@ TOOL INPUT RULES:
 - shell_exec: { "command": "actual powershell command" }
 - fetch_page: { "url": "https://exact-url.com" }
 - get_stocks: { "market": "NSE", "type": "gainers" }  — type: gainers | losers | active
+- wait: { "ms": 2000 }  — Pause execution. Use after open_browser, after clicks, after any UI action that needs time to complete. Max 5000ms.
+
+COMPUTER CONTROL RULES — follow strictly when controlling mouse/keyboard/browser:
+- ALWAYS use open_browser BEFORE keyboard_type or mouse_click on browser
+- ALWAYS add a wait step of 2000ms after open_browser before any interaction
+- For web searches: step 1 = open_browser(url), step 2 = wait(2000), step 3 = keyboard_press(ctrl+l), step 4 = keyboard_type(query), step 5 = keyboard_press(enter)
+- For clicking browser address bar: use keyboard_press(ctrl+l) to focus it first
+- After typing a URL: use keyboard_press(enter) to navigate
+- For vision_loop tasks: set max_steps to at least 5
+- Never assume the browser is already open — always open it first
+- After any mouse_click: add wait(800) to let UI respond
 
 URL RULES:
 - Always use COMPLETE URLs — never truncate a URL in a tool input
@@ -330,6 +472,38 @@ Output ONLY valid JSON, nothing else:`
   ]
 
   // ── Provider retry loop — up to 3 attempts, rotates on failure ──
+  // Pre-flight: if the caller passed a rate-limited provider, rotate immediately
+  // so attempt 0 never fires against a known-bad API.
+  {
+    const cfg = loadConfig()
+    // Match by resolved key so we pick the exact entry, not just any entry with the same provider type
+    const passedEntry = cfg.providers.apis.find(a => {
+      if (!a.enabled) return false
+      const resolvedKey = a.key.startsWith('env:')
+        ? (process.env[a.key.replace('env:', '')] || '')
+        : a.key
+      return a.provider === provider && resolvedKey === apiKey
+    })
+    if (passedEntry?.rateLimited) {
+      console.log(`[Planner] Pre-flight: ${provider} is rate-limited — rotating before attempt 0`)
+      const next = getNextAvailableAPI()
+      if (next) {
+        apiKey   = next.entry.key.startsWith('env:')
+          ? (process.env[next.entry.key.replace('env:', '')] || '')
+          : next.entry.key
+        model    = next.entry.model
+        provider = next.entry.provider
+        console.log(`[Planner] Pre-flight: rotated to ${next.entry.name} (${provider}/${model})`)
+      } else {
+        // All APIs exhausted — fall through to Ollama
+        const ollamaCfg = loadConfig()
+        apiKey   = ''
+        model    = ollamaCfg.model?.activeModel || 'mistral:7b'
+        provider = 'ollama'
+        console.log(`[Planner] Pre-flight: no APIs available — using Ollama (${model})`)
+      }
+    }
+  }
   let curApiKey   = apiKey
   let curModel    = model
   let curProvider = provider
@@ -386,13 +560,81 @@ Output ONLY valid JSON, nothing else:`
         curModel    = next.entry.model
         curProvider = next.entry.provider
         console.log(`[Planner] Rotating to ${next.entry.name} (${curProvider}/${curModel})`)
+      } else {
+        // No cloud APIs available — switch to Ollama for next attempt
+        const cfg = loadConfig()
+        curApiKey   = ''
+        curModel    = cfg.model?.activeModel || 'mistral:7b'
+        curProvider = 'ollama'
+        console.log(`[Planner] No cloud APIs — falling back to Ollama (${curModel})`)
       }
     } catch {}
   }
 
   if (!parsed) {
-    console.warn('[Planner] All attempts failed — direct answer fallback')
-    return { goal: message, requires_execution: false, plan: [], phases: [] }
+    // Final guaranteed attempt with Ollama before giving up
+    // Discover which model is actually installed via api/tags
+    try {
+      const cfg = loadConfig()
+      let ollamaModel = process.env.OLLAMA_MODEL || cfg.model?.activeModel || 'mistral-nemo:12b'
+      try {
+        const tagsRes = await fetch('http://localhost:11434/api/tags', { signal: AbortSignal.timeout(3000) })
+        if (tagsRes.ok) {
+          const tagsData = await tagsRes.json() as any
+          const firstModel = tagsData?.models?.[0]?.name
+          if (firstModel) {
+            ollamaModel = firstModel
+            console.log(`[Planner] Ollama model discovered via api/tags: ${ollamaModel}`)
+          }
+        }
+      } catch { /* Ollama not running — use config model */ }
+
+      console.log(`[Planner] All cloud attempts failed — final Ollama attempt (${ollamaModel})`)
+      const raw = await callLLM(
+        messages.map(m => `${m.role}: ${m.content}`).join('\n'),
+        '', ollamaModel, 'ollama',
+      )
+      if (raw && raw.trim().length > 0) {
+        const jsonMatch = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').match(/\{[\s\S]*\}/)
+        if (jsonMatch) {
+          parsed = JSON.parse(jsonMatch[0])
+          console.log('[Planner] Ollama fallback succeeded')
+        }
+      }
+    } catch (e: any) {
+      console.warn(`[Planner] Ollama fallback failed: ${e.message}`)
+    }
+  }
+
+  if (!parsed) {
+    // Keyword-based plan generation — when all LLMs fail, infer tool from message
+    const heuristicPlan = inferPlanFromKeywords(message)
+    if (heuristicPlan) {
+      console.log(`[Planner] Keyword-based plan: ${JSON.stringify(heuristicPlan.plan.map(s => s.tool))}`)
+      parsed = heuristicPlan
+    }
+  }
+
+  if (!parsed) {
+    console.warn('[Planner] All attempts including Ollama failed — direct answer fallback')
+    return {
+      goal:               message,
+      requires_execution: false,
+      plan:               [],
+      phases:             [],
+      direct_response:    "I couldn't create a plan for that. Could you rephrase your request?",
+    }
+  }
+
+  // Guard against null/empty plan object
+  if (!parsed.plan && !parsed.steps) {
+    return {
+      goal:               message,
+      requires_execution: false,
+      plan:               [],
+      phases:             [],
+      direct_response:    parsed.direct_response || "I'll answer directly.",
+    }
   }
 
   // Validate tool names — reject hallucinated tools
@@ -427,7 +669,7 @@ Output ONLY valid JSON, nothing else:`
   const workspace = new WorkspaceMemory(taskPlan.id)
   workspace.write('goal.txt', message)
 
-  return {
+  const candidatePlan: AgentPlan = {
     goal:               parsed.goal || message,
     requires_execution: parsed.requires_execution === true && orderedPlan.length > 0,
     plan:               orderedPlan,
@@ -435,6 +677,164 @@ Output ONLY valid JSON, nothing else:`
     planId:             taskPlan.id,
     workspaceDir:       taskPlan.workspaceDir,
     phases:             taskPlan.phases,
+  }
+
+  // Validate before returning — log warnings, strip hard-invalid steps
+  const validation = validatePlan(candidatePlan)
+  if (validation.warnings.length > 0) {
+    console.warn(`[Planner] Validation warnings:\n  ${validation.warnings.join('\n  ')}`)
+  }
+  if (!validation.valid) {
+    console.warn(`[Planner] Plan has validation errors:\n  ${validation.errors.join('\n  ')}`)
+
+    // One retry — ask the LLM to fix the plan
+    console.log('[Planner] Retrying with validation errors injected into prompt...')
+    const retryMessages = [
+      ...messages,
+      {
+        role:    'assistant',
+        content: raw.slice(0, 500),
+      },
+      {
+        role:    'user',
+        content: `The plan you produced has errors:\n${validation.errors.join('\n')}\n\nFix these issues and output a corrected JSON plan.`,
+      },
+    ]
+    try {
+      const retryRaw = await callLLM(
+        retryMessages.map(m => `${m.role}: ${m.content}`).join('\n'),
+        curApiKey, curModel, curProvider,
+      )
+      const retryMatch = retryRaw.replace(/```json\s*/g, '').replace(/```\s*/g, '').match(/\{[\s\S]*\}/)
+      if (retryMatch) {
+        const retryParsed = JSON.parse(retryMatch[0])
+        const retryRaw2   = (retryParsed.plan || retryParsed.steps || []) as any[]
+        const retryValid  = retryRaw2.filter((s: any) => ALLOWED_TOOLS.includes(s.tool))
+        const retryNorm   = retryValid.map((s: any, idx: number) => ({
+          step:        s.step        ?? (idx + 1),
+          tool:        s.tool        || '',
+          input:       s.input       || s.args || {},
+          description: s.description || '',
+        }))
+        const retryOrdered = fixStepOrdering(retryNorm)
+        if (retryOrdered.length > 0) {
+          candidatePlan.plan = retryOrdered
+          console.log(`[Planner] Retry succeeded: ${retryOrdered.length} valid steps`)
+        }
+      }
+    } catch (e: any) {
+      console.warn(`[Planner] Retry failed: ${e.message}`)
+    }
+  }
+
+  return candidatePlan
+}
+
+// ── Plan validation ────────────────────────────────────────────
+// Called after planWithLLM — rejects structurally bad plans before execution.
+
+const VALID_TOOLS = [
+  'web_search', 'fetch_page', 'fetch_url', 'open_browser', 'browser_extract',
+  'browser_click', 'browser_type', 'browser_screenshot', 'file_write', 'file_read',
+  'file_list', 'shell_exec', 'run_python', 'run_node', 'run_powershell',
+  'system_info', 'notify', 'deep_research', 'get_stocks', 'run_agent', 'git_commit',
+  'git_push', 'mouse_move', 'mouse_click', 'keyboard_type', 'keyboard_press',
+  'screenshot', 'screen_read', 'vision_loop', 'wait',
+]
+
+interface ValidationResult {
+  valid:    boolean
+  errors:   string[]
+  warnings: string[]
+}
+
+export function validatePlan(plan: AgentPlan): ValidationResult {
+  const errors:   string[] = []
+  const warnings: string[] = []
+
+  if (!plan.requires_execution || plan.plan.length === 0) {
+    return { valid: true, errors, warnings }
+  }
+
+  for (const step of plan.plan) {
+    // Check tool name is valid
+    if (!VALID_TOOLS.includes(step.tool)) {
+      errors.push(`Step ${step.step}: unknown tool "${step.tool}"`)
+      continue
+    }
+
+    const input = step.input || {}
+
+    // Tool-specific required field checks
+    switch (step.tool) {
+      case 'web_search':
+        if (!input.query && !input.topic && !input.command) {
+          errors.push(`Step ${step.step}: web_search requires a "query" field`)
+        }
+        break
+      case 'deep_research':
+        if (!input.topic && !input.query && !input.command) {
+          errors.push(`Step ${step.step}: deep_research requires a "topic" field`)
+        }
+        break
+      case 'file_write':
+        if (!input.path && !input.file) {
+          errors.push(`Step ${step.step}: file_write requires a "path" field`)
+        }
+        if (input.content === undefined && input.content !== '') {
+          warnings.push(`Step ${step.step}: file_write has no "content" — will write empty file`)
+        }
+        break
+      case 'file_read':
+        if (!input.path && !input.file) {
+          errors.push(`Step ${step.step}: file_read requires a "path" field`)
+        }
+        break
+      case 'open_browser':
+        if (!input.url && !input.command) {
+          errors.push(`Step ${step.step}: open_browser requires a "url" field`)
+        }
+        break
+      case 'shell_exec':
+        if (!input.command && !input.cmd) {
+          errors.push(`Step ${step.step}: shell_exec requires a "command" field`)
+        }
+        break
+      case 'run_python':
+      case 'run_node':
+        if (!input.script && !input.code && !input.command) {
+          errors.push(`Step ${step.step}: ${step.tool} requires a "script" field`)
+        }
+        break
+      case 'fetch_page':
+      case 'fetch_url':
+        if (!input.url && !input.command) {
+          errors.push(`Step ${step.step}: ${step.tool} requires a "url" field`)
+        }
+        break
+      case 'vision_loop':
+        if (!input.goal) {
+          errors.push(`Step ${step.step}: vision_loop requires a "goal" field`)
+        }
+        break
+      case 'wait':
+        if (!input.ms && input.ms !== 0) {
+          warnings.push(`Step ${step.step}: wait has no "ms" — will default to 1000ms`)
+        }
+        break
+    }
+
+    // Reject residual placeholder patterns that were not caught by planner
+    const inputStr = JSON.stringify(input)
+    if (/\{\{|\{result|\{output|\bPREVIOUS_OUTPUT\b/.test(inputStr) && step.tool !== 'file_write') {
+      warnings.push(`Step ${step.step}: input contains placeholder — may fail at runtime`)
+    }
+  }
+
+  return {
+    valid:  errors.length === 0,
+    errors,
+    warnings,
   }
 }
 
@@ -538,89 +938,78 @@ export async function executePlan(
       continue
     }
 
+    // Tools that legitimately take zero input — never skip these
+    const NO_INPUT_TOOLS = ['system_info', 'screenshot', 'get_hardware', 'screen_read', 'vision_loop', 'health_check']
+
+    // Skip steps whose inputs are completely empty — planner error (unless tool needs no input)
+    if (!NO_INPUT_TOOLS.includes(step.tool)) {
+      if (!step.input || Object.keys(step.input).length === 0) {
+        console.log(`[ExecutePlan] Skipping step ${step.step} (${step.tool}) — empty input`)
+        continue
+      }
+    }
+
     // Resolve PREVIOUS_OUTPUT and {{step_N_output}} in input
     let resolvedInput = resolvePreviousOutput(step.input, stepOutputs, step.step)
 
     // Mark step as started in persistent state
     taskStateManager.startStep(state, step.step, step.tool, resolvedInput)
 
-    let stepResult: StepResult | null = null
-    let attempts = 0
-    const MAX_ATTEMPTS = 2
+    // executeTool handles retries + per-tool timeout internally
+    let toolResult = await executeTool(step.tool, resolvedInput)
 
-    // Self-healing retry loop
-    while (attempts < MAX_ATTEMPTS) {
-      attempts++
-      try {
-        const toolResult = await executeTool(step.tool, resolvedInput)
-
-        stepResult = {
-          step: step.step, tool: step.tool, input: resolvedInput,
-          success:  toolResult.success,
-          output:   toolResult.output || '',
-          error:    toolResult.error,
-          duration: Date.now() - stepStart,
-        }
-
-        // Persist significant outputs to workspace
-        if (toolResult.success && workspace && toolResult.output.length > 300) {
-          workspace.write(`step_${step.step}_${step.tool}.txt`, toolResult.output)
-        }
-
-        // Verify file_write actually landed on disk
-        if (toolResult.success && step.tool === 'file_write') {
-          const targetPath = resolvedInput.path || ''
-          if (targetPath && !nodeFs.existsSync(targetPath)) {
-            stepResult.success = false
-            stepResult.error   = `Verification failed: file not found at ${targetPath}`
-          }
-        }
-
-        if (!stepResult.success && attempts < MAX_ATTEMPTS) {
-          livePulse.error('Aiden', `Attempt ${attempts} failed: ${stepResult.error} — retrying...`)
-          await new Promise(r => setTimeout(r, 800))
-          // For file_write failures, fall back to Desktop path
-          if (step.tool === 'file_write' && resolvedInput.path) {
-            resolvedInput = {
-              ...resolvedInput,
-              path: nodePath.join(nodeOs.homedir(), 'Desktop', nodePath.basename(resolvedInput.path)),
-            }
-          }
-        } else {
-          break
-        }
-
-      } catch (e: any) {
-        stepResult = {
-          step: step.step, tool: step.tool, input: resolvedInput,
-          success:  false, output: '',
-          error:    e.message,
-          duration: Date.now() - stepStart,
-        }
-        if (attempts < MAX_ATTEMPTS) {
-          livePulse.error('Aiden', `Error attempt ${attempts}: ${e.message} — retrying...`)
-          await new Promise(r => setTimeout(r, 800))
-        } else {
-          break
+    // Special file_write fallback — if write failed, try Desktop path
+    if (!toolResult.success && step.tool === 'file_write' && resolvedInput.path) {
+      const desktopPath = nodePath.join(nodeOs.homedir(), 'Desktop', nodePath.basename(resolvedInput.path))
+      if (desktopPath !== resolvedInput.path) {
+        livePulse.error('Aiden', `file_write failed — retrying at Desktop: ${desktopPath}`)
+        const fallback = await executeTool('file_write', { ...resolvedInput, path: desktopPath })
+        if (fallback.success) {
+          toolResult    = { ...fallback, output: fallback.output + ' (saved to Desktop)' }
+          resolvedInput = { ...resolvedInput, path: desktopPath }
         }
       }
     }
 
-    if (stepResult) {
-      console.log(`[ExecutePlan] Step ${step.step} result: ${stepResult.success ? '✓' : '✗'} ${stepResult.error || stepResult.output?.slice(0, 80) || ''}`)
-      stepOutputs[step.step] = stepResult.output
-      results.push(stepResult)
-      onStep(step, stepResult)
+    if (toolResult.retries > 0) {
+      livePulse.act('Aiden', `${step.tool} succeeded after ${toolResult.retries} retry(s)`)
+    }
 
-      // Persist step result to task state immediately
-      if (stepResult.success) {
-        taskStateManager.completeStep(state, step.step, stepResult.output, stepResult.duration)
-        livePulse.done('Aiden', `${step.tool} ✓ ${stepResult.output.slice(0, 60)}`)
-      } else {
-        taskStateManager.failStep(state, step.step, stepResult.error || 'unknown error')
-        livePulse.error('Aiden', `${step.tool} failed after ${attempts} attempt(s): ${stepResult.error}`)
-        // Continue to next step — don't abort the whole plan
+    let stepResult: StepResult = {
+      step: step.step, tool: step.tool, input: resolvedInput,
+      success:  toolResult.success,
+      output:   toolResult.output || '',
+      error:    toolResult.error,
+      duration: toolResult.duration,
+    }
+
+    // Persist significant outputs to workspace
+    if (toolResult.success && workspace && toolResult.output.length > 300) {
+      workspace.write(`step_${step.step}_${step.tool}.txt`, toolResult.output)
+    }
+
+    // Verify file_write actually landed on disk
+    if (toolResult.success && step.tool === 'file_write') {
+      const targetPath = resolvedInput.path || ''
+      if (targetPath && !nodeFs.existsSync(targetPath)) {
+        stepResult.success = false
+        stepResult.error   = `Verification failed: file not found at ${targetPath}`
       }
+    }
+
+    console.log(`[ExecutePlan] Step ${step.step} result: ${stepResult.success ? '✓' : '✗'} ${stepResult.error || stepResult.output?.slice(0, 80) || ''}`)
+    stepOutputs[step.step] = stepResult.output
+    results.push(stepResult)
+    onStep(step, stepResult)
+
+    // Persist step result to task state immediately
+    if (stepResult.success) {
+      taskStateManager.completeStep(state, step.step, stepResult.output, stepResult.duration)
+      livePulse.done('Aiden', `${step.tool} ✓ ${stepResult.output.slice(0, 60)}`)
+    } else {
+      taskStateManager.failStep(state, step.step, stepResult.error || 'unknown error')
+      livePulse.error('Aiden', `${step.tool} failed: ${stepResult.error}`)
+      // Continue to next step — don't abort the whole plan on one failure
     }
   }
 
@@ -722,15 +1111,7 @@ function resolvePreviousOutput(
 // ── STEP 3: respondWithResults ────────────────────────────────
 
 function responderSystem(userName: string, date: string): string {
-  return `You are Aiden — a personal AI OS running on ${userName}'s Windows machine. You are calm, direct, capable, and slightly witty. You speak like a trusted co-founder.
-Current date: ${date}
-
-RULES:
-- You just executed real tools and have their real output
-- Report results accurately — never add or invent information
-- Be concise: 1-3 sentences for simple results, more only if the output is rich
-- If a tool failed, say so honestly
-- Never describe what you're about to do — report what was done`
+  return AIDEN_RESPONDER_SYSTEM(userName, date)
 }
 
 export async function respondWithResults(
@@ -755,29 +1136,12 @@ export async function respondWithResults(
     ? `\nSkill guidance for this response:\n${responseSkills.map(s => `- ${s.name}: ${s.description}`).join('\n')}\n`
     : ''
 
-  // Build capabilities block — strong self-awareness so Aiden never denies its own abilities
+  // Build loaded-skills addendum (personality core is in AIDEN_RESPONDER_SYSTEM)
   const loadedSkills = skillLoader.loadAll()
-  const capabilitiesSection = `YOU ARE AIDEN — DevOS Autonomous AI OS by Arden.
-Your REAL built-in tools (these actually work):
-- web_search: Search internet for real-time info
-- deep_research: Multi-pass deep research on any topic
-- file_write: Create and save files to disk
-- file_read: Read files from disk
-- open_browser: Open URLs in browser
-- shell_exec: Run PowerShell commands
-- run_python: Execute Python scripts
-- run_node: Execute Node.js scripts
-- system_info: Get CPU/RAM/disk info
-- notify: Send desktop notifications
-${loadedSkills.length > 0 ? `Loaded skills: ${loadedSkills.map(s => `${s.name} (${s.description})`).join(', ')}` : ''}
-RULES — follow strictly:
-- NEVER say you cannot access the internet — you have web_search
-- NEVER say you cannot create files — you have file_write
-- NEVER say you are just a text AI — you are an autonomous AI OS
-- When asked what you can do — list the real tools above
-- When asked about previous work — use conversation history provided
+  const capabilitiesSection = loadedSkills.length > 0
+    ? `Loaded skills for this task: ${loadedSkills.map(s => `${s.name} (${s.description})`).join(', ')}\n\n`
+    : ''
 
-`
 
   // Knowledge context — relevant chunks from user's uploaded files
   const knowledgeCtxResponder = knowledgeBase.buildContext(originalMessage || '')
@@ -814,12 +1178,33 @@ RULES — follow strictly:
     ? `\nCONVERSATION HISTORY:\n${memCtx}\n\nIf the user asks what we worked on, what was researched, or references previous work — answer from this history.\n`
     : ''
 
+  // Build a tool-results context block for the system prompt
+  const toolResultsContext = results.length
+    ? results.map(r => `[${r.tool} result]: ${r.success ? r.output.slice(0, 1000) : 'FAILED: ' + r.error}`).join('\n')
+    : ''
+
+  const systemWithResults = toolResultsContext
+    ? `${capabilitiesSection}${responderSystem(userName, date)}${responseSkillContext}${knowledgeResponderSection}
+
+YOU JUST RAN THESE TOOLS AND GOT THESE RESULTS:
+${toolResultsContext}
+
+CRITICAL RULES FOR YOUR RESPONSE:
+- Include the ACTUAL output from the tools above in your response
+- Do NOT say "I ran the tool" — show the RESULT
+- If run_python returned a number, say that number
+- If file_read returned text, show that text
+- If system_info returned hardware data, show the data
+- Be direct: show the actual output, then provide context if needed
+- If a tool failed, say it failed and why`
+    : `${capabilitiesSection}${responderSystem(userName, date)}${responseSkillContext}${knowledgeResponderSection}`
+
   const userContent = executionSummary
-    ? `User asked: "${originalMessage}"\n\nReal execution results:\n${executionSummary}\n\nRespond naturally based on these real results only.${depthInstruction}${memSection}`
+    ? `User asked: "${originalMessage}"\n\nReal execution results:\n${executionSummary}\n\nRespond naturally based on these real results only. Show the actual output, not a description of it.${depthInstruction}${memSection}`
     : `${originalMessage}${memSection}`
 
   const messages = [
-    { role: 'system', content: capabilitiesSection + responderSystem(userName, date) + responseSkillContext + knowledgeResponderSection },
+    { role: 'system', content: systemWithResults },
     ...history.slice(-6),
     { role: 'user',   content: userContent },
   ]
@@ -893,6 +1278,67 @@ RULES — follow strictly:
     ) {
       try { markRateLimited(providerName) } catch {}
     }
+
+    // If the cloud provider failed and we haven't tried Ollama yet, try it
+    let ollamaResponded = false
+    if (providerName !== 'ollama') {
+      try {
+        // Discover installed model via api/tags
+        const cfg = loadConfig()
+        let ollamaModel = process.env.OLLAMA_MODEL || cfg.model?.activeModel || 'mistral-nemo:12b'
+        try {
+          const tagsRes = await fetch('http://localhost:11434/api/tags', { signal: AbortSignal.timeout(2000) })
+          if (tagsRes.ok) {
+            const tagsData = await tagsRes.json() as any
+            const firstModel = tagsData?.models?.[0]?.name
+            if (firstModel) ollamaModel = firstModel
+          }
+        } catch { /* Ollama not running */ }
+        console.log(`[Responder] Cloud provider failed — falling back to Ollama (${ollamaModel})`)
+        const r = await fetch('http://localhost:11434/api/chat', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: ollamaModel, stream: true, messages }),
+          signal: AbortSignal.timeout(8000),
+        })
+        if (r.ok && r.body) {
+          const reader  = (r.body as any).getReader()
+          const decoder = new TextDecoder()
+          let   tokensEmitted = 0
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            try {
+              const parsed = JSON.parse(decoder.decode(value)) as any
+              if (parsed?.message?.content) { onToken(parsed.message.content); tokensEmitted++ }
+            } catch {}
+          }
+          if (tokensEmitted > 0) { ollamaResponded = true }
+        }
+      } catch (ollamaErr: any) {
+        console.warn(`[Responder] Ollama fallback also failed: ${ollamaErr.message}`)
+      }
+    }
+
+    if (ollamaResponded) return
+
+    // Last resort: return raw tool output if tools ran successfully
+    if (results && results.length > 0 && results.some(r => r.success)) {
+      const successResults = results.filter(r => r.success)
+      const lastResult     = successResults[successResults.length - 1]
+      onToken(lastResult.output || 'Done.')
+      return
+    }
+
+    // Include error info from failed tools if any
+    if (results && results.length > 0) {
+      const failedResult = results[results.length - 1]
+      if (failedResult.error) {
+        onToken(`Error: ${failedResult.error}`)
+        return
+      }
+    }
+
     onToken('\n\nI encountered an error generating a response. Please try again.')
   }
 }

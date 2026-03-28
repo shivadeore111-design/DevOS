@@ -5,7 +5,7 @@ compatibility_date = "2024-01-01"
 # KV namespace — create with: wrangler kv:namespace create LICENSES
 [[kv_namespaces]]
 binding = "LICENSES"
-id      = "YOUR_KV_NAMESPACE_ID"
+id      = "2b5817ca66ed4bcb8114452d48afd38f"
 
 # Secrets — set with: wrangler secret put <NAME>
 # Required secrets:
@@ -17,3 +17,5 @@ id      = "YOUR_KV_NAMESPACE_ID"
 [vars]
 # Non-secret env vars (safe to commit)
 ENVIRONMENT = "production"
+
+

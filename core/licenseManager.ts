@@ -17,7 +17,7 @@ import path from 'path'
 // ── Config ────────────────────────────────────────────────────
 
 const LICENSE_FILE   = path.join(process.cwd(), 'workspace', 'license.json')
-const LICENSE_SERVER = 'https://devos-license-server.YOUR_SUBDOMAIN.workers.dev'
+const LICENSE_SERVER = 'https://devos-license-server.shiva-deore111.workers.dev'
 
 const OFFLINE_GRACE_MS  = 7  * 24 * 60 * 60 * 1000   // 7 days
 const REFRESH_INTERVAL  = 12 * 60 * 60 * 1000          // 12 hours
@@ -202,3 +202,5 @@ export function startLicenseRefresh(): void {
   // Then every 12 hours
   setInterval(refresh, REFRESH_INTERVAL)
 }
+
+

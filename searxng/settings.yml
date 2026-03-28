@@ -1,0 +1,96 @@
+# ============================================================
+# SearxNG settings for DevOS
+# ============================================================
+# Optimized for programmatic API access (JSON responses)
+# No UI branding, fast timeouts, wide engine coverage
+
+use_default_settings: true
+
+general:
+  debug: false
+  instance_name: "DevOS Search"
+  privacypolicy_url: false
+  donation_url: false
+  contact_url: false
+  enable_metrics: false
+
+brand:
+  new_issue_url: false
+  docs_url: false
+  public_instances: false
+  wiki_url: false
+  issue_url: false
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  default_lang: "en"
+  ban_time_on_fail: 5
+  max_ban_time_on_fail: 120
+
+server:
+  port: 8080
+  bind_address: "0.0.0.0"
+  secret_key: "devos-searxng-secret-change-in-prod"
+  base_url: "http://localhost:8888/"
+  image_proxy: false
+  method: "GET"
+  default_http_headers:
+    X-Content-Type-Options: nosniff
+    X-Download-Options: noopen
+    X-Robots-Tag: noindex, nofollow
+    Referrer-Policy: no-referrer
+
+redis:
+  url: false
+
+outgoing:
+  request_timeout: 6.0
+  max_request_timeout: 15.0
+  pool_connections: 100
+  pool_maxsize: 20
+  enable_http2: true
+
+# Engines — ordered by reliability for programmatic use
+engines:
+  - name: google
+    engine: google
+    shortcut: g
+    weight: 2
+
+  - name: bing
+    engine: bing
+    shortcut: b
+    weight: 1
+
+  - name: duckduckgo
+    engine: duckduckgo
+    shortcut: d
+    weight: 1
+
+  - name: wikipedia
+    engine: wikipedia
+    shortcut: w
+    weight: 1
+
+  - name: brave
+    engine: brave
+    shortcut: br
+    weight: 1
+
+categories_as_tabs:
+  general:
+    - general
+  news:
+    - news
+
+ui:
+  static_use_hash: true
+  default_locale: "en"
+  query_in_title: false
+  results_on_new_tab: false
+  simple_style: auto
+  center_alignment: false
+  default_theme: simple
+  theme_args:
+    simple_style: dark

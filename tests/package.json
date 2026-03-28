@@ -1,0 +1,46 @@
+{
+  "name": "devos",
+  "version": "2.0.0",
+  "description": "DevOS Aiden — Autonomous AI Operating System",
+  "main": "dist/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "dev":              "ts-node index.ts",
+    "build":            "tsc",
+    "start":            "node dist/index.js",
+
+    "stress-test":      "npx ts-node tests/stressTest.ts",
+
+    "tool-test":        "npx ts-node tests/toolTest.ts",
+    "personality-test": "npx ts-node tests/personalityTest.ts",
+    "memory-test":      "npx ts-node tests/memoryTest.ts",
+    "failure-test":     "npx ts-node tests/failureTest.ts",
+    "safety-test":      "npx ts-node tests/safetyTest.ts",
+
+    "test":             "npx ts-node tests/runAllTests.ts",
+    "test:fast":        "npx ts-node tests/runAllTests.ts --fast",
+    "test:tools":       "npx ts-node tests/runAllTests.ts --suite=tools",
+    "test:personality": "npx ts-node tests/runAllTests.ts --suite=personality",
+    "test:memory":      "npx ts-node tests/runAllTests.ts --suite=memory",
+    "test:failure":     "npx ts-node tests/runAllTests.ts --suite=failure",
+    "test:safety":      "npx ts-node tests/runAllTests.ts --suite=safety"
+  },
+  "keywords": [],
+  "author": "Shiva Deore <contact@taracod.com>",
+  "license": "SEE LICENSE IN LICENSE",
+  "dependencies": {
+    "axios":               "^1.13.5",
+    "dotenv":              "^17.3.1",
+    "execa":               "^9.6.1",
+    "express":             "^5.2.1",
+    "node-fetch":          "^3.3.2",
+    "node-telegram-bot-api": "^0.67.0",
+    "pdf-parse":           "^2.4.5",
+    "playwright":          "^1.58.2"
+  },
+  "devDependencies": {
+    "@types/node":  "^25.3.0",
+    "ts-node":      "^10.9.2",
+    "typescript":   "^5.9.3"
+  }
+}

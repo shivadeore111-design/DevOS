@@ -4,6 +4,7 @@ import {
   createContext, useContext,
 } from 'react'
 import Onboarding from '../components/Onboarding'
+import { OnboardingModal } from '../components/OnboardingModal'
 import PricingModal from '../components/PricingModal'
 
 // ── Types ─────────────────────────────────────────────────────
@@ -92,7 +93,8 @@ interface DevOSCtxType {
   input:          string
   setInput:       (v: string) => void
   // Activity
-  activityLogs:   ActivityLog[]
+  activityLogs:    ActivityLog[]
+  setActivityLogs: React.Dispatch<React.SetStateAction<ActivityLog[]>>
   // Screenshot
   screenshot:     string | null
   setScreenshot:  React.Dispatch<React.SetStateAction<string | null>>
@@ -388,6 +390,24 @@ function ApiKeysTab() {
     savingKey, saveKey, toggleProvider, deleteProvider, resetLimits,
   } = useDevOS()
 
+  // ── Inline key validation ────────────────────────────────────
+  const [keyValidation, setKeyValidation] = useState<Record<string, 'valid' | 'invalid' | 'checking' | null>>({})
+
+  const validateApiKey = async (provider: string, key: string): Promise<boolean> => {
+    if (!key.trim()) return false
+    try {
+      const r = await fetch('http://localhost:4200/api/providers/validate', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ provider, key }),
+      })
+      const data = await r.json() as any
+      return data.valid === true
+    } catch {
+      return false
+    }
+  }
+
   return (
     <div>
       {/* Reset limits */}
@@ -472,17 +492,52 @@ function ApiKeysTab() {
                 {PROVIDER_INFO[addingProvider]?.freeUrl}
               </a>
             </div>
-            <input
-              placeholder="Paste API key..."
-              value={newKey}
-              onChange={e => setNewKey(e.target.value)}
-              style={{
-                width: '100%', background: 'var(--bg3)',
-                border: '1px solid var(--border2)', borderRadius: 6,
-                padding: '8px 12px', fontFamily: 'var(--mono)', fontSize: 12,
-                color: 'var(--text)', outline: 'none', marginBottom: 8,
-              }}
-            />
+            <div style={{ position: 'relative', marginBottom: 8 }}>
+              <input
+                placeholder="Paste API key..."
+                value={newKey}
+                onChange={e => {
+                  setNewKey(e.target.value)
+                  // Reset status when user edits
+                  if (addingProvider) setKeyValidation(prev => ({ ...prev, [addingProvider]: null }))
+                }}
+                onBlur={async (e) => {
+                  const key = e.target.value.trim()
+                  if (!key || !addingProvider) return
+                  setKeyValidation(prev => ({ ...prev, [addingProvider]: 'checking' }))
+                  const valid = await validateApiKey(addingProvider, key)
+                  setKeyValidation(prev => ({ ...prev, [addingProvider]: valid ? 'valid' : 'invalid' }))
+                }}
+                style={{
+                  width: '100%', background: 'var(--bg3)',
+                  border: `1px solid ${
+                    addingProvider && keyValidation[addingProvider] === 'valid'   ? 'rgba(34,197,94,0.5)'  :
+                    addingProvider && keyValidation[addingProvider] === 'invalid' ? 'rgba(239,68,68,0.5)'  :
+                    'var(--border2)'
+                  }`,
+                  borderRadius: 6,
+                  padding: '8px 12px', fontFamily: 'var(--mono)', fontSize: 12,
+                  color: 'var(--text)', outline: 'none', boxSizing: 'border-box',
+                  transition: 'border-color 0.2s',
+                }}
+              />
+              {/* Inline validation badge */}
+              {addingProvider && keyValidation[addingProvider] === 'checking' && (
+                <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', fontFamily: 'var(--mono)', fontSize: 10, color: '#888' }}>
+                  checking...
+                </span>
+              )}
+              {addingProvider && keyValidation[addingProvider] === 'valid' && (
+                <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', fontFamily: 'var(--mono)', fontSize: 10, color: '#22c55e' }}>
+                  ✓ valid
+                </span>
+              )}
+              {addingProvider && keyValidation[addingProvider] === 'invalid' && (
+                <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', fontFamily: 'var(--mono)', fontSize: 10, color: '#ef4444' }}>
+                  ✗ invalid
+                </span>
+              )}
+            </div>
             <select
               value={newModel}
               onChange={e => setNewModel(e.target.value)}
@@ -1207,53 +1262,46 @@ function ChatPanel() {
 
 // ── LiveViewPanel ─────────────────────────────────────────────
 
-function LiveViewPanel() {
-  const { isExecuting, screenshot, setScreenshot, uiMode, setUIMode, systemStats, recentTasks } = useDevOS()
-  const [capturedAgo, setCapturedAgo]     = useState<number | null>(null)
-  const [lastCaptured, setLastCaptured]   = useState<number | null>(null)
-  const [refreshing, setRefreshing]       = useState(false)
+interface PulseEntry {
+  type: string
+  agent: string
+  message: string
+  timestamp: number
+  tool?: string
+}
 
-  // Adaptive polling: 800ms when executing, 3000ms when idle
+function LiveViewPanel() {
+  const { isExecuting, uiMode, setUIMode, systemStats, setActivityLogs, activityLogs } = useDevOS()
+  const [pulseLog, setPulseLog] = useState<PulseEntry[]>([])
+  const bottomRef               = useRef<HTMLDivElement>(null)
+
+  // WebSocket connection to LivePulse bridge
   useEffect(() => {
-    const interval = setInterval(async () => {
+    const ws = new WebSocket('ws://localhost:4200')
+    ws.onmessage = (e) => {
       try {
-        const r = await fetch('http://localhost:4200/api/screenshot?' + Date.now())
-        if (r.ok) {
-          const blob = await r.blob()
-          if (blob.size > 0) {
-            const url = URL.createObjectURL(blob)
-            setScreenshot((prev: string | null) => { if (prev) URL.revokeObjectURL(prev); return url })
-            setLastCaptured(Date.now())
-          }
+        const data = JSON.parse(e.data)
+        if (data.type === 'pulse' && data.event) {
+          const { type, agent, message, tool } = data.event as PulseEntry
+          const icon = type === 'done' ? '✅' : type === 'error' ? '❌' : type === 'tool' ? '🔧' : type === 'thinking' ? '💭' : '⚡'
+          const now  = new Date().toLocaleTimeString('en', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
+          setActivityLogs(prev => [...prev.slice(-99), {
+            time: now, icon, agent: agent || 'Aiden',
+            message: tool ? `${tool}: ${message}` : message,
+            style: (type === 'done' ? 'ok' : type === 'error' ? 'err' : type === 'tool' || type === 'act' ? 'active' : 'default') as ActivityLog['style'],
+          }])
+          setPulseLog(prev => [...prev.slice(-199), data.event as PulseEntry])
         }
       } catch {}
-    }, isExecuting ? 800 : 3000)
-    return () => clearInterval(interval)
-  }, [isExecuting, setScreenshot])
+    }
+    ws.onerror = () => {}
+    return () => { try { ws.close() } catch {} }
+  }, [setActivityLogs])
 
-  // "captured Xs ago" ticker
+  // Auto-scroll to bottom on new events
   useEffect(() => {
-    if (!lastCaptured) return
-    const t = setInterval(() => setCapturedAgo(Math.floor((Date.now() - lastCaptured) / 1000)), 1000)
-    return () => clearInterval(t)
-  }, [lastCaptured])
-
-  const manualRefresh = async () => {
-    setRefreshing(true)
-    try {
-      const r = await fetch('http://localhost:4200/api/screenshot?' + Date.now())
-      if (r.ok) {
-        const blob = await r.blob()
-        if (blob.size > 0) {
-          const url = URL.createObjectURL(blob)
-          setScreenshot((prev: string | null) => { if (prev) URL.revokeObjectURL(prev); return url })
-          setLastCaptured(Date.now())
-          setCapturedAgo(0)
-        }
-      }
-    } catch {}
-    setRefreshing(false)
-  }
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [pulseLog])
 
   return (
     <aside style={{
@@ -1270,111 +1318,107 @@ function LiveViewPanel() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--muted2)', fontFamily: 'var(--mono)' }}>
           <span style={{
             width: 5, height: 5, borderRadius: '50%',
-            background: isExecuting ? 'var(--orange)' : 'var(--muted)',
+            background: isExecuting ? 'var(--orange)' : 'var(--green)',
             animation: isExecuting ? 'pulse-dot 1s infinite' : 'none',
           }} />
-          Live View
+          Live Activity
         </div>
         <div style={{ display: 'flex', gap: 4 }}>
-          <button
-            onClick={manualRefresh} title="Refresh screenshot"
-            style={{
-              width: 28, height: 28, borderRadius: 5,
-              background: refreshing ? 'rgba(249,115,22,0.1)' : 'transparent',
-              border: '1px solid transparent', color: 'var(--muted)',
-              cursor: 'pointer', fontSize: 13, transition: 'all 0.15s',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}
-          >{refreshing ? '…' : '↻'}</button>
+          {pulseLog.length > 0 && (
+            <button
+              onClick={() => setPulseLog([])}
+              title="Clear feed"
+              style={{
+                height: 28, padding: '0 8px', borderRadius: 5,
+                background: 'transparent', border: '1px solid transparent',
+                color: 'var(--muted)', cursor: 'pointer', fontSize: 10,
+                fontFamily: 'var(--mono)', transition: 'all 0.15s',
+              }}
+            >clear</button>
+          )}
           <NavBtn onClick={() => setUIMode((m: UIMode) => m === 'watch' ? 'focus' : 'watch')} title="Watch Mode">
             {uiMode === 'watch' ? '✕' : '⤢'}
           </NavBtn>
         </div>
       </div>
 
-      {/* Content */}
-      <div style={{ flex: 1, overflow: 'auto', padding: 14 }}>
-        {/* Screenshot — shown when available (idle OR executing) */}
-        {screenshot ? (
-          <div style={{ marginBottom: 14 }}>
-            <img src={screenshot} alt="Screen" style={{
-              width: '100%', borderRadius: 6, border: '1px solid var(--border)',
-              objectFit: 'contain', maxHeight: 340, display: 'block',
-            }} />
-            <div style={{ fontSize: 9, color: 'var(--muted)', marginTop: 4, textAlign: 'center', fontFamily: 'var(--mono)' }}>
-              {isExecuting ? 'live · ' : ''}{capturedAgo !== null ? `captured ${capturedAgo}s ago` : new Date().toLocaleTimeString()}
-            </div>
+      {/* Activity Feed */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+        {pulseLog.length === 0 ? (
+          <div style={{
+            display: 'flex', flexDirection: 'column', alignItems: 'center',
+            justifyContent: 'center', flex: 1, gap: 10,
+            color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 11,
+          }}>
+            <div style={{ fontSize: 28, opacity: 0.3 }}>⚡</div>
+            <div>Waiting for activity...</div>
+            <div style={{ fontSize: 10, color: 'var(--muted)', opacity: 0.7 }}>Events will appear here as Aiden works</div>
           </div>
         ) : (
-          /* Animated placeholder grid when no screenshot yet */
-          <div style={{ marginBottom: 14 }}>
-            <div style={{
-              borderRadius: 6, border: '1px solid var(--border)',
-              background: 'var(--bg2)', padding: 16, height: 220,
-              display: 'grid', gridTemplateColumns: 'repeat(6,1fr)',
-              gridTemplateRows: 'repeat(4,1fr)', gap: 6,
-            }}>
-              {Array.from({ length: 24 }).map((_, i) => (
-                <div key={i} style={{
-                  borderRadius: 4, background: 'var(--bg3)',
-                  animation: `pulse 1.6s ease-in-out ${(i * 0.08).toFixed(2)}s infinite`,
-                }} />
-              ))}
+          pulseLog.map((entry, i) => {
+            const typeColor =
+              entry.type === 'error'   ? 'var(--red)' :
+              entry.type === 'done'    ? 'var(--green)' :
+              entry.type === 'warn'    ? 'var(--orange)' :
+              entry.type === 'tool'    ? '#60a5fa' :
+              entry.type === 'thinking'? '#a78bfa' :
+              'var(--muted2)'
+            const typeIcon =
+              entry.type === 'error'   ? '✗' :
+              entry.type === 'done'    ? '✓' :
+              entry.type === 'warn'    ? '⚠' :
+              entry.type === 'tool'    ? '⬡' :
+              entry.type === 'thinking'? '💭' :
+              entry.type === 'act'     ? '▸' :
+              '·'
+            const isNew = i === pulseLog.length - 1
+            return (
+              <div key={i} style={{
+                display: 'flex', gap: 8, alignItems: 'flex-start',
+                fontSize: 11, fontFamily: 'var(--mono)',
+                padding: '4px 8px', borderRadius: 5,
+                background: isNew ? 'rgba(249,115,22,0.06)' : 'transparent',
+                transition: 'background 0.4s',
+              }}>
+                <span style={{ color: typeColor, flexShrink: 0, fontSize: 12, lineHeight: '16px' }}>{typeIcon}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ color: 'var(--muted2)', wordBreak: 'break-word', lineHeight: 1.5 }}>
+                    {entry.tool && (
+                      <span style={{ color: '#60a5fa', marginRight: 4 }}>[{entry.tool}]</span>
+                    )}
+                    {entry.message}
+                  </div>
+                  <div style={{ fontSize: 9, color: 'var(--muted)', marginTop: 1 }}>
+                    {entry.agent} · {new Date(entry.timestamp).toLocaleTimeString('en', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                  </div>
+                </div>
+              </div>
+            )
+          })
+        )}
+        <div ref={bottomRef} />
+      </div>
+
+      {/* Footer stats */}
+      <div style={{
+        borderTop: '1px solid var(--border)', padding: '8px 14px',
+        display: 'flex', gap: 16, flexShrink: 0,
+      }}>
+        {[
+          { label: 'status', value: 'online',  color: 'var(--green)' },
+          { label: 'mode',   value: 'local',   color: 'var(--muted2)' },
+          { label: 'events', value: `${activityLogs.length}`, color: 'var(--muted2)' },
+          { label: 'memory', value: `${systemStats?.recentHistory?.length ?? 0}`, color: 'var(--muted2)' },
+        ].map(stat => (
+          <div key={stat.label} style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+            <div style={{ fontSize: 8, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: 'var(--mono)' }}>
+              {stat.label}
             </div>
-            <div style={{ fontSize: 9, color: 'var(--muted)', marginTop: 4, textAlign: 'center', fontFamily: 'var(--mono)' }}>
-              waiting for screenshot
+            <div style={{ fontSize: 11, color: stat.color, fontFamily: 'var(--mono)', fontWeight: 500 }}>
+              {stat.value}
             </div>
           </div>
-        )}
-
-        {!isExecuting && (
-          <>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
-              {[
-                { label: 'status', value: 'online',  color: 'var(--green)' },
-                { label: 'mode',   value: 'local' },
-                { label: 'memory', value: `${systemStats?.recentHistory?.length ?? 0} items` },
-                { label: 'skills', value: '3 loaded' },
-              ].map(stat => (
-                <div key={stat.label} style={{
-                  background: 'var(--bg2)', border: '1px solid var(--border)',
-                  borderRadius: 6, padding: '10px 12px',
-                }}>
-                  <div style={{ fontSize: 9, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4, fontFamily: 'var(--mono)' }}>
-                    {stat.label}
-                  </div>
-                  <div style={{ fontSize: 13, color: (stat as any).color || 'var(--text)', fontFamily: 'var(--mono)', fontWeight: 500 }}>
-                    {stat.value}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {recentTasks.length > 0 && (
-              <>
-                <div style={{ fontSize: 9, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8, fontFamily: 'var(--mono)' }}>
-                  Recent Tasks
-                </div>
-                {recentTasks.map((task: any, i: number) => (
-                  <div key={i} style={{
-                    background: 'var(--bg2)', border: '1px solid var(--border)',
-                    borderRadius: 6, padding: '8px 12px', marginBottom: 6,
-                  }}>
-                    <div style={{ fontSize: 11, color: 'var(--muted2)', fontFamily: 'var(--mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {task.goal?.slice(0, 40) || 'Task'}
-                    </div>
-                    <div style={{
-                      fontSize: 9, marginTop: 2, fontFamily: 'var(--mono)',
-                      color: task.status === 'completed' ? 'var(--green)' : task.status === 'failed' ? 'var(--red)' : 'var(--orange)',
-                    }}>
-                      {task.status}
-                    </div>
-                  </div>
-                ))}
-              </>
-            )}
-          </>
-        )}
+        ))}
       </div>
     </aside>
   )
@@ -2148,10 +2192,14 @@ export default function Home() {
   const [onboardingDone, setOnboardingDone] = useState<boolean | null>(null)
 
   useEffect(() => {
-    fetch('http://localhost:4200/api/onboarding')
+    fetch('http://localhost:4200/api/providers')
       .then(r => r.json())
-      .then((d: any) => { setOnboardingDone(d.onboardingComplete ?? true) })
-      .catch(() => setOnboardingDone(true))
+      .then((d: any) => {
+        // Show onboarding if no API key is working (no enabled, non-rate-limited provider with a key)
+        const hasWorkingKey = d.apis?.some((a: any) => a.hasKey && a.enabled && !a.rateLimited)
+        setOnboardingDone(hasWorkingKey ? true : false)
+      })
+      .catch(() => setOnboardingDone(true)) // server not running yet — skip onboarding
   }, [])
 
   // ── UI Mode ─────────────────────────────────────────────────
@@ -2738,7 +2786,7 @@ export default function Home() {
     isExecuting, isStreaming,
     messages, setMessages, conversations, setConversations, currentConvId,
     input, setInput,
-    activityLogs, screenshot, setScreenshot, sessionId,
+    activityLogs, setActivityLogs, screenshot, setScreenshot, sessionId,
     systemStats, recentTasks,
     sendMessage, startNewChat, loadConversation,
     handleQuickUpload,
@@ -2778,11 +2826,6 @@ export default function Home() {
     </div>
   )
 
-  // ── Onboarding ──────────────────────────────────────────────
-  if (!onboardingDone) return (
-    <Onboarding onComplete={() => setOnboardingDone(true)} />
-  )
-
   // ── Dashboard ───────────────────────────────────────────────
   return (
     <DevOSCtx.Provider value={ctxValue}>
@@ -2811,6 +2854,11 @@ export default function Home() {
             onActivate={validateKey}
             currentStatus={licenseStatus}
           />
+        )}
+        {!onboardingDone && (
+          <OnboardingModal onComplete={(name) => {
+            setOnboardingDone(true)
+          }} />
         )}
       </div>
     </DevOSCtx.Provider>

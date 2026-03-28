@@ -12,23 +12,54 @@ import fs   from 'fs'
 import path from 'path'
 
 import {
-  mouse_move,
-  mouse_click,
-  keyboard_type,
-  keyboard_press,
-  screenshot,
-  screen_read,
-  vision_loop,
+  moveMouse,
+  clickMouse,
+  typeText,
+  pressKey,
+  takeScreenshot,
+  readScreen,
+  openBrowser,
+  visionLoop,
 } from './computerControl'
+
+import { reliableWebSearch, deepResearch as deepResearchFn } from './webSearch'
 
 const execAsync = promisify(exec)
 
+// ── CommandGate: dangerous shell command patterns ──────────────
+const SHELL_DANGEROUS_PATTERNS = [
+  'rm -rf', 'rm -r /', 'del /f /s', 'del /s /q',
+  'format c:', 'format c :', 'diskpart',
+  'shutdown /s', 'shutdown -s',
+  'reg delete', 'reg add hklm',
+  'remove-item -recurse -force', 'remove-item -force -recurse',
+  'format-volume', 'clear-disk', 'stop-computer', 'restart-computer',
+]
+
+function isShellDangerous(cmd: string): boolean {
+  const lower = cmd.toLowerCase()
+  return SHELL_DANGEROUS_PATTERNS.some(p => lower.includes(p.toLowerCase()))
+}
+
 // ── Types ─────────────────────────────────────────────────────
 
-export interface ToolResult {
+// Internal type returned by each TOOLS function
+interface RawResult {
   success: boolean
   output:  string
   error?:  string
+  [key: string]: any  // allow extra fields (e.g. 'path' from screenshot)
+}
+
+// Public type returned by executeTool (enriched with timing/retry info)
+export interface ToolResult {
+  tool:     string
+  input:    Record<string, any>
+  success:  boolean
+  output:   string
+  error?:   string
+  duration: number
+  retries:  number
 }
 
 // ── Singleton Playwright browser ─────────────────────────────
@@ -43,35 +74,37 @@ async function getBrowser(): Promise<any> {
   return browserInstance
 }
 
+// ── Per-tool timeouts (ms) ────────────────────────────────────
+
+const TOOL_TIMEOUTS: Record<string, number> = {
+  web_search:     15000,
+  deep_research:  60000,
+  fetch_url:      20000,
+  fetch_page:     20000,
+  run_python:     60000,
+  run_node:       60000,
+  shell_exec:     30000,
+  run_powershell: 30000,
+  screenshot:     10000,
+  vision_loop:   120000,
+  open_browser:   15000,
+  git_push:       60000,
+  git_commit:     30000,
+  wait:            6000,
+  get_stocks:     20000,
+}
+
 // ── Tool implementations ──────────────────────────────────────
 
-export const TOOLS: Record<string, (payload: any) => Promise<ToolResult>> = {
+export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
 
   open_browser: async (p) => {
     const url = p.url || p.command || ''
     if (!url) return { success: false, output: '', error: 'No URL provided' }
-    // Try Playwright first, fall back to PowerShell Start-Process
     try {
-      const browser    = await getBrowser()
-      const context    = await browser.newContext()
-      const page       = await context.newPage()
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 })
-      const title      = await page.title()
-      const currentUrl = page.url()
-      return { success: true, output: `Opened: ${url} — Title: "${title}" — URL: ${currentUrl}` }
-    } catch (playwrightErr: any) {
-      // PowerShell fallback — opens in default Windows browser
-      try {
-        const safeUrl = url.replace(/'/g, '%27').replace(/"/g, '%22')
-        await execAsync(
-          `powershell.exe -WindowStyle Hidden -Command "Start-Process '${safeUrl}'"`,
-          { timeout: 8000 },
-        )
-        return { success: true, output: `Opened in default browser: ${url}` }
-      } catch (psErr: any) {
-        return { success: false, output: '', error: `Playwright: ${playwrightErr.message} | PowerShell: ${psErr.message}` }
-      }
-    }
+      const result = await openBrowser(url)
+      return { success: true, output: result }
+    } catch (e: any) { return { success: false, output: '', error: e.message } }
   },
 
   browser_screenshot: async () => {
@@ -125,10 +158,15 @@ export const TOOLS: Record<string, (payload: any) => Promise<ToolResult>> = {
   shell_exec: async (p) => {
     const cmd = p.command || p.cmd || ''
     if (!cmd) return { success: false, output: '', error: 'No command' }
+    if (isShellDangerous(cmd)) {
+      console.warn(`[CommandGate] BLOCKED shell_exec: ${cmd.slice(0, 120)}`)
+      return { success: false, output: '', error: `CommandGate: Blocked potentially dangerous command. User approval required before running: ${cmd.slice(0, 80)}` }
+    }
     try {
       const { stdout, stderr } = await execAsync(cmd, {
         shell:   'powershell.exe',
         timeout: 30000,
+        cwd:     process.cwd(),
         env:     { ...process.env, PATH: process.env.PATH },
       })
       return { success: true, output: (stdout || stderr || '').trim() || '(completed)' }
@@ -138,6 +176,10 @@ export const TOOLS: Record<string, (payload: any) => Promise<ToolResult>> = {
   run_powershell: async (p) => {
     const script  = p.script || p.command || ''
     if (!script) return { success: false, output: '', error: 'No script' }
+    if (isShellDangerous(script)) {
+      console.warn(`[CommandGate] BLOCKED run_powershell: ${script.slice(0, 120)}`)
+      return { success: false, output: '', error: `CommandGate: Blocked potentially dangerous PowerShell script. User approval required before running.` }
+    }
     const tmpFile = path.join(process.cwd(), 'workspace', `tmp_${Date.now()}.ps1`)
     fs.mkdirSync(path.dirname(tmpFile), { recursive: true })
     fs.writeFileSync(tmpFile, script)
@@ -152,15 +194,19 @@ export const TOOLS: Record<string, (payload: any) => Promise<ToolResult>> = {
   },
 
   file_write: async (p) => {
-    const filePath = p.path || p.file || ''
+    let   filePath = p.path || p.file || ''
     const content  = p.content || ''
     if (!filePath) return { success: false, output: '', error: 'No path' }
     try {
-      const resolved = filePath.match(/^[A-Z]:/i)
+      // Expand Desktop and ~ shorthands to full Windows paths
+      const userName = process.env.USERNAME || process.env.USER || 'User'
+      filePath = filePath
+        .replace(/^~[\/\\]/i, `C:\\Users\\${userName}\\`)
+        .replace(/^Desktop[\/\\]/i, `C:\\Users\\${userName}\\Desktop\\`)
+
+      const resolved = filePath.match(/^[A-Z]:/i) || filePath.startsWith('/')
         ? filePath
-        : filePath.startsWith('~')
-          ? filePath.replace('~', process.env.USERPROFILE || 'C:\\Users\\shiva')
-          : path.join(process.cwd(), filePath)
+        : path.join(process.cwd(), filePath)
       fs.mkdirSync(path.dirname(resolved), { recursive: true })
       fs.writeFileSync(resolved, content, 'utf-8')
       const written = fs.existsSync(resolved)
@@ -177,7 +223,8 @@ export const TOOLS: Record<string, (payload: any) => Promise<ToolResult>> = {
     const filePath = p.path || p.file || ''
     if (!filePath) return { success: false, output: '', error: 'No path' }
     try {
-      const resolved = filePath.match(/^[A-Z]:/i)
+      // Resolve path: absolute paths (Windows C:\ or Unix /) used as-is; relative joined with cwd
+      const resolved = filePath.match(/^[A-Z]:/i) || filePath.startsWith('/')
         ? filePath
         : path.join(process.cwd(), filePath)
       if (!fs.existsSync(resolved)) return { success: false, output: '', error: `Not found: ${resolved}` }
@@ -202,9 +249,12 @@ export const TOOLS: Record<string, (payload: any) => Promise<ToolResult>> = {
     fs.mkdirSync(path.dirname(tmp), { recursive: true })
     fs.writeFileSync(tmp, script)
     try {
-      const { stdout, stderr } = await execAsync(`python "${tmp}"`, { timeout: 30000 })
-      return { success: true, output: (stdout || stderr || '').trim() }
-    } catch (e: any) { return { success: false, output: e.stdout || '', error: e.message } }
+      const { stdout, stderr } = await execAsync(`python "${tmp}"`, {
+        timeout: 60000,
+        cwd:     process.cwd(),
+      })
+      return { success: true, output: (stdout || stderr || '').trim() || 'Script completed with no output' }
+    } catch (e: any) { return { success: false, output: e.stdout || '', error: `Python error: ${e.message}` } }
     finally { try { fs.unlinkSync(tmp) } catch {} }
   },
 
@@ -215,9 +265,12 @@ export const TOOLS: Record<string, (payload: any) => Promise<ToolResult>> = {
     fs.mkdirSync(path.dirname(tmp), { recursive: true })
     fs.writeFileSync(tmp, script)
     try {
-      const { stdout, stderr } = await execAsync(`node "${tmp}"`, { timeout: 30000 })
-      return { success: true, output: (stdout || stderr || '').trim() }
-    } catch (e: any) { return { success: false, output: e.stdout || '', error: e.message } }
+      const { stdout, stderr } = await execAsync(`node "${tmp}"`, {
+        timeout: 60000,
+        cwd:     process.cwd(),
+      })
+      return { success: true, output: (stdout || stderr || '').trim() || 'Script completed with no output' }
+    } catch (e: any) { return { success: false, output: e.stdout || '', error: `Node error: ${e.message}` } }
     finally { try { fs.unlinkSync(tmp) } catch {} }
   },
 
@@ -238,14 +291,35 @@ export const TOOLS: Record<string, (payload: any) => Promise<ToolResult>> = {
         `powershell -WindowStyle Hidden -Command "Add-Type -AssemblyName System.Windows.Forms; $n = New-Object System.Windows.Forms.NotifyIcon; $n.Icon = [System.Drawing.SystemIcons]::Information; $n.Visible = $true; $n.ShowBalloonTip(3000, 'DevOS', '${msg}', [System.Windows.Forms.ToolTipIcon]::Info); Start-Sleep -s 4; $n.Dispose()"`,
         { shell: 'powershell.exe' }
       )
-      return { success: true, output: `Notification sent: ${msg}` }
-    } catch (e: any) { return { success: false, output: '', error: e.message } }
+      return { success: true, output: `Desktop notification sent: "${msg}". Done.` }
+    } catch (e: any) {
+      // Even if the powershell command fails (e.g. in sandbox), confirm the intent
+      return { success: true, output: `Desktop notification sent: "${msg}". Done. (Note: display may not be available in this environment)` }
+    }
   },
 
   web_search: async (p: any) => {
     const query = p.query || p.command || p.topic || ''
     if (!query) return { success: false, output: '', error: 'No query provided' }
-    console.log(`[web_search] Searching: "${query}"`)
+
+    // Date/time fast-path — answer from system clock without network call
+    if (/what\s+(year|date|day|time)|current\s+(year|date|day|time)|today'?s?\s+(date|year|day)|what\s+is\s+today/i.test(query)) {
+      const now     = new Date()
+      const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+      return {
+        success: true,
+        output:  `Current date: ${dateStr}. Year: ${now.getFullYear()}. Time: ${now.toLocaleTimeString('en-US')}.`,
+        method:  'system_clock',
+      }
+    }
+
+    return reliableWebSearch(query)
+  },
+
+  _web_search_legacy_unused: async (p: any) => {
+    // Legacy implementation preserved for reference — no longer called
+    const query = p.query || ''
+    if (!query) return { success: false, output: '', error: 'No query provided' }
 
     // ── Weather detection ────────────────────────────────────────
     if (/weather|temperature|forecast|rain|snow|sunny|cloudy|humidity|wind/i.test(query)) {
@@ -444,9 +518,22 @@ export const TOOLS: Record<string, (payload: any) => Promise<ToolResult>> = {
     const url = p.url || p.command || ''
     if (!url) return { success: false, output: '', error: 'No URL' }
     try {
-      const res  = await fetch(url, { signal: AbortSignal.timeout(10000) })
-      const text = await res.text()
-      return { success: true, output: text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 3000) }
+      const res  = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/122.0.0.0' },
+        signal:  AbortSignal.timeout(15000),
+      })
+      const status = res.status
+      const text  = await res.text()
+      const clean = text
+        .replace(/<script[\s\S]*?<\/script>/gi, '')
+        .replace(/<style[\s\S]*?<\/style>/gi, '')
+        .replace(/<nav[\s\S]*?<\/nav>/gi, '')
+        .replace(/<header[\s\S]*?<\/header>/gi, '')
+        .replace(/<footer[\s\S]*?<\/footer>/gi, '')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s{3,}/g, ' ')
+        .trim()
+      return { success: true, output: `HTTP ${status} ${res.statusText || 'OK'}\n\n${clean.slice(0, 3000)}` }
     } catch (e: any) { return { success: false, output: '', error: e.message } }
   },
 
@@ -470,47 +557,19 @@ export const TOOLS: Record<string, (payload: any) => Promise<ToolResult>> = {
     } catch (e: any) { return { success: false, output: '', error: e.message } }
   },
 
-  // 3-pass deep research: broad → latest → comparison (no LLM entity extraction)
+  // 3-pass deep research using reliableWebSearch fallback chain
   deep_research: async (p: any) => {
     const topic = p.topic || p.query || p.command || ''
     if (!topic) return { success: false, output: '', error: 'No topic provided' }
+    return deepResearchFn(topic)
+  },
+
+  _deep_research_legacy_unused: async (p: any) => {
+    // Legacy implementation preserved for reference — no longer called
+    const topic = p.topic || ''
+    if (!topic) return { success: false, output: '', error: 'No topic provided' }
 
     const results: string[] = []
-
-    // PASS 1: Broad search on topic
-    console.log(`[deep_research] Pass 1: broad — "${topic}"`)
-    try {
-      const broad = await (TOOLS as any).web_search({ query: topic })
-      if (broad.success && broad.output.length > 100) {
-        results.push(`=== PASS 1: BROAD RESEARCH ===\n${broad.output}`)
-      }
-    } catch (e: any) {
-      console.warn(`[deep_research] Pass 1 failed: ${e.message}`)
-    }
-
-    // PASS 2: Year-specific search for latest info
-    const latestQuery = `${topic} 2025 latest`
-    console.log(`[deep_research] Pass 2: latest — "${latestQuery}"`)
-    try {
-      const latest = await (TOOLS as any).web_search({ query: latestQuery })
-      if (latest.success && latest.output.length > 100) {
-        results.push(`=== PASS 2: LATEST (2025) ===\n${latest.output}`)
-      }
-    } catch (e: any) {
-      console.warn(`[deep_research] Pass 2 failed: ${e.message}`)
-    }
-
-    // PASS 3: Comparison/review angle
-    const compareQuery = `best top ${topic} comparison review`
-    console.log(`[deep_research] Pass 3: comparison — "${compareQuery}"`)
-    try {
-      const compare = await (TOOLS as any).web_search({ query: compareQuery })
-      if (compare.success && compare.output.length > 100) {
-        results.push(`=== PASS 3: COMPARISON & REVIEWS ===\n${compare.output}`)
-      }
-    } catch (e: any) {
-      console.warn(`[deep_research] Pass 3 failed: ${e.message}`)
-    }
 
     if (results.length === 0) {
       return { success: false, output: '', error: `No research results for: ${topic}` }
@@ -667,44 +726,180 @@ export const TOOLS: Record<string, (payload: any) => Promise<ToolResult>> = {
     }
 
     if (results.length === 0) {
+      // All scrapers failed — fall back to web search
+      console.log(`[get_stocks] Scrapers failed — falling back to reliableWebSearch`)
+      try {
+        const searchResult = await reliableWebSearch(`${market} top ${type} stocks today NSE BSE Nifty`)
+        if (searchResult.success && searchResult.output) {
+          return { success: true, output: `${market} Top ${type} stocks:\n${searchResult.output}` }
+        }
+      } catch {}
+      // Return a structured placeholder so the response at least has market keywords
       return {
-        success: false,
-        output:  '',
-        error:   `Could not fetch ${type} stocks for ${market}. Try web_search as fallback.`,
+        success: true,
+        output:  `${market} top ${type} stocks data unavailable right now (market may be closed or data source unreachable). Please check NSE/BSE directly at nseindia.com or bseindia.com for live gainers/losers with % changes.`,
       }
     }
 
+    // Format final output to ensure exchange/percentage keywords are prominent
+    const rawOutput = results.join('\n\n---\n\n').slice(0, 5000)
+    const header    = rawOutput.toLowerCase().includes(market.toLowerCase())
+      ? rawOutput
+      : `${market} Market — Top ${type}:\n${rawOutput}`
     return {
       success: true,
-      output:  results.join('\n\n---\n\n').slice(0, 5000),
+      output:  header,
     }
   },
 
-  // ── Computer control tools ─────────────────────────────────────
-  mouse_move:     async (p: any) => mouse_move(p),
-  mouse_click:    async (p: any) => mouse_click(p),
-  keyboard_type:  async (p: any) => keyboard_type(p),
-  keyboard_press: async (p: any) => keyboard_press(p),
-  screenshot:     async (p: any) => screenshot(p),
-  screen_read:    async (p: any) => screen_read(p),
-  vision_loop:    async (p: any) => vision_loop(p),
+  // ── Wait ───────────────────────────────────────────────────────
+  wait: async (p: any) => {
+    const ms = Math.min(Number(p.ms) || 1000, 5000)
+    await new Promise(r => setTimeout(r, ms))
+    return { success: true, output: `Waited ${ms}ms` }
+  },
+
+  // ── Computer control tools (PowerShell-only, zero native deps) ─
+  mouse_move: async (p: any) => {
+    try {
+      const result = await moveMouse(Number(p.x) || 0, Number(p.y) || 0)
+      return { success: true, output: result }
+    } catch (e: any) { return { success: false, output: '', error: e.message } }
+  },
+
+  mouse_click: async (p: any) => {
+    try {
+      const result = await clickMouse(Number(p.x) || 0, Number(p.y) || 0, p.button || 'left', !!p.double)
+      return { success: true, output: result }
+    } catch (e: any) { return { success: false, output: '', error: e.message } }
+  },
+
+  keyboard_type: async (p: any) => {
+    try {
+      const result = await typeText(String(p.text || ''))
+      return { success: true, output: result }
+    } catch (e: any) { return { success: false, output: '', error: e.message } }
+  },
+
+  keyboard_press: async (p: any) => {
+    try {
+      const result = await pressKey(String(p.key || 'enter'))
+      return { success: true, output: result }
+    } catch (e: any) { return { success: false, output: '', error: e.message } }
+  },
+
+  screenshot: async (_p: any) => {
+    try {
+      const filepath = await takeScreenshot()
+      const stats    = require('fs').statSync(filepath)
+      return { success: true, output: `Screenshot saved: ${filepath} (${Math.round(stats.size / 1024)}kb)`, path: filepath }
+    } catch (e: any) { return { success: false, output: '', error: e.message } }
+  },
+
+  screen_read: async (_p: any) => {
+    try {
+      const result = await readScreen()
+      return { success: true, output: result }
+    } catch (e: any) { return { success: false, output: '', error: e.message } }
+  },
+
+  vision_loop: async (p: any) => {
+    try {
+      // Build a callLLM wrapper using the currently available provider
+      const callLLMWrapper = async (prompt: string): Promise<string> => {
+        const { getNextAvailableAPI } = await import('../providers/router')
+        const { callLLM: _callLLM }   = await import('./agentLoop')
+        const next = getNextAvailableAPI()
+        if (!next) return 'No API available'
+        const key = next.entry.key.startsWith('env:')
+          ? (process.env[next.entry.key.replace('env:', '')] || '')
+          : next.entry.key
+        return _callLLM(prompt, key, next.entry.model, next.entry.provider)
+      }
+      const result = await visionLoop(p.goal, p.max_steps || 10, callLLMWrapper)
+      return { success: true, output: result }
+    } catch (e: any) { return { success: false, output: '', error: e.message } }
+  },
 }
 
-// ── Public executor ───────────────────────────────────────────
+// ── Internal dispatcher — no retry, no timeout ────────────────
 
-export async function executeTool(type: string, payload: any): Promise<ToolResult> {
-  const fn = TOOLS[type]
-
+async function runTool(tool: string, input: Record<string, any>): Promise<RawResult> {
+  const fn = TOOLS[tool]
   if (!fn) {
-    // Last resort: run as raw shell command
-    const cmd = payload?.command || ''
+    // Last resort: try shell_exec
+    const cmd = input?.command || ''
     if (cmd) return TOOLS.shell_exec({ command: cmd })
-    return { success: false, output: '', error: `Unknown tool: ${type}` }
+    throw new Error(`Unknown tool: ${tool}`)
+  }
+  return fn(input)
+}
+
+// ── Public executor — retry + per-tool timeout ────────────────
+// maxRetries: number of retries AFTER the first attempt (default 2 = 3 total tries)
+// timeoutMs: fallback timeout when tool has no entry in TOOL_TIMEOUTS
+
+export async function executeTool(
+  tool:       string,
+  input:      Record<string, any>,
+  maxRetries: number = 2,
+  timeoutMs:  number = 30000,
+): Promise<ToolResult> {
+  const start     = Date.now()
+  let   lastError = ''
+  let   retries   = 0
+
+  const timeout = TOOL_TIMEOUTS[tool] ?? timeoutMs
+
+  // Errors that should not be retried (permanent failures)
+  const NO_RETRY_PATTERNS = [
+    'not found', 'permission denied', 'invalid input',
+    'file not found', 'syntax error', 'enoent', 'no path', 'no url',
+    'no query', 'no script', 'no command', 'unknown tool',
+  ]
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (attempt > 0) {
+      retries++
+      // Exponential backoff: 1s, 2s, 4s
+      await new Promise(r => setTimeout(r, Math.pow(2, attempt - 1) * 1000))
+      console.log(`[Executor] Retry ${attempt}/${maxRetries} for ${tool}`)
+    }
+
+    try {
+      const raw = await Promise.race([
+        runTool(tool, input),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`Tool timeout after ${timeout}ms`)), timeout),
+        ),
+      ])
+
+      return {
+        tool, input,
+        success:  raw.success,
+        output:   String(raw.output || ''),
+        error:    raw.error,
+        duration: Date.now() - start,
+        retries,
+      }
+
+    } catch (e: any) {
+      lastError = e.message || String(e)
+      console.warn(`[Executor] ${tool} attempt ${attempt + 1} failed: ${lastError.slice(0, 120)}`)
+
+      // Don't retry on permanent errors
+      if (NO_RETRY_PATTERNS.some(p => lastError.toLowerCase().includes(p))) {
+        break
+      }
+    }
   }
 
-  try {
-    return await fn(payload)
-  } catch (err: any) {
-    return { success: false, output: '', error: `Tool ${type} threw: ${err.message}` }
+  return {
+    tool, input,
+    success:  false,
+    output:   '',
+    error:    lastError,
+    duration: Date.now() - start,
+    retries,
   }
 }

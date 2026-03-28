@@ -34,6 +34,17 @@ import { checkSearxNG }                   from './core/webSearch'
 const workspace = path.join(process.cwd(), 'workspace', 'sandbox')
 if (!fs.existsSync(workspace)) fs.mkdirSync(workspace, { recursive: true })
 
+// ── Global crash prevention — keep server alive on unhandled errors ──
+process.on('uncaughtException', (err) => {
+  console.error('[DevOS] Uncaught Exception (server kept alive):', err.message)
+  // Do NOT exit — keep the server alive
+})
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[DevOS] Unhandled Rejection (server kept alive):', reason)
+  // Do NOT exit
+})
+
 // ── CLI args ──────────────────────────────────────────────────
 
 const args     = process.argv.slice(2)
