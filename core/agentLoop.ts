@@ -148,6 +148,7 @@ const OPENAI_COMPAT_ENDPOINTS: Record<string, string> = {
   openrouter: 'https://openrouter.ai/api/v1/chat/completions',
   cerebras:   'https://api.cerebras.ai/v1/chat/completions',
   nvidia:     'https://integrate.api.nvidia.com/v1/chat/completions',
+  github:     'https://models.inference.ai.azure.com/v1/chat/completions',
 }
 
 function buildHeaders(providerName: string, apiKey: string): Record<string, string> {
@@ -1421,8 +1422,28 @@ export async function callLLM(
       const d = await r.json() as any
       return d?.message?.content || ''
 
+    } else if (providerName === 'cloudflare') {
+      // Cloudflare Workers AI — accountId|modelName stored in model field
+      const [accountId, cfModel] = model.split('|')
+      const r = await fetch(
+        `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${cfModel || '@cf/meta/llama-3.1-8b-instruct'}`,
+        {
+          method:  'POST',
+          headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ messages }),
+          signal:  AbortSignal.timeout(20000),
+        }
+      )
+      if (r.status === 429) {
+        try { markRateLimited(providerName) } catch {}
+        throw new Error(`Rate limited (429): ${providerName}`)
+      }
+      if (!r.ok) throw new Error(`cloudflare ${r.status}`)
+      const d = await r.json() as any
+      return d?.result?.response || ''
+
     } else {
-      // OpenAI-compatible: groq, openrouter, cerebras, nvidia
+      // OpenAI-compatible: groq, openrouter, cerebras, nvidia, github
       const url     = OPENAI_COMPAT_ENDPOINTS[providerName] || OPENAI_COMPAT_ENDPOINTS.groq
       const headers = buildHeaders(providerName, apiKey)
       const r = await fetch(url, {

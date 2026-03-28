@@ -29,6 +29,8 @@ const RATE_LIMIT_WINDOWS: Record<string, number> = {
   anthropic:  60  * 1000,
   cerebras:   30  * 1000,
   nvidia:     60  * 1000,
+  cloudflare: 30  * 1000,
+  github:     30  * 1000,
   ollama:     0,           // local — never rate-limited
 }
 const DEFAULT_RATE_LIMIT_MS = 60 * 1000 // 1 minute fallback
