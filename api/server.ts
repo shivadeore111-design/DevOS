@@ -53,6 +53,7 @@ import { semanticMemory }                               from '../core/semanticMe
 import { entityGraph }                                  from '../core/entityGraph'
 import { learningMemory }                               from '../core/learningMemory'
 import { knowledgeBase }                               from '../core/knowledgeBase'
+import { deepKB }                                      from '../core/deepKB'
 import multer                                           from 'multer'
 import { skillTeacher }                               from '../core/skillTeacher'
 import { growthEngine }                               from '../core/growthEngine'
@@ -914,6 +915,11 @@ export function createApiServer(): Express {
   // â”€â”€ Knowledge Base endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   // GET /api/knowledge â€” list all files + stats
+  // GET /api/kb/graph — DeepKB graph endpoint
+  app.get('/api/kb/graph', (_req: Request, res: Response) => {
+    res.json({ message: 'DeepKB graph endpoint active' })
+  })
+
   app.get('/api/knowledge', (_req: Request, res: Response) => {
     try {
       res.json({ files: knowledgeBase.listFiles(), stats: knowledgeBase.getStats() })

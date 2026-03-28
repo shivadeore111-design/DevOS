@@ -10,6 +10,7 @@
 import fs   from 'fs'
 import path from 'path'
 import { extractFile } from './fileIngestion'
+import { deepKB } from './deepKB'
 
 export interface KnowledgeChunk {
   id:          string
@@ -328,7 +329,14 @@ export class KnowledgeBase {
 
     if (scored.length > 0) this.save()
 
-    return scored.map(r => r.chunk)
+    const results = scored.map(r => r.chunk)
+
+    // DeepKB — ingest entities from top results into the graph
+    for (const chunk of results.slice(0, 3)) {
+      deepKB.ingestFromKBResult(chunk.text, chunk.filename)
+    }
+
+    return results
   }
 
   // ── Build context string for planner/responder injection ──────
@@ -354,6 +362,16 @@ export class KnowledgeBase {
       ...chunks.map(c => `[From: ${c.filename}]\n${c.text}`),
       'Use the above as reference knowledge only.',
     ]
+
+    // DeepKB — expand graph context from top chunks (1-hop neighbours)
+    const expanded = chunks.flatMap(c =>
+      deepKB.expand(c.filename.toLowerCase().replace(/\s+/g, '_'), 1)
+    ).slice(0, 5)
+
+    if (expanded.length > 0) {
+      lines.push('\nRELATED ENTITIES:')
+      lines.push(...expanded.map(e => `- ${e.name} (${e.type}) via ${e.relation}`))
+    }
 
     // Hard cap — never inject more than 2000 chars
     return lines.join('\n').slice(0, 2000)
