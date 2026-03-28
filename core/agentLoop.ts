@@ -24,6 +24,7 @@ import { knowledgeBase } from './knowledgeBase'
 import { skillTeacher }  from './skillTeacher'
 import { growthEngine }  from './growthEngine'
 import { AIDEN_RESPONDER_SYSTEM } from './aidenPersonality'
+import { auditTrail }             from './auditTrail'
 import * as nodeFs             from 'fs'
 import * as nodePath           from 'path'
 import * as nodeOs             from 'os'
@@ -1008,6 +1009,19 @@ export async function executePlan(
     stepOutputs[step.step] = stepResult.output
     results.push(stepResult)
     onStep(step, stepResult)
+
+    // Audit trail — record every tool execution
+    auditTrail.record({
+      action:     'tool',
+      tool:       step.tool,
+      input:      JSON.stringify(step.input).slice(0, 200),
+      output:     stepResult.output?.slice(0, 200),
+      durationMs: stepResult.duration,
+      success:    stepResult.success,
+      error:      stepResult.error,
+      goal:       plan.goal,
+      traceId:    plan.planId,
+    })
 
     // Persist step result to task state immediately
     if (stepResult.success) {

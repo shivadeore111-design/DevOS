@@ -28,6 +28,7 @@ import { executor }                        from './core/executor'
 import { memoryStrategy }                  from './core/memoryStrategy'
 import { startApiServer }                  from './api/server'
 import { checkSearxNG }                   from './core/webSearch'
+import { auditTrail }                     from './core/auditTrail'
 
 // ── Bootstrap ─────────────────────────────────────────────────
 
@@ -254,6 +255,17 @@ async function main(): Promise<void> {
       break
     }
 
+    // ── devos history ────────────────────────────────────────
+    case 'history': {
+      try {
+        const entries = auditTrail.getToday()
+        console.log('\n' + auditTrail.formatSummary(entries) + '\n')
+      } catch (err: any) {
+        console.error(`[history] Error: ${err?.message ?? err}`)
+      }
+      break
+    }
+
     // ── devos help / default ─────────────────────────────────
     case 'help':
     case '--help':
@@ -271,6 +283,7 @@ Commands:
   setup              Configure DevOS for your machine
   setup:reset        Reset and re-run setup
   hardware           Show detected hardware
+  history            Show today's activity summary
   models             List compatible AI models
   models recommend   Show recommended model per task type
   memory stats       Show memory statistics

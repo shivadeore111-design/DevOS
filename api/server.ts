@@ -55,7 +55,10 @@ import { learningMemory }                               from '../core/learningMe
 import { knowledgeBase }                               from '../core/knowledgeBase'
 import multer                                           from 'multer'
 import { skillTeacher }                               from '../core/skillTeacher'
+import { growthEngine }                               from '../core/growthEngine'
+import { userCognitionProfile }                      from '../core/userCognitionProfile'
 import { isPro, validateLicense, getCurrentLicense, clearLicense, startLicenseRefresh } from '../core/licenseManager'
+import { auditTrail } from '../core/auditTrail'
 
 // â”€â”€ Chat error handler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Centralised error formatting for /api/chat catch blocks.
@@ -511,6 +514,7 @@ export function createApiServer(): Express {
         }
         send({ done: true, provider: apiName })
         res.end()
+        userCognitionProfile.observe(message, reply)
         conversationMemory.addAssistantMessage(reply)
         return
       } catch {
@@ -667,6 +671,7 @@ export function createApiServer(): Express {
 
       conversationMemory.updateFromExecution(toolsUsed, filesCreated, searchQueries, plan.planId)
       conversationMemory.addAssistantMessage(fullReply, { toolsUsed, filesCreated, searchQueries, planId: plan.planId })
+      userCognitionProfile.observe(resolvedMessage, fullReply)
 
       incrementUsage(apiName)
       send({ done: true, provider: apiName })
@@ -1379,6 +1384,15 @@ export function createApiServer(): Express {
     }
   })
 
+  // GET /api/audit/today — daily activity summary
+  app.get('/api/audit/today', (_req: Request, res: Response) => {
+    const entries = auditTrail.getToday()
+    res.json({
+      entries,
+      summary: auditTrail.formatSummary(entries),
+    })
+  })
+
   // GET /api/doctor
   app.get('/api/doctor', async (_req: Request, res: Response) => {
     try {
@@ -1720,6 +1734,52 @@ export function createApiServer(): Express {
   })
 
   // â”€â”€ 404 catch-all â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── UserCognitionProfile ────────────────────────────────────────
+
+  // GET /api/cognition/profile — current inferred user cognitive style
+  app.get('/api/cognition/profile', (_req: Request, res: Response) => {
+    try {
+      res.json(userCognitionProfile.getProfile())
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
+    // ── GrowthEngine ──────────────────────────────────────────────
+
+  // GET /api/growth/report — weekly summary: successes, failures, gaps, proposals
+  app.get('/api/growth/report', (_req: Request, res: Response) => {
+    try {
+      res.json(growthEngine.getWeeklyReport())
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
+  // GET /api/growth/gaps — live capability gap analysis
+  app.get('/api/growth/gaps', (_req: Request, res: Response) => {
+    try {
+      res.json({ gaps: growthEngine.analyze() })
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
+  // GET /api/growth/failures — recent failure log (raw JSONL lines)
+  app.get('/api/growth/failures', (_req: Request, res: Response) => {
+    try {
+      const limitParam = parseInt(((_req as any).query?.limit as string) || '20', 10)
+      const logPath = require('path').join(process.cwd(), 'workspace', 'growth', 'failure-log.jsonl')
+      const fs2     = require('fs')
+      if (!fs2.existsSync(logPath)) { res.json({ failures: [] }); return }
+      const lines   = fs2.readFileSync(logPath, 'utf-8').trim().split('\n').filter(Boolean)
+      const recent  = lines.slice(-limitParam).map((l: string) => { try { return JSON.parse(l) } catch { return null } }).filter(Boolean)
+      res.json({ failures: recent })
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
   app.use((_req: Request, res: Response) => {
     res.status(404).json({ error: 'Not found' })
   })
@@ -1923,7 +1983,8 @@ async function streamChat(
   apiName:  string,
   send:     (data: object) => void,
 ): Promise<void> {
-  const chatPrompt = `You are Aiden — a personal AI OS built for ${userName}. You are sharp, direct, and slightly witty. You speak like a trusted co-founder. Respond naturally and conversationally — never say "Done." as a response to a greeting or question. Today: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.`
+  const cognitionHint = userCognitionProfile.getSystemPromptAddition()
+  const chatPrompt = `You are Aiden — a personal AI OS built for ${userName}. You are sharp, direct, and slightly witty. You speak like a trusted co-founder. Respond naturally and conversationally — never say "Done." as a response to a greeting or question. Today: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.${cognitionHint ? ' ' + cognitionHint : ''}`
 
   const msgs = [
     { role: 'system', content: chatPrompt },
