@@ -1923,10 +1923,7 @@ async function streamChat(
   apiName:  string,
   send:     (data: object) => void,
 ): Promise<void> {
-  const chatPrompt = `${AIDEN_STREAM_SYSTEM}
-
-User: ${userName}
-Today: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.`
+  const chatPrompt = `You are Aiden — a personal AI OS built for ${userName}. You are sharp, direct, and slightly witty. You speak like a trusted co-founder. Respond naturally and conversationally — never say "Done." as a response to a greeting or question. Today: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.`
 
   const msgs = [
     { role: 'system', content: chatPrompt },

@@ -140,10 +140,10 @@ interface DevOSCtxType {
   routing:        any
   addingProvider: string | null
   setAddingProvider: (v: string | null) => void
-  newKey:         string
-  setNewKey:      (v: string) => void
-  newModel:       string
-  setNewModel:    (v: string) => void
+  providerKeys:   Record<string, string>
+  setProviderKeys:(v: React.SetStateAction<Record<string, string>>) => void
+  providerModels: Record<string, string>
+  setProviderModels:(v: React.SetStateAction<Record<string, string>>) => void
   savingKey:      boolean
   saveKey:        (providerID: string) => void
   toggleProvider: (name: string, enabled: boolean) => void
@@ -387,7 +387,7 @@ function SettingsSection({ title, children }: { title: string; children: React.R
 function ApiKeysTab() {
   const {
     providers, routing, addingProvider, setAddingProvider,
-    newKey, setNewKey, newModel, setNewModel,
+    providerKeys, setProviderKeys, providerModels, setProviderModels,
     savingKey, saveKey, toggleProvider, deleteProvider, resetLimits,
   } = useDevOS()
 
@@ -496,11 +496,12 @@ function ApiKeysTab() {
             <div style={{ position: 'relative', marginBottom: 8 }}>
               <input
                 placeholder="Paste API key..."
-                value={newKey}
+                value={providerKeys[addingProvider] || ''}
                 onChange={e => {
-                  setNewKey(e.target.value)
-                  // Reset status when user edits
-                  if (addingProvider) setKeyValidation(prev => ({ ...prev, [addingProvider]: null }))
+                  const val = e.target.value
+                  setProviderKeys(prev => ({ ...prev, [addingProvider]: val }))
+                  // Reset validation status when user edits
+                  setKeyValidation(prev => ({ ...prev, [addingProvider]: null }))
                 }}
                 onBlur={async (e) => {
                   const key = e.target.value.trim()
@@ -540,8 +541,8 @@ function ApiKeysTab() {
               )}
             </div>
             <select
-              value={newModel}
-              onChange={e => setNewModel(e.target.value)}
+              value={providerModels[addingProvider] || ''}
+              onChange={e => setProviderModels(prev => ({ ...prev, [addingProvider]: e.target.value }))}
               style={{
                 width: '100%', background: 'var(--bg3)',
                 border: '1px solid var(--border2)', borderRadius: 6,
@@ -556,13 +557,13 @@ function ApiKeysTab() {
             </select>
             <button
               onClick={() => saveKey(addingProvider)}
-              disabled={!newKey.trim() || savingKey}
+              disabled={!(providerKeys[addingProvider] || '').trim() || savingKey}
               style={{
                 width: '100%', padding: '8px', borderRadius: 6,
                 background: 'var(--orange)', border: 'none',
                 color: '#000', fontFamily: 'var(--mono)', fontSize: 12,
                 fontWeight: 600, cursor: 'pointer',
-                opacity: !newKey.trim() || savingKey ? 0.5 : 1,
+                opacity: !(providerKeys[addingProvider] || '').trim() || savingKey ? 0.5 : 1,
               }}
             >
               {savingKey ? 'Saving...' : 'Save API Key'}
@@ -1198,7 +1199,13 @@ function ChatPanel() {
                 color: execMode === m ? 'var(--orange)' : 'var(--muted)',
                 cursor: 'pointer', fontSize: 14, transition: 'all 0.15s',
               }}>
-                {m === 'auto' ? '⚡' : m === 'plan' ? '📋' : '💬'}
+                {m === 'auto' ? (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                ) : m === 'plan' ? (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h4"/></svg>
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                )}
               </button>
             ))}
           </div>
@@ -1239,7 +1246,9 @@ function ChatPanel() {
                 cursor: 'pointer', fontSize: 14, transition: 'all 0.2s',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}
-            >🔊</button>
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+            </button>
           )}
 
           {/* Send */}
@@ -1255,7 +1264,9 @@ function ChatPanel() {
               fontSize: 14, transition: 'all 0.2s',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}
-          >▶</button>
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          </button>
         </div>
       </div>
     </section>
@@ -1274,8 +1285,9 @@ interface PulseEntry {
 
 function LiveViewPanel() {
   const { isExecuting, uiMode, setUIMode, systemStats, setActivityLogs, activityLogs } = useDevOS()
-  const [pulseLog, setPulseLog] = useState<PulseEntry[]>([])
-  const bottomRef               = useRef<HTMLDivElement>(null)
+  const [pulseLog, setPulseLog]     = useState<PulseEntry[]>([])
+  const [collapsed, setCollapsed]   = useState(false)
+  const bottomRef                   = useRef<HTMLDivElement>(null)
 
   // WebSocket connection to LivePulse bridge
   useEffect(() => {
@@ -1309,41 +1321,73 @@ function LiveViewPanel() {
     <aside style={{
       overflow: 'hidden', borderLeft: '1px solid var(--border)',
       background: 'var(--bg1)', display: 'flex', flexDirection: 'column',
-      minWidth: 420,
+      width: collapsed ? 40 : undefined,
+      minWidth: collapsed ? 40 : 420,
+      transition: 'min-width 0.2s ease-out, width 0.2s ease-out',
     }}>
       {/* Header */}
       <div style={{
         height: 40, display: 'flex', alignItems: 'center',
-        justifyContent: 'space-between', padding: '0 14px',
+        justifyContent: collapsed ? 'center' : 'space-between',
+        padding: collapsed ? '0' : '0 14px',
         borderBottom: '1px solid var(--border)', flexShrink: 0,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--muted2)', fontFamily: 'var(--mono)' }}>
-          <span style={{
-            width: 5, height: 5, borderRadius: '50%',
-            background: isExecuting ? 'var(--orange)' : 'var(--green)',
-            animation: isExecuting ? 'pulse-dot 1s infinite' : 'none',
-          }} />
-          Live Activity
-        </div>
-        <div style={{ display: 'flex', gap: 4 }}>
-          {pulseLog.length > 0 && (
-            <button
-              onClick={() => setPulseLog([])}
-              title="Clear feed"
-              style={{
-                height: 28, padding: '0 8px', borderRadius: 5,
-                background: 'transparent', border: '1px solid transparent',
-                color: 'var(--muted)', cursor: 'pointer', fontSize: 10,
-                fontFamily: 'var(--mono)', transition: 'all 0.15s',
-              }}
-            >clear</button>
-          )}
-          <NavBtn onClick={() => setUIMode((m: UIMode) => m === 'watch' ? 'focus' : 'watch')} title="Watch Mode">
-            {uiMode === 'watch' ? '✕' : '⤢'}
-          </NavBtn>
-        </div>
+        {collapsed ? (
+          <button
+            onClick={() => setCollapsed(false)}
+            title="Expand Live Activity"
+            style={{
+              width: 40, height: 40, display: 'flex', alignItems: 'center',
+              justifyContent: 'center', background: 'transparent', border: 'none',
+              color: 'var(--muted)', cursor: 'pointer',
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+          </button>
+        ) : (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--muted2)', fontFamily: 'var(--mono)' }}>
+              <span style={{
+                width: 5, height: 5, borderRadius: '50%',
+                background: isExecuting ? 'var(--orange)' : 'var(--green)',
+                animation: isExecuting ? 'pulse-dot 1s infinite' : 'none',
+              }} />
+              Live Activity
+            </div>
+            <div style={{ display: 'flex', gap: 4 }}>
+              {pulseLog.length > 0 && (
+                <button
+                  onClick={() => setPulseLog([])}
+                  title="Clear feed"
+                  style={{
+                    height: 28, padding: '0 8px', borderRadius: 5,
+                    background: 'transparent', border: '1px solid transparent',
+                    color: 'var(--muted)', cursor: 'pointer', fontSize: 10,
+                    fontFamily: 'var(--mono)', transition: 'all 0.15s',
+                  }}
+                >clear</button>
+              )}
+              <button
+                onClick={() => setCollapsed(true)}
+                title="Collapse panel"
+                style={{
+                  width: 28, height: 28, borderRadius: 5, display: 'flex',
+                  alignItems: 'center', justifyContent: 'center',
+                  background: 'transparent', border: 'none',
+                  color: 'var(--muted)', cursor: 'pointer', transition: 'all 0.15s',
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+              </button>
+              <NavBtn onClick={() => setUIMode((m: UIMode) => m === 'watch' ? 'focus' : 'watch')} title="Watch Mode">
+                {uiMode === 'watch' ? '✕' : '⤢'}
+              </NavBtn>
+            </div>
+          </>
+        )}
       </div>
 
+      {!collapsed && <>
       {/* Activity Feed */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 2 }}>
         {pulseLog.length === 0 ? (
@@ -1352,7 +1396,7 @@ function LiveViewPanel() {
             justifyContent: 'center', flex: 1, gap: 10,
             color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 11,
           }}>
-            <div style={{ fontSize: 28, opacity: 0.3 }}>⚡</div>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.3 }}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
             <div>Waiting for activity...</div>
             <div style={{ fontSize: 10, color: 'var(--muted)', opacity: 0.7 }}>Events will appear here as Aiden works</div>
           </div>
@@ -1422,6 +1466,8 @@ function LiveViewPanel() {
           </div>
         ))}
       </div>
+    </>
+    }
     </aside>
   )
 }
@@ -2268,8 +2314,8 @@ export default function Home() {
   const [providers,       setProviders]       = useState<any[]>([])
   const [routing,         setRouting]         = useState<any>({ mode: 'auto', fallbackToOllama: true })
   const [addingProvider,  setAddingProvider]  = useState<string | null>(null)
-  const [newKey,          setNewKey]          = useState('')
-  const [newModel,        setNewModel]        = useState('')
+  const [providerKeys,    setProviderKeys]    = useState<Record<string, string>>({})
+  const [providerModels,  setProviderModels]  = useState<Record<string, string>>({})
   const [savingKey,       setSavingKey]       = useState(false)
 
   // ── Knowledge Base state ────────────────────────────────────
@@ -2624,22 +2670,24 @@ export default function Home() {
 
   // ── Settings: API Key handlers ──────────────────────────────
   const saveKey = useCallback(async (providerID: string) => {
-    if (!newKey.trim()) return
+    const key   = (providerKeys[providerID] || '').trim()
+    const model = providerModels[providerID] || ''
+    if (!key) return
     setSavingKey(true)
     try {
       await fetch('http://localhost:4200/api/providers/add', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider: providerID, key: newKey.trim(), model: newModel || undefined }),
+        body: JSON.stringify({ provider: providerID, key, model: model || undefined }),
       })
-      setNewKey('')
-      setNewModel('')
+      setProviderKeys(prev => { const n = { ...prev }; delete n[providerID]; return n })
+      setProviderModels(prev => { const n = { ...prev }; delete n[providerID]; return n })
       setAddingProvider(null)
       const d = await fetch('http://localhost:4200/api/providers').then(r => r.json()) as any
       setProviders(d.apis || [])
     } catch {}
     setSavingKey(false)
-  }, [newKey, newModel])
+  }, [providerKeys, providerModels])
 
   const toggleProvider = useCallback(async (name: string, enabled: boolean) => {
     await fetch(`http://localhost:4200/api/providers/${encodeURIComponent(name)}`, {
@@ -2833,7 +2881,7 @@ export default function Home() {
     voiceStatus, isRecording, ttsEnabled, setTtsEnabled, recordingTimer, startRecording,
     // API keys
     providers, routing, addingProvider, setAddingProvider,
-    newKey, setNewKey, newModel, setNewModel,
+    providerKeys, setProviderKeys, providerModels, setProviderModels,
     savingKey, saveKey, toggleProvider, deleteProvider, resetLimits,
     // Knowledge base
     knowledgeFiles, knowledgeStats, uploadingFile,
