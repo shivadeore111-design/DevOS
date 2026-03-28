@@ -84,6 +84,7 @@ interface DevOSCtxType {
   // Execution
   isExecuting:    boolean
   isStreaming:    boolean
+  activeModel:    string
   // Messages / conversations
   messages:       Message[]
   setMessages:    React.Dispatch<React.SetStateAction<Message[]>>
@@ -721,6 +722,7 @@ function NavBar() {
     liveViewOpen, setLiveViewOpen,
     setSettingsOpen, setSettingsTab,
     licenseStatus, setPricingOpen,
+    activeModel,
   } = useDevOS()
 
   return (
@@ -751,7 +753,7 @@ function NavBar() {
             display: 'inline-block', animation: 'pulse-dot 2s infinite',
           }} />
           <span style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'var(--mono)' }}>
-            v2 · local
+            {activeModel ? activeModel.split('/').pop()?.replace(':latest', '') || activeModel : 'local'}
           </span>
         </div>
       </div>
@@ -2202,6 +2204,16 @@ export default function Home() {
       .catch(() => setOnboardingDone(true)) // server not running yet — skip onboarding
   }, [])
 
+  // ── Load active model label for header ───────────────────────
+  useEffect(() => {
+    fetch('http://localhost:4200/api/config')
+      .then(r => r.json())
+      .then((d: any) => {
+        if (d.activeModel) setActiveModel(d.activeModel)
+      })
+      .catch(() => {})
+  }, [])
+
   // ── UI Mode ─────────────────────────────────────────────────
   const [uiMode,         setUIMode]         = useState<UIMode>('focus')
   const [execMode,       setExecMode]       = useState<ExecMode>('auto')
@@ -2212,6 +2224,7 @@ export default function Home() {
   const [settingsTab,    setSettingsTab]    = useState('api')
   const [isExecuting,    setIsExecuting]    = useState(false)
   const [isStreaming,    setIsStreaming]    = useState(false)
+  const [activeModel,    setActiveModel]    = useState<string>('')
 
   // ── Messages / conversations ────────────────────────────────
   const [messages,       setMessages]       = useState<Message[]>([])
@@ -2472,7 +2485,10 @@ export default function Home() {
     try {
       const resp = await fetch('http://localhost:4200/api/chat', {
         method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept':        'text/event-stream',
+        },
         body: JSON.stringify({
           message:  userMsg.content,
           history:  newMessages.slice(-10).map(m => ({ role: m.role, content: m.content })),
@@ -2538,6 +2554,11 @@ export default function Home() {
                 saveToConversation(updated)
                 return updated
               })
+              // Refresh active model label — provider may have auto-rotated
+              fetch('http://localhost:4200/api/config')
+                .then(r => r.json())
+                .then((d: any) => { if (d.activeModel) setActiveModel(d.activeModel) })
+                .catch(() => {})
             }
           } catch {}
         }
@@ -2547,7 +2568,16 @@ export default function Home() {
       setIsStreaming(false)
       setMessages(m => m.map(msg =>
         msg.id === thinkingId
-          ? { ...msg, content: 'Something went wrong. Please try again.', isStreaming: false }
+          ? { ...msg, content: fullReply || 'Something went wrong. Please try again.', isStreaming: false }
+          : msg
+      ))
+    } finally {
+      // Guarantee cleanup — if the stream closes without a `done` event, clear state
+      setIsStreaming(false)
+      setIsExecuting(false)
+      setMessages(m => m.map(msg =>
+        msg.id === thinkingId && msg.isStreaming
+          ? { ...msg, isStreaming: false }
           : msg
       ))
     }
@@ -2783,7 +2813,7 @@ export default function Home() {
     historyOpen, setHistoryOpen, liveViewOpen, setLiveViewOpen,
     activityOpen, setActivityOpen, settingsOpen, setSettingsOpen,
     settingsTab, setSettingsTab,
-    isExecuting, isStreaming,
+    isExecuting, isStreaming, activeModel,
     messages, setMessages, conversations, setConversations, currentConvId,
     input, setInput,
     activityLogs, setActivityLogs, screenshot, setScreenshot, sessionId,
