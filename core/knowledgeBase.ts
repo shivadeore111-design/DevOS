@@ -10,6 +10,7 @@
 import fs   from 'fs'
 import path from 'path'
 import { extractFile } from './fileIngestion'
+import { deepKB } from './deepKB'
 
 export interface KnowledgeChunk {
   id:          string
