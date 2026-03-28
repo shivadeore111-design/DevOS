@@ -23,6 +23,8 @@ import {
 } from './computerControl'
 
 import { reliableWebSearch, deepResearch as deepResearchFn } from './webSearch'
+import { getMarketData }   from './tools/marketDataTool'
+import { getCompanyInfo }  from './tools/companyFilingsTool'
 
 const execAsync = promisify(exec)
 
@@ -92,6 +94,9 @@ const TOOL_TIMEOUTS: Record<string, number> = {
   git_commit:     30000,
   wait:            6000,
   get_stocks:     20000,
+  get_market_data:   15000,
+  get_company_info:  15000,
+  social_research:   30000,
 }
 
 // ── Tool implementations ──────────────────────────────────────
@@ -750,6 +755,36 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
       success: true,
       output:  header,
     }
+  },
+
+  // ── Financial tools ─────────────────────────────────────
+
+  get_market_data: async (p: any) => {
+    const symbol = (p.symbol || p.ticker || '').trim()
+    if (!symbol) return { success: false, output: '', error: 'No symbol provided. Pass { symbol: "RELIANCE" } or { symbol: "AAPL" }.' }
+    try {
+      const data = await getMarketData(symbol)
+      return { success: true, output: JSON.stringify(data, null, 2) }
+    } catch (e: any) {
+      return { success: false, output: '', error: e.message }
+    }
+  },
+
+  get_company_info: async (p: any) => {
+    const symbol = (p.symbol || p.ticker || '').trim()
+    if (!symbol) return { success: false, output: '', error: 'No symbol provided. Pass { symbol: "RELIANCE" } or { symbol: "AAPL" }.' }
+    try {
+      const data = await getCompanyInfo(symbol)
+      return { success: true, output: JSON.stringify(data, null, 2) }
+    } catch (e: any) {
+      return { success: false, output: '', error: e.message }
+    }
+  },
+
+  social_research: async (input: { topic: string }) => {
+    const { socialResearch } = await import('./tools/socialResearchTool')
+    const result = await socialResearch(input.topic)
+    return { success: true, output: JSON.stringify(result, null, 2) }
   },
 
   // ── Wait ───────────────────────────────────────────────────────

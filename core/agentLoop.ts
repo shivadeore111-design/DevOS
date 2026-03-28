@@ -22,6 +22,7 @@ import { ollamaProvider } from '../providers/ollama'
 import { loadConfig }     from '../providers/index'
 import { knowledgeBase } from './knowledgeBase'
 import { skillTeacher }  from './skillTeacher'
+import { growthEngine }  from './growthEngine'
 import { AIDEN_RESPONDER_SYSTEM } from './aidenPersonality'
 import * as nodeFs             from 'fs'
 import * as nodePath           from 'path'
@@ -372,6 +373,7 @@ export async function planWithLLM(
     'browser_click', 'browser_type', 'file_write', 'file_read',
     'file_list', 'shell_exec', 'run_python', 'run_node',
     'system_info', 'notify', 'deep_research', 'get_stocks',
+    'get_market_data', 'get_company_info', 'social_research',
     'mouse_move', 'mouse_click', 'keyboard_type', 'keyboard_press',
     'screenshot', 'screen_read', 'vision_loop', 'wait',
   ]
@@ -430,6 +432,8 @@ TOOL INPUT RULES:
 - shell_exec: { "command": "actual powershell command" }
 - fetch_page: { "url": "https://exact-url.com" }
 - get_stocks: { "market": "NSE", "type": "gainers" }  — type: gainers | losers | active
+- get_market_data: { "symbol": "RELIANCE" }  — real-time price, change%, volume for any stock (NSE/BSE/US)
+- get_company_info: { "symbol": "RELIANCE" }  — company profile, sector, P/E, EPS, revenue
 - wait: { "ms": 2000 }  — Pause execution. Use after open_browser, after clicks, after any UI action that needs time to complete. Max 5000ms.
 
 COMPUTER CONTROL RULES — follow strictly when controlling mouse/keyboard/browser:
@@ -444,7 +448,9 @@ COMPUTER CONTROL RULES — follow strictly when controlling mouse/keyboard/brows
 
 URL RULES:
 - Always use COMPLETE URLs — never truncate a URL in a tool input
-- For stock/financial queries (NSE, BSE, gainers, losers, share price) → use get_stocks, NOT web_search
+- For market-wide queries (gainers, losers, most active) → use get_stocks, NOT web_search
+- For individual stock price / market data → use get_market_data({ "symbol": "RELIANCE" })
+- For company profile, financials, P/E ratio, EPS → use get_company_info({ "symbol": "RELIANCE" })
 - Example: get_stocks({ "market": "NSE", "type": "gainers" })
 
 OUTPUT FORMAT (strict JSON only):
@@ -738,7 +744,8 @@ const VALID_TOOLS = [
   'browser_click', 'browser_type', 'browser_screenshot', 'file_write', 'file_read',
   'file_list', 'shell_exec', 'run_python', 'run_node', 'run_powershell',
   'system_info', 'notify', 'deep_research', 'get_stocks', 'run_agent', 'git_commit',
-  'git_push', 'mouse_move', 'mouse_click', 'keyboard_type', 'keyboard_press',
+  'git_push', 'get_market_data', 'get_company_info',
+  'mouse_move', 'mouse_click', 'keyboard_type', 'keyboard_press',
   'screenshot', 'screen_read', 'vision_loop', 'wait',
 ]
 
@@ -1051,6 +1058,9 @@ export async function executePlan(
   const anyFailed      = results.some(r => !r.success)
 
   if (allSucceeded && executedTools.length > 0) {
+    // GrowthEngine — record success for gap-resolution tracking
+    growthEngine.logSuccess(plan.goal, executedTools)
+
     try {
       const next = getNextAvailableAPI()
       if (next) {
@@ -1064,6 +1074,10 @@ export async function executePlan(
       }
     } catch {}
   } else if (anyFailed) {
+    // GrowthEngine — record failure with full error context
+    const firstError = results.find(r => !r.success)?.error ?? 'Unknown error'
+    growthEngine.logFailure(plan.goal, firstError, executedTools)
+
     skillTeacher.recordFailure(plan.goal, executedTools)
   }
 
