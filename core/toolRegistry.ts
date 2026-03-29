@@ -102,6 +102,12 @@ const TOOL_TIMEOUTS: Record<string, number> = {
   social_research:              30000,
   code_interpreter_python:      35000,
   code_interpreter_node:        35000,
+  clipboard_read:                5000,
+  clipboard_write:               5000,
+  window_list:                  10000,
+  window_focus:                  8000,
+  app_launch:                   10000,
+  app_close:                     8000,
 }
 
 // ── Tool implementations ──────────────────────────────────────
@@ -890,6 +896,77 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
       output:  (result.output || '') + filesNote,
       error:   result.error,
     }
+  },
+
+  // ── Sprint 23: Clipboard + Window + App Launch Tools ──────────
+
+  clipboard_read: async () => {
+    try {
+      const { execSync } = await import('child_process')
+      const text = execSync('powershell.exe -Command "Get-Clipboard"', { timeout: 5000 }).toString().trim()
+      return { success: true, output: text || '(clipboard is empty)' }
+    } catch (e: any) { return { success: false, output: '', error: e.message } }
+  },
+
+  clipboard_write: async (p) => {
+    const text = p.text || p.content || p.command || ''
+    if (!text) return { success: false, output: '', error: 'No text provided' }
+    try {
+      const { execSync } = await import('child_process')
+      const safe = text.replace(/'/g, "''")
+      execSync(`powershell.exe -Command "Set-Clipboard -Value '${safe}'"`, { timeout: 5000 })
+      return { success: true, output: `Copied to clipboard: "${text.slice(0, 80)}${text.length > 80 ? '...' : ''}"` }
+    } catch (e: any) { return { success: false, output: '', error: e.message } }
+  },
+
+  window_list: async () => {
+    try {
+      const { execSync } = await import('child_process')
+      const out = execSync(
+        'powershell.exe -Command "Get-Process | Where-Object {$_.MainWindowTitle -ne \'\'} | Select-Object -Property Id,ProcessName,MainWindowTitle | ConvertTo-Json"',
+        { timeout: 10000 }
+      ).toString().trim()
+      return { success: true, output: out || '(no visible windows found)' }
+    } catch (e: any) { return { success: false, output: '', error: e.message } }
+  },
+
+  window_focus: async (p) => {
+    const title = p.title || p.window || p.command || ''
+    if (!title) return { success: false, output: '', error: 'No window title provided' }
+    try {
+      const { execSync } = await import('child_process')
+      const safe = title.replace(/'/g, "''")
+      execSync(
+        `powershell.exe -Command "Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.Interaction]::AppActivate('${safe}')"`,
+        { timeout: 8000 }
+      )
+      return { success: true, output: `Focused window: "${title}"` }
+    } catch (e: any) { return { success: false, output: '', error: e.message } }
+  },
+
+  app_launch: async (p) => {
+    const app = p.app || p.path || p.command || ''
+    if (!app) return { success: false, output: '', error: 'No app specified' }
+    if (isShellDangerous(app)) {
+      return { success: false, output: '', error: 'CommandGate: Blocked potentially dangerous app launch.' }
+    }
+    try {
+      const { execSync } = await import('child_process')
+      const safe = app.replace(/'/g, "''")
+      execSync(`powershell.exe -Command "Start-Process '${safe}'"`, { timeout: 10000 })
+      return { success: true, output: `Launched: "${app}"` }
+    } catch (e: any) { return { success: false, output: '', error: e.message } }
+  },
+
+  app_close: async (p) => {
+    const app = p.app || p.process || p.command || ''
+    if (!app) return { success: false, output: '', error: 'No app/process name provided' }
+    try {
+      const { execSync } = await import('child_process')
+      const safe = app.replace(/'/g, "''")
+      execSync(`powershell.exe -Command "Stop-Process -Name '${safe}' -Force -ErrorAction SilentlyContinue"`, { timeout: 8000 })
+      return { success: true, output: `Closed process: "${app}"` }
+    } catch (e: any) { return { success: false, output: '', error: e.message } }
   },
 }
 

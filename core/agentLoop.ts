@@ -185,6 +185,9 @@ function inferPhasesFromSteps(
     file_list:       'reading',  shell_exec:      'execution',
     run_python:      'execution', run_node:       'execution',
     system_info:     'execution', notify:         'execution',
+    clipboard_read:  'execution', clipboard_write: 'execution',
+    window_list:     'execution', window_focus:   'execution',
+    app_launch:      'execution', app_close:      'execution',
   }
   const phaseNames: Record<string, string> = {
     research:  'Research & Gather',
@@ -436,6 +439,8 @@ export async function planWithLLM(
     'mouse_move', 'mouse_click', 'keyboard_type', 'keyboard_press',
     'screenshot', 'screen_read', 'vision_loop', 'wait',
     'code_interpreter_python', 'code_interpreter_node',
+    'clipboard_read', 'clipboard_write', 'window_list', 'window_focus',
+    'app_launch', 'app_close',
   ]
 
   // Sprint 13: append discovered MCP tools
@@ -818,6 +823,8 @@ const VALID_TOOLS = [
   'mouse_move', 'mouse_click', 'keyboard_type', 'keyboard_press',
   'screenshot', 'screen_read', 'vision_loop', 'wait',
   'code_interpreter_python', 'code_interpreter_node',
+  'clipboard_read', 'clipboard_write', 'window_list', 'window_focus',
+  'app_launch', 'app_close',
 ]
 
 interface ValidationResult {
@@ -926,6 +933,7 @@ const PARALLEL_SAFE = new Set([
   'web_search', 'system_info', 'get_stocks', 'get_market_data',
   'social_research', 'fetch_url', 'fetch_page', 'get_company_info',
   'deep_research', 'code_interpreter_python', 'code_interpreter_node',
+  'clipboard_read', 'window_list',
 ])
 
 const SEQUENTIAL_ONLY = new Set([
@@ -933,6 +941,7 @@ const SEQUENTIAL_ONLY = new Set([
   'open_browser', 'browser_click', 'browser_type', 'browser_extract',
   'mouse_move', 'mouse_click', 'keyboard_type', 'keyboard_press',
   'screenshot', 'screen_read', 'vision_loop', 'notify', 'wait',
+  'clipboard_write', 'window_focus', 'app_launch', 'app_close',
 ])
 
 export function buildDependencyGroups(steps: ToolStep[]): ToolStep[][] {
@@ -1000,6 +1009,9 @@ export async function executePlan(
     file_list:       'reading',  shell_exec:      'execution',
     run_python:      'execution', run_node:       'execution',
     system_info:     'execution', notify:         'execution',
+    clipboard_read:  'execution', clipboard_write: 'execution',
+    window_list:     'execution', window_focus:   'execution',
+    app_launch:      'execution', app_close:      'execution',
   }
 
   let lastCapability = ''
