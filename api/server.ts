@@ -61,6 +61,32 @@ import { userCognitionProfile }                      from '../core/userCognition
 import { isPro, validateLicense, getCurrentLicense, clearLicense, startLicenseRefresh } from '../core/licenseManager'
 import { auditTrail } from '../core/auditTrail'
 
+// â”€â”€ Human-readable tool message helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function humanToolMessage(tool: string, input: Record<string, any>): string {
+  const map: Record<string, string> = {
+    web_search:      `Searching the web for "${input?.query || ''}"`,
+    deep_research:   `Researching "${input?.topic || ''}" in depth`,
+    file_write:      `Writing to ${input?.path ? (input.path as string).split('\\').pop() : 'a file'}`,
+    file_read:       `Reading ${input?.path ? (input.path as string).split('\\').pop() : 'a file'}`,
+    shell_exec:      `Running a system command`,
+    run_python:      `Executing Python code`,
+    run_node:        `Executing Node.js code`,
+    system_info:     `Checking your system specs`,
+    screenshot:      `Taking a screenshot`,
+    fetch_url:       `Fetching ${input?.url || 'a URL'}`,
+    fetch_page:      `Fetching ${input?.url || 'a page'}`,
+    notify:          `Sending you a notification`,
+    get_stocks:      `Getting ${input?.market || ''} market data`,
+    social_research: `Searching Reddit and HackerNews for "${input?.topic || ''}"`,
+    get_market_data: `Looking up ${input?.symbol || 'stock'} price`,
+    get_company_info:`Getting company info for ${input?.symbol || ''}`,
+    open_browser:    `Opening ${input?.url || 'browser'}`,
+    browser_click:   `Clicking on the page`,
+    browser_extract: `Extracting content from page`,
+  }
+  return map[tool] || `Working on: ${tool}`
+}
+
 // â”€â”€ Chat error handler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Centralised error formatting for /api/chat catch blocks.
 // Returns user-facing tokens and activity events via the SSE send fn.
@@ -547,7 +573,7 @@ export function createApiServer(): Express {
       }
 
       // â”€â”€ STEP 1: PLAN â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-      send({ activity: { icon: 'ðŸ§ ', agent: 'Aiden', message: 'Thinking...', style: 'thinking' }, done: false })
+      send({ activity: { icon: 'ðŸ§ ', agent: 'Aiden', message: 'Working out a plan...', style: 'thinking' }, done: false })
 
       const memoryContext = conversationMemory.buildContext()
       const plan: AgentPlan = await planWithLLM(resolvedMessage, history, rawKey, activeModel, providerName, memoryContext)
@@ -620,7 +646,7 @@ export function createApiServer(): Express {
         plan,
         (step: ToolStep, result: StepResult) => {
           send({
-            activity: { icon: 'ðŸ”§', agent: 'Aiden', message: `${step.tool}: ${step.description}`, style: 'tool' },
+            activity: { icon: 'ðŸ”§', agent: 'Aiden', message: humanToolMessage(step.tool, step.input as Record<string, any>), style: 'tool', rawTool: step.tool, rawInput: step.input },
             done: false,
           })
           send({

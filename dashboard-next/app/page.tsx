@@ -38,11 +38,13 @@ interface Conversation {
 }
 
 interface ActivityLog {
-  time:    string
-  icon:    string
-  agent:   string
-  message: string
-  style?:  'ok' | 'err' | 'active' | 'default'
+  time:      string
+  icon:      string
+  agent:     string
+  message:   string
+  style?:    'ok' | 'err' | 'active' | 'default'
+  rawTool?:  string
+  rawInput?: Record<string, any>
 }
 
 interface MiniPromptConfig { type: 'websearch' | 'research' | 'stocks'; placeholder: string }
@@ -1476,6 +1478,7 @@ function LiveViewPanel() {
 
 function ActivityBar() {
   const { activityOpen, setActivityOpen, activityLogs, logsEndRef } = useDevOS()
+  const [expandedLog, setExpandedLog] = useState<number | null>(null)
 
   useEffect(() => {
     if (activityOpen) logsEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -1515,15 +1518,33 @@ function ActivityBar() {
               No activity yet — send a message to get started
             </div>
           ) : activityLogs.slice(-100).map((log, i) => (
-            <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '2px 0', fontFamily: 'var(--mono)', fontSize: 11 }}>
-              <span style={{ color: 'var(--muted)', flexShrink: 0, fontSize: 9, paddingTop: 1 }}>{log.time}</span>
-              <span style={{ flexShrink: 0 }}>{log.icon}</span>
-              <span style={{ color: 'var(--muted2)', flexShrink: 0 }}>[{log.agent}]</span>
-              <span style={{
-                color: log.style === 'ok'     ? 'var(--green)'  :
-                       log.style === 'err'    ? 'var(--red)'    :
-                       log.style === 'active' ? 'var(--orange)' : 'var(--muted2)',
-              }}>{log.message}</span>
+            <div key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', padding: '4px 0' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontFamily: 'var(--mono)', fontSize: 11, flex: 1, minWidth: 0 }}>
+                  <span style={{ color: 'var(--muted)', flexShrink: 0, fontSize: 9, paddingTop: 1 }}>{log.time}</span>
+                  <span style={{ flexShrink: 0 }}>{log.icon}</span>
+                  <span style={{ color: 'var(--muted2)', flexShrink: 0 }}>[{log.agent}]</span>
+                  <span style={{
+                    color: log.style === 'ok'     ? 'var(--green)'  :
+                           log.style === 'err'    ? 'var(--red)'    :
+                           log.style === 'active' ? 'var(--orange)' : 'var(--muted2)',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>{log.message}</span>
+                </div>
+                {log.rawTool && (
+                  <button
+                    onClick={() => setExpandedLog(expandedLog === i ? null : i)}
+                    style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 9, fontFamily: 'var(--mono)', flexShrink: 0, padding: '0 2px' }}
+                  >
+                    {expandedLog === i ? '▲' : '▼'}
+                  </button>
+                )}
+              </div>
+              {expandedLog === i && log.rawTool && (
+                <pre style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--muted)', background: 'var(--bg3)', padding: '6px 8px', borderRadius: 4, margin: '4px 0 0', overflow: 'auto', maxHeight: 100 }}>
+                  {JSON.stringify({ tool: log.rawTool, input: log.rawInput }, null, 2)}
+                </pre>
+              )}
             </div>
           ))}
           <div ref={logsEndRef} />
@@ -2564,13 +2585,15 @@ export default function Home() {
             if (data.activity) {
               if (!isExecuting) setIsExecuting(true)
               const log: ActivityLog = {
-                time:    new Date().toLocaleTimeString('en', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-                icon:    data.activity.icon    || '▸',
-                agent:   data.activity.agent   || 'Aiden',
-                message: data.activity.message || '',
-                style:   data.activity.style === 'done'    ? 'ok'     :
-                         data.activity.style === 'error'   ? 'err'    :
-                         data.activity.style === 'act' || data.activity.style === 'tool' ? 'active' : 'default',
+                time:     new Date().toLocaleTimeString('en', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+                icon:     data.activity.icon    || '▸',
+                agent:    data.activity.agent   || 'Aiden',
+                message:  data.activity.message || '',
+                style:    data.activity.style === 'done'    ? 'ok'     :
+                          data.activity.style === 'error'   ? 'err'    :
+                          data.activity.style === 'act' || data.activity.style === 'tool' ? 'active' : 'default',
+                rawTool:  data.activity.rawTool  || undefined,
+                rawInput: data.activity.rawInput || undefined,
               }
               setActivityLogs(prev => [...prev.slice(-99), log])
             }
