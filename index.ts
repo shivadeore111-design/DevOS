@@ -7,8 +7,8 @@
 // Imports ONLY from files that exist in the actual codebase.
 // All missing-module imports from prior versions have been removed.
 //
-// Commands: serve, goal, doctor, setup, setup:reset, hardware,
-//           automate, automate:stop, memory, models, help
+// Commands: serve, stop, status, goal, doctor, setup, setup:reset,
+//           hardware, automate, automate:stop, memory, models, help
 // ============================================================
 
 import 'dotenv/config'
@@ -78,6 +78,10 @@ async function main(): Promise<void> {
 
         startApiServer()
 
+        // ── Background service PID management ─────────────────
+        const { startBackgroundService } = await import('./core/backgroundService')
+        startBackgroundService(4200)
+
         // ── Capability profile — detect hardware tier silently ─
         buildCapabilityProfile().then(profile => {
           console.log(`[Capability] Tier: ${profile.tier} | RAM: ${profile.ramGB}GB | GPU: ${profile.gpuVRAM}GB VRAM | Local LLM: ${profile.localLLM}`)
@@ -90,6 +94,35 @@ async function main(): Promise<void> {
       } catch (err: any) {
         console.error(`[serve] Error: ${err?.message ?? err}`)
         process.exit(1)
+      }
+      break
+    }
+
+    // ── devos stop ──────────────────────────────────────────
+    case 'stop': {
+      try {
+        const { stopService } = await import('./core/backgroundService')
+        stopService()
+      } catch (err: any) {
+        console.error(`[stop] Error: ${err?.message ?? err}`)
+      }
+      break
+    }
+
+    // ── devos status ─────────────────────────────────────────
+    case 'status': {
+      try {
+        const { isServiceRunning, getPid } = await import('./core/backgroundService')
+        if (isServiceRunning()) {
+          const pid = getPid()
+          console.log(`✓ Aiden is running (PID: ${pid})`)
+          console.log(`  API:       http://localhost:4200`)
+          console.log(`  Dashboard: http://localhost:3000`)
+        } else {
+          console.log('✗ Aiden is not running')
+        }
+      } catch (err: any) {
+        console.error(`[status] Error: ${err?.message ?? err}`)
       }
       break
     }
@@ -283,7 +316,9 @@ DevOS v1.0 — Personal AI OS
 Usage: devos <command>
 
 Commands:
-  serve              Start DevOS server
+  serve              Start DevOS server (background service)
+  stop               Stop the running Aiden service
+  status             Check if Aiden is running
   goal "<t>" "<d>"   Run a goal
   automate "<task>"  Control your computer
   doctor             System health check

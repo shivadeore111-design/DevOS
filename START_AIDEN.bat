@@ -168,7 +168,7 @@ echo   └───────────────────────�
 color 07
 echo.
 echo   Starting DevOS API  . . .
-start /min "DevOS API" cmd /c "cd /d C:\Users\shiva\DevOS && npx ts-node index.ts serve"
+start /min "DevOS API" cmd /c "cd /d C:\Users\shiva\DevOS && npx ts-node index.ts serve 2>>workspace\aiden-error.log"
 echo   Initialising agents  . . .
 timeout /t 1 /nobreak >nul
 echo   .
