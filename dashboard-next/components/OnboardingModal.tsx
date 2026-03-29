@@ -219,8 +219,12 @@ export function OnboardingModal({ onComplete }: { onComplete: (name: string) => 
               {apiKey.trim() ? '✓ API key saved' : '○ No API key — using Ollama'}<br />
               ✓ 23 tools ready to use
             </div>
-            <div style={{ ...mono, fontSize: 11, color: '#555', marginBottom: 28 }}>
+            <div style={{ ...mono, fontSize: 11, color: '#555', marginBottom: 16 }}>
               You can add or change API keys anytime in Settings.
+            </div>
+            <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#555', marginBottom: 28 }}>
+              Aiden works out of the box with free AI providers.<br/>
+              Add Groq or Gemini in Settings for faster, smarter responses.
             </div>
             <button
               onClick={finish}

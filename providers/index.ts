@@ -46,13 +46,32 @@ const CONFIG_PATH = path.join(process.cwd(), 'config', 'devos.config.json')
 
 function defaultConfig(): DevOSConfig {
   return {
-    user:    { name: 'there' },
-    model:   { active: 'ollama', activeModel: 'mistral:7b' },
+    user:  { name: 'there' },
+    model: { active: 'cerebras-free', activeModel: 'llama3.1-8b' },
     providers: {
       ollama: { enabled: true, models: [] },
-      apis:   [],
+      apis: [
+        {
+          name:        'cerebras-free',
+          provider:    'cerebras',
+          key:         'csk-w32jtjthv666erywhmxrkpx9kfnehn4e6cp38n3d3kmym943',
+          model:       'llama3.1-8b',
+          enabled:     true,
+          rateLimited: false,
+          usageCount:  0,
+        },
+        {
+          name:        'cloudflare-free',
+          provider:    'cloudflare',
+          key:         'env:CLOUDFLARE_API_TOKEN',
+          model:       'env:CLOUDFLARE_ACCOUNT_ID|@cf/meta/llama-3.1-8b-instruct',
+          enabled:     false,
+          rateLimited: false,
+          usageCount:  0,
+        },
+      ],
     },
-    routing: { mode: 'auto', fallbackToOllama: true },
+    routing:            { mode: 'auto', fallbackToOllama: true },
     onboardingComplete: false,
   }
 }

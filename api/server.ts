@@ -85,6 +85,7 @@ function handleChatError(
     markRateLimited(apiName)
     send({ activity: { icon: 'âš¡', agent: 'Aiden', message: `${apiName} rate limited â€” switching provider`, style: 'error' }, done: false })
     send({ token: `\nâš¡ **${apiName} is rate limited.** Try again in a moment â€” DevOS will switch to a different provider.\n`, done: false })
+    send({ token: '\n\n💡 **Tip:** Add a Groq or Gemini key in Settings → API Keys for higher limits and faster responses.', done: false })
   } else if (isTimeout) {
     send({ activity: { icon: 'â±ï¸', agent: 'Aiden', message: 'Request timed out', style: 'error' }, done: false })
     send({ token: `\nâ±ï¸ **Request timed out.** The operation took too long. Try a simpler query or check your network.\n`, done: false })
