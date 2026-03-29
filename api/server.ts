@@ -39,6 +39,7 @@ import { getSmartProvider, markRateLimited, incrementUsage, logProviderStatus, g
 import { executeTool } from '../core/toolRegistry'
 import { getScreenSize, takeScreenshot as captureScreen } from '../core/computerControl'
 import { planWithLLM, executePlan, respondWithResults, callLLM } from '../core/agentLoop'
+import { TOOL_DESCRIPTIONS } from '../core/toolRegistry'
 import { runReActLoop, ReActStep }                                 from '../core/reactLoop'
 import { scheduler }                                              from '../core/scheduler'
 import { AIDEN_STREAM_SYSTEM }                          from '../core/aidenPersonality'
@@ -1750,6 +1751,24 @@ export function createApiServer(): Express {
     } catch (e: any) {
       res.json({ error: e.message })
     }
+  })
+
+  // GET /api/mcp/info — MCP server discovery
+  app.get('/api/mcp/info', (_req: Request, res: Response) => {
+    res.json({
+      mcpServer:     'http://localhost:3001',
+      tools:         Object.keys(TOOL_DESCRIPTIONS).length,
+      message:       'Add this to your Claude Desktop or MCP client config to connect to Aiden',
+      configExample: {
+        mcpServers: {
+          aiden: {
+            url:         'http://localhost:3001',
+            name:        'Aiden — Personal AI OS',
+            description: 'Connect to your local Aiden instance for file access, web search, computer control, and persistent memory',
+          },
+        },
+      },
+    })
   })
 
   // POST /api/react — standalone ReAct agent endpoint (SSE streaming)

@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "aiden": {
+      "url": "http://localhost:3001",
+      "name": "Aiden — Personal AI OS",
+      "description": "Connect to your local Aiden instance for file access, web search, computer control, and persistent memory"
+    }
+  }
+}

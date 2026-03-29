@@ -31,7 +31,8 @@ import { checkSearxNG }                   from './core/webSearch'
 import { auditTrail }                     from './core/auditTrail'
 import { buildCapabilityProfile }         from './core/capabilityProfile'
 import { verifyInstall, getCurrentLicense } from './core/licenseManager'
-import { scheduler } from './core/scheduler'
+import { scheduler }      from './core/scheduler'
+import { startMCPServer } from './core/mcpServer'
 
 // ── Bootstrap ─────────────────────────────────────────────────
 
@@ -93,6 +94,10 @@ async function main(): Promise<void> {
         }
 
         startApiServer()
+
+        // ── Sprint 29: start MCP server ────────────────────────
+        startMCPServer(3001)
+        console.log('[MCP] Aiden is now available as an MCP server on port 3001')
 
         // ── Sprint 25: register morning briefing ───────────────
         scheduler.registerMorningBriefing()
