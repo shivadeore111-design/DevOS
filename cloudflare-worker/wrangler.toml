@@ -1,21 +1,14 @@
-name            = "devos-license-server"
-main            = "license-server.ts"
+﻿name               = "devos-license-server"
+main               = "license-server.js"
 compatibility_date = "2024-01-01"
 
-# KV namespace — create with: wrangler kv:namespace create LICENSES
 [[kv_namespaces]]
 binding = "LICENSES"
 id      = "2b5817ca66ed4bcb8114452d48afd38f"
 
-# Secrets — set with: wrangler secret put <NAME>
-# Required secrets:
-#   RAZORPAY_WEBHOOK_SECRET   — from Razorpay Dashboard → Webhooks
-#   STRIPE_WEBHOOK_SECRET     — from Stripe Dashboard → Webhooks → Signing secret
-#   RESEND_API_KEY            — from resend.com → API Keys
-#   ADMIN_SECRET              — any strong random string you choose
+[[kv_namespaces]]
+binding = "REGISTRATIONS"
+id      = "ab2c47fbbaf94c6ba9778effb7177891"
 
 [vars]
-# Non-secret env vars (safe to commit)
 ENVIRONMENT = "production"
-
-

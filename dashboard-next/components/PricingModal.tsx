@@ -119,19 +119,21 @@ function detectCurrency(): string {
 
 // ── Feature comparison ────────────────────────────────────────
 
-const FEATURES = [
-  { label: 'Web search + deep research',    free: true,  pro: true  },
-  { label: 'File create / read / edit',     free: true,  pro: true  },
-  { label: 'Run Python, Node.js, PowerShell', free: true, pro: true  },
-  { label: 'TXT / Markdown knowledge base', free: true,  pro: true  },
-  { label: '6 communication channels',      free: true,  pro: true  },
-  { label: 'Computer control + vision',     free: true,  pro: true  },
-  { label: '10 LLM providers',              free: true,  pro: true  },
-  { label: 'PDF ingestion',                 free: false, pro: true  },
-  { label: 'EPUB / book ingestion',         free: false, pro: true  },
-  { label: 'Voice input (Whisper STT)',      free: false, pro: true  },
-  { label: 'Text-to-speech output',         free: false, pro: true  },
-  { label: 'Priority support',              free: false, pro: true  },
+const FEATURES: Array<{ label: string; free: boolean | string; pro: boolean | string }> = [
+  { label: 'Web search + deep research',    free: true,        pro: true  },
+  { label: 'File create / read / edit',     free: true,        pro: true  },
+  { label: 'Run Python, Node.js, PowerShell', free: true,      pro: true  },
+  { label: 'TXT / Markdown knowledge base', free: true,        pro: true  },
+  { label: 'Knowledge base files',          free: '3 files',   pro: 'Unlimited' },
+  { label: 'Scheduled tasks',               free: '1 task',    pro: 'Unlimited' },
+  { label: '6 communication channels',      free: true,        pro: true  },
+  { label: 'Computer control + vision',     free: true,        pro: true  },
+  { label: '10 LLM providers',              free: true,        pro: true  },
+  { label: 'PDF ingestion',                 free: false,       pro: true  },
+  { label: 'EPUB / book ingestion',         free: false,       pro: true  },
+  { label: 'Voice input (Whisper STT)',      free: false,       pro: true  },
+  { label: 'Text-to-speech output',         free: false,       pro: true  },
+  { label: 'Priority support',              free: false,       pro: true  },
 ]
 
 // ── Props ─────────────────────────────────────────────────────
@@ -336,8 +338,12 @@ export default function PricingModal({ onClose, onActivate, currentStatus }: Pri
                     }}
                   >
                     <div style={{ padding: '9px 14px', fontSize: '13px', color: '#94a3b8' }}>{f.label}</div>
-                    <div style={{ padding: '9px 0', textAlign: 'center', fontSize: '15px' }}>{f.free ? '✓' : '–'}</div>
-                    <div style={{ padding: '9px 0', textAlign: 'center', fontSize: '15px', color: '#a78bfa' }}>{f.pro ? '✓' : '–'}</div>
+                    <div style={{ padding: '9px 0', textAlign: 'center', fontSize: typeof f.free === 'string' ? '12px' : '15px', color: typeof f.free === 'string' ? '#94a3b8' : 'inherit' }}>
+                      {typeof f.free === 'string' ? f.free : f.free ? '✓' : '–'}
+                    </div>
+                    <div style={{ padding: '9px 0', textAlign: 'center', fontSize: typeof f.pro === 'string' ? '12px' : '15px', color: typeof f.pro === 'string' ? '#a78bfa' : '#a78bfa' }}>
+                      {typeof f.pro === 'string' ? f.pro : f.pro ? '✓' : '–'}
+                    </div>
                   </div>
                 ))}
               </div>

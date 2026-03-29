@@ -195,6 +195,67 @@ const settingsTextStyle: React.CSSProperties = {
   fontFamily: 'var(--mono)', lineHeight: 1.7,
 }
 
+// ── UpgradeToast ─────────────────────────────────────────────
+// Sprint 19: shown when a free tier limit is hit (403 + upgrade: true)
+
+function UpgradeToast({
+  message,
+  action,
+  onAction,
+  onDismiss,
+}: {
+  message:   string
+  action:    string
+  onAction:  () => void
+  onDismiss: () => void
+}) {
+  return (
+    <div style={{
+      position:    'fixed',
+      bottom:      20,
+      right:       20,
+      zIndex:      9000,
+      background:  'var(--bg2)',
+      border:      '1px solid rgba(167,139,250,0.4)',
+      borderRadius: 10,
+      padding:     '12px 16px',
+      display:     'flex',
+      alignItems:  'center',
+      gap:         12,
+      maxWidth:    380,
+      boxShadow:   '0 8px 32px rgba(0,0,0,0.5)',
+      animation:   'fadeInUp 0.25s ease-out',
+      fontFamily:  'var(--mono)',
+    }}>
+      <span style={{ fontSize: 18 }}>🔒</span>
+      <span style={{ flex: 1, fontSize: 11, color: 'var(--text)', lineHeight: 1.5 }}>{message}</span>
+      <button
+        onClick={() => { onAction(); onDismiss() }}
+        style={{
+          background:   'linear-gradient(135deg,#7c3aed,#a855f7)',
+          border:       'none',
+          borderRadius:  6,
+          color:        '#fff',
+          fontSize:     10,
+          fontWeight:   700,
+          padding:      '5px 12px',
+          cursor:       'pointer',
+          whiteSpace:   'nowrap',
+          fontFamily:   'var(--mono)',
+        }}
+      >{action}</button>
+      <button
+        onClick={onDismiss}
+        style={{
+          background: 'none', border: 'none',
+          color: 'var(--muted)', cursor: 'pointer',
+          fontSize: 14, padding: '0 2px', lineHeight: 1,
+        }}
+      >✕</button>
+    </div>
+  )
+}
+
 // ── PatternSuggestionBanner ───────────────────────────────────
 // Shown when the cognition engine detects a repetitive pattern.
 // Offers a one-click "Set it up" that creates a scheduled task.
@@ -203,10 +264,12 @@ function PatternSuggestionBanner({
   pattern,
   onDismiss,
   onSetup,
+  onUpgrade,
 }: {
-  pattern:   AutomationPattern
-  onDismiss: () => void
-  onSetup:   (goal: string) => void
+  pattern:    AutomationPattern
+  onDismiss:  () => void
+  onSetup:    (goal: string) => void
+  onUpgrade?: (message: string) => void
 }) {
   const [setting, setSetting] = useState(false)
   const [done,    setDone]    = useState(false)
@@ -214,7 +277,7 @@ function PatternSuggestionBanner({
   const handleSetup = async () => {
     setSetting(true)
     try {
-      await fetch('http://localhost:4200/api/scheduler/tasks', {
+      const r = await fetch('http://localhost:4200/api/scheduler/tasks', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
@@ -223,6 +286,11 @@ function PatternSuggestionBanner({
           goal:        pattern.automationGoal,
         }),
       })
+      // Sprint 19: handle free tier limit
+      if (r.status === 403) {
+        const d = await r.json() as any
+        if (d.upgrade && onUpgrade) { onUpgrade(d.message); onDismiss(); return }
+      }
       setDone(true)
       setTimeout(onDismiss, 2000)
     } catch {
@@ -2457,6 +2525,9 @@ export default function Home() {
   const [licenseKey,     setLicenseKey]     = useState('')
   const [licenseMsg,     setLicenseMsg]     = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
+  // ── Sprint 19: upgrade nudge toast ───────────────────────────
+  const [upgradeToast, setUpgradeToast] = useState<{ message: string; action: string; onAction: () => void } | null>(null)
+
   // ── Sprint 12: proactive automation suggestions ──────────────
   const [suggestionPattern,  setSuggestionPattern]  = useState<AutomationPattern | null>(null)
   const [suggestionDismissed, setSuggestionDismissed] = useState(false)
@@ -2876,6 +2947,12 @@ export default function Home() {
       // Start async upload — get jobId immediately
       const r = await fetch('http://localhost:4200/api/knowledge/upload/async', { method: 'POST', body: fd })
       const d = await r.json() as any
+      // Sprint 19: handle free tier limit / upgrade nudge
+      if (r.status === 403 && d.upgrade) {
+        setUpgradeToast({ message: d.message, action: 'Upgrade to Pro', onAction: () => setPricingOpen(true) })
+        setUploadingFile(false)
+        return
+      }
       if (!d.success) { setUploadingFile(false); return }
 
       const jobId = d.jobId as string
@@ -3087,11 +3164,20 @@ export default function Home() {
             currentStatus={licenseStatus}
           />
         )}
+        {upgradeToast && (
+          <UpgradeToast
+            message={upgradeToast.message}
+            action={upgradeToast.action}
+            onAction={upgradeToast.onAction}
+            onDismiss={() => setUpgradeToast(null)}
+          />
+        )}
         {suggestionPattern && !suggestionDismissed && (
           <PatternSuggestionBanner
             pattern={suggestionPattern}
             onDismiss={() => { setSuggestionDismissed(true); setSuggestionPattern(null) }}
             onSetup={(goal) => { /* handled inside banner */ }}
+            onUpgrade={(message) => setUpgradeToast({ message, action: 'Upgrade to Pro', onAction: () => setPricingOpen(true) })}
           />
         )}
         {!onboardingDone && (
