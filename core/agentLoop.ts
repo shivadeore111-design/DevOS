@@ -26,6 +26,7 @@ import { growthEngine }  from './growthEngine'
 import { AIDEN_RESPONDER_SYSTEM } from './aidenPersonality'
 import { auditTrail }             from './auditTrail'
 import { mcpClient }             from './mcpClient'
+import { unifiedMemoryRecall, buildMemoryInjection } from './memoryRecall'
 import * as nodeFs             from 'fs'
 import * as nodePath           from 'path'
 import * as nodeOs             from 'os'
@@ -462,6 +463,16 @@ export async function planWithLLM(
     ? `\n\n${knowledgeCtxPlanner}\n`
     : ''
 
+  // Sprint 21: unified memory recall — inject relevant memories into planner
+  let memoryRecallSection = ''
+  try {
+    const recalled       = await unifiedMemoryRecall(message, 3)
+    const memoryInjected = buildMemoryInjection(recalled)
+    if (memoryInjected) {
+      memoryRecallSection = memoryInjected
+    }
+  } catch {}
+
   const plannerPrompt = `You are DevOS Planner. Analyze the user request and output a JSON plan.
 
 CRITICAL RULES:
@@ -530,7 +541,7 @@ OUTPUT FORMAT (strict JSON only):
 
 If requires_execution is false:
 { "goal": "...", "requires_execution": false, "reasoning": "...", "plan": [] }
-${skillContext}${memorySection}${learningSection}${knowledgeSection}
+${skillContext}${memorySection}${learningSection}${knowledgeSection}${memoryRecallSection}
 Output ONLY valid JSON, nothing else:`
 
   const messages = [

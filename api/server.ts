@@ -65,6 +65,7 @@ import { auditTrail } from '../core/auditTrail'
 import { mcpClient }   from '../core/mcpClient'
 import { responseCache } from '../core/responseCache'
 import { scanAndRedact, containsSecret } from '../core/secretScanner'
+import { unifiedMemoryRecall, buildMemoryInjection } from '../core/memoryRecall'
 
 // â”€â”€ Human-readable tool message helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function humanToolMessage(tool: string, input: Record<string, any>): string {
@@ -2399,7 +2400,18 @@ async function streamChat(
   }
 
   const cognitionHint = userCognitionProfile.getSystemPromptAddition()
-  const chatPrompt = `You are Aiden — a personal AI OS built for ${userName}. You are sharp, direct, and slightly witty. You speak like a trusted co-founder. Today: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.${cognitionHint}${firstMessageContext}`
+
+  // Sprint 21: proactive memory surfacing
+  let memoryContext = ''
+  try {
+    const recalled = await unifiedMemoryRecall(message, 5)
+    memoryContext  = buildMemoryInjection(recalled)
+    if (recalled.relevant.length > 0) {
+      memoryContext += `\nProactive: if any memory context is directly relevant to the user's message, naturally reference it. Example: "I remember you mentioned X..." \xe2\x80\x94 but only if genuinely relevant, not forced.`
+    }
+  } catch {}
+
+  const chatPrompt = `You are Aiden — a personal AI OS built for ${userName}. You are sharp, direct, and slightly witty. You speak like a trusted co-founder. Today: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.${cognitionHint}${firstMessageContext}${memoryContext}`
 
   const msgs = [
     { role: 'system', content: chatPrompt },
