@@ -31,6 +31,9 @@ import { responseCache }   from './responseCache'
 
 const execAsync = promisify(exec)
 
+// ── Sprint 24: active folder-watcher registry ─────────────────
+const activeWatchers = new Map<string, fs.FSWatcher>()
+
 // ── CommandGate: dangerous shell command patterns ──────────────
 const SHELL_DANGEROUS_PATTERNS = [
   'rm -rf', 'rm -r /', 'del /f /s', 'del /s /q',
@@ -108,6 +111,8 @@ const TOOL_TIMEOUTS: Record<string, number> = {
   window_focus:                  8000,
   app_launch:                   10000,
   app_close:                     8000,
+  watch_folder:                 10000,
+  watch_folder_list:             5000,
 }
 
 // ── Tool implementations ──────────────────────────────────────
@@ -967,6 +972,72 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
       execSync(`powershell.exe -Command "Stop-Process -Name '${safe}' -Force -ErrorAction SilentlyContinue"`, { timeout: 8000 })
       return { success: true, output: `Closed process: "${app}"` }
     } catch (e: any) { return { success: false, output: '', error: e.message } }
+  },
+
+  // ── Sprint 24: Folder Watcher ─────────────────────────────────
+
+  watch_folder: async (p) => {
+    const rawFolder  = p.folder || p.path || p.dir || ''
+    const goal       = p.goal   || p.command || ''
+    const stop       = !!p.stop
+
+    if (!rawFolder) return { success: false, output: '', error: 'No folder specified' }
+
+    const userName  = process.env.USERPROFILE || process.env.HOME || ''
+    const folderPath = rawFolder
+      .replace(/%USERPROFILE%/gi, userName)
+      .replace(/^~[\/\\]/,        userName + path.sep)
+
+    // Stop mode
+    if (stop) {
+      const watcher = activeWatchers.get(folderPath)
+      if (watcher) {
+        watcher.close()
+        activeWatchers.delete(folderPath)
+        return { success: true, output: `Stopped watching: ${folderPath}` }
+      }
+      return { success: false, output: `No active watcher for: ${folderPath}` }
+    }
+
+    if (!goal) return { success: false, output: '', error: 'No goal specified' }
+    if (!fs.existsSync(folderPath)) return { success: false, output: '', error: `Folder not found: ${folderPath}` }
+
+    // Close existing watcher on same path before starting a new one
+    const existing = activeWatchers.get(folderPath)
+    if (existing) { existing.close(); activeWatchers.delete(folderPath) }
+
+    const watcher = fs.watch(folderPath, async (eventType: string, filename: string | null) => {
+      if (eventType !== 'rename' || !filename) return
+      const fullPath = path.join(folderPath, filename)
+
+      // Small delay to let the file finish writing
+      await new Promise<void>(r => setTimeout(r, 500))
+      if (!fs.existsSync(fullPath)) return
+
+      let isFile = false
+      try { isFile = fs.statSync(fullPath).isFile() } catch { return }
+      if (!isFile) return
+
+      try {
+        await fetch('http://localhost:4200/api/chat', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body:    JSON.stringify({ message: `${goal} — new file: ${fullPath}`, history: [] }),
+        })
+      } catch {}
+    })
+
+    activeWatchers.set(folderPath, watcher)
+    return {
+      success: true,
+      output:  `Now watching: ${folderPath}\nWill execute: "${goal}" when new files appear.\nActive watchers: ${activeWatchers.size}`,
+    }
+  },
+
+  watch_folder_list: async () => {
+    if (activeWatchers.size === 0) return { success: true, output: 'No active folder watchers.' }
+    const list = Array.from(activeWatchers.keys()).map((f, i) => `${i + 1}. ${f}`).join('\n')
+    return { success: true, output: `Active watchers:\n${list}` }
   },
 }
 
