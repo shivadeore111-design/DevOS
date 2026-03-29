@@ -995,19 +995,6 @@ export function createApiServer(): Express {
     kbUpload.single('file')(req, res, async (err) => {
       if (err) { res.status(400).json({ error: err.message }); return }
 
-      // Sprint 19: free tier limit -- 3 KB files max
-      if (!isPro()) {
-        const stats = knowledgeBase.getStats()
-        if (stats.files >= 3) {
-          res.status(403).json({
-            error:   'Free tier limit reached',
-            message: 'Free tier allows 3 knowledge base files. Upgrade to Pro for unlimited.',
-            upgrade: true,
-          })
-          return
-        }
-      }
-
       const file = (req as any).file as Express.Multer.File | undefined
 
       // Pro gate â€” PDF and EPUB require an active Pro license
@@ -1095,20 +1082,6 @@ export function createApiServer(): Express {
           upgrade: true,
         })
         return
-      }
-
-      // Sprint 19: free tier limit — 3 KB files max
-      if (!isPro()) {
-        const statsAsync = knowledgeBase.getStats()
-        if (statsAsync.files >= 3) {
-          try { fs.unlinkSync(file.path) } catch {}
-          res.status(403).json({
-            error:   'Free tier limit reached',
-            message: 'Free tier allows 3 knowledge base files. Upgrade to Pro for unlimited.',
-            upgrade: true,
-          })
-          return
-        }
       }
 
       const jobId   = `job_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
@@ -1563,24 +1536,6 @@ export function createApiServer(): Express {
     res.json({ success: true, message: 'Cache cleared' })
   })
 
-  // POST /api/register -- Sprint 20: email registration for early access
-  app.post('/api/register', async (req: Request, res: Response) => {
-    const { email } = req.body as { email?: string }
-    if (!email || !email.includes('@')) {
-      res.status(400).json({ error: 'Valid email required' })
-      return
-    }
-    const { registerEmail } = await import('../core/licenseManager')
-    const result = await registerEmail(email)
-    if (result.success) {
-      // Persist email into config so verifyInstall can use it on next boot
-      const cfg = loadConfig()
-      ;(cfg.user as any).email = email
-      saveConfig(cfg)
-    }
-    res.json(result)
-  })
-
   // GET  /api/scheduler/tasks — list all scheduled tasks
   app.get('/api/scheduler/tasks', (_req: Request, res: Response) => {
     res.json(scheduler.list())
@@ -1594,18 +1549,6 @@ export function createApiServer(): Express {
     if (!description || !schedule || !goal) {
       res.status(400).json({ error: 'description, schedule, and goal are required' })
       return
-    }
-    // Sprint 19: free tier limit -- 1 scheduled task max
-    if (!isPro()) {
-      const tasks = scheduler.list()
-      if (tasks.length >= 1) {
-        res.status(403).json({
-          error:   'Free tier limit reached',
-          message: 'Free tier allows 1 scheduled task. Upgrade to Pro for unlimited.',
-          upgrade: true,
-        })
-        return
-      }
     }
     const task = scheduler.add(description, schedule, goal)
     res.json(task)

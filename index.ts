@@ -30,7 +30,6 @@ import { startApiServer }                  from './api/server'
 import { checkSearxNG }                   from './core/webSearch'
 import { auditTrail }                     from './core/auditTrail'
 import { buildCapabilityProfile }         from './core/capabilityProfile'
-import { verifyInstall, getCurrentLicense } from './core/licenseManager'
 
 // ── Bootstrap ─────────────────────────────────────────────────
 
@@ -75,20 +74,6 @@ async function main(): Promise<void> {
           console.log('[DevOS] ⚠  SearxNG not detected on http://localhost:8888')
           console.log('           Web search will fall back to: Brave API → DuckDuckGo → Wikipedia')
           console.log('           For best results, start SearxNG: .\\scripts\\start-searxng.ps1')
-        }
-
-        // ── Sprint 20: machine binding check ──────────────────
-        const license   = getCurrentLicense()
-        const userEmail = license.email || ''
-        if (userEmail) {
-          const verify = await verifyInstall(userEmail)
-          if (!verify.allowed) {
-            console.log('\n╔══════════════════════════════════════════╗')
-            console.log('║  Access Required                         ║')
-            console.log('║  Get access at: devos.taracod.com        ║')
-            console.log('╚══════════════════════════════════════════╝\n')
-            process.exit(1)
-          }
         }
 
         startApiServer()
