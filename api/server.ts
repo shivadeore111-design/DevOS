@@ -1707,6 +1707,51 @@ export function createApiServer(): Express {
     }
   })
 
+  // GET /api/growth — Sprint 27: GrowthEngine + UserCognition stats for dashboard card
+  app.get('/api/growth', (_req: Request, res: Response) => {
+    try {
+      const entries  = auditTrail.getToday()
+      const allTime  = (() => {
+        const p = require('path').join(process.cwd(), 'workspace', 'audit', 'audit.jsonl')
+        if (!require('fs').existsSync(p)) return []
+        return require('fs').readFileSync(p, 'utf-8').trim().split('\n').filter(Boolean).map((l: string) => {
+          try { return JSON.parse(l) } catch { return null }
+        }).filter(Boolean)
+      })()
+
+      const totalActions = allTime.length
+      const successRate  = allTime.length > 0
+        ? Math.round((allTime.filter((e: any) => e.success).length / allTime.length) * 100)
+        : 0
+
+      const profile = userCognitionProfile.getProfile?.()
+
+      const skillsDir   = require('path').join(process.cwd(), 'skills')
+      const approvedDir = require('path').join(skillsDir, 'approved')
+      const skillCount  = require('fs').existsSync(skillsDir)
+        ? require('fs').readdirSync(skillsDir).filter((f: string) => f.endsWith('.md')).length : 0
+      const approvedCount = require('fs').existsSync(approvedDir)
+        ? require('fs').readdirSync(approvedDir).filter((f: string) => f.endsWith('.md')).length : 0
+
+      res.json({
+        totalActions,
+        successRate,
+        skillsLearned:  skillCount,
+        skillsApproved: approvedCount,
+        todayActions:   entries.length,
+        todaySuccess:   entries.filter((e: any) => e.success).length,
+        profile: {
+          verbosity:     profile?.verbosity     || 'balanced',
+          technicalLevel: profile?.technicalLevel || 'medium',
+          decisionStyle: profile?.decisionStyle  || 'analytical',
+        },
+        patterns: userCognitionProfile.detectRepetitivePatterns?.()?.slice(0, 2) ?? [],
+      })
+    } catch (e: any) {
+      res.json({ error: e.message })
+    }
+  })
+
   // POST /api/react — standalone ReAct agent endpoint (SSE streaming)
   app.post('/api/react', async (req: Request, res: Response) => {
     const { goal } = req.body as { goal?: string }

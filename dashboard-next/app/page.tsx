@@ -1477,6 +1477,108 @@ function ChatPanel() {
   )
 }
 
+// ── GrowthCard ────────────────────────────────────────────────
+// Sprint 27: shows GrowthEngine stats + UserCognition profile
+
+function GrowthCard() {
+  const [data,     setData]     = useState<any>(null)
+  const [expanded, setExpanded] = useState(false)
+
+  useEffect(() => {
+    fetch('http://localhost:4200/api/growth')
+      .then(r => r.json())
+      .then(d => setData(d))
+      .catch(() => {})
+
+    // Refresh every 2 minutes
+    const id = setInterval(() => {
+      fetch('http://localhost:4200/api/growth')
+        .then(r => r.json())
+        .then(d => setData(d))
+        .catch(() => {})
+    }, 120_000)
+    return () => clearInterval(id)
+  }, [])
+
+  if (!data || data.error) return null
+
+  return (
+    <div style={{
+      background: 'var(--bg1)', border: '1px solid var(--border)',
+      borderRadius: 10, padding: '12px 14px', margin: '8px 14px 0',
+      fontFamily: 'var(--mono)', flexShrink: 0,
+    }}>
+      {/* Header */}
+      <div
+        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', marginBottom: expanded ? 12 : 0 }}
+        onClick={() => setExpanded(e => !e)}
+      >
+        <span style={{ fontSize: 10, color: 'var(--orange)', fontWeight: 600, letterSpacing: '.08em', textTransform: 'uppercase' }}>
+          ⚡ Aiden is growing
+        </span>
+        <span style={{ fontSize: 9, color: 'var(--muted)', marginLeft: 8 }}>
+          {expanded ? '▲ collapse' : '▼ expand'}
+        </span>
+      </div>
+
+      {expanded && (
+        <>
+          {/* Key stats row */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 10 }}>
+            {[
+              { value: data.skillsLearned,       label: 'skills' },
+              { value: `${data.successRate}%`,   label: 'success' },
+              { value: data.totalActions,        label: 'actions' },
+            ].map((stat, i) => (
+              <div key={i} style={{ textAlign: 'center', background: 'var(--bg2)', borderRadius: 6, padding: '7px 4px' }}>
+                <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--orange)' }}>{stat.value}</div>
+                <div style={{ fontSize: 9, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.06em' }}>{stat.label}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Today sub-row */}
+          <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
+            <div style={{ fontSize: 9, color: 'var(--muted)' }}>
+              Today: <span style={{ color: 'var(--muted2)' }}>{data.todaySuccess}/{data.todayActions} tasks succeeded</span>
+            </div>
+          </div>
+
+          {/* UserCognition profile */}
+          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8, marginBottom: 8 }}>
+            <div style={{ fontSize: 9, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 6 }}>
+              Aiden thinks you prefer
+            </div>
+            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' as const }}>
+              {[
+                data.profile?.verbosity,
+                (data.profile?.technicalLevel || '') + ' technical',
+                data.profile?.decisionStyle,
+              ].filter(Boolean).map((tag: string, i: number) => (
+                <span key={i} style={{
+                  fontSize: 10, padding: '2px 7px', borderRadius: 4,
+                  background: 'var(--odim)',
+                  border: '1px solid rgba(249,115,22,.2)',
+                  color: 'var(--orange)',
+                }}>{tag}</span>
+              ))}
+            </div>
+          </div>
+
+          {/* Proactive pattern suggestion */}
+          {data.patterns?.length > 0 && (
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8 }}>
+              <div style={{ fontSize: 10, color: 'var(--muted2)', lineHeight: 1.5 }}>
+                {data.patterns[0].suggestion}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
 // ── LiveViewPanel ─────────────────────────────────────────────
 
 interface PulseEntry {
@@ -1488,7 +1590,7 @@ interface PulseEntry {
 }
 
 function LiveViewPanel() {
-  const { isExecuting, uiMode, setUIMode, systemStats, setActivityLogs, activityLogs } = useDevOS()
+  const { isExecuting, uiMode, setUIMode, systemStats, setActivityLogs, activityLogs, setMessages } = useDevOS()
   const [pulseLog, setPulseLog]     = useState<PulseEntry[]>([])
   const [collapsed, setCollapsed]   = useState(false)
   const bottomRef                   = useRef<HTMLDivElement>(null)
@@ -1660,6 +1762,9 @@ function LiveViewPanel() {
         )}
         <div ref={bottomRef} />
       </div>
+
+      {/* Sprint 27: Growth Card */}
+      <GrowthCard />
 
       {/* Footer stats */}
       <div style={{
