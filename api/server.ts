@@ -35,7 +35,7 @@ import { modelRouter }    from '../core/modelRouter'
 import { registerComputerUseRoutes } from './routes/computerUse'
 import { loadConfig, saveConfig, APIEntry } from '../providers/index'
 import { ollamaProvider } from '../providers/ollama'
-import { getSmartProvider, markRateLimited, incrementUsage, logProviderStatus } from '../providers/router'
+import { getSmartProvider, markRateLimited, incrementUsage, logProviderStatus, getModelForTask } from '../providers/router'
 import { executeTool } from '../core/toolRegistry'
 import { getScreenSize, takeScreenshot as captureScreen } from '../core/computerControl'
 import { planWithLLM, executePlan, respondWithResults } from '../core/agentLoop'
@@ -404,17 +404,21 @@ export function createApiServer(): Express {
 
       const collectToken = (token: string) => { jsonTokens.push(token) }
 
-      // We'll run the same logic but collect instead of stream
+      // Sprint 6: tiered model selection per role
+      // Responder drives chat mode; planner drives plan/auto mode
+      const responderTier = getModelForTask('responder')
+      const plannerTier   = getModelForTask('planner')
       const { provider, model, userName, apiName } = getSmartProvider()
       const config   = loadConfig()
-      const apiEntry = config.providers.apis.find(a => a.name === apiName)
-      const rawKey   = apiEntry
-        ? (apiEntry.key.startsWith('env:')
-            ? process.env[apiEntry.key.replace('env:', '')] || ''
-            : apiEntry.key)
-        : ''
-      const providerName = apiEntry?.provider || 'ollama'
-      const activeModel  = apiEntry?.model || model
+      // Responder key (used for streamChat + respondWithResults)
+      const rawKey       = responderTier.apiKey
+      const providerName = responderTier.providerName
+      const activeModel  = responderTier.model
+      const apiName2     = responderTier.apiName
+      // Planner key (used for planWithLLM)
+      const plannerKey   = plannerTier.apiKey
+      const plannerModel = plannerTier.model
+      const plannerProv  = plannerTier.providerName
 
       try {
         const resolvedMessage = conversationMemory.addUserMessage(message)
@@ -432,7 +436,7 @@ export function createApiServer(): Express {
         }
 
         const memoryContext = conversationMemory.buildContext()
-        const plan: AgentPlan = await planWithLLM(resolvedMessage, history, rawKey, activeModel, providerName, memoryContext)
+        const plan: AgentPlan = await planWithLLM(resolvedMessage, history, plannerKey, plannerModel, plannerProv, memoryContext)
 
         if (!plan.requires_execution || plan.plan.length === 0) {
           if (plan.direct_response) {
@@ -458,7 +462,7 @@ export function createApiServer(): Express {
           resolvedMessage, plan, results, history,
           userName, rawKey, activeModel, providerName,
           (token) => { jsonTokens.push(token) },
-        )
+        ) // responder tier: rawKey/activeModel/providerName already set to responder tier above
 
         fullReply = jsonTokens.join('')
 
@@ -495,16 +499,17 @@ export function createApiServer(): Express {
       }
     }
 
+    // Sprint 6: tiered model selection
+    const responderTierSSE = getModelForTask('responder')
+    const plannerTierSSE   = getModelForTask('planner')
     const { provider, model, userName, apiName } = getSmartProvider()
     const config       = loadConfig()
-    const apiEntry     = config.providers.apis.find(a => a.name === apiName)
-    const rawKey       = apiEntry
-      ? (apiEntry.key.startsWith('env:')
-          ? process.env[apiEntry.key.replace('env:', '')] || ''
-          : apiEntry.key)
-      : ''
-    const providerName = apiEntry?.provider || (apiName === 'ollama' ? 'ollama' : 'ollama')
-    const activeModel  = apiEntry?.model || model
+    const rawKey       = responderTierSSE.apiKey
+    const providerName = responderTierSSE.providerName
+    const activeModel  = responderTierSSE.model
+    const plannerKeySSE   = plannerTierSSE.apiKey
+    const plannerModelSSE = plannerTierSSE.model
+    const plannerProvSSE  = plannerTierSSE.providerName
 
     // ── Conversational fast-path — skip planning for simple messages ──
     // These need zero tools — routing through planWithLLM wastes 8-30 seconds.
@@ -576,7 +581,7 @@ export function createApiServer(): Express {
       send({ activity: { icon: 'ðŸ§ ', agent: 'Aiden', message: 'Working out a plan...', style: 'thinking' }, done: false })
 
       const memoryContext = conversationMemory.buildContext()
-      const plan: AgentPlan = await planWithLLM(resolvedMessage, history, rawKey, activeModel, providerName, memoryContext)
+      const plan: AgentPlan = await planWithLLM(resolvedMessage, history, plannerKeySSE, plannerModelSSE, plannerProvSSE, memoryContext)
 
       // â”€â”€ PLAN-ONLY MODE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       if (mode === 'plan') {
@@ -2184,14 +2189,12 @@ async function streamChat(
     }
   } catch { /* racing failed — fall through to sequential */ }
 
-  // Resolve the actual API key and provider type from config
-  const cfg      = loadConfig()
-  const apiEntry = cfg.providers.apis.find(a => a.name === apiName)
-  const providerType = apiEntry?.provider ?? 'ollama'
-  const rawKey   = apiEntry?.key ?? ''
-  const apiKey   = rawKey.startsWith('env:')
-    ? (process.env[rawKey.replace('env:', '')] || '')
-    : rawKey
+  // Sprint 6: use responder tier for streamChat provider selection
+  const cfg              = loadConfig()
+  const responderChat    = getModelForTask('responder')
+  const providerType     = responderChat.providerName
+  const apiKey           = responderChat.apiKey
+  const activeStreamModel = responderChat.model || model // tiered model overrides caller's model
 
   let streamEnded = false
   const timeout = setTimeout(() => {
@@ -2207,7 +2210,7 @@ async function streamChat(
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${apiKey}`,
         },
-        body: JSON.stringify({ model, messages: msgs, stream: true }),
+        body: JSON.stringify({ model: activeStreamModel, messages: msgs, stream: true }),
       })
       if (!resp.ok || !resp.body) {
         const errText = await resp.text().catch(() => resp.statusText)
@@ -2241,7 +2244,7 @@ async function streamChat(
       const resp = await fetch('http://localhost:11434/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model, messages: msgs, stream: true }),
+        body: JSON.stringify({ model: activeStreamModel, messages: msgs, stream: true }),
       })
       if (!resp.ok || !resp.body) {
         throw new Error(`Ollama ${resp.status}: ${resp.statusText}`)
@@ -2281,7 +2284,7 @@ async function streamChat(
           'Authorization': `Bearer ${apiKey}`,
           ...(providerType === 'openrouter' ? { 'HTTP-Referer': 'https://devos.local', 'X-Title': 'DevOS' } : {}),
         },
-        body: JSON.stringify({ model, messages: msgs, stream: true }),
+        body: JSON.stringify({ model: activeStreamModel, messages: msgs, stream: true }),
       })
       if (!resp.ok || !resp.body) {
         const errText = await resp.text().catch(() => resp.statusText)

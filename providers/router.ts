@@ -163,6 +163,66 @@ export function logProviderStatus(): void {
   console.log(`  ollama — local — #${order} guaranteed fallback`)
 }
 
+// ── Task-type model tiering ───────────────────────────────────
+// Returns the best available key+model for a specific task role.
+// Planner needs strong reasoning; executor needs speed; responder needs quality.
+
+export type TaskType = 'planner' | 'executor' | 'responder'
+
+function resolveKey(api: APIEntry): {
+  apiKey: string; model: string; providerName: string; apiName: string
+} {
+  return {
+    apiKey:       api.key.startsWith('env:')
+      ? (process.env[api.key.replace('env:', '')] || '')
+      : api.key,
+    model:        api.model,
+    providerName: api.provider,
+    apiName:      api.name,
+  }
+}
+
+export function getModelForTask(task: TaskType): {
+  apiKey: string; model: string; providerName: string; apiName: string
+} {
+  autoResetExpiredLimits()
+  const config    = loadConfig()
+  const available = config.providers.apis.filter(a => {
+    if (!a.enabled || a.rateLimited) return false
+    const k = a.key.startsWith('env:') ? (process.env[a.key.replace('env:', '')] || '') : a.key
+    return k.length > 0
+  })
+
+  // Planner: strongest reasoning — openrouter > groq > gemini > cerebras > others
+  if (task === 'planner') {
+    for (const p of ['openrouter', 'groq', 'gemini', 'cerebras']) {
+      const api = available.find(a => a.provider === p)
+      if (api) return resolveKey(api)
+    }
+  }
+
+  // Executor: fastest — cerebras > groq > nvidia > others
+  if (task === 'executor') {
+    for (const p of ['cerebras', 'groq', 'nvidia', 'openai']) {
+      const api = available.find(a => a.provider === p)
+      if (api) return resolveKey(api)
+    }
+  }
+
+  // Responder: best quality — groq > gemini > openrouter > cerebras > others
+  if (task === 'responder') {
+    for (const p of ['groq', 'gemini', 'openrouter', 'cerebras']) {
+      const api = available.find(a => a.provider === p)
+      if (api) return resolveKey(api)
+    }
+  }
+
+  // Generic fallback — any available API, then Ollama
+  if (available.length > 0) return resolveKey(available[0])
+  const ollamaModel = config.model?.activeModel || 'mistral:7b'
+  return { apiKey: '', model: ollamaModel, providerName: 'ollama', apiName: 'ollama' }
+}
+
 // ── Main entry: get smart provider with full fallback chain ───
 
 export function getSmartProvider(): {

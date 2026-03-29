@@ -17,7 +17,7 @@ import { taskStateManager, TaskState }     from './taskState'
 import { skillLoader }                     from './skillLoader'
 import { learningMemory }                  from './learningMemory'
 import { conversationMemory }             from './conversationMemory'
-import { getNextAvailableAPI, markRateLimited, incrementUsage } from '../providers/router'
+import { getNextAvailableAPI, markRateLimited, incrementUsage, getModelForTask } from '../providers/router'
 import { ollamaProvider } from '../providers/ollama'
 import { loadConfig }     from '../providers/index'
 import { knowledgeBase } from './knowledgeBase'
@@ -534,37 +534,22 @@ Output ONLY valid JSON, nothing else:`
     { role: 'user', content: message },
   ]
 
-  // ── Provider retry loop — up to 3 attempts, rotates on failure ──
-  // Pre-flight: if the caller passed a rate-limited provider, rotate immediately
-  // so attempt 0 never fires against a known-bad API.
+  // ── Sprint 6: Task-tiered provider selection ─────────────────
+  // Always use the best reasoning model for planning, regardless of what
+  // the caller passed in. Falls back to caller's values if tiering has nothing.
   {
-    const cfg = loadConfig()
-    // Match by resolved key so we pick the exact entry, not just any entry with the same provider type
-    const passedEntry = cfg.providers.apis.find(a => {
-      if (!a.enabled) return false
-      const resolvedKey = a.key.startsWith('env:')
-        ? (process.env[a.key.replace('env:', '')] || '')
-        : a.key
-      return a.provider === provider && resolvedKey === apiKey
-    })
-    if (passedEntry?.rateLimited) {
-      console.log(`[Planner] Pre-flight: ${provider} is rate-limited — rotating before attempt 0`)
-      const next = getNextAvailableAPI()
-      if (next) {
-        apiKey   = next.entry.key.startsWith('env:')
-          ? (process.env[next.entry.key.replace('env:', '')] || '')
-          : next.entry.key
-        model    = next.entry.model
-        provider = next.entry.provider
-        console.log(`[Planner] Pre-flight: rotated to ${next.entry.name} (${provider}/${model})`)
-      } else {
-        // All APIs exhausted — fall through to Ollama
-        const ollamaCfg = loadConfig()
-        apiKey   = ''
-        model    = ollamaCfg.model?.activeModel || 'mistral:7b'
-        provider = 'ollama'
-        console.log(`[Planner] Pre-flight: no APIs available — using Ollama (${model})`)
-      }
+    const tiered = getModelForTask('planner')
+    if (tiered.apiKey || tiered.providerName === 'ollama') {
+      apiKey   = tiered.apiKey
+      model    = tiered.model
+      provider = tiered.providerName
+      console.log(`[Planner] Sprint 6 tiering: using ${tiered.apiName} (${provider}/${model})`)
+    } else if (!apiKey) {
+      // Caller had nothing either — last resort Ollama
+      const cfg = loadConfig()
+      apiKey   = ''
+      model    = cfg.model?.activeModel || 'mistral:7b'
+      provider = 'ollama'
     }
   }
   let curApiKey   = apiKey
@@ -625,18 +610,15 @@ Output ONLY valid JSON, nothing else:`
     // Wait before next attempt — helps with rate-limit recovery
     await new Promise(r => setTimeout(r, 1000))
 
-    // Rotate to the next available provider for the next attempt
+    // Rotate to next best planner provider for this attempt
     try {
-      const next = getNextAvailableAPI()
-      if (next) {
-        curApiKey   = next.entry.key.startsWith('env:')
-          ? (process.env[next.entry.key.replace('env:', '')] || '')
-          : next.entry.key
-        curModel    = next.entry.model
-        curProvider = next.entry.provider
-        console.log(`[Planner] Rotating to ${next.entry.name} (${curProvider}/${curModel})`)
+      const tiered = getModelForTask('planner')
+      if (tiered.apiKey || tiered.providerName === 'ollama') {
+        curApiKey   = tiered.apiKey
+        curModel    = tiered.model
+        curProvider = tiered.providerName
+        console.log(`[Planner] Rotating (tiered) to ${tiered.apiName} (${curProvider}/${curModel})`)
       } else {
-        // No cloud APIs available — switch to Ollama for next attempt
         const cfg = loadConfig()
         curApiKey   = ''
         curModel    = cfg.model?.activeModel || 'mistral:7b'
