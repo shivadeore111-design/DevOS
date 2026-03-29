@@ -41,7 +41,7 @@ async function sendEmail(env, to, subject, html) {
 }
 
 async function sendDownloadEmail(env, email, token) {
-  const url = `https://devos-license-server.shiva-deore111.workers.dev/download/${token}`;
+  const url = `https://api.taracod.com/download/${token}`;
   await sendEmail(env, email, "Welcome to Aiden — Your Download Link", `
 <!DOCTYPE html>
 <html>
