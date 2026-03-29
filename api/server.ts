@@ -289,7 +289,7 @@ export function createApiServer(): Express {
     const { history = [], mode = 'auto', sessionId } = (req.body || {}) as {
       message?:   string
       history?:   { role: string; content: string }[]
-      mode?:      'auto' | 'plan' | 'chat' | 'react'
+      mode?:      'auto' | 'plan' | 'chat' | 'react' | 'fast'
       sessionId?: string
     }
 
@@ -477,6 +477,13 @@ export function createApiServer(): Express {
           return
         }
 
+        // —— Sprint 26: fast mode — skip planning, call LLM directly (used by Quick Action widget)
+        if (mode === 'fast') {
+          const quickReply = await callLLM(resolvedMessage, rawKey, activeModel, providerName)
+          conversationMemory.addAssistantMessage(quickReply)
+          res.json({ response: quickReply, message: quickReply, provider: apiName2 }); return
+        }
+
         const memoryContext = conversationMemory.buildContext()
         const plan: AgentPlan = await planWithLLM(resolvedMessage, history, plannerKey, plannerModel, plannerProv, memoryContext)
 
@@ -620,6 +627,20 @@ export function createApiServer(): Express {
       }
 
       // â”€â”€ STEP 1: PLAN â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      // Sprint 26: fast mode in SSE path
+      if (mode === 'fast') {
+        const quickReply = await callLLM(resolvedMessage, rawKey, activeModel, providerName)
+        conversationMemory.addAssistantMessage(quickReply)
+        const words = quickReply.split(' ')
+        for (const word of words) {
+          send({ token: word + ' ', done: false, provider: apiName })
+          await new Promise(r => setTimeout(r, 8))
+        }
+        send({ done: true, provider: apiName })
+        res.end()
+        return
+      }
+
       send({ activity: { icon: 'ðŸ§ ', agent: 'Aiden', message: 'Working out a plan...', style: 'thinking' }, done: false })
 
       const memoryContext = conversationMemory.buildContext()

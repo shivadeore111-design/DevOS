@@ -1,0 +1,4 @@
+pystray
+pillow
+keyboard
+requests
