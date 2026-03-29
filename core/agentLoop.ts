@@ -346,6 +346,61 @@ function inferPlanFromKeywords(message: string): any | null {
   return null
 }
 
+// ── Sprint 5: Planner racing helper ──────────────────────────
+// Fires top-2 available APIs simultaneously; returns first valid JSON string.
+
+async function racePlannerAPIs(
+  promptText: string,
+  topN = 2,
+): Promise<string | null> {
+  const cfg  = loadConfig()
+  const apis = cfg.providers.apis
+    .filter(a => {
+      if (!a.enabled || a.rateLimited) return false
+      const k = a.key.startsWith('env:') ? (process.env[a.key.replace('env:', '')] || '') : a.key
+      return k.length > 0 && a.provider !== 'ollama'
+    })
+    .slice(0, topN)
+
+  if (apis.length < 2) return null
+
+  const controllers = apis.map(() => new AbortController())
+
+  const callOne = async (api: typeof apis[0], ctrl: AbortController): Promise<string> => {
+    const key = api.key.startsWith('env:')
+      ? (process.env[api.key.replace('env:', '')] || '')
+      : api.key
+    const messages = [{ role: 'user', content: promptText }]
+    // Use callLLM logic inline with abort support
+    const url     = OPENAI_COMPAT_ENDPOINTS[api.provider] || OPENAI_COMPAT_ENDPOINTS.groq
+    const headers = buildHeaders(api.provider, key)
+    const r = await fetch(url, {
+      method:  'POST',
+      headers,
+      body:    JSON.stringify({ model: api.model, messages, stream: false, max_tokens: 2000 }),
+      signal:  ctrl.signal,
+    })
+    if (!r.ok) throw new Error(`${api.provider} ${r.status}`)
+    const d = await r.json() as any
+    const text = d?.choices?.[0]?.message?.content || ''
+    // Only return if it looks like valid JSON
+    if (!text.trim() || !text.includes('{')) throw new Error('no JSON')
+    return text
+  }
+
+  const promises = apis.map((api, i) =>
+    callOne(api, controllers[i]).then(text => {
+      controllers.forEach((c, j) => { if (j !== i) { try { c.abort() } catch {} } })
+      return text
+    })
+  )
+
+  try {
+    return await Promise.race(promises)
+  } catch {}
+  return null
+}
+
 // ── STEP 1: planWithLLM ────────────────────────────────────────
 
 export async function planWithLLM(
@@ -519,11 +574,23 @@ Output ONLY valid JSON, nothing else:`
   let parsed: any = null
 
   for (let attempt = 0; attempt < 3; attempt++) {
+    raw = '' // reset each attempt so stale values don't bleed through
     try {
-      raw = await callLLM(
-        messages.map(m => `${m.role}: ${m.content}`).join('\n'),
-        curApiKey, curModel, curProvider,
-      )
+      // Sprint 5: on first attempt, race top-2 providers simultaneously
+      if (attempt === 0) {
+        const promptText = messages.map(m => `${m.role}: ${m.content}`).join('\n')
+        const raceRaw = await racePlannerAPIs(promptText).catch(() => null)
+        if (raceRaw && raceRaw.trim().length > 0) {
+          raw = raceRaw
+          console.log('[Planner] Race winner resolved')
+        }
+      }
+      if (!raw) {
+        raw = await callLLM(
+          messages.map(m => `${m.role}: ${m.content}`).join('\n'),
+          curApiKey, curModel, curProvider,
+        )
+      }
 
       if (!raw || raw.trim().length === 0) {
         console.warn(`[Planner] Empty response attempt ${attempt + 1} (${curProvider}) — marking and rotating`)

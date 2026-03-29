@@ -2040,6 +2040,99 @@ export function startApiServer(portArg?: number): Express {
   return app
 }
 
+// ── Provider racing helpers ─────────────────────────────────
+// fetchProviderResponse: fires a single non-streaming request to a provider.
+// raceProviders: fires top-2 simultaneously, returns the fastest valid response.
+
+async function fetchProviderResponse(
+  api:      import('../providers/index').APIEntry,
+  messages: { role: string; content: string }[],
+  signal:   AbortSignal,
+): Promise<{ text: string; apiName: string }> {
+  const key = api.key.startsWith('env:')
+    ? (process.env[api.key.replace('env:', '')] || '')
+    : api.key
+  const providerType = api.provider
+  const model        = api.model
+
+  if (providerType === 'gemini') {
+    const resp = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+      body: JSON.stringify({ model, messages, stream: false }),
+      signal,
+    })
+    if (!resp.ok) throw new Error(`Gemini ${resp.status}`)
+    const d = await resp.json() as any
+    return { text: d?.choices?.[0]?.message?.content || '', apiName: api.name }
+
+  } else if (providerType === 'ollama') {
+    const resp = await fetch('http://localhost:11434/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, messages, stream: false }),
+      signal,
+    })
+    if (!resp.ok) throw new Error(`Ollama ${resp.status}`)
+    const d = await resp.json() as any
+    return { text: d?.message?.content || '', apiName: api.name }
+
+  } else {
+    const COMPAT_ENDPOINTS: Record<string, string> = {
+      groq:       'https://api.groq.com/openai/v1/chat/completions',
+      openrouter: 'https://openrouter.ai/api/v1/chat/completions',
+      cerebras:   'https://api.cerebras.ai/v1/chat/completions',
+      openai:     'https://api.openai.com/v1/chat/completions',
+      nvidia:     'https://integrate.api.nvidia.com/v1/chat/completions',
+      github:     'https://models.inference.ai.azure.com/chat/completions',
+    }
+    const endpoint = COMPAT_ENDPOINTS[providerType] ?? COMPAT_ENDPOINTS['groq']
+    const resp = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${key}`,
+        ...(providerType === 'openrouter' ? { 'HTTP-Referer': 'https://devos.local', 'X-Title': 'DevOS' } : {}),
+      },
+      body: JSON.stringify({ model, messages, stream: false, max_tokens: 2000 }),
+      signal,
+    })
+    if (!resp.ok) throw new Error(`${providerType} ${resp.status}`)
+    const d = await resp.json() as any
+    return { text: d?.choices?.[0]?.message?.content || '', apiName: api.name }
+  }
+}
+
+async function raceProviders(
+  messages: { role: string; content: string }[],
+  topN = 2,
+): Promise<{ text: string; apiName: string } | null> {
+  const cfg  = loadConfig()
+  const apis = cfg.providers.apis
+    .filter(a => {
+      if (!a.enabled || a.rateLimited) return false
+      const k = a.key.startsWith('env:') ? (process.env[a.key.replace('env:', '')] || '') : a.key
+      return k.length > 0 && a.provider !== 'ollama'
+    })
+    .slice(0, topN)
+
+  if (apis.length < 2) return null
+
+  const controllers = apis.map(() => new AbortController())
+  const promises = apis.map((api, i) =>
+    fetchProviderResponse(api, messages, controllers[i].signal).then(result => {
+      controllers.forEach((c, j) => { if (j !== i) { try { c.abort() } catch {} } })
+      return result
+    })
+  )
+
+  try {
+    const winner = await Promise.race(promises)
+    if (winner.text.trim()) return winner
+  } catch {}
+  return null
+}
+
 // ── Pure-chat streaming helper (no planner, no tools) ─────────
 
 async function streamChat(
@@ -2076,6 +2169,20 @@ async function streamChat(
     ...history.slice(-8),
     { role: 'user', content: message },
   ]
+
+  // ── Sprint 5: Provider racing ─ fire top-2, stream winner's tokens ───────────
+  try {
+    const raceResult = await raceProviders(msgs)
+    if (raceResult) {
+      // Simulate streaming: send each word as a token for natural feel
+      const words = raceResult.text.split(' ')
+      for (let wi = 0; wi < words.length; wi++) {
+        const token = (wi === 0 ? '' : ' ') + words[wi]
+        send({ token, done: false, provider: raceResult.apiName })
+      }
+      return
+    }
+  } catch { /* racing failed — fall through to sequential */ }
 
   // Resolve the actual API key and provider type from config
   const cfg      = loadConfig()
