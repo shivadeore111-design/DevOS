@@ -926,6 +926,47 @@ export function validatePlan(plan: AgentPlan): ValidationResult {
   }
 }
 
+// ── Sprint 28: shouldReplan ────────────────────────────────────
+// After each failed step, ask the LLM: should we replan?
+
+async function shouldReplan(
+  originalGoal:   string,
+  completedSteps: StepResult[],
+  failedStep:     ToolStep,
+  failureReason:  string,
+  apiKey:         string,
+  model:          string,
+  provider:       string,
+): Promise<{ replan: boolean; newApproach?: string }> {
+  const prompt = `You are replanning a failed task.
+
+Original goal: "${originalGoal}"
+
+Steps completed so far:
+${completedSteps.map((s, i) => `${i + 1}. ${s.tool}: ${s.success ? 'succeeded' : 'failed'}`).join('\n') || 'None'}
+
+Failed step: ${failedStep.tool}
+Failure reason: ${failureReason}
+
+Should I replan with a different approach, or retry the same step?
+
+Respond in JSON only:
+{
+  "replan": true/false,
+  "reason": "why",
+  "newApproach": "describe the new approach if replanning, or null"
+}`
+
+  try {
+    const raw = await callLLM(prompt, apiKey, model, provider)
+    const match = raw.match(/\{[\s\S]*\}/)
+    const parsed = JSON.parse(match?.[0] || '{}')
+    return { replan: parsed.replan === true, newApproach: parsed.newApproach || undefined }
+  } catch {
+    return { replan: false }
+  }
+}
+
 // ── STEP 2: executePlan ────────────────────────────────────────
 
 // —— Sprint 8: dependency-group builder ——————————————
@@ -976,6 +1017,9 @@ export async function executePlan(
   onStep:         (step: ToolStep, result: StepResult) => void,
   onPhaseChange?: (phase: Phase, index: number, total: number) => void,
   existingState?: TaskState,
+  replanApiKey?:   string,
+  replanModel?:    string,
+  replanProvider?: string,
 ): Promise<StepResult[]> {
 
   const results:     StepResult[]           = []
@@ -1149,7 +1193,9 @@ async function executeSingleStep(
   const groups = buildDependencyGroups(plan.plan)
   console.log(`[ExecutePlan] Dependency groups: ${groups.map(g => g.length === 1 ? g[0].tool : `[${g.map(s => s.tool).join('+')}]`).join(' → ')}`)
 
-  for (const group of groups) {
+  let _gi = 0
+  while (_gi < groups.length) {
+    const group = groups[_gi++]
 
     // Phase-transition detection — use first step of each group
     const thisCap = capabilityMap[group[0].tool] || 'execution'
@@ -1182,6 +1228,63 @@ async function executeSingleStep(
       const stepResult = await executeSingleStep(step, stepOutputs, state, plan, workspace, onStep)
       stepOutputs[step.step] = stepResult.output
       results.push(stepResult)
+
+      // ── Sprint 28: mid-execution replan on failure ─────────────────
+      if (!stepResult.success) {
+        // Resolve credentials: prefer explicit params, then route through getNextAvailableAPI
+        let _rpKey      = replanApiKey   || ''
+        let _rpModel    = replanModel    || ''
+        let _rpProvider = replanProvider || ''
+        if (!_rpKey && !_rpModel) {
+          try {
+            const _next = getNextAvailableAPI()
+            if (_next) {
+              _rpKey      = _next.entry.key.startsWith('env:')
+                ? (process.env[_next.entry.key.replace('env:', '')] || '')
+                : _next.entry.key
+              _rpModel    = _next.entry.model
+              _rpProvider = _next.entry.provider
+            }
+          } catch {}
+        }
+        if (_rpKey || _rpProvider === 'ollama') {
+          const replanDecision = await shouldReplan(
+            plan.goal,
+            results,
+            step,
+            stepResult.error || 'unknown error',
+            _rpKey, _rpModel, _rpProvider,
+          )
+          if (replanDecision.replan && replanDecision.newApproach) {
+            livePulse.act('Aiden', `Replanning: ${replanDecision.newApproach}`)
+            auditTrail.record({
+              action:     'system',
+              tool:       'replan',
+              input:      `Failed: ${step.tool}`,
+              output:     replanDecision.newApproach,
+              durationMs: 0,
+              success:    true,
+              goal:       plan.goal,
+              traceId:    plan.planId,
+            })
+            try {
+              const newPlan = await planWithLLM(
+                `${plan.goal} — previous approach failed at ${step.tool}: ${replanDecision.newApproach}`,
+                [],
+                _rpKey, _rpModel, _rpProvider,
+              )
+              if (newPlan && newPlan.plan && newPlan.plan.length > 0) {
+                const newGroups = buildDependencyGroups(newPlan.plan)
+                // Replace remaining groups with the new plan's groups
+                groups.splice(_gi, groups.length - _gi, ...newGroups)
+                console.log(`[ExecutePlan] Replan spliced ${newGroups.length} new group(s) from step ${_gi}`)
+              }
+            } catch (e: any) {
+              console.warn(`[ExecutePlan] Replan planWithLLM failed: ${e.message}`)
+            }
+          }
+        }
+      }
 
     } else {
       // —— Parallel group ———————————————————————
