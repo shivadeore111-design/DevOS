@@ -36,7 +36,7 @@ async function sendEmail(env, to, subject, html) {
   await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ from: "Aiden <contact@taracod.com>", to: [to], subject, html })
+    body: JSON.stringify({ from: "Aiden <hello@taracod.com>", to: [to], subject, html })
   });
 }
 
@@ -53,7 +53,7 @@ async function sendDownloadEmail(env, email, token) {
   </div>
   <p style="color:#64748b;font-size:12px;text-align:center;">This link expires in 48 hours.</p>
   <hr style="border:none;border-top:1px solid #334155;margin:24px 0;">
-  <p style="color:#64748b;font-size:12px;">Questions? <a href="mailto:contact@taracod.com" style="color:#f97316;">contact@taracod.com</a></p>
+  <p style="color:#64748b;font-size:12px;">Questions? <a href="mailto:hello@taracod.com" style="color:#f97316;">hello@taracod.com</a></p>
 </body>
 </html>`);
 }
@@ -71,7 +71,7 @@ async function sendLicenseEmail(env, email, licenseKey, expiryDate) {
   <p style="color:#94a3b8;font-size:14px;"><strong style="color:#e2e8f0;">Expires:</strong> ${expiryDate}</p>
   <p style="color:#94a3b8;font-size:14px;">Open Aiden ? Settings ? Pro License ? paste your key ? Activate.</p>
   <hr style="border:none;border-top:1px solid #334155;margin:24px 0;">
-  <p style="color:#64748b;font-size:12px;">Questions? <a href="mailto:contact@taracod.com" style="color:#f97316;">contact@taracod.com</a></p>
+  <p style="color:#64748b;font-size:12px;">Questions? <a href="mailto:hello@taracod.com" style="color:#f97316;">hello@taracod.com</a></p>
 </body>
 </html>`);
 }
@@ -118,7 +118,7 @@ async function handleVerifyInstall(request, env) {
     return json({ allowed: true });
   }
 
-  return json({ allowed: false, reason: "Active on 2 machines already. Email contact@taracod.com to transfer." });
+  return json({ allowed: false, reason: "Active on 2 machines already. Email hello@taracod.com to transfer." });
 }
 
 async function handleDownload(request, env) {
@@ -158,12 +158,12 @@ async function handleDownload(request, env) {
     </ol>
   </div>
   <p style="color:#475569;font-size:13px;margin-bottom:24px;">Requires: Windows 10/11 · Node.js 18+</p>
-  <a href="https://github.com/shivadeore111-design/DevOS/archive/refs/heads/master.zip"
+  <a href="https://github.com/shivadeore111-design/DevOS/releases/download/v2.0.0/Aiden-v2.0.zip"
      style="background:#f97316;color:#000;padding:16px 48px;border-radius:8px;text-decoration:none;font-weight:700;font-size:18px;display:inline-block;">
     Download Aiden
   </a>
   <p style="color:#334155;font-size:11px;margin-top:24px;">Registered to: ${record.email}</p>
-  <p style="color:#334155;font-size:11px;">Need help? <a href="mailto:contact@taracod.com" style="color:#f97316;">contact@taracod.com</a></p>
+  <p style="color:#334155;font-size:11px;">Need help? <a href="mailto:hello@taracod.com" style="color:#f97316;">hello@taracod.com</a></p>
 </body>
 </html>`, { headers: { "Content-Type": "text/html" } });
 }
