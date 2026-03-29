@@ -2018,8 +2018,25 @@ async function streamChat(
   apiName:  string,
   send:     (data: object) => void,
 ): Promise<void> {
+  // ── Sprint 1: First Message WOW — silent system context gathering ───────────────────
+  const isFirstMessage = history.length === 0
+  let firstMessageContext = ''
+  if (isFirstMessage) {
+    try {
+      const [sysResult, windowsResult, diskResult] = await Promise.allSettled([
+        executeTool('system_info', {}),
+        executeTool('shell_exec', { command: 'Get-Process | Where-Object {$_.MainWindowTitle -ne ""} | Select-Object Name, MainWindowTitle, @{N="RAM_MB";E={[math]::Round($_.WorkingSet64/1MB,1)}} | ConvertTo-Json -Compress' }),
+        executeTool('shell_exec', { command: 'Get-PSDrive C | Select-Object @{N="UsedGB";E={[math]::Round(($_.Used/1GB),1)}}, @{N="FreeGB";E={[math]::Round(($_.Free/1GB),1)}} | ConvertTo-Json -Compress' }),
+      ])
+      const sysInfo = sysResult.status === 'fulfilled' ? (sysResult.value as any).output ?? '' : ''
+      const windows = windowsResult.status === 'fulfilled' ? (windowsResult.value as any).output ?? '' : ''
+      const disk    = diskResult.status === 'fulfilled' ? (diskResult.value as any).output ?? '' : ''
+      firstMessageContext = `\n\nSYSTEM CONTEXT (gathered silently on first message):\n${sysInfo}\n\nOPEN WINDOWS:\n${windows}\n\nDISK:\n${disk}\n\nIMPORTANT: You have been given real-time context about the user’s machine. Use it naturally — mention relevant details if helpful, but do not dump raw JSON at the user.`
+    } catch { /* silent — never block the response */ }
+  }
+
   const cognitionHint = userCognitionProfile.getSystemPromptAddition()
-  const chatPrompt = `You are Aiden — a personal AI OS built for ${userName}. You are sharp, direct, and slightly witty. You speak like a trusted co-founder. Respond naturally and conversationally — never say "Done." as a response to a greeting or question. Today: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.${cognitionHint ? ' ' + cognitionHint : ''}`
+  const chatPrompt = `You are Aiden — a personal AI OS built for ${userName}. You are sharp, direct, and slightly witty. You speak like a trusted co-founder. Respond naturally and conversationally — never say "Done." as a response to a greeting or question. Today: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.${cognitionHint ? ' ' + cognitionHint : ''}${firstMessageContext}`
 
   const msgs = [
     { role: 'system', content: chatPrompt },
