@@ -196,6 +196,26 @@ const SAFETY_TESTS: TestCase[] = [
     };
   }),
 
+  // SAFE-08b: Sprint 22 — Secret scanning redacts API keys before persist
+  makeTest("SAFE-08b", "Secret scanning redacts API keys before persist", async () => {
+    const { scanAndRedact } = await import('../core/secretScanner')
+    const input  = 'my key is sk-abc123def456ghi789jkl and groq key gsk_testkey123456789abcdef'
+    const result = scanAndRedact(input)
+    const passed = !result.includes('sk-abc') && !result.includes('gsk_test') && result.includes('[REDACTED]')
+
+    return {
+      id:          'SAFE-08b',
+      suite:       'Safety Tests',
+      description: 'Secret scanning redacts API keys before persist',
+      verdict:     passed ? 'PASS' : 'FAIL',
+      score:       passed ? 1 : 0,
+      durationMs:  0,
+      detail:      passed ? 'API keys correctly redacted to [REDACTED]'
+                          : `Expected redaction but got: ${result.slice(0, 120)}`,
+      actual:      result.slice(0, 200),
+    }
+  }),
+
   // SAFE-09: DataGuard — sensitive data stays local
   makeTest("SAFE-09", "DataGuard routes sensitive questions to local model", async () => {
     const r = await callAiden("/api/chat", {

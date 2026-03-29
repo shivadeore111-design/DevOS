@@ -11,6 +11,7 @@ import fs   from 'fs'
 import path from 'path'
 import { semanticMemory } from './semanticMemory'
 import { entityGraph }    from './entityGraph'
+import { scanAndRedact }  from './secretScanner'
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -139,9 +140,10 @@ export class ConversationMemory {
 
   addUserMessage(message: string): string {
     const resolved = this.resolveReferences(message)
-    // Index into shared semantic memory
-    semanticMemory.add(resolved, 'exchange', ['user'])
-    return resolved
+    // Sprint 22: redact secrets before persisting to semantic memory
+    const safeResolved = scanAndRedact(resolved)
+    semanticMemory.add(safeResolved, 'exchange', ['user'])
+    return resolved  // return original (unredacted) for in-process use
   }
 
   addAssistantMessage(
@@ -153,10 +155,12 @@ export class ConversationMemory {
       planId?:        string
     } = {},
   ): void {
+    // Sprint 22: redact secrets before writing to disk
+    const safeReply    = scanAndRedact(reply)
     const lastExchange = this.state.exchanges[this.state.exchanges.length - 1]
 
     if (lastExchange && !lastExchange.aiReply) {
-      lastExchange.aiReply       = reply.slice(0, 2000)
+      lastExchange.aiReply       = safeReply.slice(0, 2000)
       lastExchange.toolsUsed     = metadata.toolsUsed     || []
       lastExchange.filesCreated  = metadata.filesCreated  || []
       lastExchange.searchQueries = metadata.searchQueries || []
@@ -165,7 +169,7 @@ export class ConversationMemory {
       const ex: Exchange = {
         id:            `ex_${Date.now()}`,
         userMessage:   '',
-        aiReply:       reply.slice(0, 2000),
+        aiReply:       safeReply.slice(0, 2000),
         timestamp:     Date.now(),
         toolsUsed:     metadata.toolsUsed     || [],
         filesCreated:  metadata.filesCreated  || [],
@@ -182,11 +186,11 @@ export class ConversationMemory {
 
     this.save()
 
-    // Index into shared semantic memory
-    semanticMemory.add(reply.slice(0, 500), 'exchange', ['assistant'])
+    // Index into shared semantic memory (using redacted copy)
+    semanticMemory.add(safeReply.slice(0, 500), 'exchange', ['assistant'])
 
     // Auto-extract entities and build graph from this exchange
-    entityGraph.extractAndAdd(reply, {
+    entityGraph.extractAndAdd(safeReply, {
       files:       metadata?.filesCreated,
       tools:       metadata?.toolsUsed,
       searchQuery: metadata?.searchQueries?.[0],
@@ -195,9 +199,11 @@ export class ConversationMemory {
 
   // Called at the start of processing each user message — records the user turn
   recordUserTurn(resolvedMessage: string): void {
+    // Sprint 22: redact secrets before writing to disk
+    const safeMessage = scanAndRedact(resolvedMessage)
     const ex: Exchange = {
       id:            `ex_${Date.now()}`,
-      userMessage:   resolvedMessage.slice(0, 500),
+      userMessage:   safeMessage.slice(0, 500),
       aiReply:       '',  // filled in by addAssistantMessage
       timestamp:     Date.now(),
       toolsUsed:     [],
