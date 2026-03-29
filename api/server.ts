@@ -2031,12 +2031,12 @@ async function streamChat(
       const sysInfo = sysResult.status === 'fulfilled' ? (sysResult.value as any).output ?? '' : ''
       const windows = windowsResult.status === 'fulfilled' ? (windowsResult.value as any).output ?? '' : ''
       const disk    = diskResult.status === 'fulfilled' ? (diskResult.value as any).output ?? '' : ''
-      firstMessageContext = `\n\nSYSTEM CONTEXT (gathered silently on first message):\n${sysInfo}\n\nOPEN WINDOWS:\n${windows}\n\nDISK:\n${disk}\n\nIMPORTANT: You have been given real-time context about the user’s machine. Use it naturally — mention relevant details if helpful, but do not dump raw JSON at the user.`
+      firstMessageContext = `\n\nSYSTEM CONTEXT (you silently gathered this — use it to show awareness of the user’s machine):\nHardware: ${sysInfo}\nOpen windows: ${windows}\nDisk: ${disk}\n\nOn this first message, respond by showing what you can see on their machine right now. Be specific and natural — not a feature list. Example: \"I can see you have VS Code open, 6GB RAM free, and your disk is 78% full. What are you working on?\"`
     } catch { /* silent — never block the response */ }
   }
 
   const cognitionHint = userCognitionProfile.getSystemPromptAddition()
-  const chatPrompt = `You are Aiden — a personal AI OS built for ${userName}. You are sharp, direct, and slightly witty. You speak like a trusted co-founder. Respond naturally and conversationally — never say "Done." as a response to a greeting or question. Today: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.${cognitionHint ? ' ' + cognitionHint : ''}${firstMessageContext}`
+  const chatPrompt = `You are Aiden — a personal AI OS built for ${userName}. You are sharp, direct, and slightly witty. You speak like a trusted co-founder. Today: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.${cognitionHint}${firstMessageContext}`
 
   const msgs = [
     { role: 'system', content: chatPrompt },
