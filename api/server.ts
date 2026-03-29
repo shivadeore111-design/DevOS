@@ -63,6 +63,7 @@ import { userCognitionProfile }                      from '../core/userCognition
 import { isPro, validateLicense, getCurrentLicense, clearLicense, startLicenseRefresh } from '../core/licenseManager'
 import { auditTrail } from '../core/auditTrail'
 import { mcpClient }   from '../core/mcpClient'
+import { responseCache } from '../core/responseCache'
 
 // â”€â”€ Human-readable tool message helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function humanToolMessage(tool: string, input: Record<string, any>): string {
@@ -1522,6 +1523,17 @@ export function createApiServer(): Express {
   // GET  /api/mcp/tools -- list all cached MCP tools across all servers
   app.get('/api/mcp/tools', (_req: Request, res: Response) => {
     res.json(mcpClient.getAllCachedTools())
+  })
+
+  // GET  /api/cache/stats -- response cache statistics
+  app.get('/api/cache/stats', (_req: Request, res: Response) => {
+    res.json(responseCache.getStats())
+  })
+
+  // POST /api/cache/clear -- flush all cached tool results
+  app.post('/api/cache/clear', (_req: Request, res: Response) => {
+    responseCache.clear()
+    res.json({ success: true, message: 'Cache cleared' })
   })
 
   // GET  /api/scheduler/tasks — list all scheduled tasks

@@ -27,6 +27,7 @@ import { getMarketData }   from './tools/marketDataTool'
 import { getCompanyInfo }  from './tools/companyFilingsTool'
 import { mcpClient }       from './mcpClient'
 import { runInSandbox }    from './codeInterpreter'
+import { responseCache }   from './responseCache'
 
 const execAsync = promisify(exec)
 
@@ -931,6 +932,18 @@ export async function executeTool(
   let   lastError = ''
   let   retries   = 0
 
+  // ── Sprint 17: cache check ────────────────────────────────────
+  const cachedOutput = responseCache.get(tool, input)
+  if (cachedOutput !== null) {
+    return {
+      tool, input,
+      success:  true,
+      output:   cachedOutput,
+      duration: Date.now() - start,
+      retries:  0,
+    }
+  }
+
   const timeout = TOOL_TIMEOUTS[tool] ?? timeoutMs
 
   // Errors that should not be retried (permanent failures)
@@ -956,7 +969,7 @@ export async function executeTool(
         ),
       ])
 
-      return {
+      const result: ToolResult = {
         tool, input,
         success:  raw.success,
         output:   String(raw.output || ''),
@@ -964,6 +977,13 @@ export async function executeTool(
         duration: Date.now() - start,
         retries,
       }
+
+      // ── Sprint 17: cache successful results ───────────────────
+      if (result.success && result.output) {
+        responseCache.set(tool, input, result.output)
+      }
+
+      return result
 
     } catch (e: any) {
       lastError = e.message || String(e)
