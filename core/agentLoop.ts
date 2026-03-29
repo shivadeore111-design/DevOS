@@ -434,6 +434,7 @@ export async function planWithLLM(
     'get_market_data', 'get_company_info', 'social_research',
     'mouse_move', 'mouse_click', 'keyboard_type', 'keyboard_press',
     'screenshot', 'screen_read', 'vision_loop', 'wait',
+    'code_interpreter_python', 'code_interpreter_node',
   ]
 
   // Sprint 13: append discovered MCP tools
@@ -805,6 +806,7 @@ const VALID_TOOLS = [
   'git_push', 'get_market_data', 'get_company_info',
   'mouse_move', 'mouse_click', 'keyboard_type', 'keyboard_press',
   'screenshot', 'screen_read', 'vision_loop', 'wait',
+  'code_interpreter_python', 'code_interpreter_node',
 ]
 
 interface ValidationResult {
@@ -912,7 +914,7 @@ export function validatePlan(plan: AgentPlan): ValidationResult {
 const PARALLEL_SAFE = new Set([
   'web_search', 'system_info', 'get_stocks', 'get_market_data',
   'social_research', 'fetch_url', 'fetch_page', 'get_company_info',
-  'deep_research',
+  'deep_research', 'code_interpreter_python', 'code_interpreter_node',
 ])
 
 const SEQUENTIAL_ONLY = new Set([

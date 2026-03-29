@@ -26,6 +26,7 @@ import { reliableWebSearch, deepResearch as deepResearchFn } from './webSearch'
 import { getMarketData }   from './tools/marketDataTool'
 import { getCompanyInfo }  from './tools/companyFilingsTool'
 import { mcpClient }       from './mcpClient'
+import { runInSandbox }    from './codeInterpreter'
 
 const execAsync = promisify(exec)
 
@@ -95,9 +96,11 @@ const TOOL_TIMEOUTS: Record<string, number> = {
   git_commit:     30000,
   wait:            6000,
   get_stocks:     20000,
-  get_market_data:   15000,
-  get_company_info:  15000,
-  social_research:   30000,
+  get_market_data:              15000,
+  get_company_info:             15000,
+  social_research:              30000,
+  code_interpreter_python:      35000,
+  code_interpreter_node:        35000,
 }
 
 // ── Tool implementations ──────────────────────────────────────
@@ -855,6 +858,37 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
       const result = await visionLoop(p.goal, p.max_steps || 10, callLLMWrapper)
       return { success: true, output: result }
     } catch (e: any) { return { success: false, output: '', error: e.message } }
+  },
+
+  // ── Sprint 16: Code Interpreter Sandbox ───────────────────────
+
+  code_interpreter_python: async (p: any) => {
+    const code     = p.code || p.script || ''
+    const packages = Array.isArray(p.packages) ? p.packages as string[] : undefined
+    if (!code) return { success: false, output: '', error: 'No code provided' }
+    const result = await runInSandbox(code, 'python', packages)
+    const filesNote = result.files && result.files.length > 0
+      ? `\nFiles created: ${result.files.join(', ')}`
+      : ''
+    return {
+      success: result.success,
+      output:  (result.output || '') + filesNote,
+      error:   result.error,
+    }
+  },
+
+  code_interpreter_node: async (p: any) => {
+    const code = p.code || p.script || ''
+    if (!code) return { success: false, output: '', error: 'No code provided' }
+    const result = await runInSandbox(code, 'node')
+    const filesNote = result.files && result.files.length > 0
+      ? `\nFiles created: ${result.files.join(', ')}`
+      : ''
+    return {
+      success: result.success,
+      output:  (result.output || '') + filesNote,
+      error:   result.error,
+    }
   },
 }
 
