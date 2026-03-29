@@ -1563,6 +1563,24 @@ export function createApiServer(): Express {
     res.json({ success: true, message: 'Cache cleared' })
   })
 
+  // POST /api/register -- Sprint 20: email registration for early access
+  app.post('/api/register', async (req: Request, res: Response) => {
+    const { email } = req.body as { email?: string }
+    if (!email || !email.includes('@')) {
+      res.status(400).json({ error: 'Valid email required' })
+      return
+    }
+    const { registerEmail } = await import('../core/licenseManager')
+    const result = await registerEmail(email)
+    if (result.success) {
+      // Persist email into config so verifyInstall can use it on next boot
+      const cfg = loadConfig()
+      ;(cfg.user as any).email = email
+      saveConfig(cfg)
+    }
+    res.json(result)
+  })
+
   // GET  /api/scheduler/tasks — list all scheduled tasks
   app.get('/api/scheduler/tasks', (_req: Request, res: Response) => {
     res.json(scheduler.list())

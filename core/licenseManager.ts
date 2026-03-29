@@ -13,11 +13,13 @@
 
 import fs   from 'fs'
 import path from 'path'
+import { getMachineId } from './machineId'
 
 // ── Config ────────────────────────────────────────────────────
 
 const LICENSE_FILE   = path.join(process.cwd(), 'workspace', 'license.json')
 const LICENSE_SERVER = 'https://devos-license-server.shiva-deore111.workers.dev'
+const DIST_SERVER    = 'https://devos-license-server.shiva-deore111.workers.dev'
 
 const OFFLINE_GRACE_MS  = 7  * 24 * 60 * 60 * 1000   // 7 days
 const REFRESH_INTERVAL  = 12 * 60 * 60 * 1000          // 12 hours
@@ -203,4 +205,48 @@ export function startLicenseRefresh(): void {
   setInterval(refresh, REFRESH_INTERVAL)
 }
 
+// ── Sprint 20: Distribution control + machine binding ─────────
 
+/**
+ * Verify that this email+machine combination is allowed to run.
+ * Called on startup. On network failure, allows (offline users not blocked).
+ */
+export async function verifyInstall(email: string): Promise<{ allowed: boolean; reason?: string }> {
+  try {
+    const machineId = getMachineId()
+    const r = await fetch(`${DIST_SERVER}/verify-install`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ email, machineId }),
+      signal:  AbortSignal.timeout(8000),
+    })
+    if (!r.ok) return { allowed: false, reason: 'Server unreachable' }
+    const data = await r.json() as any
+    return { allowed: data.allowed === true, reason: data.reason }
+  } catch {
+    // Network failure — don't block offline users
+    return { allowed: true }
+  }
+}
+
+/**
+ * Register an email address for early access.
+ * Returns a human-readable message to display to the user.
+ */
+export async function registerEmail(email: string): Promise<{ success: boolean; message: string }> {
+  try {
+    const r = await fetch(`${DIST_SERVER}/register`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ email }),
+      signal:  AbortSignal.timeout(8000),
+    })
+    const data = await r.json() as any
+    return {
+      success: r.ok,
+      message: data.message || 'Check your email for the download link',
+    }
+  } catch (e: any) {
+    return { success: false, message: e.message }
+  }
+}
