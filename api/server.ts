@@ -1419,6 +1419,12 @@ export function createApiServer(): Express {
     }
   })
 
+  // GET /api/capability — hardware capability profile
+  app.get('/api/capability', (_req: Request, res: Response) => {
+    const { loadCapabilityProfile } = require('../core/capabilityProfile')
+    res.json(loadCapabilityProfile() || { error: 'Profile not built yet' })
+  })
+
   // GET /api/audit/today — daily activity summary
   app.get('/api/audit/today', (_req: Request, res: Response) => {
     const entries = auditTrail.getToday()

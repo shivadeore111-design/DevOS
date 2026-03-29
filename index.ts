@@ -29,6 +29,7 @@ import { memoryStrategy }                  from './core/memoryStrategy'
 import { startApiServer }                  from './api/server'
 import { checkSearxNG }                   from './core/webSearch'
 import { auditTrail }                     from './core/auditTrail'
+import { buildCapabilityProfile }         from './core/capabilityProfile'
 
 // ── Bootstrap ─────────────────────────────────────────────────
 
@@ -76,6 +77,12 @@ async function main(): Promise<void> {
         }
 
         startApiServer()
+
+        // ── Capability profile — detect hardware tier silently ─
+        buildCapabilityProfile().then(profile => {
+          console.log(`[Capability] Tier: ${profile.tier} | RAM: ${profile.ramGB}GB | GPU: ${profile.gpuVRAM}GB VRAM | Local LLM: ${profile.localLLM}`)
+        }).catch(() => { /* non-fatal */ })
+
         console.log('╔══════════════════════════════════════════════╗')
         console.log('║  DevOS v2.0 · Aiden — Your Personal AI OS   ║')
         console.log('║  http://localhost:4200  ·  Zero telemetry    ║')
