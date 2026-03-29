@@ -28,13 +28,15 @@ interface Phase {
 }
 
 interface Message {
-  id:          string
-  role:        'user' | 'assistant'
-  content:     string
-  provider?:   string
-  timestamp:   number
-  phases?:     Phase[]
-  isStreaming?: boolean
+  id:             string
+  role:           'user' | 'assistant'
+  content:        string
+  provider?:      string
+  timestamp:      number
+  phases?:        Phase[]
+  isStreaming?:   boolean
+  isBriefing?:    boolean
+  briefingLabel?: string
 }
 
 interface Conversation {
@@ -426,7 +428,8 @@ function MarkdownContent({ content }: { content: string }) {
 
 function ChatMessage({ message }: { message: Message }) {
   const [copied, setCopied] = useState(false)
-  const isUser = message.role === 'user'
+  const isUser     = message.role === 'user'
+  const isBriefing = !!message.isBriefing
 
   const copyMessage = () => {
     navigator.clipboard.writeText(message.content).catch(() => {})
@@ -441,16 +444,32 @@ function ChatMessage({ message }: { message: Message }) {
       alignItems: isUser ? 'flex-end' : 'flex-start',
       animation: 'fadeInUp 0.25s ease-out',
     }}>
-      {/* Label */}
-      <div style={{
-        fontSize: 9, color: 'var(--muted)', textTransform: 'uppercase',
-        letterSpacing: '0.1em', marginBottom: 4,
-        fontFamily: 'var(--mono)',
-        paddingLeft: isUser ? 0 : 4,
-        paddingRight: isUser ? 4 : 0,
-      }}>
-        {isUser ? 'You' : 'Aiden'}
-      </div>
+      {/* Label — briefing gets an orange pill, normal messages get plain text */}
+      {isBriefing ? (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, paddingLeft: 4,
+        }}>
+          <span style={{
+            fontSize: 9, fontFamily: 'var(--mono)', textTransform: 'uppercase',
+            letterSpacing: '0.12em', color: '#f97316',
+            background: 'rgba(249,115,22,0.12)',
+            border: '1px solid rgba(249,115,22,0.25)',
+            borderRadius: 4, padding: '2px 6px',
+          }}>
+            {message.briefingLabel ?? 'Morning Briefing'}
+          </span>
+        </div>
+      ) : (
+        <div style={{
+          fontSize: 9, color: 'var(--muted)', textTransform: 'uppercase',
+          letterSpacing: '0.1em', marginBottom: 4,
+          fontFamily: 'var(--mono)',
+          paddingLeft: isUser ? 0 : 4,
+          paddingRight: isUser ? 4 : 0,
+        }}>
+          {isUser ? 'You' : 'Aiden'}
+        </div>
+      )}
 
       {/* Phase steps */}
       {!isUser && message.phases && message.phases.length > 0 && (
@@ -484,8 +503,18 @@ function ChatMessage({ message }: { message: Message }) {
       {/* Bubble */}
       <div className="message-bubble" style={{
         position: 'relative', maxWidth: '85%',
-        background: isUser ? 'rgba(249,115,22,0.1)' : 'var(--bg2)',
-        border: `1px solid ${isUser ? 'rgba(249,115,22,0.22)' : 'var(--border)'}`,
+        background: isUser
+          ? 'rgba(249,115,22,0.1)'
+          : isBriefing
+            ? 'rgba(249,115,22,0.06)'
+            : 'var(--bg2)',
+        border: `1px solid ${
+          isUser
+            ? 'rgba(249,115,22,0.22)'
+            : isBriefing
+              ? 'rgba(249,115,22,0.18)'
+              : 'var(--border)'
+        }`,
         borderRadius: isUser ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
         padding: '10px 14px',
       }}>
@@ -1470,6 +1499,18 @@ function LiveViewPanel() {
     ws.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data)
+        if (data.type === 'briefing' && data.content) {
+          setMessages((prev: Message[]) => [...prev, {
+            id:             `briefing_${Date.now()}`,
+            role:           'assistant' as const,
+            content:        data.content as string,
+            timestamp:      data.timestamp ?? Date.now(),
+            isBriefing:     true,
+            briefingLabel:  (data.label as string) ?? 'Morning Briefing',
+            isStreaming:    false,
+          }])
+          return
+        }
         if (data.type === 'pulse' && data.event) {
           const { type, agent, message, tool } = data.event as PulseEntry
           const icon = type === 'done' ? '✅' : type === 'error' ? '❌' : type === 'tool' ? '🔧' : type === 'thinking' ? '💭' : '⚡'

@@ -65,7 +65,11 @@ import { auditTrail } from '../core/auditTrail'
 import { mcpClient }   from '../core/mcpClient'
 import { responseCache } from '../core/responseCache'
 import { scanAndRedact, containsSecret } from '../core/secretScanner'
+import { loadBriefingConfig, saveBriefingConfig, deliverBriefing } from '../core/morningBriefing'
 import { unifiedMemoryRecall, buildMemoryInjection } from '../core/memoryRecall'
+
+// —— Sprint 25: module-level WebSocket clients registry (shared between createApiServer routes and startApiServer WS setup)
+let wsBroadcastClients = new Set<any>()
 
 // â”€â”€ Human-readable tool message helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function humanToolMessage(tool: string, input: Record<string, any>): string {
@@ -1646,6 +1650,42 @@ export function createApiServer(): Express {
     }
   })
 
+  // GET  /api/briefing/config — load morning briefing config
+  app.get('/api/briefing/config', (_req: Request, res: Response) => {
+    res.json(loadBriefingConfig())
+  })
+
+  // POST /api/briefing/config — save morning briefing config
+  app.post('/api/briefing/config', (req: Request, res: Response) => {
+    const config = req.body as ReturnType<typeof loadBriefingConfig>
+    saveBriefingConfig(config)
+    scheduler.registerMorningBriefing()
+    res.json({ success: true })
+  })
+
+  // POST /api/briefing — receive briefing content, broadcast to WebSocket clients
+  app.post('/api/briefing', (req: Request, res: Response) => {
+    const { content, label } = req.body as { content?: string; label?: string }
+    if (content) {
+      const payload = JSON.stringify({ type: 'briefing', content, label, timestamp: Date.now() })
+      wsBroadcastClients.forEach((ws: any) => {
+        try { if (ws.readyState === ws.OPEN) ws.send(payload) } catch {}
+      })
+    }
+    res.json({ success: true })
+  })
+
+  // POST /api/briefing/run — trigger morning briefing manually
+  app.post('/api/briefing/run', async (_req: Request, res: Response) => {
+    try {
+      const config = loadBriefingConfig()
+      await deliverBriefing(config)
+      res.json({ success: true, message: 'Briefing delivered' })
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message })
+    }
+  })
+
   // POST /api/react — standalone ReAct agent endpoint (SSE streaming)
   app.post('/api/react', async (req: Request, res: Response) => {
     const { goal } = req.body as { goal?: string }
@@ -2174,6 +2214,7 @@ export function startupCheck(): void {
 // â”€â”€ Server launcher â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function startApiServer(portArg?: number): Express {
+
   // Read port from config/api.json with sensible fallback
   let port = portArg ?? 4200
   let host = '127.0.0.1'
@@ -2212,6 +2253,7 @@ export function startApiServer(portArg?: number): Express {
 
   wss.on('connection', (ws) => {
     wsClients.add(ws)
+    wsBroadcastClients.add(ws)
     // Send last 20 history events to newly connected client so UI isn't blank
     const recentHistory = livePulse.getHistory().slice(-20)
     recentHistory.forEach(event => {
@@ -2221,8 +2263,8 @@ export function startApiServer(portArg?: number): Express {
         }
       } catch {}
     })
-    ws.on('close', () => wsClients.delete(ws))
-    ws.on('error', () => wsClients.delete(ws))
+    ws.on('close', () => { wsClients.delete(ws); wsBroadcastClients.delete(ws) })
+    ws.on('error', () => { wsClients.delete(ws); wsBroadcastClients.delete(ws) })
   })
 
   // Forward ALL livePulse events to ALL connected WebSocket clients

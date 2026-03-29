@@ -9,6 +9,7 @@
 
 import fs   from 'fs'
 import path from 'path'
+import { loadBriefingConfig, deliverBriefing } from './morningBriefing'
 
 const TASKS_PATH = path.join(process.cwd(), 'workspace', 'scheduled-tasks.json')
 
@@ -179,6 +180,36 @@ export class Scheduler {
     return this.tasks
   }
 
+  // ── Sprint 25: morning briefing registration ────────────
+
+  registerMorningBriefing(): void {
+    const config = loadBriefingConfig()
+
+    // Always remove any existing briefing task first
+    const existing = this.tasks.find(t => t.id === 'morning_briefing')
+    if (existing) this.remove('morning_briefing')
+
+    if (!config.enabled) return
+
+    const [hourStr, minuteStr] = config.time.split(':')
+    const hour   = parseInt(hourStr   ?? '8',  10)
+    const minute = parseInt(minuteStr ?? '0', 10)
+
+    const task: ScheduledTask = {
+      id:             'morning_briefing',
+      description:    'Morning briefing',
+      schedule:       `every day at ${config.time}`,
+      cronExpression: `${minute} ${hour} * * *`,
+      goal:           '__morning_briefing__',
+      enabled:        true,
+      createdAt:      Date.now(),
+    }
+    this.tasks.push(task)
+    this.save()
+    this.scheduleTask(task)
+    console.log(`[Scheduler] Morning briefing registered at ${config.time}`)
+  }
+
   // ── Internal ───────────────────────────────────────────
 
   private scheduleTask(task: ScheduledTask): void {
@@ -205,6 +236,19 @@ export class Scheduler {
 
   private async runTask(task: ScheduledTask): Promise<void> {
     console.log(`[Scheduler] Running task: "${task.description}"`)
+
+    // ── Sprint 25: morning briefing special marker ────────
+    if (task.goal === '__morning_briefing__') {
+      try {
+        const config = loadBriefingConfig()
+        await deliverBriefing(config)
+        console.log(`[Scheduler] Morning briefing delivered`)
+      } catch (e: any) {
+        console.error(`[Scheduler] Morning briefing failed: ${e.message}`)
+      }
+      return
+    }
+
     try {
       const res = await fetch('http://localhost:4200/api/chat', {
         method:  'POST',

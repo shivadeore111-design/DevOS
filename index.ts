@@ -31,6 +31,7 @@ import { checkSearxNG }                   from './core/webSearch'
 import { auditTrail }                     from './core/auditTrail'
 import { buildCapabilityProfile }         from './core/capabilityProfile'
 import { verifyInstall, getCurrentLicense } from './core/licenseManager'
+import { scheduler } from './core/scheduler'
 
 // ── Bootstrap ─────────────────────────────────────────────────
 
@@ -92,6 +93,9 @@ async function main(): Promise<void> {
         }
 
         startApiServer()
+
+        // ── Sprint 25: register morning briefing ───────────────
+        scheduler.registerMorningBriefing()
 
         // ── Background service PID management ─────────────────
         const { startBackgroundService } = await import('./core/backgroundService')
