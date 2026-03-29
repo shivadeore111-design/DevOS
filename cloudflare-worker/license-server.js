@@ -1,4 +1,4 @@
-﻿const CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+const CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
 function generateLicenseKey() {
   const s = () => Array.from({length:5},()=>CHARS[Math.floor(Math.random()*CHARS.length)]).join("");
@@ -36,13 +36,13 @@ async function sendEmail(env, to, subject, html) {
   await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ from: "Aiden <hello@taracod.com>", to: [to], subject, html })
+    body: JSON.stringify({ from: "Aiden <contact@taracod.com>", to: [to], subject, html })
   });
 }
 
 async function sendDownloadEmail(env, email, token) {
   const url = `https://devos-license-server.shiva-deore111.workers.dev/download/${token}`;
-  await sendEmail(env, email, "Welcome to Aiden — Your Download Link", `
+  await sendEmail(env, email, "Welcome to Aiden � Your Download Link", `
 <!DOCTYPE html>
 <html>
 <body style="font-family:system-ui,sans-serif;max-width:520px;margin:40px auto;color:#e2e8f0;background:#0f172a;padding:32px;border-radius:12px;">
@@ -63,13 +63,13 @@ async function sendLicenseEmail(env, email, licenseKey, expiryDate) {
 <!DOCTYPE html>
 <html>
 <body style="font-family:system-ui,sans-serif;max-width:520px;margin:40px auto;color:#e2e8f0;background:#0f172a;padding:32px;border-radius:12px;">
-  <h1 style="color:#f97316;margin:0 0 8px;">Aiden Pro — Activated</h1>
+  <h1 style="color:#f97316;margin:0 0 8px;">Aiden Pro � Activated</h1>
   <p style="color:#94a3b8;margin:0 0 24px;">Your license key is below.</p>
   <div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:20px;text-align:center;margin-bottom:24px;">
     <code style="font-size:22px;letter-spacing:4px;color:#f1f5f9;font-weight:700;">${licenseKey}</code>
   </div>
   <p style="color:#94a3b8;font-size:14px;"><strong style="color:#e2e8f0;">Expires:</strong> ${expiryDate}</p>
-  <p style="color:#94a3b8;font-size:14px;">Open Aiden → Settings → Pro License → paste your key → Activate.</p>
+  <p style="color:#94a3b8;font-size:14px;">Open Aiden ? Settings ? Pro License ? paste your key ? Activate.</p>
   <hr style="border:none;border-top:1px solid #334155;margin:24px 0;">
   <p style="color:#64748b;font-size:12px;">Questions? <a href="mailto:contact@taracod.com" style="color:#f97316;">contact@taracod.com</a></p>
 </body>
@@ -134,7 +134,7 @@ async function handleDownload(request, env) {
 <body style="font-family:system-ui;text-align:center;padding:60px;background:#0f172a;color:#e2e8f0;">
   <h1 style="color:#f97316;">Link Expired</h1>
   <p style="color:#94a3b8;">This download link has expired.</p>
-  <a href="https://devos.taracod.com" style="color:#f97316;font-weight:600;">Get a new link →</a>
+  <a href="https://devos.taracod.com" style="color:#f97316;font-weight:600;">Get a new link ?</a>
 </body>
 </html>`, { status: 410, headers: { "Content-Type": "text/html" } });
 
@@ -145,7 +145,7 @@ async function handleDownload(request, env) {
 <head><title>Download Aiden</title></head>
 <body style="font-family:system-ui;text-align:center;padding:60px;background:#0f172a;color:#e2e8f0;max-width:600px;margin:0 auto;">
   <div style="margin-bottom:32px;">
-    <div style="width:60px;height:60px;background:#f97316;border-radius:14px;margin:0 auto 16px;display:flex;align-items:center;justify-content:center;font-size:28px;">⚡</div>
+    <div style="width:60px;height:60px;background:#f97316;border-radius:14px;margin:0 auto 16px;display:flex;align-items:center;justify-content:center;font-size:28px;">?</div>
     <h1 style="color:#f1f5f9;font-size:28px;margin:0 0 8px;">Download Aiden</h1>
     <p style="color:#94a3b8;">Your personal AI OS. Runs 100% on your machine.</p>
   </div>
@@ -153,11 +153,11 @@ async function handleDownload(request, env) {
     <p style="color:#e2e8f0;font-weight:600;margin:0 0 12px;">Setup (2 minutes):</p>
     <ol style="color:#94a3b8;line-height:2.2;margin:0;padding-left:20px;">
       <li>Download and extract the zip below</li>
-      <li>Right-click <code style="color:#f97316;background:#0f172a;padding:2px 6px;border-radius:4px;">install.ps1</code> → Run with PowerShell</li>
+      <li>Right-click <code style="color:#f97316;background:#0f172a;padding:2px 6px;border-radius:4px;">install.ps1</code> ? Run with PowerShell</li>
       <li>Double-click <strong style="color:#e2e8f0;">Aiden</strong> on your Desktop</li>
     </ol>
   </div>
-  <p style="color:#475569;font-size:13px;margin-bottom:24px;">Requires: Windows 10/11 · Node.js 18+</p>
+  <p style="color:#475569;font-size:13px;margin-bottom:24px;">Requires: Windows 10/11 � Node.js 18+</p>
   <a href="https://github.com/shivadeore111-design/DevOS/archive/refs/heads/master.zip"
      style="background:#f97316;color:#000;padding:16px 48px;border-radius:8px;text-decoration:none;font-weight:700;font-size:18px;display:inline-block;">
     Download Aiden
