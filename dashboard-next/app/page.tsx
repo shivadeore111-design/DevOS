@@ -10,7 +10,14 @@ import PricingModal from '../components/PricingModal'
 // ── Types ─────────────────────────────────────────────────────
 
 type UIMode   = 'focus' | 'execution' | 'power' | 'watch'
-type ExecMode = 'auto'  | 'plan'      | 'chat'
+type ExecMode = 'auto'  | 'plan'      | 'chat'  | 'react'
+
+interface AutomationPattern {
+  pattern:        string
+  frequency:      number
+  suggestion:     string
+  automationGoal: string
+}
 
 interface Phase {
   name:   string
@@ -186,6 +193,104 @@ const codeStyle: React.CSSProperties = {
 const settingsTextStyle: React.CSSProperties = {
   fontSize: 12, color: 'var(--muted2)',
   fontFamily: 'var(--mono)', lineHeight: 1.7,
+}
+
+// ── PatternSuggestionBanner ───────────────────────────────────
+// Shown when the cognition engine detects a repetitive pattern.
+// Offers a one-click "Set it up" that creates a scheduled task.
+
+function PatternSuggestionBanner({
+  pattern,
+  onDismiss,
+  onSetup,
+}: {
+  pattern:   AutomationPattern
+  onDismiss: () => void
+  onSetup:   (goal: string) => void
+}) {
+  const [setting, setSetting] = useState(false)
+  const [done,    setDone]    = useState(false)
+
+  const handleSetup = async () => {
+    setSetting(true)
+    try {
+      await fetch('http://localhost:4200/api/scheduler/tasks', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          description: `Auto: ${pattern.pattern.replace(/_/g, ' ')}`,
+          schedule:    pattern.automationGoal.match(/every [^,]+/i)?.[0] ?? 'daily at 8am',
+          goal:        pattern.automationGoal,
+        }),
+      })
+      setDone(true)
+      setTimeout(onDismiss, 2000)
+    } catch {
+      setSetting(false)
+    }
+  }
+
+  return (
+    <div style={{
+      position:       'fixed',
+      bottom:         52,
+      left:           '50%',
+      transform:      'translateX(-50%)',
+      zIndex:         200,
+      background:     'var(--bg2)',
+      border:         '1px solid rgba(249,115,22,0.35)',
+      borderRadius:   8,
+      padding:        '10px 14px',
+      display:        'flex',
+      alignItems:     'center',
+      gap:            10,
+      maxWidth:       560,
+      width:          'calc(100vw - 40px)',
+      boxShadow:      '0 4px 24px rgba(0,0,0,0.4)',
+      animation:      'fadeInUp 0.3s ease-out',
+      fontFamily:     'var(--mono)',
+    }}>
+      <span style={{ fontSize: 16 }}>{'⚡'}</span>
+      <span style={{ flex: 1, fontSize: 11, color: 'var(--text)', lineHeight: 1.5 }}>
+        {done ? '✓ Scheduled! Aiden will handle this automatically.' : pattern.suggestion}
+      </span>
+      {!done && (
+        <>
+          <button
+            onClick={handleSetup}
+            disabled={setting}
+            style={{
+              background:   'rgba(249,115,22,0.15)',
+              border:       '1px solid rgba(249,115,22,0.4)',
+              borderRadius:  4,
+              color:        'var(--orange)',
+              fontSize:     10,
+              padding:      '4px 10px',
+              cursor:       setting ? 'wait' : 'pointer',
+              fontFamily:   'var(--mono)',
+              whiteSpace:   'nowrap',
+            }}
+          >
+            {setting ? 'Setting up…' : 'Set it up'}
+          </button>
+          <button
+            onClick={onDismiss}
+            style={{
+              background: 'transparent',
+              border:     'none',
+              color:      'var(--muted)',
+              cursor:     'pointer',
+              fontSize:   14,
+              padding:    '0 2px',
+            }}
+            title="Dismiss"
+          >
+            {'×'}
+          </button>
+        </>
+      )}
+    </div>
+  )
 }
 
 // ── NavBtn ────────────────────────────────────────────────────
@@ -2352,6 +2457,32 @@ export default function Home() {
   const [licenseKey,     setLicenseKey]     = useState('')
   const [licenseMsg,     setLicenseMsg]     = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
+  // ── Sprint 12: proactive automation suggestions ──────────────
+  const [suggestionPattern,  setSuggestionPattern]  = useState<AutomationPattern | null>(null)
+  const [suggestionDismissed, setSuggestionDismissed] = useState(false)
+
+  useEffect(() => {
+    // Only start polling after 20+ conversations
+    const convCount = messages.filter(m => m.role === 'user').length
+    if (convCount < 20 || suggestionDismissed) return
+
+    const check = () => {
+      fetch('http://localhost:4200/api/cognition/suggestions')
+        .then(r => r.json())
+        .then((d: any) => {
+          const patterns: AutomationPattern[] = d.patterns ?? []
+          if (patterns.length > 0 && !suggestionDismissed) {
+            setSuggestionPattern(patterns[0])
+          }
+        })
+        .catch(() => {})
+    }
+
+    check()
+    const timer = setInterval(check, 5 * 60 * 1000) // re-check every 5 minutes
+    return () => clearInterval(timer)
+  }, [messages.length, suggestionDismissed]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Refs ────────────────────────────────────────────────────
   const inputRef         = useRef<HTMLTextAreaElement>(null)
   const kbInputRef       = useRef<HTMLInputElement>(null)
@@ -2954,6 +3085,13 @@ export default function Home() {
             onClose={() => { setPricingOpen(false); setLicenseMsg(null) }}
             onActivate={validateKey}
             currentStatus={licenseStatus}
+          />
+        )}
+        {suggestionPattern && !suggestionDismissed && (
+          <PatternSuggestionBanner
+            pattern={suggestionPattern}
+            onDismiss={() => { setSuggestionDismissed(true); setSuggestionPattern(null) }}
+            onSetup={(goal) => { /* handled inside banner */ }}
           />
         )}
         {!onboardingDone && (
