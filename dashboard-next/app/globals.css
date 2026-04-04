@@ -1,51 +1,93 @@
-/* ── DevOS Design Tokens ────────────────────────────────────── */
+/* ── Aiden Design Tokens ─────────────────────────────────────── */
 :root {
-  --bg:      #0e0e0e;
-  --bg1:     #141414;
-  --bg2:     #1a1a1a;
-  --bg3:     #222222;
-  --border:  #2a2a2a;
-  --border2: #333333;
-  --text:    #e8e8e8;
-  --muted:   #555555;
-  --muted2:  #888888;
-  --muted3:  #aaaaaa;
+  /* Backgrounds */
+  --bg:      #0a0a0a;
+  --bg1:     #0f0f0f;
+  --bg2:     #161616;
+  --bg3:     #1e1e1e;
+  --bg4:     #262626;
+
+  /* Borders */
+  --border:  rgba(255,255,255,0.07);
+  --border2: rgba(255,255,255,0.10);
+  --border3: rgba(255,255,255,0.14);
+
+  /* Text */
+  --text:    #f2f2f2;
+  --text2:   #d6d6d6;
+  --muted:   #484848;
+  --muted2:  #6e6e6e;
+  --muted3:  #9a9a9a;
+
+  /* Accent */
   --orange:  #f97316;
+  --orange2: rgba(249,115,22,0.10);
+  --orange3: rgba(249,115,22,0.05);
   --green:   #22c55e;
   --red:     #ef4444;
-  --mono:    var(--font-mono, 'JetBrains Mono', monospace);
-  --sans:    var(--font-sans, 'Outfit', sans-serif);
-  --odim:    rgba(249, 115, 22, 0.08);
+  --blue:    #3b82f6;
+  --purple:  #8b5cf6;
+
+  /* Fonts */
+  --mono:    var(--font-mono, 'JetBrains Mono', 'Menlo', monospace);
+  --sans:    var(--font-sans, 'Inter', system-ui, sans-serif);
+
+  /* Legacy compat */
+  --odim:    rgba(249,115,22,0.08);
+
+  /* Effects */
+  --glass:        rgba(255,255,255,0.025);
+  --shadow:       0 0 0 1px rgba(255,255,255,0.05), 0 8px 32px rgba(0,0,0,0.7);
+  --shadow-sm:    0 2px 8px rgba(0,0,0,0.5);
+  --shadow-md:    0 4px 16px rgba(0,0,0,0.6);
+  --glow-orange:  0 0 24px rgba(249,115,22,0.18);
+  --glow-sm:      0 0 12px rgba(249,115,22,0.12);
 }
 
 /* ── Base reset ─────────────────────────────────────────────── */
 * { box-sizing: border-box; }
+
 html, body {
   height: 100%;
   margin: 0;
   padding: 0;
-  background: #0e0e0e;
-  color: #e8e8e8;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
   overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
+
 textarea { font-family: inherit; }
 textarea:focus { outline: none; }
 button:focus { outline: none; }
+input { font-family: inherit; }
 
 /* ── Scrollbar ──────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 3px; height: 3px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: #333333; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.14); }
 
 /* ── Animations ─────────────────────────────────────────────── */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
 @keyframes fadeInUp {
-  from { opacity: 0; transform: translateY(8px); }
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeInDown {
+  from { opacity: 0; transform: translateY(-6px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes thinkingPulse {
-  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.3; }
   40%           { transform: scale(1);   opacity: 1; }
 }
 
@@ -55,17 +97,17 @@ button:focus { outline: none; }
 }
 
 @keyframes pulse-orange {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.4); }
-  50%      { box-shadow: 0 0 0 6px rgba(249, 115, 22, 0); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(249,115,22,0.4); }
+  50%      { box-shadow: 0 0 0 6px rgba(249,115,22,0); }
 }
 
 @keyframes slideIn {
-  from { transform: translateX(100%); }
-  to   { transform: translateX(0); }
+  from { transform: translateX(100%); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
 }
 
 @keyframes slideUpFade {
-  from { opacity: 0; transform: translateY(6px); }
+  from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
@@ -74,6 +116,67 @@ button:focus { outline: none; }
   50%      { opacity: 0.3; }
 }
 
+@keyframes shimmer {
+  from { background-position: -200% center; }
+  to   { background-position:  200% center; }
+}
+
 /* ── Copy button hover ──────────────────────────────────────── */
 .copy-btn { opacity: 0 !important; transition: opacity 0.15s !important; }
 .message-bubble:hover .copy-btn { opacity: 1 !important; }
+
+/* ── Pill input focus glow ──────────────────────────────────── */
+.input-pill {
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.input-pill:focus-within {
+  border-color: rgba(249,115,22,0.4) !important;
+  box-shadow: 0 0 0 3px rgba(249,115,22,0.08) !important;
+}
+
+/* ── Nav button hover ───────────────────────────────────────── */
+.nav-btn:hover {
+  background: rgba(255,255,255,0.06) !important;
+  color: var(--text2) !important;
+}
+
+/* ── Provider card hover ────────────────────────────────────── */
+.provider-card:hover {
+  border-color: rgba(255,255,255,0.12) !important;
+  background: rgba(255,255,255,0.03) !important;
+}
+
+/* ── Settings tab hover ─────────────────────────────────────── */
+.settings-tab:hover {
+  background: rgba(255,255,255,0.04) !important;
+  color: var(--text2) !important;
+}
+
+/* ── Conversation item hover ────────────────────────────────── */
+.conv-item:hover {
+  background: rgba(255,255,255,0.05) !important;
+  color: var(--text2) !important;
+}
+
+/* ── Suggestion chip hover ──────────────────────────────────── */
+.suggestion-chip:hover {
+  border-color: rgba(249,115,22,0.3) !important;
+  background: rgba(249,115,22,0.06) !important;
+  color: var(--text) !important;
+}
+
+/* ── Code block ─────────────────────────────────────────────── */
+.code-block {
+  background: #111111;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.code-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: rgba(255,255,255,0.03);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}

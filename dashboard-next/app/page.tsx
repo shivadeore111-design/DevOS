@@ -377,12 +377,12 @@ function NavBtn({
   title?:   string
 }) {
   return (
-    <button onClick={onClick} title={title} style={{
-      width: 30, height: 30, borderRadius: 5,
-      background: active ? 'rgba(249,115,22,0.12)' : 'transparent',
-      border:     active ? '1px solid rgba(249,115,22,0.25)' : '1px solid transparent',
+    <button onClick={onClick} title={title} className="nav-btn" style={{
+      width: 32, height: 32, borderRadius: 7,
+      background: active ? 'rgba(249,115,22,0.1)' : 'transparent',
+      border:     active ? '1px solid rgba(249,115,22,0.22)' : '1px solid transparent',
       color:      active ? 'var(--orange)' : 'var(--muted2)',
-      cursor: 'pointer', fontSize: 13, transition: 'all 0.15s',
+      cursor: 'pointer', transition: 'all 0.12s',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
     }}>
       {children}
@@ -392,6 +392,40 @@ function NavBtn({
 
 // ── MarkdownContent ───────────────────────────────────────────
 
+function CodeBlock({ lang, code }: { lang: string; code: string }) {
+  const [copied, setCopied] = useState(false)
+  const copy = () => {
+    navigator.clipboard.writeText(code).catch(() => {})
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+  return (
+    <div className="code-block" style={{ margin: '10px 0' }}>
+      <div className="code-block-header">
+        <span style={{ fontSize: 10, color: 'var(--muted3)', fontFamily: 'var(--mono)', textTransform: 'lowercase' }}>
+          {lang || 'code'}
+        </span>
+        <button onClick={copy} style={{
+          background: 'none', border: 'none', cursor: 'pointer',
+          fontFamily: 'var(--mono)', fontSize: 10,
+          color: copied ? 'var(--green)' : 'var(--muted2)',
+          padding: '2px 6px', borderRadius: 4, transition: 'color 0.15s',
+        }}>
+          {copied ? '✓ copied' : 'copy'}
+        </button>
+      </div>
+      <pre style={{
+        margin: 0, padding: '12px 14px',
+        fontFamily: 'var(--mono)', fontSize: 12,
+        color: 'var(--text2)', whiteSpace: 'pre-wrap',
+        lineHeight: 1.6, overflowX: 'auto',
+      }}>
+        {code}
+      </pre>
+    </div>
+  )
+}
+
 function MarkdownContent({ content }: { content: string }) {
   const parts = content.split(/(```[\s\S]*?```)/g)
   return (
@@ -399,28 +433,13 @@ function MarkdownContent({ content }: { content: string }) {
       {parts.map((part, i) => {
         if (part.startsWith('```')) {
           const lines = part.slice(3).split('\n')
-          const lang  = lines[0]
+          const lang  = lines[0].trim()
           const code  = lines.slice(1, -1).join('\n')
-          return (
-            <div key={i} style={{
-              background: 'var(--bg)', border: '1px solid var(--border)',
-              borderRadius: 6, padding: '10px 14px', margin: '8px 0',
-              overflow: 'auto',
-            }}>
-              {lang && (
-                <div style={{ fontSize: 9, color: 'var(--muted)', marginBottom: 6, textTransform: 'uppercase' }}>
-                  {lang}
-                </div>
-              )}
-              <pre style={{ margin: 0, fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--text)', whiteSpace: 'pre-wrap' }}>
-                {code}
-              </pre>
-            </div>
-          )
+          return <CodeBlock key={i} lang={lang} code={code} />
         }
         const formatted = part
           .replace(/\*\*(.*?)\*\*/g, '<strong style="color:var(--text);font-weight:600">$1</strong>')
-          .replace(/`(.*?)`/g,       '<code style="background:var(--bg3);border:1px solid var(--border);border-radius:3px;padding:1px 5px;font-family:var(--mono);font-size:12px">$1</code>')
+          .replace(/`(.*?)`/g, '<code style="background:var(--bg3);border:1px solid rgba(255,255,255,0.08);border-radius:4px;padding:1px 6px;font-family:var(--mono);font-size:12px;color:var(--text2)">$1</code>')
         return <span key={i} dangerouslySetInnerHTML={{ __html: formatted }} />
       })}
     </>
@@ -442,133 +461,143 @@ function ChatMessage({ message }: { message: Message }) {
 
   return (
     <div style={{
-      marginBottom: 24,
-      display: 'flex', flexDirection: 'column',
-      alignItems: isUser ? 'flex-end' : 'flex-start',
-      animation: 'fadeInUp 0.25s ease-out',
+      marginBottom: 28,
+      display: 'flex',
+      flexDirection: isUser ? 'row-reverse' : 'row',
+      alignItems: 'flex-start',
+      gap: 10,
+      animation: 'fadeInUp 0.2s ease-out',
     }}>
-      {/* Label — briefing gets an orange pill, normal messages get plain text */}
-      {isBriefing ? (
+      {/* Avatar (Aiden only) */}
+      {!isUser && (
         <div style={{
-          display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, paddingLeft: 4,
+          width: 28, height: 28, borderRadius: 7, flexShrink: 0,
+          background: 'linear-gradient(135deg, #f97316, #ea580c)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 10, fontWeight: 800, color: '#000',
+          fontFamily: 'var(--sans)', letterSpacing: '-0.5px',
+          marginTop: 2,
+          boxShadow: '0 2px 8px rgba(249,115,22,0.2)',
         }}>
-          <span style={{
-            fontSize: 9, fontFamily: 'var(--mono)', textTransform: 'uppercase',
-            letterSpacing: '0.12em', color: '#f97316',
-            background: 'rgba(249,115,22,0.12)',
-            border: '1px solid rgba(249,115,22,0.25)',
-            borderRadius: 4, padding: '2px 6px',
+          {isBriefing ? '☀' : 'A/'}
+        </div>
+      )}
+
+      {/* Content column */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: isUser ? 'flex-end' : 'flex-start', maxWidth: '80%' }}>
+        {/* Briefing label */}
+        {isBriefing && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+            <span style={{
+              fontSize: 9, fontFamily: 'var(--mono)', textTransform: 'uppercase',
+              letterSpacing: '0.12em', color: '#f97316',
+              background: 'rgba(249,115,22,0.12)',
+              border: '1px solid rgba(249,115,22,0.25)',
+              borderRadius: 4, padding: '2px 7px',
+            }}>
+              {message.briefingLabel ?? 'Morning Briefing'}
+            </span>
+          </div>
+        )}
+
+        {/* Phase steps */}
+        {!isUser && message.phases && message.phases.length > 0 && (
+          <div style={{
+            background: 'var(--bg2)', border: '1px solid var(--border)',
+            borderRadius: 8, padding: '10px 14px', marginBottom: 8,
+            fontFamily: 'var(--mono)', fontSize: 11, lineHeight: 1.8,
+            width: '100%',
           }}>
-            {message.briefingLabel ?? 'Morning Briefing'}
-          </span>
-        </div>
-      ) : (
-        <div style={{
-          fontSize: 9, color: 'var(--muted)', textTransform: 'uppercase',
-          letterSpacing: '0.1em', marginBottom: 4,
-          fontFamily: 'var(--mono)',
-          paddingLeft: isUser ? 0 : 4,
-          paddingRight: isUser ? 4 : 0,
-        }}>
-          {isUser ? 'You' : 'Aiden'}
-        </div>
-      )}
-
-      {/* Phase steps */}
-      {!isUser && message.phases && message.phases.length > 0 && (
-        <div style={{
-          background: 'var(--bg2)', border: '1px solid var(--border)',
-          borderRadius: 8, padding: '10px 14px', marginBottom: 8,
-          fontFamily: 'var(--mono)', fontSize: 11, lineHeight: 1.8,
-          maxWidth: '100%', width: '100%',
-        }}>
-          {message.phases.map((phase, i) => (
-            <div key={i}>
-              <div style={{ color: phase.status === 'done' ? 'var(--green)' : 'var(--orange)' }}>
-                {phase.status === 'done' ? '✓' : '▶'} Phase {phase.index}/{phase.total}: {phase.name}
-              </div>
-              {phase.steps.map((step, j) => (
-                <div key={j} style={{
-                  paddingLeft: 16,
-                  color: step.status === 'done'    ? 'var(--green)'  :
-                         step.status === 'failed'  ? 'var(--red)'    :
-                         step.status === 'running' ? 'var(--orange)' : 'var(--muted)',
-                }}>
-                  {step.status === 'done' ? '✓' : step.status === 'failed' ? '✗' : '·'} {step.tool}
-                  {step.duration ? <span style={{ color: 'var(--muted)', marginLeft: 8 }}>({step.duration}s)</span> : ''}
+            {message.phases.map((phase, i) => (
+              <div key={i}>
+                <div style={{ color: phase.status === 'done' ? 'var(--green)' : 'var(--orange)' }}>
+                  {phase.status === 'done' ? '✓' : '▶'} Phase {phase.index}/{phase.total}: {phase.name}
                 </div>
-              ))}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Bubble */}
-      <div className="message-bubble" style={{
-        position: 'relative', maxWidth: '85%',
-        background: isUser
-          ? 'rgba(249,115,22,0.1)'
-          : isBriefing
-            ? 'rgba(249,115,22,0.06)'
-            : 'var(--bg2)',
-        border: `1px solid ${
-          isUser
-            ? 'rgba(249,115,22,0.22)'
-            : isBriefing
-              ? 'rgba(249,115,22,0.18)'
-              : 'var(--border)'
-        }`,
-        borderRadius: isUser ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
-        padding: '10px 14px',
-      }}>
-        {/* Thinking dots */}
-        {message.isStreaming && !message.content && (
-          <div style={{ display: 'flex', gap: 4, padding: '4px 0' }}>
-            {[0, 1, 2].map(i => (
-              <span key={i} style={{
-                width: 6, height: 6, borderRadius: '50%',
-                background: 'var(--orange)', display: 'inline-block',
-                animation: `thinkingPulse 1.4s ${i * 0.2}s infinite ease-in-out`,
-              }} />
+                {phase.steps.map((step, j) => (
+                  <div key={j} style={{
+                    paddingLeft: 16,
+                    color: step.status === 'done'    ? 'var(--green)'  :
+                           step.status === 'failed'  ? 'var(--red)'    :
+                           step.status === 'running' ? 'var(--orange)' : 'var(--muted)',
+                  }}>
+                    {step.status === 'done' ? '✓' : step.status === 'failed' ? '✗' : '·'} {step.tool}
+                    {step.duration ? <span style={{ color: 'var(--muted)', marginLeft: 8 }}>({step.duration}s)</span> : ''}
+                  </div>
+                ))}
+              </div>
             ))}
           </div>
         )}
 
-        {/* Content */}
-        {message.content && (
+        {/* Message bubble */}
+        <div className="message-bubble" style={{
+          position: 'relative',
+          background: isUser
+            ? 'rgba(249,115,22,0.12)'
+            : isBriefing
+              ? 'rgba(249,115,22,0.05)'
+              : 'var(--bg2)',
+          border: `1px solid ${
+            isUser
+              ? 'rgba(249,115,22,0.25)'
+              : isBriefing
+                ? 'rgba(249,115,22,0.15)'
+                : 'var(--border)'
+          }`,
+          borderRadius: isUser ? '16px 16px 4px 16px' : '4px 16px 16px 16px',
+          padding: '12px 16px',
+        }}>
+          {/* Thinking animation */}
+          {message.isStreaming && !message.content && (
+            <div style={{ display: 'flex', gap: 5, padding: '4px 0', alignItems: 'center' }}>
+              {[0, 1, 2].map(i => (
+                <span key={i} style={{
+                  width: 7, height: 7, borderRadius: '50%',
+                  background: 'var(--orange)', display: 'inline-block',
+                  animation: `thinkingPulse 1.4s ${i * 0.2}s infinite ease-in-out`,
+                }} />
+              ))}
+            </div>
+          )}
+
+          {/* Content */}
+          {message.content && (
+            <div style={{
+              fontFamily: isUser ? 'var(--sans)' : 'var(--sans)',
+              fontSize: 13,
+              color: isUser ? 'var(--text)' : 'var(--text2)',
+              lineHeight: 1.75,
+              whiteSpace: 'pre-wrap',
+            }}>
+              <MarkdownContent content={message.content} />
+            </div>
+          )}
+
+          {/* Copy button */}
+          {message.content && !message.isStreaming && (
+            <button onClick={copyMessage} className="copy-btn" style={{
+              position: 'absolute', top: 8, right: 8,
+              background: 'var(--bg3)', border: '1px solid var(--border2)',
+              borderRadius: 5, padding: '3px 8px',
+              fontFamily: 'var(--mono)', fontSize: 9,
+              color: copied ? 'var(--green)' : 'var(--muted2)',
+              cursor: 'pointer', transition: 'color 0.15s',
+            }}>
+              {copied ? '✓' : '⎘'}
+            </button>
+          )}
+        </div>
+
+        {/* Provider / timestamp */}
+        {!isUser && message.provider && !message.isStreaming && (
           <div style={{
-            fontFamily: 'var(--mono)', fontSize: 13,
-            color: isUser ? 'var(--text)' : 'var(--muted3)',
-            lineHeight: 1.7, whiteSpace: 'pre-wrap',
+            fontSize: 10, color: 'var(--muted)', marginTop: 5,
+            fontFamily: 'var(--mono)',
           }}>
-            <MarkdownContent content={message.content} />
+            {message.provider.split('/').pop()}
           </div>
         )}
-
-        {/* Copy button */}
-        {message.content && !message.isStreaming && (
-          <button onClick={copyMessage} className="copy-btn" style={{
-            position: 'absolute', top: 8, right: 8,
-            background: 'var(--bg3)', border: '1px solid var(--border2)',
-            borderRadius: 4, padding: '2px 8px',
-            fontFamily: 'var(--mono)', fontSize: 10,
-            color: copied ? 'var(--green)' : 'var(--muted)',
-            cursor: 'pointer',
-          }}>
-            {copied ? '✓ copied' : '⎘ copy'}
-          </button>
-        )}
       </div>
-
-      {/* Provider badge */}
-      {!isUser && message.provider && !message.isStreaming && (
-        <div style={{
-          fontSize: 9, color: 'var(--muted)', marginTop: 4,
-          fontFamily: 'var(--mono)', paddingLeft: 4,
-        }}>
-          via {message.provider}
-        </div>
-      )}
     </div>
   )
 }
@@ -598,203 +627,260 @@ function ApiKeysTab() {
     savingKey, saveKeyError, saveKey, toggleProvider, deleteProvider, resetLimits,
   } = useDevOS()
 
-  // ── Inline key validation ────────────────────────────────────
   const [keyValidation, setKeyValidation] = useState<Record<string, 'valid' | 'invalid' | 'checking' | null>>({})
 
   const validateApiKey = async (provider: string, key: string): Promise<boolean> => {
     if (!key.trim()) return false
     try {
       const r = await fetch('http://localhost:4200/api/providers/validate', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ provider, key }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider, key }),
       })
       const data = await r.json() as any
       return data.valid === true
-    } catch {
-      return false
-    }
+    } catch { return false }
   }
 
+  // Build set of configured provider IDs
+  const configuredProviders = new Set(providers.map((p: any) => p.provider))
+
   return (
-    <div>
-      {/* Reset limits */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'var(--mono)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-          Configured APIs
-        </div>
-        <button onClick={resetLimits} style={{
-          fontSize: 10, padding: '3px 10px', borderRadius: 4,
-          background: 'transparent', border: '1px solid var(--border2)',
-          color: 'var(--muted2)', fontFamily: 'var(--mono)', cursor: 'pointer',
-        }}>
-          Reset Rate Limits
-        </button>
-      </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-      {/* Existing providers */}
-      {providers.map((p: any) => (
-        <div key={p.name} style={{
-          background: 'var(--bg2)', border: '1px solid var(--border)',
-          borderRadius: 8, padding: '10px 14px', marginBottom: 8,
-          display: 'flex', alignItems: 'center', gap: 10,
-        }}>
-          <div style={{
-            width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-            background: p.rateLimited ? 'var(--red)' : p.enabled ? 'var(--green)' : 'var(--muted)',
-          }} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 12, color: 'var(--text)', fontFamily: 'var(--mono)' }}>
-              {p.name}
-              {p.rateLimited && <span style={{ color: 'var(--red)', marginLeft: 8, fontSize: 10 }}>rate limited</span>}
-            </div>
-            <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'var(--mono)', marginTop: 2 }}>
-              {p.provider} · {p.model} · {p.usageCount || 0} calls
-            </div>
-          </div>
-          <button onClick={() => toggleProvider(p.name, !p.enabled)} style={{
-            fontSize: 10, padding: '2px 8px', borderRadius: 4,
-            background: 'transparent', border: '1px solid var(--border2)',
-            color: p.enabled ? 'var(--green)' : 'var(--muted)', fontFamily: 'var(--mono)', cursor: 'pointer',
-          }}>
-            {p.enabled ? 'on' : 'off'}
-          </button>
-          <button onClick={() => deleteProvider(p.name)} style={{
-            fontSize: 10, padding: '2px 8px', borderRadius: 4,
-            background: 'transparent', border: '1px solid rgba(239,68,68,0.3)',
-            color: 'var(--red)', fontFamily: 'var(--mono)', cursor: 'pointer',
-          }}>
-            ✕
-          </button>
+      {/* ── Provider cards ── */}
+      <div>
+        <div style={{ fontSize: 11, color: 'var(--muted2)', fontFamily: 'var(--sans)', fontWeight: 500, marginBottom: 10 }}>
+          Add API Key
         </div>
-      ))}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {Object.entries(PROVIDER_INFO).map(([id, info]) => {
+            const isOpen = addingProvider === id
+            const isConfigured = configuredProviders.has(id)
+            const validation = keyValidation[id]
 
-      {/* Add new provider */}
-      <div style={{ marginTop: 16 }}>
-        <div style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 10, fontFamily: 'var(--mono)' }}>
-          Add Provider
-        </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
-          {Object.entries(PROVIDER_INFO).map(([id, info]) => (
-            <button key={id} onClick={() => setAddingProvider(addingProvider === id ? null : id)} style={{
-              padding: '4px 12px', borderRadius: 6,
-              background: addingProvider === id ? 'rgba(249,115,22,0.12)' : 'var(--bg2)',
-              border: `1px solid ${addingProvider === id ? 'rgba(249,115,22,0.3)' : 'var(--border2)'}`,
-              color: addingProvider === id ? 'var(--orange)' : 'var(--muted2)',
-              fontFamily: 'var(--mono)', fontSize: 11, cursor: 'pointer',
-            }}>
-              {info.label}
-            </button>
-          ))}
-        </div>
-
-        {addingProvider && (
-          <div style={{
-            background: 'var(--bg2)', border: '1px solid var(--border)',
-            borderRadius: 8, padding: 14, marginBottom: 8,
-          }}>
-            <div style={{ fontSize: 11, color: 'var(--muted2)', fontFamily: 'var(--mono)', marginBottom: 10 }}>
-              Get free key:{' '}
-              <a href={PROVIDER_INFO[addingProvider]?.freeUrl} target="_blank" rel="noopener"
-                style={{ color: 'var(--orange)', textDecoration: 'none' }}>
-                {PROVIDER_INFO[addingProvider]?.freeUrl}
-              </a>
-            </div>
-            <div style={{ position: 'relative', marginBottom: 8 }}>
-              <input
-                placeholder="Paste API key..."
-                value={providerKeys[addingProvider] || ''}
-                onChange={e => {
-                  const val = e.target.value
-                  setProviderKeys(prev => ({ ...prev, [addingProvider]: val }))
-                  // Reset validation status when user edits
-                  setKeyValidation(prev => ({ ...prev, [addingProvider]: null }))
-                }}
-                onBlur={async (e) => {
-                  const key = e.target.value.trim()
-                  if (!key || !addingProvider) return
-                  setKeyValidation(prev => ({ ...prev, [addingProvider]: 'checking' }))
-                  const valid = await validateApiKey(addingProvider, key)
-                  setKeyValidation(prev => ({ ...prev, [addingProvider]: valid ? 'valid' : 'invalid' }))
-                }}
-                style={{
-                  width: '100%', background: 'var(--bg3)',
-                  border: `1px solid ${
-                    addingProvider && keyValidation[addingProvider] === 'valid'   ? 'rgba(34,197,94,0.5)'  :
-                    addingProvider && keyValidation[addingProvider] === 'invalid' ? 'rgba(239,68,68,0.5)'  :
-                    'var(--border2)'
-                  }`,
-                  borderRadius: 6,
-                  padding: '8px 12px', fontFamily: 'var(--mono)', fontSize: 12,
-                  color: 'var(--text)', outline: 'none', boxSizing: 'border-box',
-                  transition: 'border-color 0.2s',
-                }}
-              />
-              {/* Inline validation badge */}
-              {addingProvider && keyValidation[addingProvider] === 'checking' && (
-                <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', fontFamily: 'var(--mono)', fontSize: 10, color: '#888' }}>
-                  checking...
-                </span>
-              )}
-              {addingProvider && keyValidation[addingProvider] === 'valid' && (
-                <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', fontFamily: 'var(--mono)', fontSize: 10, color: '#22c55e' }}>
-                  ✓ valid
-                </span>
-              )}
-              {addingProvider && keyValidation[addingProvider] === 'invalid' && (
-                <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', fontFamily: 'var(--mono)', fontSize: 10, color: '#ef4444' }}>
-                  ✗ invalid
-                </span>
-              )}
-            </div>
-            <select
-              value={providerModels[addingProvider] || ''}
-              onChange={e => setProviderModels(prev => ({ ...prev, [addingProvider]: e.target.value }))}
-              style={{
-                width: '100%', background: 'var(--bg3)',
-                border: '1px solid var(--border2)', borderRadius: 6,
-                padding: '8px 12px', fontFamily: 'var(--mono)', fontSize: 12,
-                color: 'var(--text)', outline: 'none', marginBottom: 10,
-              }}
-            >
-              <option value="">Default model</option>
-              {PROVIDER_INFO[addingProvider]?.models.map((m: string) => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
-            <button
-              onClick={() => saveKey(addingProvider)}
-              disabled={!(providerKeys[addingProvider] || '').trim() || savingKey}
-              style={{
-                width: '100%', padding: '8px', borderRadius: 6,
-                background: 'var(--orange)', border: 'none',
-                color: '#000', fontFamily: 'var(--mono)', fontSize: 12,
-                fontWeight: 600, cursor: 'pointer',
-                opacity: !(providerKeys[addingProvider] || '').trim() || savingKey ? 0.5 : 1,
-              }}
-            >
-              {savingKey ? 'Saving...' : 'Save API Key'}
-            </button>
-            {saveKeyError && (
-              <div style={{
-                marginTop: 8, padding: '6px 10px', borderRadius: 4,
-                background: 'rgba(255,80,80,0.12)', border: '1px solid rgba(255,80,80,0.35)',
-                color: '#ff5050', fontSize: 11, fontFamily: 'var(--mono)',
+            return (
+              <div key={id} className="provider-card" style={{
+                borderRadius: 10,
+                border: `1px solid ${isOpen ? 'rgba(255,255,255,0.12)' : 'var(--border)'}`,
+                background: isOpen ? 'var(--bg3)' : 'var(--bg2)',
+                overflow: 'hidden', transition: 'all 0.15s',
               }}>
-                ✗ {saveKeyError}
+                {/* Card header — click to toggle */}
+                <button
+                  onClick={() => setAddingProvider(isOpen ? null : id)}
+                  style={{
+                    width: '100%', display: 'flex', alignItems: 'center', gap: 12,
+                    padding: '12px 14px', background: 'transparent', border: 'none',
+                    cursor: 'pointer', textAlign: 'left',
+                  }}
+                >
+                  {/* Provider color accent */}
+                  <div style={{
+                    width: 32, height: 32, borderRadius: 8, flexShrink: 0,
+                    background: `${info.color}20`,
+                    border: `1px solid ${info.color}30`,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 11, fontWeight: 700, color: info.color,
+                    fontFamily: 'var(--mono)',
+                  }}>
+                    {info.label.slice(0, 2).toUpperCase()}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, color: 'var(--text)', fontFamily: 'var(--sans)', fontWeight: 500 }}>
+                      {info.label}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--muted2)', fontFamily: 'var(--mono)', marginTop: 1 }}>
+                      {info.defaultModel}
+                    </div>
+                  </div>
+                  {/* Status dot */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{
+                      width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
+                      background: isConfigured ? 'var(--green)' : 'var(--muted)',
+                    }} />
+                    <span style={{ fontSize: 10, color: isConfigured ? 'var(--green)' : 'var(--muted)', fontFamily: 'var(--mono)' }}>
+                      {isConfigured ? 'configured' : 'not set'}
+                    </span>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--muted)', transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}><polyline points="6 9 12 15 18 9"/></svg>
+                  </div>
+                </button>
+
+                {/* Expanded form */}
+                {isOpen && (
+                  <div style={{ padding: '0 14px 14px', borderTop: '1px solid var(--border)' }}>
+                    <div style={{ paddingTop: 12 }}>
+                      {/* Get free key link */}
+                      <div style={{ fontSize: 11, color: 'var(--muted2)', fontFamily: 'var(--sans)', marginBottom: 10 }}>
+                        <a href={info.freeUrl} target="_blank" rel="noopener" style={{
+                          color: 'var(--orange)', textDecoration: 'none', fontWeight: 500,
+                          display: 'inline-flex', alignItems: 'center', gap: 4,
+                        }}>
+                          Get free API key →
+                        </a>
+                      </div>
+
+                      {/* Key input */}
+                      <div style={{ position: 'relative', marginBottom: 8 }}>
+                        <input
+                          placeholder={`Paste ${info.label} API key…`}
+                          value={providerKeys[id] || ''}
+                          onChange={e => {
+                            setProviderKeys(prev => ({ ...prev, [id]: e.target.value }))
+                            setKeyValidation(prev => ({ ...prev, [id]: null }))
+                          }}
+                          onBlur={async (e) => {
+                            const key = e.target.value.trim()
+                            if (!key) return
+                            setKeyValidation(prev => ({ ...prev, [id]: 'checking' }))
+                            const valid = await validateApiKey(id, key)
+                            setKeyValidation(prev => ({ ...prev, [id]: valid ? 'valid' : 'invalid' }))
+                          }}
+                          style={{
+                            width: '100%', background: 'var(--bg)',
+                            border: `1px solid ${
+                              validation === 'valid'   ? 'rgba(34,197,94,0.45)'  :
+                              validation === 'invalid' ? 'rgba(239,68,68,0.45)'  :
+                              'var(--border2)'
+                            }`,
+                            borderRadius: 8, padding: '9px 90px 9px 12px',
+                            fontFamily: 'var(--mono)', fontSize: 12,
+                            color: 'var(--text)', outline: 'none',
+                            transition: 'border-color 0.2s',
+                          }}
+                        />
+                        {validation === 'checking' && (
+                          <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--muted2)' }}>checking…</span>
+                        )}
+                        {validation === 'valid' && (
+                          <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--green)' }}>✓ valid</span>
+                        )}
+                        {validation === 'invalid' && (
+                          <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--red)' }}>✗ invalid</span>
+                        )}
+                      </div>
+
+                      {/* Model select */}
+                      <select
+                        value={providerModels[id] || ''}
+                        onChange={e => setProviderModels(prev => ({ ...prev, [id]: e.target.value }))}
+                        style={{
+                          width: '100%', background: 'var(--bg)',
+                          border: '1px solid var(--border2)', borderRadius: 8,
+                          padding: '9px 12px', fontFamily: 'var(--mono)', fontSize: 12,
+                          color: 'var(--muted2)', outline: 'none', marginBottom: 10,
+                        }}
+                      >
+                        <option value="">Default model — {info.defaultModel}</option>
+                        {info.models.map((m: string) => (
+                          <option key={m} value={m}>{m}</option>
+                        ))}
+                      </select>
+
+                      {/* Save button */}
+                      <button
+                        onClick={() => saveKey(id)}
+                        disabled={!(providerKeys[id] || '').trim() || savingKey}
+                        style={{
+                          width: '100%', padding: '10px', borderRadius: 8,
+                          background: !(providerKeys[id] || '').trim() || savingKey
+                            ? 'rgba(255,255,255,0.06)'
+                            : `linear-gradient(135deg, ${info.color}, ${info.color}cc)`,
+                          border: 'none',
+                          color: !(providerKeys[id] || '').trim() || savingKey ? 'var(--muted)' : '#000',
+                          fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 600,
+                          cursor: !(providerKeys[id] || '').trim() || savingKey ? 'not-allowed' : 'pointer',
+                          transition: 'all 0.15s',
+                        }}
+                      >
+                        {savingKey ? 'Saving…' : `Save ${info.label} Key`}
+                      </button>
+
+                      {/* Error message */}
+                      {saveKeyError && addingProvider === id && (
+                        <div style={{
+                          marginTop: 8, padding: '8px 12px', borderRadius: 6,
+                          background: 'rgba(239,68,68,0.08)',
+                          border: '1px solid rgba(239,68,68,0.25)',
+                          color: '#fca5a5', fontSize: 11, fontFamily: 'var(--mono)',
+                        }}>
+                          ✗ {saveKeyError}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-        )}
+            )
+          })}
+        </div>
       </div>
 
-      {/* Routing info */}
-      <div style={{ marginTop: 16, padding: 12, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8 }}>
-        <div style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6, fontFamily: 'var(--mono)' }}>
-          Routing
+      {/* ── Active providers ── */}
+      {providers.length > 0 && (
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <div style={{ fontSize: 11, color: 'var(--muted2)', fontFamily: 'var(--sans)', fontWeight: 500 }}>
+              Active Keys
+            </div>
+            <button onClick={resetLimits} style={{
+              fontSize: 10, padding: '3px 10px', borderRadius: 6,
+              background: 'transparent', border: '1px solid var(--border2)',
+              color: 'var(--muted2)', fontFamily: 'var(--mono)', cursor: 'pointer',
+              transition: 'all 0.15s',
+            }}>
+              Reset Rate Limits
+            </button>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {providers.map((p: any) => {
+              const info = PROVIDER_INFO[p.provider]
+              return (
+                <div key={p.name} style={{
+                  background: 'var(--bg2)', border: '1px solid var(--border)',
+                  borderRadius: 8, padding: '10px 14px',
+                  display: 'flex', alignItems: 'center', gap: 10,
+                }}>
+                  <div style={{
+                    width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+                    background: p.rateLimited ? 'var(--red)' : p.enabled ? 'var(--green)' : 'var(--muted)',
+                  }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, color: 'var(--text)', fontFamily: 'var(--sans)', fontWeight: 500 }}>
+                      {p.name}
+                      {p.rateLimited && <span style={{ color: 'var(--red)', marginLeft: 8, fontSize: 10, fontFamily: 'var(--mono)' }}>rate limited</span>}
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'var(--mono)', marginTop: 1 }}>
+                      {p.model || info?.defaultModel} · {p.usageCount || 0} calls
+                    </div>
+                  </div>
+                  <button onClick={() => toggleProvider(p.name, !p.enabled)} style={{
+                    fontSize: 10, padding: '3px 10px', borderRadius: 6,
+                    background: p.enabled ? 'rgba(34,197,94,0.08)' : 'transparent',
+                    border: `1px solid ${p.enabled ? 'rgba(34,197,94,0.25)' : 'var(--border2)'}`,
+                    color: p.enabled ? 'var(--green)' : 'var(--muted)', fontFamily: 'var(--mono)', cursor: 'pointer',
+                    transition: 'all 0.15s',
+                  }}>
+                    {p.enabled ? 'on' : 'off'}
+                  </button>
+                  <button onClick={() => deleteProvider(p.name)} style={{
+                    width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: 'transparent', border: '1px solid rgba(239,68,68,0.2)',
+                    borderRadius: 6, color: 'var(--red)', cursor: 'pointer', fontSize: 12, transition: 'all 0.15s',
+                  }}>×</button>
+                </div>
+              )
+            })}
+          </div>
         </div>
+      )}
+
+      {/* ── Routing info ── */}
+      <div style={{ padding: '12px 14px', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8 }}>
+        <div style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 5, fontFamily: 'var(--mono)' }}>Routing</div>
         <div style={{ fontSize: 11, color: 'var(--muted2)', fontFamily: 'var(--mono)' }}>
-          Mode: {routing?.mode || 'auto'} · Ollama fallback: {routing?.fallbackToOllama ? 'on' : 'off'}
+          Mode: <span style={{ color: 'var(--text2)' }}>{routing?.mode || 'auto'}</span>
+          {' · '}Ollama fallback: <span style={{ color: 'var(--text2)' }}>{routing?.fallbackToOllama ? 'on' : 'off'}</span>
         </div>
       </div>
     </div>
@@ -942,64 +1028,115 @@ function NavBar() {
     activeModel,
   } = useDevOS()
 
+  const modelLabel = activeModel
+    ? activeModel.split('/').pop()?.replace(':latest', '') || activeModel
+    : 'local'
+
   return (
     <nav style={{
       height: 48, display: 'flex', alignItems: 'center',
       justifyContent: 'space-between', padding: '0 16px',
-      background: 'rgba(14,14,14,0.95)', backdropFilter: 'blur(12px)',
+      background: 'rgba(10,10,10,0.95)', backdropFilter: 'blur(16px)',
       borderBottom: '1px solid var(--border)', flexShrink: 0, zIndex: 100,
     }}>
       {/* Brand */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <div style={{
-          width: 24, height: 24, borderRadius: 5,
-          background: 'var(--orange)',
+          width: 26, height: 26, borderRadius: 6,
+          background: isExecuting
+            ? 'var(--orange)'
+            : 'linear-gradient(135deg, #f97316, #ea580c)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 10, fontWeight: 800, color: '#000', flexShrink: 0,
-          animation: isExecuting ? 'pulse-orange 1s infinite' : 'none',
-        }}>◉</div>
-        <span style={{ fontSize: 13, color: 'var(--text)', letterSpacing: '0.05em', fontFamily: 'var(--mono)' }}>
-          DEVOS
-        </span>
-        <span style={{ color: 'var(--muted)', fontSize: 13 }}>·</span>
-        <span style={{ fontSize: 13, color: 'var(--muted2)', fontFamily: 'var(--mono)' }}>AIDEN</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginLeft: 4 }}>
+          fontSize: 11, fontWeight: 800, color: '#000', flexShrink: 0,
+          letterSpacing: '-0.5px', fontFamily: 'var(--sans)',
+          boxShadow: isExecuting ? 'var(--glow-orange)' : 'none',
+          animation: isExecuting ? 'pulse-orange 1.5s infinite' : 'none',
+          transition: 'box-shadow 0.3s',
+        }}>A/</div>
+        <span style={{
+          fontSize: 13, color: 'var(--text)', letterSpacing: '0.08em',
+          fontFamily: 'var(--sans)', fontWeight: 600,
+        }}>AIDEN</span>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 5,
+          padding: '2px 8px', borderRadius: 20,
+          background: 'rgba(255,255,255,0.04)',
+          border: '1px solid var(--border)',
+        }}>
           <span style={{
-            width: 6, height: 6, borderRadius: '50%',
+            width: 5, height: 5, borderRadius: '50%', flexShrink: 0,
             background: isExecuting ? 'var(--orange)' : 'var(--green)',
-            display: 'inline-block', animation: 'pulse-dot 2s infinite',
+            display: 'inline-block',
+            animation: isExecuting ? 'pulse-dot 0.8s infinite' : 'pulse-dot 3s infinite',
           }} />
-          <span style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'var(--mono)' }}>
-            {activeModel ? activeModel.split('/').pop()?.replace(':latest', '') || activeModel : 'local'}
+          <span style={{ fontSize: 10, color: 'var(--muted3)', fontFamily: 'var(--mono)', letterSpacing: '0.02em' }}>
+            {modelLabel}
           </span>
         </div>
       </div>
 
-      {/* Mode indicator */}
-      <div style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--muted)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-        {uiMode === 'focus'     && 'Focus Mode'}
-        {uiMode === 'execution' && <span style={{ color: 'var(--orange)' }}>● Executing...</span>}
-        {uiMode === 'power'     && 'Power Mode'}
-        {uiMode === 'watch'     && 'Watch Mode'}
+      {/* Center: mode indicator */}
+      <div style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)' }}>
+        {uiMode === 'execution' && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            padding: '3px 12px', borderRadius: 20,
+            background: 'rgba(249,115,22,0.08)',
+            border: '1px solid rgba(249,115,22,0.2)',
+            fontFamily: 'var(--mono)', fontSize: 10,
+            color: 'var(--orange)', letterSpacing: '0.06em',
+          }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--orange)', animation: 'pulse-dot 0.8s infinite' }} />
+            EXECUTING
+          </div>
+        )}
+        {uiMode === 'power' && (
+          <div style={{
+            padding: '3px 12px', borderRadius: 20,
+            background: 'rgba(139,92,246,0.08)',
+            border: '1px solid rgba(139,92,246,0.2)',
+            fontFamily: 'var(--mono)', fontSize: 10,
+            color: '#a78bfa', letterSpacing: '0.06em',
+          }}>POWER MODE</div>
+        )}
+        {uiMode === 'watch' && (
+          <div style={{
+            padding: '3px 12px', borderRadius: 20,
+            background: 'rgba(59,130,246,0.08)',
+            border: '1px solid rgba(59,130,246,0.2)',
+            fontFamily: 'var(--mono)', fontSize: 10,
+            color: '#60a5fa', letterSpacing: '0.06em',
+          }}>WATCH</div>
+        )}
       </div>
 
       {/* Controls */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-        <NavBtn active={historyOpen || uiMode === 'power'} onClick={() => setHistoryOpen(h => !h)} title="History">☰</NavBtn>
-        <NavBtn active={liveViewOpen || uiMode === 'execution' || uiMode === 'power'} onClick={() => setLiveViewOpen(l => !l)} title="Live View">⌄</NavBtn>
-        <NavBtn active={uiMode === 'power'} onClick={() => setUIMode(m => m === 'power' ? 'focus' : 'power')} title="Power Mode (Ctrl+P)">⊞</NavBtn>
-        <NavBtn active={uiMode === 'watch'} onClick={() => setUIMode(m => m === 'watch' ? 'focus' : 'watch')} title="Watch Mode">⤢</NavBtn>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+        <NavBtn active={historyOpen || uiMode === 'power'} onClick={() => setHistoryOpen(h => !h)} title="Chat History">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="16" y2="12"/><line x1="3" y1="18" x2="11" y2="18"/></svg>
+        </NavBtn>
+        <NavBtn active={liveViewOpen || uiMode === 'execution' || uiMode === 'power'} onClick={() => setLiveViewOpen(l => !l)} title="Live Activity">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        </NavBtn>
+        <NavBtn active={uiMode === 'power'} onClick={() => setUIMode(m => m === 'power' ? 'focus' : 'power')} title="Power Mode (Ctrl+P)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        </NavBtn>
+        <NavBtn active={uiMode === 'watch'} onClick={() => setUIMode(m => m === 'watch' ? 'focus' : 'watch')} title="Focus: Live View Only">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+        </NavBtn>
         <ChatHeader />
-        <div style={{ width: 1, height: 20, background: 'var(--border2)', margin: '0 4px' }} />
-        <NavBtn onClick={() => setSettingsOpen(true)} title="Settings">⚙</NavBtn>
+        <div style={{ width: 1, height: 18, background: 'var(--border2)', margin: '0 4px' }} />
+        <NavBtn onClick={() => setSettingsOpen(true)} title="Settings">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14M12 2v2M12 20v2M2 12h2M20 12h2"/></svg>
+        </NavBtn>
         <div
           style={{
-            padding: '2px 8px', borderRadius: 4, fontSize: 10,
-            background: licenseStatus.active ? 'rgba(139,92,246,0.15)' : 'var(--odim)',
-            border: `1px solid ${licenseStatus.active ? 'rgba(139,92,246,0.4)' : 'rgba(249,115,22,0.25)'}`,
+            padding: '3px 10px', borderRadius: 6, fontSize: 10,
+            background: licenseStatus.active ? 'rgba(139,92,246,0.12)' : 'rgba(249,115,22,0.08)',
+            border: `1px solid ${licenseStatus.active ? 'rgba(139,92,246,0.3)' : 'rgba(249,115,22,0.22)'}`,
             color: licenseStatus.active ? '#a78bfa' : 'var(--orange)',
-            fontFamily: 'var(--mono)', cursor: 'pointer',
-            display: 'flex', alignItems: 'center', gap: 4,
+            fontFamily: 'var(--mono)', fontWeight: 600, cursor: 'pointer',
+            letterSpacing: '0.06em', transition: 'all 0.15s',
           }}
           onClick={() => licenseStatus.active
             ? (() => { setSettingsOpen(true); setSettingsTab('pro') })()
@@ -1029,66 +1166,85 @@ function HistorySidebar() {
 
   return (
     <aside style={{
-      overflow: 'hidden', borderRight: '1px solid var(--border)',
-      background: 'var(--bg1)', display: 'flex', flexDirection: 'column',
+      overflow: 'hidden',
+      borderRight: '1px solid var(--border)',
+      background: 'var(--bg1)',
+      display: 'flex', flexDirection: 'column',
     }}>
-      <button onClick={startNewChat} style={{
-        margin: 12, padding: '8px 14px', borderRadius: 6,
-        background: 'transparent', border: '1px solid var(--border2)',
-        color: 'var(--muted2)', fontFamily: 'var(--mono)', fontSize: 12,
-        cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s',
-        display: 'flex', alignItems: 'center', gap: 8,
-      }}>
-        + New Chat
-        <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--muted)' }}>⌘K</span>
-      </button>
+      {/* Top: New Chat */}
+      <div style={{ padding: '12px 10px 8px', flexShrink: 0 }}>
+        <button onClick={startNewChat} style={{
+          width: '100%', padding: '8px 12px', borderRadius: 8,
+          background: 'rgba(249,115,22,0.08)',
+          border: '1px solid rgba(249,115,22,0.18)',
+          color: 'var(--orange)', fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 500,
+          cursor: 'pointer', transition: 'all 0.15s',
+          display: 'flex', alignItems: 'center', gap: 8,
+        }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          New Chat
+          <span style={{ marginLeft: 'auto', fontSize: 9, color: 'rgba(249,115,22,0.5)', fontFamily: 'var(--mono)' }}>⌘K</span>
+        </button>
+      </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '0 8px' }}>
+      {/* Conversation list */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '4px 6px' }}>
         {(Object.entries(grouped) as [string, Conversation[]][]).map(([group, convs]) => convs.length > 0 && (
           <div key={group}>
             <div style={{
-              padding: '8px 8px 4px', fontSize: 9,
+              padding: '8px 6px 4px', fontSize: 9,
               color: 'var(--muted)', textTransform: 'uppercase',
-              letterSpacing: '0.1em', fontFamily: 'var(--mono)',
+              letterSpacing: '0.1em', fontFamily: 'var(--mono)', fontWeight: 500,
             }}>
               {group === 'today' ? 'Today' : group === 'yesterday' ? 'Yesterday' : 'Earlier'}
             </div>
             {convs.map(conv => (
-              <button key={conv.id} onClick={() => loadConversation(conv.id)} style={{
+              <button key={conv.id} onClick={() => loadConversation(conv.id)} className="conv-item" style={{
                 display: 'block', width: '100%', textAlign: 'left',
-                padding: '7px 10px', borderRadius: 5, marginBottom: 2,
-                background: currentConvId === conv.id ? 'var(--bg2)' : 'transparent',
-                border: 'none',
-                borderLeft: `2px solid ${currentConvId === conv.id ? 'var(--orange)' : 'transparent'}`,
+                padding: '6px 10px', borderRadius: 6, marginBottom: 1,
+                background: currentConvId === conv.id
+                  ? 'rgba(249,115,22,0.08)'
+                  : 'transparent',
+                border: `1px solid ${currentConvId === conv.id ? 'rgba(249,115,22,0.15)' : 'transparent'}`,
                 color: currentConvId === conv.id ? 'var(--text)' : 'var(--muted2)',
-                fontFamily: 'var(--mono)', fontSize: 11, cursor: 'pointer',
-                transition: 'all 0.15s', overflow: 'hidden',
+                fontFamily: 'var(--sans)', fontSize: 12, cursor: 'pointer',
+                transition: 'all 0.12s', overflow: 'hidden',
                 textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                lineHeight: 1.4,
               }}>
-                {conv.title.slice(0, 32)}{conv.title.length > 32 ? '...' : ''}
+                {conv.title.slice(0, 28)}{conv.title.length > 28 ? '...' : ''}
               </button>
             ))}
           </div>
         ))}
         {conversations.length === 0 && (
-          <div style={{ padding: 16, fontSize: 11, color: 'var(--muted)', textAlign: 'center', fontFamily: 'var(--mono)' }}>
-            No conversations yet
+          <div style={{ padding: '24px 10px', fontSize: 11, color: 'var(--muted)', textAlign: 'center', fontFamily: 'var(--sans)', lineHeight: 1.6 }}>
+            No chats yet.<br />
+            <span style={{ fontSize: 10 }}>Start a conversation to build history.</span>
           </div>
         )}
       </div>
 
-      <div style={{ padding: '0 8px 8px' }}>
+      {/* Identity badge from Sidebar component */}
+      <div style={{ padding: '0 8px 8px', flexShrink: 0 }}>
         <Sidebar />
       </div>
 
+      {/* Status bar */}
       <div style={{
-        padding: '12px 16px', borderTop: '1px solid var(--border)',
+        padding: '10px 14px', borderTop: '1px solid var(--border)',
         fontSize: 10, color: 'var(--muted)',
         display: 'flex', alignItems: 'center', gap: 6,
-        fontFamily: 'var(--mono)',
+        fontFamily: 'var(--mono)', flexShrink: 0,
       }}>
-        <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--green)', display: 'inline-block' }} />
-        Aiden v2 · local
+        <span style={{
+          width: 5, height: 5, borderRadius: '50%',
+          background: 'var(--green)', display: 'inline-block',
+          animation: 'pulse-dot 3s infinite',
+        }} />
+        <span>Aiden v2</span>
+        <span style={{ color: 'var(--muted)' }}>·</span>
+        <span>local</span>
       </div>
     </aside>
   )
@@ -1099,35 +1255,56 @@ function HistorySidebar() {
 function EmptyState() {
   const { setInput } = useDevOS()
   const suggestions = [
-    'Research top AI agents 2025',
-    'What is the weather in Mumbai',
-    'Check NSE top gainers today',
-    'Create a Python script for me',
+    { icon: '🔍', text: 'Research top AI agents 2025',  sub: 'Deep research' },
+    { icon: '☁️', text: 'What is the weather in Mumbai', sub: 'Live data' },
+    { icon: '📈', text: 'Check NSE top gainers today',   sub: 'Market data' },
+    { icon: '🐍', text: 'Create a Python script for me', sub: 'Code' },
   ]
   return (
     <div style={{
       flex: 1, display: 'flex', flexDirection: 'column',
       alignItems: 'center', justifyContent: 'center',
-      padding: 40, gap: 24,
+      padding: '0 40px 80px', gap: 32, animation: 'fadeInUp 0.4s ease-out',
     }}>
-      <div style={{
-        width: 48, height: 48, borderRadius: 10,
-        background: 'var(--orange)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 20, fontWeight: 800, color: '#000',
-        fontFamily: 'var(--sans)',
-      }}>D/</div>
-      <div style={{ fontSize: 18, fontFamily: 'var(--sans)', fontWeight: 600, color: 'var(--text)' }}>
-        What can I help you with?
+      {/* Logo */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+        <div style={{
+          width: 56, height: 56, borderRadius: 14,
+          background: 'linear-gradient(135deg, #f97316, #ea580c)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 22, fontWeight: 800, color: '#000',
+          fontFamily: 'var(--sans)', letterSpacing: '-1px',
+          boxShadow: '0 8px 32px rgba(249,115,22,0.25)',
+        }}>A/</div>
+        <div>
+          <div style={{ fontSize: 22, fontFamily: 'var(--sans)', fontWeight: 700, color: 'var(--text)', textAlign: 'center', letterSpacing: '-0.3px' }}>
+            What can I help you with?
+          </div>
+          <div style={{ fontSize: 13, fontFamily: 'var(--sans)', color: 'var(--muted3)', textAlign: 'center', marginTop: 6 }}>
+            Ask anything — Aiden researches, codes, and executes for you.
+          </div>
+        </div>
       </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center', maxWidth: 480 }}>
+
+      {/* Suggestion chips */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, width: '100%', maxWidth: 520 }}>
         {suggestions.map(s => (
-          <button key={s} onClick={() => setInput(s)} style={{
-            padding: '6px 14px', borderRadius: 20,
-            background: 'var(--bg2)', border: '1px solid var(--border2)',
-            color: 'var(--muted2)', fontFamily: 'var(--mono)', fontSize: 11,
-            cursor: 'pointer', transition: 'all 0.15s',
-          }}>{s} →</button>
+          <button key={s.text} onClick={() => setInput(s.text)} className="suggestion-chip" style={{
+            padding: '12px 14px', borderRadius: 10, textAlign: 'left',
+            background: 'var(--bg2)', border: '1px solid var(--border)',
+            color: 'var(--muted2)', cursor: 'pointer', transition: 'all 0.15s',
+            display: 'flex', flexDirection: 'column', gap: 4,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 16 }}>{s.icon}</span>
+              <span style={{ fontSize: 9, color: 'var(--muted)', fontFamily: 'var(--mono)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                {s.sub}
+              </span>
+            </div>
+            <div style={{ fontSize: 12, fontFamily: 'var(--sans)', color: 'var(--text2)', lineHeight: 1.4 }}>
+              {s.text}
+            </div>
+          </button>
         ))}
       </div>
     </div>
@@ -1342,7 +1519,14 @@ function ChatPanel() {
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value)
     e.target.style.height = 'auto'
-    e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px'
+    e.target.style.height = Math.min(e.target.scrollHeight, 140) + 'px'
+  }
+
+  const modeLabels: Record<ExecMode, string> = {
+    auto:  'Auto',
+    plan:  'Plan',
+    chat:  'Chat',
+    react: 'React',
   }
 
   return (
@@ -1351,143 +1535,171 @@ function ChatPanel() {
       overflow: 'hidden', background: 'var(--bg)', minWidth: 0,
     }}>
       {/* Messages */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '24px 0', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '24px 0 8px', display: 'flex', flexDirection: 'column' }}>
         {messages.length === 0 ? (
           <EmptyState />
         ) : (
-          <div style={{ maxWidth: 720, width: '100%', margin: '0 auto', padding: '0 24px' }}>
+          <div style={{ maxWidth: 720, width: '100%', margin: '0 auto', padding: '0 28px' }}>
             {messages.map(msg => <ChatMessage key={msg.id} message={msg} />)}
             <div ref={messagesEndRef} />
           </div>
         )}
       </div>
 
-      {/* Input area */}
+      {/* Floating input bar */}
       <div style={{
-        borderTop: '1px solid var(--border)',
-        padding: '12px 24px',
-        background: 'var(--bg1)', flexShrink: 0,
+        padding: '12px 24px 16px',
+        background: 'linear-gradient(to top, var(--bg) 60%, transparent)',
+        flexShrink: 0,
       }}>
-        <div style={{ maxWidth: 720, margin: '0 auto', display: 'flex', gap: 8, alignItems: 'flex-end', position: 'relative' }}>
-          {/* Plus menu trigger */}
-          <div style={{ position: 'relative', flexShrink: 0 }}>
+        <div style={{ maxWidth: 720, margin: '0 auto', position: 'relative' }}>
+          {/* PlusMenu anchored to this container */}
+          <div style={{ position: 'relative' }}>
             <PlusMenu />
-            <button
-              onClick={() => setPlusMenuOpen(!plusMenuOpen)}
-              title="Actions"
-              style={{
-                width: 36, height: 36, borderRadius: 6,
-                background: plusMenuOpen ? 'rgba(249,115,22,0.12)' : 'var(--bg2)',
-                border: plusMenuOpen ? '1px solid rgba(249,115,22,0.35)' : '1px solid var(--border2)',
-                color: plusMenuOpen ? 'var(--orange)' : 'var(--muted2)',
-                cursor: 'pointer', fontSize: 18,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                transition: 'all 0.15s',
-              }}
-            >+</button>
           </div>
           <input
             ref={kbInputRef} type="file" accept=".txt,.md,.pdf,.epub,.markdown"
             style={{ display: 'none' }} onChange={handleQuickUpload}
           />
 
-          {/* Textarea */}
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={handleInputChange}
-            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
-            placeholder="Ask Aiden anything..."
-            rows={1}
-            disabled={isStreaming}
-            style={{
-              flex: 1, resize: 'none',
-              background: 'var(--bg2)', border: '1px solid var(--border2)',
-              borderRadius: 8, padding: '9px 14px',
-              fontFamily: 'var(--mono)', fontSize: 13,
-              color: 'var(--text)', outline: 'none',
-              minHeight: 38, maxHeight: 120,
-              transition: 'border-color 0.2s', lineHeight: 1.6,
-            }}
-          />
+          {/* Pill container */}
+          <div className="input-pill" style={{
+            display: 'flex', alignItems: 'flex-end', gap: 6,
+            background: 'var(--bg2)',
+            border: '1px solid var(--border2)',
+            borderRadius: 24, padding: '6px 6px 6px 14px',
+          }}>
+            {/* Plus button */}
+            <button
+              onClick={() => setPlusMenuOpen(!plusMenuOpen)}
+              title="Actions"
+              style={{
+                width: 30, height: 30, borderRadius: '50%', flexShrink: 0,
+                background: plusMenuOpen ? 'rgba(249,115,22,0.15)' : 'transparent',
+                border: 'none',
+                color: plusMenuOpen ? 'var(--orange)' : 'var(--muted2)',
+                cursor: 'pointer', fontSize: 20, lineHeight: 1,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                transition: 'all 0.15s', marginBottom: 1,
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
 
-          {/* Mode selector */}
-          <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
-            {(['auto', 'plan', 'chat'] as ExecMode[]).map(m => (
-              <button key={m} onClick={() => setExecMode(m)} title={m} style={{
-                width: 28, height: 28, borderRadius: 5, border: 'none',
-                background: execMode === m ? 'rgba(249,115,22,0.15)' : 'transparent',
-                color: execMode === m ? 'var(--orange)' : 'var(--muted)',
-                cursor: 'pointer', fontSize: 14, transition: 'all 0.15s',
+            {/* Textarea */}
+            <textarea
+              ref={inputRef}
+              value={input}
+              onChange={handleInputChange}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
+              placeholder="Ask Aiden anything..."
+              rows={1}
+              disabled={isStreaming}
+              style={{
+                flex: 1, resize: 'none',
+                background: 'transparent', border: 'none',
+                padding: '6px 0',
+                fontFamily: 'var(--sans)', fontSize: 14,
+                color: 'var(--text)', outline: 'none',
+                minHeight: 30, maxHeight: 140,
+                lineHeight: 1.5,
+              }}
+            />
+
+            {/* Right buttons group */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0, marginBottom: 1 }}>
+              {/* Mode selector */}
+              <div style={{
+                display: 'flex', background: 'var(--bg3)', borderRadius: 8,
+                border: '1px solid var(--border)', padding: 2, gap: 1,
               }}>
-                {m === 'auto' ? (
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-                ) : m === 'plan' ? (
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h4"/></svg>
-                ) : (
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                )}
+                {(['auto', 'plan', 'chat'] as ExecMode[]).map(m => (
+                  <button key={m} onClick={() => setExecMode(m)} title={m} style={{
+                    height: 22, padding: '0 7px', borderRadius: 6, border: 'none',
+                    background: execMode === m ? 'rgba(249,115,22,0.15)' : 'transparent',
+                    color: execMode === m ? 'var(--orange)' : 'var(--muted2)',
+                    cursor: 'pointer', fontSize: 9, fontFamily: 'var(--mono)',
+                    fontWeight: execMode === m ? 600 : 400,
+                    transition: 'all 0.12s', letterSpacing: '0.04em',
+                  }}>
+                    {modeLabels[m]}
+                  </button>
+                ))}
+              </div>
+
+              {/* Voice input */}
+              {voiceStatus.stt && (
+                <button
+                  onClick={startRecording} disabled={isStreaming}
+                  title={isRecording ? `Recording... ${recordingTimer}s` : 'Voice input'}
+                  style={{
+                    width: 30, height: 30, borderRadius: '50%', flexShrink: 0,
+                    background: isRecording ? 'rgba(239,68,68,0.15)' : 'transparent',
+                    border: `1px solid ${isRecording ? 'rgba(239,68,68,0.4)' : 'transparent'}`,
+                    color: isRecording ? '#ef4444' : 'var(--muted2)',
+                    cursor: isStreaming ? 'not-allowed' : 'pointer',
+                    fontSize: isRecording ? 11 : 14, fontFamily: 'var(--mono)',
+                    animation: isRecording ? 'pulse-dot 0.8s infinite' : 'none',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    transition: 'all 0.2s',
+                  }}
+                >
+                  {isRecording
+                    ? <span style={{ fontSize: 10 }}>{recordingTimer}</span>
+                    : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                  }
+                </button>
+              )}
+
+              {/* TTS */}
+              {voiceStatus.tts && (
+                <button
+                  onClick={() => setTtsEnabled(!ttsEnabled)}
+                  title={ttsEnabled ? 'Disable voice' : 'Enable voice responses'}
+                  style={{
+                    width: 30, height: 30, borderRadius: '50%', flexShrink: 0,
+                    background: ttsEnabled ? 'rgba(249,115,22,0.15)' : 'transparent',
+                    border: 'none',
+                    color: ttsEnabled ? 'var(--orange)' : 'var(--muted2)',
+                    cursor: 'pointer', transition: 'all 0.2s',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                </button>
+              )}
+
+              {/* Send button */}
+              <button
+                onClick={() => sendMessage()}
+                disabled={!input.trim() || isStreaming}
+                style={{
+                  width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
+                  background: input.trim() && !isStreaming
+                    ? 'var(--orange)'
+                    : 'rgba(255,255,255,0.06)',
+                  border: 'none',
+                  color: input.trim() && !isStreaming ? '#000' : 'var(--muted)',
+                  cursor: input.trim() && !isStreaming ? 'pointer' : 'not-allowed',
+                  transition: 'all 0.2s',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  boxShadow: input.trim() && !isStreaming ? '0 2px 8px rgba(249,115,22,0.3)' : 'none',
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
               </button>
-            ))}
+            </div>
           </div>
 
-          {/* Voice input button — shown only when STT available */}
-          {voiceStatus.stt && (
-            <button
-              onClick={startRecording}
-              disabled={isStreaming}
-              title={isRecording ? `Recording... ${recordingTimer}s` : 'Voice input (5s)'}
-              style={{
-                width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
-                background: isRecording ? 'rgba(239,68,68,0.15)' : 'var(--bg2)',
-                border: `1px solid ${isRecording ? 'rgba(239,68,68,0.4)' : 'var(--border2)'}`,
-                color: isRecording ? '#ef4444' : 'var(--muted2)',
-                cursor: isStreaming ? 'not-allowed' : 'pointer',
-                fontSize: isRecording ? 13 : 14,
-                fontFamily: isRecording ? 'var(--mono)' : 'inherit',
-                transition: 'all 0.2s',
-                animation: isRecording ? 'pulse-dot 0.8s infinite' : 'none',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}
-            >
-              {isRecording ? `${recordingTimer}` : '🎤'}
-            </button>
-          )}
-
-          {/* TTS toggle button — shown only when TTS available */}
-          {voiceStatus.tts && (
-            <button
-              onClick={() => setTtsEnabled(!ttsEnabled)}
-              title={ttsEnabled ? 'Disable voice responses' : 'Enable voice responses (Aiden speaks)'}
-              style={{
-                width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
-                background: ttsEnabled ? 'rgba(249,115,22,0.15)' : 'var(--bg2)',
-                border: `1px solid ${ttsEnabled ? 'rgba(249,115,22,0.4)' : 'var(--border2)'}`,
-                color: ttsEnabled ? 'var(--orange)' : 'var(--muted2)',
-                cursor: 'pointer', fontSize: 14, transition: 'all 0.2s',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}
-            >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
-            </button>
-          )}
-
-          {/* Send */}
-          <button
-            onClick={() => sendMessage()}
-            disabled={!input.trim() || isStreaming}
-            style={{
-              width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
-              background: input.trim() && !isStreaming ? 'var(--orange)' : 'var(--bg3)',
-              border: 'none',
-              color: input.trim() && !isStreaming ? '#000' : 'var(--muted)',
-              cursor: input.trim() && !isStreaming ? 'pointer' : 'not-allowed',
-              fontSize: 14, transition: 'all 0.2s',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-          </button>
+          {/* Mode hint */}
+          <div style={{
+            display: 'flex', justifyContent: 'center', marginTop: 8, gap: 16,
+            fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--muted)',
+          }}>
+            <span>Enter to send</span>
+            <span>Shift+Enter for new line</span>
+            <span>Ctrl+K for new chat</span>
+          </div>
         </div>
       </div>
     </section>
@@ -1766,13 +1978,13 @@ function LiveViewPanel() {
     <aside style={{
       overflow: 'hidden', borderLeft: '1px solid var(--border)',
       background: 'var(--bg1)', display: 'flex', flexDirection: 'column',
-      width: collapsed ? 40 : undefined,
-      minWidth: collapsed ? 40 : 420,
+      width: collapsed ? 36 : undefined,
+      minWidth: collapsed ? 36 : undefined,
       transition: 'min-width 0.2s ease-out, width 0.2s ease-out',
     }}>
       {/* Header */}
       <div style={{
-        height: 40, display: 'flex', alignItems: 'center',
+        height: 44, display: 'flex', alignItems: 'center',
         justifyContent: collapsed ? 'center' : 'space-between',
         padding: collapsed ? '0' : '0 14px',
         borderBottom: '1px solid var(--border)', flexShrink: 0,
@@ -1782,50 +1994,51 @@ function LiveViewPanel() {
             onClick={() => setCollapsed(false)}
             title="Expand Live Activity"
             style={{
-              width: 40, height: 40, display: 'flex', alignItems: 'center',
+              width: 36, height: 44, display: 'flex', alignItems: 'center',
               justifyContent: 'center', background: 'transparent', border: 'none',
               color: 'var(--muted)', cursor: 'pointer',
             }}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
           </button>
         ) : (
           <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--muted2)', fontFamily: 'var(--mono)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, color: 'var(--muted2)', fontFamily: 'var(--sans)', fontWeight: 500 }}>
               <span style={{
-                width: 5, height: 5, borderRadius: '50%',
+                width: 6, height: 6, borderRadius: '50%',
                 background: isExecuting ? 'var(--orange)' : 'var(--green)',
-                animation: isExecuting ? 'pulse-dot 1s infinite' : 'none',
+                animation: isExecuting ? 'pulse-dot 0.8s infinite' : 'pulse-dot 3s infinite',
+                flexShrink: 0,
               }} />
               Live Activity
             </div>
-            <div style={{ display: 'flex', gap: 4 }}>
+            <div style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
               {pulseLog.length > 0 && (
                 <button
                   onClick={() => setPulseLog([])}
-                  title="Clear feed"
+                  title="Clear"
                   style={{
-                    height: 28, padding: '0 8px', borderRadius: 5,
-                    background: 'transparent', border: '1px solid transparent',
-                    color: 'var(--muted)', cursor: 'pointer', fontSize: 10,
+                    height: 26, padding: '0 10px', borderRadius: 6,
+                    background: 'transparent', border: '1px solid var(--border)',
+                    color: 'var(--muted2)', cursor: 'pointer', fontSize: 10,
                     fontFamily: 'var(--mono)', transition: 'all 0.15s',
                   }}
                 >clear</button>
               )}
               <button
                 onClick={() => setCollapsed(true)}
-                title="Collapse panel"
+                title="Collapse"
                 style={{
-                  width: 28, height: 28, borderRadius: 5, display: 'flex',
+                  width: 26, height: 26, borderRadius: 6, display: 'flex',
                   alignItems: 'center', justifyContent: 'center',
-                  background: 'transparent', border: 'none',
+                  background: 'transparent', border: '1px solid var(--border)',
                   color: 'var(--muted)', cursor: 'pointer', transition: 'all 0.15s',
                 }}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
               </button>
               <NavBtn onClick={() => setUIMode((m: UIMode) => m === 'watch' ? 'focus' : 'watch')} title="Watch Mode">
-                {uiMode === 'watch' ? '✕' : '⤢'}
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
               </NavBtn>
             </div>
           </>
@@ -1834,52 +2047,55 @@ function LiveViewPanel() {
 
       {!collapsed && <>
       {/* Activity Feed */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 1 }}>
         {pulseLog.length === 0 ? (
           <div style={{
             display: 'flex', flexDirection: 'column', alignItems: 'center',
-            justifyContent: 'center', flex: 1, gap: 10,
-            color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 11,
+            justifyContent: 'center', flex: 1, gap: 12,
+            color: 'var(--muted)', fontFamily: 'var(--sans)', fontSize: 12,
           }}>
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.3 }}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-            <div>Waiting for activity...</div>
-            <div style={{ fontSize: 10, color: 'var(--muted)', opacity: 0.7 }}>Events will appear here as Aiden works</div>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.25 }}><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            <div style={{ textAlign: 'center' }}>
+              <div>Waiting for activity</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>Events appear as Aiden works</div>
+            </div>
           </div>
         ) : (
           pulseLog.map((entry, i) => {
             const typeColor =
-              entry.type === 'error'   ? 'var(--red)' :
-              entry.type === 'done'    ? 'var(--green)' :
-              entry.type === 'warn'    ? 'var(--orange)' :
-              entry.type === 'tool'    ? '#60a5fa' :
-              entry.type === 'thinking'? '#a78bfa' :
+              entry.type === 'error'    ? 'var(--red)'    :
+              entry.type === 'done'     ? 'var(--green)'  :
+              entry.type === 'warn'     ? 'var(--orange)' :
+              entry.type === 'tool'     ? '#60a5fa'       :
+              entry.type === 'thinking' ? '#a78bfa'       :
               'var(--muted2)'
             const typeIcon =
-              entry.type === 'error'   ? '✗' :
-              entry.type === 'done'    ? '✓' :
-              entry.type === 'warn'    ? '⚠' :
-              entry.type === 'tool'    ? '⬡' :
-              entry.type === 'thinking'? '💭' :
-              entry.type === 'act'     ? '▸' :
+              entry.type === 'error'    ? '✗' :
+              entry.type === 'done'     ? '✓' :
+              entry.type === 'warn'     ? '!' :
+              entry.type === 'tool'     ? '⬡' :
+              entry.type === 'thinking' ? '◌' :
+              entry.type === 'act'      ? '▸' :
               '·'
             const isNew = i === pulseLog.length - 1
             return (
               <div key={i} style={{
                 display: 'flex', gap: 8, alignItems: 'flex-start',
                 fontSize: 11, fontFamily: 'var(--mono)',
-                padding: '4px 8px', borderRadius: 5,
-                background: isNew ? 'rgba(249,115,22,0.06)' : 'transparent',
-                transition: 'background 0.4s',
+                padding: '5px 8px', borderRadius: 6,
+                background: isNew ? 'rgba(249,115,22,0.05)' : 'transparent',
+                borderLeft: isNew ? '2px solid rgba(249,115,22,0.3)' : '2px solid transparent',
+                transition: 'all 0.4s',
               }}>
-                <span style={{ color: typeColor, flexShrink: 0, fontSize: 12, lineHeight: '16px' }}>{typeIcon}</span>
+                <span style={{ color: typeColor, flexShrink: 0, fontSize: 11, lineHeight: '16px', fontWeight: 600 }}>{typeIcon}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ color: 'var(--muted2)', wordBreak: 'break-word', lineHeight: 1.5 }}>
+                  <div style={{ color: 'var(--muted3)', wordBreak: 'break-word', lineHeight: 1.5 }}>
                     {entry.tool && (
-                      <span style={{ color: '#60a5fa', marginRight: 4 }}>[{entry.tool}]</span>
+                      <span style={{ color: '#60a5fa', marginRight: 5, fontSize: 10 }}>[{entry.tool}]</span>
                     )}
                     {entry.message}
                   </div>
-                  <div style={{ fontSize: 9, color: 'var(--muted)', marginTop: 1 }}>
+                  <div style={{ fontSize: 9, color: 'var(--muted)', marginTop: 2 }}>
                     {entry.agent} · {new Date(entry.timestamp).toLocaleTimeString('en', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                   </div>
                 </div>
@@ -2317,19 +2533,18 @@ function ChannelModal() {
 function DisclaimerBar() {
   return (
     <div style={{
-      height: 24, display: 'flex', alignItems: 'center',
-      justifyContent: 'center', gap: 8, flexShrink: 0,
-      background: 'var(--bg1)', borderTop: '1px solid var(--border)',
+      height: 22, display: 'flex', alignItems: 'center',
+      justifyContent: 'space-between', padding: '0 16px', flexShrink: 0,
+      background: 'var(--bg)', borderTop: '1px solid var(--border)',
       fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--muted)',
     }}>
-      <span>Aiden is an AI and can make mistakes. Always verify important responses.</span>
-      <span style={{ color: 'var(--border2)' }}>·</span>
+      <span>Aiden can make mistakes — verify critical responses.</span>
       <span>
         Built by{' '}
-        <a href="https://taracod.com" target="_blank" rel="noopener" style={{ color: 'var(--muted2)', textDecoration: 'none' }}>
-          Shiva Deore
+        <a href="https://taracod.com" target="_blank" rel="noopener" style={{ color: 'var(--muted3)', textDecoration: 'none' }}>
+          Taracod
         </a>
-        {' '}at Taracod · White Lotus · © 2026
+        {' '}· © 2026
       </span>
     </div>
   )
@@ -2433,18 +2648,16 @@ function UserProfileTab() {
 // ── SettingsDrawer ────────────────────────────────────────────
 
 const SETTINGS_TABS = [
-  { id: 'profile',  label: '👤 My Profile'  },
-  { id: 'api',      label: '🔑 API Keys'    },
-  { id: 'model',    label: '🧠 Model'        },
-  { id: 'knowledge',label: '📚 Knowledge'   },
-  { id: 'channels', label: '💬 Channels'    },
-  { id: 'pro',      label: '🔐 Pro License' },
-  { id: 'guide',    label: '📖 User Guide'  },
-  { id: 'setup',    label: '🔧 Setup'        },
-  { id: 'privacy',  label: '📜 Privacy'     },
-  { id: 'legal',    label: '⚖️ Legal'        },
-  { id: 'about',    label: 'ℹ️ About'        },
-  { id: 'danger',   label: '⚠️ Danger Zone' },
+  { id: 'profile',   label: 'My Profile',   icon: '👤' },
+  { id: 'api',       label: 'API Keys',      icon: '🔑' },
+  { id: 'knowledge', label: 'Knowledge',     icon: '📚' },
+  { id: 'channels',  label: 'Channels',      icon: '💬' },
+  { id: 'pro',       label: 'Pro License',   icon: '⭐' },
+  { id: 'guide',     label: 'User Guide',    icon: '📖' },
+  { id: 'setup',     label: 'Setup',         icon: '🔧' },
+  { id: 'privacy',   label: 'Privacy',       icon: '🔒' },
+  { id: 'about',     label: 'About',         icon: 'ℹ️'  },
+  { id: 'danger',    label: 'Danger Zone',   icon: '⚠️'  },
 ]
 
 function SettingsDrawer() {
@@ -2457,47 +2670,78 @@ function SettingsDrawer() {
   return (
     <>
       <div onClick={() => setSettingsOpen(false)} style={{
-        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
-        zIndex: 200, backdropFilter: 'blur(2px)',
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
+        zIndex: 200, backdropFilter: 'blur(4px)',
       }} />
       <div style={{
-        position: 'fixed', top: 0, right: 0, bottom: 0, width: 420,
+        position: 'fixed', top: 0, right: 0, bottom: 0, width: 480,
         background: 'var(--bg1)', borderLeft: '1px solid var(--border)',
-        zIndex: 201, display: 'flex', flexDirection: 'column',
-        animation: 'slideIn 0.25s ease-out',
+        zIndex: 201, display: 'flex', flexDirection: 'row',
+        animation: 'slideIn 0.22s cubic-bezier(0.22,1,0.36,1)',
+        boxShadow: '-24px 0 80px rgba(0,0,0,0.5)',
       }}>
-        {/* Header */}
+        {/* Left: Tab nav */}
         <div style={{
-          height: 52, display: 'flex', alignItems: 'center',
-          justifyContent: 'space-between', padding: '0 20px',
-          borderBottom: '1px solid var(--border)', flexShrink: 0,
+          width: 160, borderRight: '1px solid var(--border)',
+          display: 'flex', flexDirection: 'column', flexShrink: 0,
+          background: 'var(--bg)',
         }}>
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--text)' }}>⚙ Settings</span>
-          <button onClick={() => setSettingsOpen(false)} style={{
-            background: 'none', border: 'none', color: 'var(--muted)',
-            cursor: 'pointer', fontSize: 18, padding: '0 4px',
-          }}>✕</button>
-        </div>
+          {/* Header */}
+          <div style={{
+            height: 52, display: 'flex', alignItems: 'center',
+            padding: '0 16px', borderBottom: '1px solid var(--border)', flexShrink: 0,
+          }}>
+            <span style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>Settings</span>
+          </div>
 
-        {/* Tabs */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '8px 8px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-          {SETTINGS_TABS.map(tab => (
-            <button key={tab.id} onClick={() => setSettingsTab(tab.id)} style={{
-              textAlign: 'left', padding: '7px 12px', borderRadius: 5,
-              background: settingsTab === tab.id ? 'var(--bg2)' : 'transparent',
-              border: 'none',
-              borderLeft: `2px solid ${settingsTab === tab.id ? 'var(--orange)' : 'transparent'}`,
-              color: settingsTab === tab.id ? 'var(--text)' : 'var(--muted2)',
-              fontFamily: 'var(--mono)', fontSize: 12, cursor: 'pointer',
+          {/* Tabs */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: '8px 6px' }}>
+            {SETTINGS_TABS.map(tab => (
+              <button key={tab.id} onClick={() => setSettingsTab(tab.id)} className="settings-tab" style={{
+                width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 6,
+                background: settingsTab === tab.id ? 'var(--bg2)' : 'transparent',
+                border: `1px solid ${settingsTab === tab.id ? 'var(--border)' : 'transparent'}`,
+                color: settingsTab === tab.id ? 'var(--text)' : 'var(--muted2)',
+                fontFamily: 'var(--sans)', fontSize: 12, cursor: 'pointer',
+                transition: 'all 0.12s', marginBottom: 1,
+                display: 'flex', alignItems: 'center', gap: 8,
+              }}>
+                <span style={{ fontSize: 13 }}>{tab.icon}</span>
+                <span style={{ fontWeight: settingsTab === tab.id ? 500 : 400 }}>{tab.label}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Close */}
+          <div style={{ padding: '12px 8px', borderTop: '1px solid var(--border)', flexShrink: 0 }}>
+            <button onClick={() => setSettingsOpen(false)} style={{
+              width: '100%', padding: '8px', borderRadius: 6,
+              background: 'transparent', border: '1px solid var(--border)',
+              color: 'var(--muted2)', fontFamily: 'var(--sans)', fontSize: 12, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
               transition: 'all 0.15s',
             }}>
-              {tab.label}
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              Close
             </button>
-          ))}
+          </div>
         </div>
 
-        {/* Content */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
+        {/* Right: Content */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+          {/* Content header */}
+          <div style={{
+            height: 52, display: 'flex', alignItems: 'center', padding: '0 20px',
+            borderBottom: '1px solid var(--border)', flexShrink: 0,
+          }}>
+            <span style={{ fontFamily: 'var(--sans)', fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>
+              {SETTINGS_TABS.find(t => t.id === settingsTab)?.icon}{' '}
+              {SETTINGS_TABS.find(t => t.id === settingsTab)?.label || 'Settings'}
+            </span>
+          </div>
+
+          {/* Content */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
           {settingsTab === 'profile'   && <UserProfileTab />}
           {settingsTab === 'api'       && <ApiKeysTab />}
           {settingsTab === 'knowledge' && <KnowledgeBaseTab />}
@@ -2739,13 +2983,15 @@ function SettingsDrawer() {
             <div>
               <div style={{ textAlign: 'center', padding: '24px 0 16px', borderBottom: '1px solid var(--border)', marginBottom: 20 }}>
                 <div style={{
-                  width: 48, height: 48, borderRadius: 10, background: 'var(--orange)',
+                  width: 52, height: 52, borderRadius: 13,
+                  background: 'linear-gradient(135deg, #f97316, #ea580c)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 18, fontWeight: 800, color: '#000', margin: '0 auto 12px',
-                  fontFamily: 'var(--sans)',
-                }}>D/</div>
-                <div style={{ fontFamily: 'var(--sans)', fontSize: 16, fontWeight: 700, color: 'var(--text)' }}>DevOS · Aiden</div>
-                <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>v2 · Local AI OS</div>
+                  fontSize: 20, fontWeight: 800, color: '#000', margin: '0 auto 12px',
+                  fontFamily: 'var(--sans)', letterSpacing: '-1px',
+                  boxShadow: '0 8px 24px rgba(249,115,22,0.3)',
+                }}>A/</div>
+                <div style={{ fontFamily: 'var(--sans)', fontSize: 17, fontWeight: 700, color: 'var(--text)' }}>Aiden</div>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>v2 · Local AI OS · by Taracod</div>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {[
@@ -2767,9 +3013,9 @@ function SettingsDrawer() {
 
           {settingsTab === 'danger' && (
             <div>
-              <div style={{ background: 'rgba(239,68,68,0.05)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8, padding: 16, marginBottom: 20 }}>
-                <div style={{ fontSize: 12, color: 'var(--red)', fontFamily: 'var(--mono)', marginBottom: 4 }}>⚠️ Danger Zone</div>
-                <div style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--mono)' }}>These actions cannot be undone.</div>
+              <div style={{ background: 'rgba(239,68,68,0.05)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 10, padding: 16, marginBottom: 20 }}>
+                <div style={{ fontSize: 12, color: 'var(--red)', fontFamily: 'var(--sans)', fontWeight: 600, marginBottom: 4 }}>Danger Zone</div>
+                <div style={{ fontSize: 11, color: 'var(--muted2)', fontFamily: 'var(--sans)' }}>These actions cannot be undone.</div>
               </div>
               {[
                 {
@@ -2785,14 +3031,15 @@ function SettingsDrawer() {
                 <button key={item.label} onClick={() => {
                   if (window.confirm(`Are you sure? This cannot be undone.\n\n${item.label}`)) item.action()
                 }} style={{
-                  width: '100%', marginBottom: 8, padding: '10px 14px',
-                  background: 'transparent', border: '1px solid rgba(239,68,68,0.3)',
-                  borderRadius: 6, color: 'var(--red)', fontFamily: 'var(--mono)',
-                  fontSize: 12, cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s',
+                  width: '100%', marginBottom: 8, padding: '11px 14px',
+                  background: 'transparent', border: '1px solid rgba(239,68,68,0.25)',
+                  borderRadius: 8, color: 'var(--red)', fontFamily: 'var(--sans)',
+                  fontSize: 13, cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s',
                 }}>{item.label}</button>
               ))}
             </div>
           )}
+          </div>
         </div>
       </div>
     </>
@@ -3044,10 +3291,10 @@ export default function Home() {
   // ── Grid columns ────────────────────────────────────────────
   const gridColumns = useMemo(() => {
     if (uiMode === 'watch')     return '0px 1fr 0px'
-    if (uiMode === 'power')     return '260px 1fr 420px'
-    if (uiMode === 'execution') return '0px 1fr 420px'
-    const left  = historyOpen  ? '260px' : '0px'
-    const right = liveViewOpen ? '380px' : '0px'
+    if (uiMode === 'power')     return '220px 1fr 400px'
+    if (uiMode === 'execution') return '0px 1fr 400px'
+    const left  = historyOpen  ? '220px' : '0px'
+    const right = liveViewOpen ? '360px' : '0px'
     return `${left} 1fr ${right}`
   }, [uiMode, historyOpen, liveViewOpen])
 
