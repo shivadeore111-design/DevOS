@@ -30,6 +30,7 @@ import { unifiedMemoryRecall, buildMemoryInjection } from './memoryRecall'
 import * as nodeFs             from 'fs'
 import * as nodePath           from 'path'
 import * as nodeOs             from 'os'
+import { costTracker, extractTokenUsage, calculateCost } from './costTracker'
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -1679,6 +1680,7 @@ export async function callLLM(
         throw new Error(`HTTP ${r.status} from ${providerName}`)
       }
       const d = await r.json() as any
+      try { costTracker.record({ provider: providerName, model, rawResponse: d, taskType: 'user' }) } catch {}
       return d?.candidates?.[0]?.content?.parts?.[0]?.text || ''
 
     } else if (providerName === 'ollama') {
@@ -1696,6 +1698,7 @@ export async function callLLM(
         throw new Error(`HTTP ${r.status} from ${providerName}`)
       }
       const d = await r.json() as any
+      try { costTracker.record({ provider: providerName, model, rawResponse: d, taskType: 'user' }) } catch {}
       return d?.message?.content || ''
 
     } else if (providerName === 'cloudflare') {
@@ -1736,6 +1739,7 @@ export async function callLLM(
         throw new Error(`HTTP ${r.status} from ${providerName}`)
       }
       const d = await r.json() as any
+      try { costTracker.record({ provider: providerName, model, rawResponse: d, taskType: 'user' }) } catch {}
       return d?.choices?.[0]?.message?.content || ''
     }
   } catch (e: any) {
