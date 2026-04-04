@@ -33,8 +33,8 @@ import { buildCapabilityProfile }         from './core/capabilityProfile'
 import { verifyInstall, getCurrentLicense } from './core/licenseManager'
 import { scheduler }      from './core/scheduler'
 import { startMCPServer } from './core/mcpServer'
-import { dreamEngine }    from './core/dreamEngine'
-import { aidenIdentity }  from './core/aidenIdentity'
+import { checkAndRunDream }  from './core/dreamEngine'
+import { getIdentity, refreshIdentity } from './core/aidenIdentity'
 
 // ── Bootstrap ─────────────────────────────────────────────────
 
@@ -106,19 +106,19 @@ async function main(): Promise<void> {
 
         // ── Dream Engine: memory consolidation every 6 hours ──
         setInterval(async () => {
-          try { await dreamEngine.run() } catch {}
+          try { checkAndRunDream() } catch {}
         }, 6 * 60 * 60 * 1000)
         // Also run once on startup (gates will skip if not due)
         setTimeout(async () => {
-          try { await dreamEngine.run() } catch {}
+          try { checkAndRunDream() } catch {}
         }, 30_000)
 
         // ── Aiden Identity: refresh on startup + every hour ───
         setTimeout(() => {
-          try { aidenIdentity.refresh() } catch {}
+          try { refreshIdentity() } catch {}
         }, 5_000)
         setInterval(() => {
-          try { aidenIdentity.refresh() } catch {}
+          try { refreshIdentity() } catch {}
         }, 60 * 60 * 1000)
 
         // ── Background service PID management ─────────────────
