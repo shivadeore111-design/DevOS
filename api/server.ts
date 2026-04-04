@@ -68,6 +68,10 @@ import { responseCache } from '../core/responseCache'
 import { scanAndRedact, containsSecret } from '../core/secretScanner'
 import { loadBriefingConfig, saveBriefingConfig, deliverBriefing } from '../core/morningBriefing'
 import { unifiedMemoryRecall, buildMemoryInjection } from '../core/memoryRecall'
+import { costTracker, DailyCost } from '../core/costTracker'
+import { sessionMemory } from '../core/sessionMemory'
+import { memoryExtractor } from '../core/memoryExtractor'
+import { aidenIdentity, AidenIdentity } from '../core/aidenIdentity'
 
 // —— Sprint 25: module-level WebSocket clients registry (shared between createApiServer routes and startApiServer WS setup)
 let wsBroadcastClients = new Set<any>()
@@ -756,6 +760,16 @@ export function createApiServer(): Express {
 
       streamEnded = true
       clearTimeout(timeout)
+      // Track assistant response in session memory (fire-and-forget)
+      setTimeout(() => { try { sessionMemory.addMessage('assistant', fullReply) } catch {} }, 0)
+      // Memory extraction -- fire in background 100ms after response (never blocks)
+      setTimeout(async () => {
+        try {
+          const msgs = [...history, { role: 'user', content: resolvedMessage }, { role: 'assistant', content: fullReply }]
+          await memoryExtractor.extractFromConversation(msgs)
+          sessionMemory.endSession()
+        } catch {}
+      }, 100)
 
       // â”€â”€ UPDATE CONVERSATION MEMORY â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       const toolsUsed     = results.map(r => r.tool)
@@ -1754,6 +1768,45 @@ export function createApiServer(): Express {
   })
 
   // GET /api/mcp/info — MCP server discovery
+
+  // GET /api/cost — today's cost summary + per-provider breakdown
+  app.get('/api/cost', (_req: Request, res: Response) => {
+    res.json(costTracker.getDaily())
+  })
+
+  // POST /api/cost/budget — set daily budget cap { budgetUSD: number }
+  app.post('/api/cost/budget', (req: Request, res: Response) => {
+    const { budgetUSD } = req.body as { budgetUSD?: number }
+    if (typeof budgetUSD !== 'number' || budgetUSD < 0) {
+      res.status(400).json({ error: 'budgetUSD must be a non-negative number' })
+      return
+    }
+    costTracker.setBudgetCap(budgetUSD)
+    res.json({ ok: true, budgetUSD })
+  })
+  // GET /api/session/last — last session info for dashboard Settings card
+  app.get('/api/session/last', (_req: Request, res: Response) => {
+    const info = sessionMemory.getLastSessionInfo()
+    if (!info) { res.json({ title: null, currentState: null }); return }
+    res.json(info)
+  })
+
+  // GET /api/session/list — list all session summaries
+  app.get('/api/session/list', (_req: Request, res: Response) => {
+    res.json(sessionMemory.listSessions())
+  })
+
+  // GET /api/identity — Aiden identity snapshot
+  app.get('/api/identity', (_req: Request, res: Response) => {
+    res.json(aidenIdentity.get())
+  })
+
+  // POST /api/identity/refresh — force recompute from audit trail
+  app.post('/api/identity/refresh', (_req: Request, res: Response) => {
+    res.json(aidenIdentity.refresh())
+  })
+
+
   app.get('/api/mcp/info', (_req: Request, res: Response) => {
     res.json({
       mcpServer:     'http://localhost:3001',
@@ -1850,6 +1903,24 @@ export function createApiServer(): Express {
     res.flushHeaders()
     const interval = setInterval(() => res.write('data: {"type":"ping"}\n\n'), 30_000)
     req.on('close', () => clearInterval(interval))
+  })
+
+  // Wire cost_update — broadcast to WS clients whenever cost changes
+  costTracker.onChange((daily: DailyCost) => {
+    try {
+      wsBroadcastClients.forEach((ws: any) => {
+        try { ws.send(JSON.stringify({ type: 'cost_update', data: daily })) } catch {}
+      })
+    } catch {}
+  })
+
+  // Wire identity_update — broadcast whenever identity is refreshed
+  aidenIdentity.onChange((identity: AidenIdentity) => {
+    try {
+      wsBroadcastClients.forEach((ws: any) => {
+        try { ws.send(JSON.stringify({ type: 'identity_update', data: identity })) } catch {}
+      })
+    } catch {}
   })
 
   // GET /api/pulse â€” SSE stream of LivePulse events (tool:start, tool:done, plan:start, plan:done)
@@ -2728,4 +2799,14 @@ async function streamChat(
 
   streamEnded = true
   clearTimeout(timeout)
-}
+}  // Wire cost_update SSE — broadcast to pulse clients whenever cost changes
+  costTracker.onChange((daily: DailyCost) => {
+    try {
+      const payload = JSON.stringify({ event: 'cost_update', data: daily, ts: Date.now() })
+      wsBroadcastClients.forEach((ws: any) => {
+        try { ws.send(JSON.stringify({ type: 'cost_update', data: daily })) } catch {}
+      })
+    } catch {}
+  })
+
+
