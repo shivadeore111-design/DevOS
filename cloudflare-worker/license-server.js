@@ -152,15 +152,15 @@ async function handleDownload(request, env) {
   <div style="background:#1e293b;border-radius:12px;padding:24px;margin-bottom:32px;text-align:left;">
     <p style="color:#e2e8f0;font-weight:600;margin:0 0 12px;">Setup (2 minutes):</p>
     <ol style="color:#94a3b8;line-height:2.2;margin:0;padding-left:20px;">
-      <li>Run <strong style="color:#e2e8f0;">Aiden-Setup.exe</strong> below</li>
-      <li>Follow the installer wizard (Ollama optional)</li>
+      <li>Extract <strong style="color:#e2e8f0;">Aiden-v2.2.zip</strong> below</li>
+      <li>Run <code style="color:#f97316;background:#0f172a;padding:2px 6px;border-radius:4px;">install.bat</code> as Administrator</li>
       <li>Double-click <strong style="color:#e2e8f0;">Aiden</strong> on your Desktop</li>
     </ol>
   </div>
   <p style="color:#475569;font-size:13px;margin-bottom:24px;">Requires: Windows 10/11 &middot; Node.js 18+</p>
-  <a href="https://github.com/shivadeore111-design/DevOS/releases/download/v2.0.0/Aiden-Setup.exe"
+  <a href="https://github.com/shivadeore111-design/DevOS/releases/download/v2.2.0/Aiden-v2.2.zip"
      style="background:#f97316;color:#000;padding:16px 48px;border-radius:8px;text-decoration:none;font-weight:700;font-size:18px;display:inline-block;">
-    Download Aiden-Setup.exe
+    Download Aiden-v2.2.zip
   </a>
   <p style="color:#334155;font-size:11px;margin-top:24px;">Registered to: ${record.email}</p>
   <p style="color:#334155;font-size:11px;">Need help? <a href="mailto:hello@taracod.com" style="color:#f97316;">hello@taracod.com</a></p>
