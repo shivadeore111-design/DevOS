@@ -1,0 +1,12 @@
+name = "devos-landing"
+main = "landing.js"
+compatibility_date = "2026-03-30"
+workers_dev = false
+
+[[routes]]
+pattern = "devos.taracod.com/*"
+zone_name = "taracod.com"
+
+[[routes]]
+pattern = "aiden.taracod.com"
+custom_domain = true
