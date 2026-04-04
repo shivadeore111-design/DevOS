@@ -6,6 +6,8 @@ import {
 import Onboarding from '../components/Onboarding'
 import { OnboardingModal } from '../components/OnboardingModal'
 import PricingModal from '../components/PricingModal'
+import ChatHeader from '../components/ChatHeader'
+import Sidebar from '../components/Sidebar'
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -977,6 +979,7 @@ function NavBar() {
         <NavBtn active={liveViewOpen || uiMode === 'execution' || uiMode === 'power'} onClick={() => setLiveViewOpen(l => !l)} title="Live View">⌄</NavBtn>
         <NavBtn active={uiMode === 'power'} onClick={() => setUIMode(m => m === 'power' ? 'focus' : 'power')} title="Power Mode (Ctrl+P)">⊞</NavBtn>
         <NavBtn active={uiMode === 'watch'} onClick={() => setUIMode(m => m === 'watch' ? 'focus' : 'watch')} title="Watch Mode">⤢</NavBtn>
+        <ChatHeader />
         <div style={{ width: 1, height: 20, background: 'var(--border2)', margin: '0 4px' }} />
         <NavBtn onClick={() => setSettingsOpen(true)} title="Settings">⚙</NavBtn>
         <div
@@ -1062,6 +1065,10 @@ function HistorySidebar() {
             No conversations yet
           </div>
         )}
+      </div>
+
+      <div style={{ padding: '0 8px 8px' }}>
+        <Sidebar />
       </div>
 
       <div style={{

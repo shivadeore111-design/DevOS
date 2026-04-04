@@ -35,6 +35,8 @@
     "security/dataGuard.ts",
     "security/browserVault.ts",
     "agents/types.ts",
+    "agents/ceo.ts",
+    "agents/verifier.ts",
     "agents/desktopAutomator.ts",
     "integrations/computerUse/screenAgent.ts",
     "integrations/computerUse/apiRegistry.ts",

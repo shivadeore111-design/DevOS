@@ -10,6 +10,7 @@
 import fs   from 'fs'
 import path from 'path'
 import { loadBriefingConfig, deliverBriefing } from './morningBriefing'
+import { checkAndRunDream } from './dreamEngine'
 
 const TASKS_PATH = path.join(process.cwd(), 'workspace', 'scheduled-tasks.json')
 
@@ -138,6 +139,7 @@ export class Scheduler {
 
   constructor() {
     this.load()
+    this.registerDreamSchedule()
   }
 
   // ── Public API ─────────────────────────────────────────
@@ -178,6 +180,22 @@ export class Scheduler {
 
   list(): ScheduledTask[] {
     return this.tasks
+  }
+
+  // ── Dream Engine: check every 6 hours ─────────────────
+
+  registerDreamSchedule(): void {
+    // Run once 30s after startup
+    setTimeout(() => {
+      checkAndRunDream()
+    }, 30_000)
+
+    // Then every 6 hours
+    setInterval(() => {
+      checkAndRunDream()
+    }, 6 * 60 * 60 * 1000)
+
+    console.log('[Scheduler] Dream engine scheduled (every 6h, startup+30s)')
   }
 
   // ── Sprint 25: morning briefing registration ────────────
