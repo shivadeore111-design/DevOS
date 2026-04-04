@@ -3,269 +3,225 @@
 // Copyright (c) 2026 Shiva Deore. All rights reserved.
 // ============================================================
 
-// core/costTracker.ts — Per-task and daily cost tracking.
-// Extracts token usage from LLM response objects (Groq/Cerebras/OpenRouter/Gemini/Ollama),
-// calculates USD cost per provider pricing, persists daily totals to workspace/cost/,
-// and enforces a configurable daily budget cap with Ollama fallback on breach.
+// core/costTracker.ts — Token usage and cost tracking for every LLM call.
+// Hooked into callLLM in agentLoop.ts.
+// Background (system) costs are tracked separately from user budget.
 
 import fs   from 'fs'
 import path from 'path'
+import { eventBus } from './eventBus'
 
-// ── Paths ──────────────────────────────────────────────────────
+// ── Pricing (per million tokens) ─────────────────────────────
 
-const COST_DIR   = path.join(process.cwd(), 'workspace', 'cost')
-const DAILY_FILE = path.join(COST_DIR, 'daily.json')
-const LOG_FILE   = path.join(COST_DIR, 'cost-log.jsonl')
-
-// ── Provider pricing (USD per million tokens) ─────────────────
-
-const PROVIDER_PRICING: Record<string, { input: number; output: number }> = {
+const PRICING: Record<string, { input: number; output: number }> = {
   'groq':       { input: 0,    output: 0 },
   'gemini':     { input: 0,    output: 0 },
   'cerebras':   { input: 0,    output: 0 },
   'openrouter': { input: 0.14, output: 0.28 },
   'ollama':     { input: 0,    output: 0 },
   'nvidia':     { input: 0,    output: 0 },
-  // model-level overrides for OpenRouter
-  'openrouter/deepseek-v3': { input: 0.14, output: 0.28 },
+  'cloudflare': { input: 0,    output: 0 },
+  'github':     { input: 0,    output: 0 },
 }
 
-// ── Types ──────────────────────────────────────────────────────
+// ── Paths ─────────────────────────────────────────────────────
 
-export interface TokenUsage {
-  inputTokens:  number
-  outputTokens: number
-  totalTokens:  number
-}
+const COST_DIR = path.join(process.cwd(), 'workspace', 'cost')
 
-export interface CostEntry {
-  id:           string
+// ── Types ─────────────────────────────────────────────────────
+
+export interface UsageRecord {
   ts:           number
-  traceId?:     string
-  taskType:     'user' | 'system'   // system = background agents (session, dream, etc.)
   provider:     string
   model:        string
-  usage:        TokenUsage
+  inputTokens:  number
+  outputTokens: number
   costUSD:      number
+  traceId?:     string
+  isSystem:     boolean
 }
 
-export interface DailyCost {
-  date:          string             // YYYY-MM-DD
-  totalUSD:      number
-  systemUSD:     number             // background agent cost — not counted vs user budget
-  userUSD:       number             // user-initiated cost
-  byProvider:    Record<string, number>
-  entryCount:    number
-  budgetCapUSD:  number
-  budgetExceeded:boolean
-  lastUpdated:   number
+export interface DailyCostSummary {
+  date:       string
+  totalUSD:   number
+  systemUSD:  number
+  userUSD:    number
+  byProvider: Record<string, number>
 }
 
-// ── Token extraction ───────────────────────────────────────────
+// ── CostTracker ───────────────────────────────────────────────
 
-export function extractTokenUsage(raw: any): TokenUsage {
-  if (!raw || typeof raw !== 'object') {
-    return { inputTokens: 0, outputTokens: 0, totalTokens: 0 }
-  }
-
-  // Groq / Cerebras / OpenRouter / GitHub Models
-  if (raw.usage?.prompt_tokens !== undefined) {
-    const input  = raw.usage.prompt_tokens     ?? 0
-    const output = raw.usage.completion_tokens ?? 0
-    return { inputTokens: input, outputTokens: output, totalTokens: input + output }
-  }
-
-  // Gemini
-  if (raw.usageMetadata?.promptTokenCount !== undefined) {
-    const input  = raw.usageMetadata.promptTokenCount      ?? 0
-    const output = raw.usageMetadata.candidatesTokenCount  ?? 0
-    return { inputTokens: input, outputTokens: output, totalTokens: input + output }
-  }
-
-  // Ollama
-  if (raw.prompt_eval_count !== undefined) {
-    const input  = raw.prompt_eval_count ?? 0
-    const output = raw.eval_count        ?? 0
-    return { inputTokens: input, outputTokens: output, totalTokens: input + output }
-  }
-
-  return { inputTokens: 0, outputTokens: 0, totalTokens: 0 }
-}
-
-// ── Cost calculation ───────────────────────────────────────────
-
-export function calculateCost(provider: string, model: string, usage: TokenUsage): number {
-  // Try model-level key first (e.g. "openrouter/deepseek-v3")
-  const modelKey   = `${provider}/${model}`
-  const pricing    = PROVIDER_PRICING[modelKey] ?? PROVIDER_PRICING[provider] ?? { input: 0, output: 0 }
-  const inputCost  = (usage.inputTokens  * pricing.input)  / 1_000_000
-  const outputCost = (usage.outputTokens * pricing.output) / 1_000_000
-  return Math.round((inputCost + outputCost) * 1_000_000) / 1_000_000  // round to 6 dp
-}
-
-// ── CostTracker ────────────────────────────────────────────────
-
-export class CostTracker {
-  private daily: DailyCost
-  private listeners: Array<(daily: DailyCost) => void> = []
+class CostTracker {
+  private todayRecords: UsageRecord[] = []
+  private lastDate:     string        = ''
+  private budgetEnforced = false
 
   constructor() {
     try { fs.mkdirSync(COST_DIR, { recursive: true }) } catch {}
-    this.daily = this.loadOrInit()
+    this.refreshDay()
   }
 
-  // ── Public API ─────────────────────────────────────────
+  // ── Day management ─────────────────────────────────────────
 
-  /**
-   * Record a completed LLM call.  Call this after every provider.generate() /
-   * provider.generateStream() call with the raw response object so token counts
-   * can be extracted automatically.
-   */
-  record(opts: {
-    provider:  string
-    model:     string
-    rawResponse?: any
-    usage?:    TokenUsage       // supply directly if already extracted
-    traceId?:  string
-    taskType?: 'user' | 'system'
-  }): CostEntry {
-    const usage = opts.usage ?? (opts.rawResponse ? extractTokenUsage(opts.rawResponse) : { inputTokens: 0, outputTokens: 0, totalTokens: 0 })
-    const cost  = calculateCost(opts.provider, opts.model, usage)
-    const entry: CostEntry = {
-      id:       `c_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
-      ts:       Date.now(),
-      traceId:  opts.traceId,
-      taskType: opts.taskType ?? 'user',
-      provider: opts.provider,
-      model:    opts.model,
-      usage,
-      costUSD:  cost,
-    }
-
-    this.appendLog(entry)
-    this.updateDaily(entry)
-    this.notifyListeners()
-
-    return entry
+  private dateKey(): string {
+    return new Date().toISOString().slice(0, 10)
   }
 
-  /** Get today's cost summary */
-  getDaily(): DailyCost {
-    this.ensureFreshDay()
-    return { ...this.daily }
+  private logPath(): string {
+    return path.join(COST_DIR, `${this.dateKey()}.jsonl`)
   }
 
-  /** Get total cost for today (user-initiated only, excludes system) */
-  getUserDailyUSD(): number {
-    this.ensureFreshDay()
-    return this.daily.userUSD
-  }
-
-  /** Budget cap in USD — 0 means no cap */
-  getBudgetCap(): number {
-    return this.daily.budgetCapUSD
-  }
-
-  /** Set the daily budget cap */
-  setBudgetCap(usd: number): void {
-    this.ensureFreshDay()
-    this.daily.budgetCapUSD = usd
-    this.saveDaily()
-    this.notifyListeners()
-  }
-
-  /** Returns true if the user daily budget has been exceeded */
-  isBudgetExceeded(): boolean {
-    this.ensureFreshDay()
-    return this.daily.budgetCapUSD > 0 && this.daily.userUSD >= this.daily.budgetCapUSD
-  }
-
-  /** Format today's cost for display — e.g. "$0.47 today" */
-  formatToday(): string {
-    this.ensureFreshDay()
-    return `$${this.daily.totalUSD.toFixed(4)} today`
-  }
-
-  /** Per-provider breakdown as a formatted string */
-  formatBreakdown(): string {
-    this.ensureFreshDay()
-    const lines = Object.entries(this.daily.byProvider)
-      .sort((a, b) => b[1] - a[1])
-      .map(([p, c]) => `  ${p}: $${c.toFixed(6)}`)
-    return lines.length ? lines.join('\n') : '  No charges today'
-  }
-
-  /** Subscribe to cost updates (used by SSE broadcast) */
-  onChange(listener: (daily: DailyCost) => void): () => void {
-    this.listeners.push(listener)
-    return () => { this.listeners = this.listeners.filter(l => l !== listener) }
-  }
-
-  // ── Internal ───────────────────────────────────────────
-
-  private updateDaily(entry: CostEntry): void {
-    this.ensureFreshDay()
-    const d = this.daily
-    d.totalUSD   += entry.costUSD
-    d.lastUpdated = Date.now()
-    if (entry.taskType === 'system') {
-      d.systemUSD += entry.costUSD
-    } else {
-      d.userUSD   += entry.costUSD
-      d.budgetExceeded = d.budgetCapUSD > 0 && d.userUSD >= d.budgetCapUSD
-    }
-    d.byProvider[entry.provider] = (d.byProvider[entry.provider] ?? 0) + entry.costUSD
-    d.entryCount++
-    this.saveDaily()
-  }
-
-  private ensureFreshDay(): void {
-    const today = new Date().toISOString().slice(0, 10)
-    if (this.daily.date !== today) {
-      this.daily = this.loadOrInit()
+  private refreshDay(): void {
+    const today = this.dateKey()
+    if (today === this.lastDate) return
+    this.lastDate       = today
+    this.budgetEnforced = false
+    const p = this.logPath()
+    if (!fs.existsSync(p)) { this.todayRecords = []; return }
+    try {
+      this.todayRecords = fs.readFileSync(p, 'utf-8')
+        .trim().split('\n').filter(Boolean)
+        .map(l => { try { return JSON.parse(l) as UsageRecord } catch { return null } })
+        .filter((r): r is UsageRecord => r !== null)
+    } catch {
+      this.todayRecords = []
     }
   }
 
-  private loadOrInit(): DailyCost {
-    const today = new Date().toISOString().slice(0, 10)
-    try {
-      if (fs.existsSync(DAILY_FILE)) {
-        const saved = JSON.parse(fs.readFileSync(DAILY_FILE, 'utf-8')) as DailyCost
-        if (saved.date === today) return saved
-      }
-    } catch {}
-    // New day — read budget cap from previous day if available
-    let budgetCapUSD = 2.0   // $2 default
-    try {
-      if (fs.existsSync(DAILY_FILE)) {
-        const prev = JSON.parse(fs.readFileSync(DAILY_FILE, 'utf-8')) as DailyCost
-        budgetCapUSD = prev.budgetCapUSD ?? 2.0
-      }
-    } catch {}
-    return { date: today, totalUSD: 0, systemUSD: 0, userUSD: 0, byProvider: {}, entryCount: 0, budgetCapUSD, budgetExceeded: false, lastUpdated: Date.now() }
-  }
+  // ── Main tracking call ─────────────────────────────────────
 
-  private saveDaily(): void {
+  trackUsage(
+    provider:     string,
+    model:        string,
+    inputTokens:  number,
+    outputTokens: number,
+    traceId?:     string,
+    isSystem      = false,
+  ): void {
+    this.refreshDay()
+
+    const pricing = PRICING[provider] ?? { input: 0, output: 0 }
+    const costUSD = (inputTokens * pricing.input + outputTokens * pricing.output) / 1_000_000
+
+    const record: UsageRecord = {
+      ts: Date.now(),
+      provider,
+      model,
+      inputTokens,
+      outputTokens,
+      costUSD,
+      traceId,
+      isSystem,
+    }
+
+    this.todayRecords.push(record)
+
     try {
-      fs.writeFileSync(DAILY_FILE, JSON.stringify(this.daily, null, 2))
+      fs.appendFileSync(this.logPath(), JSON.stringify(record) + '\n')
     } catch (e: any) {
-      console.warn('[CostTracker] Failed to save daily:', e.message)
+      console.error('[CostTracker] Write failed:', e.message)
     }
-  }
 
-  private appendLog(entry: CostEntry): void {
+    // Budget enforcement — only for user calls, only trigger once per day
+    if (!isSystem && !this.budgetEnforced) {
+      const userTotal = this.getDailyUserCost()
+      const budget    = this.getDailyBudget()
+      if (userTotal >= budget) {
+        this.budgetEnforced = true
+        this.enforceBudgetCap(userTotal, budget)
+      }
+    }
+
+    // Emit event for dashboard
     try {
-      fs.appendFileSync(LOG_FILE, JSON.stringify(entry) + '\n')
+      eventBus.emit('cost_update', this.getDailySummary())
     } catch {}
   }
 
-  private notifyListeners(): void {
-    const snap = this.getDaily()
-    for (const l of this.listeners) {
-      try { l(snap) } catch {}
+  // ── Accessors ──────────────────────────────────────────────
+
+  getDailyBudget(): number {
+    try {
+      const cfgPath = path.join(process.cwd(), 'config', 'devos.config.json')
+      const raw     = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as any
+      return typeof raw.dailyBudgetUSD === 'number' ? raw.dailyBudgetUSD : 5.00
+    } catch {
+      return 5.00
     }
+  }
+
+  getDailyUserCost(): number {
+    this.refreshDay()
+    return this.todayRecords
+      .filter(r => !r.isSystem)
+      .reduce((s, r) => s + r.costUSD, 0)
+  }
+
+  getDailySystemCost(): number {
+    this.refreshDay()
+    return this.todayRecords
+      .filter(r => r.isSystem)
+      .reduce((s, r) => s + r.costUSD, 0)
+  }
+
+  getDailySummary(): DailyCostSummary {
+    this.refreshDay()
+    const byProvider: Record<string, number> = {}
+    let totalUSD = 0, systemUSD = 0, userUSD = 0
+
+    for (const r of this.todayRecords) {
+      byProvider[r.provider] = (byProvider[r.provider] ?? 0) + r.costUSD
+      totalUSD  += r.costUSD
+      if (r.isSystem) systemUSD += r.costUSD
+      else            userUSD   += r.costUSD
+    }
+
+    return {
+      date: this.dateKey(),
+      totalUSD,
+      systemUSD,
+      userUSD,
+      byProvider,
+    }
+  }
+
+  getTraceTotal(traceId: string): number {
+    this.refreshDay()
+    return this.todayRecords
+      .filter(r => r.traceId === traceId)
+      .reduce((s, r) => s + r.costUSD, 0)
+  }
+
+  formatUserCost(): string {
+    const usd = this.getDailyUserCost()
+    return `$${usd.toFixed(2)} today`
+  }
+
+  // ── Budget enforcement ─────────────────────────────────────
+
+  private enforceBudgetCap(userTotal: number, budget: number): void {
+    console.warn(`[CostTracker] Daily budget cap $${budget} reached ($${userTotal.toFixed(4)} used) — switching to Ollama`)
+
+    // Switch routing to Ollama-only
+    try {
+      const configPath = path.join(process.cwd(), 'config', 'devos.config.json')
+      const raw        = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as any
+      raw.routing      = { ...raw.routing, mode: 'manual' }
+      raw.model        = { ...raw.model, active: 'ollama' }
+      fs.writeFileSync(configPath, JSON.stringify(raw, null, 2))
+    } catch (e: any) {
+      console.error('[CostTracker] Failed to switch to Ollama:', e.message)
+    }
+
+    // Desktop notification — fire-and-forget
+    import('./toolRegistry').then(({ executeTool }) => {
+      executeTool('notify', {
+        message: `DevOS daily budget cap ($${budget}) reached. Switched to Ollama to prevent overspending.`,
+      }).catch(() => {})
+    }).catch(() => {})
   }
 }
 
 // ── Singleton ──────────────────────────────────────────────────
+
 export const costTracker = new CostTracker()

@@ -3,152 +3,206 @@
 // Copyright (c) 2026 Shiva Deore. All rights reserved.
 // ============================================================
 
-// core/aidenIdentity.ts — Aiden's evolving identity system.
-// Derives level (1-5), title, skillsLearned, streakDays, and
-// topStrength from AuditTrail task counts. Persists to
-// workspace/identity.json. Broadcasts identity_update via SSE.
-//
-// Called: on server start + after each completed chat/tool action.
+// core/aidenIdentity.ts — Aiden's persistent identity and level system.
+// Computed from AuditTrail (XP) + SkillTeacher (skills learned) + sessions (streak).
+// Persisted to workspace/identity.json. Emits identity_update via eventBus.
 
 import fs   from 'fs'
 import path from 'path'
-import { auditTrail } from './auditTrail'
+import { auditTrail }  from './auditTrail'
+import { skillTeacher } from './skillTeacher'
+import { eventBus }    from './eventBus'
 
-// ── Paths ──────────────────────────────────────────────────────
-
-const IDENTITY_PATH = path.join(process.cwd(), 'workspace', 'identity.json')
-
-// ── Types ──────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────
 
 export interface AidenIdentity {
-  level:         number       // 1-5
-  title:         string       // e.g. "Apprentice", "Operator", "Specialist", "Mastermind", "Architect"
-  xp:            number       // total successful tasks
-  nextLevelXp:   number       // XP needed to reach next level
-  skillsLearned: number       // unique tools used successfully
-  streakDays:    number       // consecutive days with ≥1 successful action
-  topStrength:   string       // most-used tool name
-  lastUpdated:   string       // ISO date
+  level:         number   // 1–5
+  title:         string   // Apprentice | Assistant | Specialist | Expert | Architect
+  xp:            number   // total successful tasks from AuditTrail
+  skillsLearned: number   // from skillTeacher
+  streakDays:    number   // consecutive days with sessions
+  topStrength:   string   // Research | Code | Automation | Analysis
+  xpToNextLevel: number   // XP needed to reach next level
+  xpProgress:    number   // 0.0–1.0 progress toward next level
+  lastUpdated:   string   // ISO date
 }
 
-// ── Level thresholds ───────────────────────────────────────────
+// ── Constants ─────────────────────────────────────────────────
 
-const LEVELS = [
-  { level: 1, title: 'Apprentice',  minXp: 0   },
-  { level: 2, title: 'Operator',    minXp: 25  },
-  { level: 3, title: 'Specialist',  minXp: 100 },
-  { level: 4, title: 'Mastermind',  minXp: 300 },
-  { level: 5, title: 'Architect',   minXp: 750 },
-] as const
+const IDENTITY_PATH = path.join(process.cwd(), 'workspace', 'identity.json')
+const AUDIT_PATH    = path.join(process.cwd(), 'workspace', 'audit', 'audit.jsonl')
+const SESSIONS_DIR  = path.join(process.cwd(), 'workspace', 'sessions')
 
-function levelFromXp(xp: number): { level: number; title: string; nextLevelXp: number } {
-  let current: { level: number; title: string; minXp: number } = LEVELS[0]
-  for (const l of LEVELS) {
-    if (xp >= l.minXp) current = l
-  }
-  const idx  = LEVELS.findIndex(l => l.level === current.level)
-  const next = LEVELS[idx + 1]
+const LEVEL_THRESHOLDS = [0, 10, 50, 200, 500]   // XP needed for levels 1–5
+const TITLES           = ['Apprentice', 'Assistant', 'Specialist', 'Expert', 'Architect']
+
+// ── Level helpers ─────────────────────────────────────────────
+
+function computeLevel(xp: number): number {
+  if (xp < 10)  return 1
+  if (xp < 50)  return 2
+  if (xp < 200) return 3
+  if (xp < 500) return 4
+  return 5
+}
+
+function computeProgress(xp: number, level: number): { xpToNext: number; progress: number } {
+  if (level >= 5) return { xpToNext: 0, progress: 1 }
+  const floor = LEVEL_THRESHOLDS[level - 1]
+  const ceil  = LEVEL_THRESHOLDS[level]
+  const span  = ceil - floor
+  const done  = xp - floor
   return {
-    level:       current.level,
-    title:       current.title,
-    nextLevelXp: next ? next.minXp : current.minXp,
+    xpToNext: Math.max(0, ceil - xp),
+    progress: Math.min(1, Math.max(0, done / span)),
   }
 }
 
-// ── Streak calculation ─────────────────────────────────────────
-// Reads audit log and counts consecutive days with ≥1 success
-// working backwards from today.
+// ── XP: count successful tasks from audit trail ───────────────
 
-function computeStreak(entries: Array<{ ts: number; success: boolean }>): number {
-  if (entries.length === 0) return 0
-
-  // Collect unique day strings that had at least one success
-  const successDays = new Set<string>()
-  for (const e of entries) {
-    if (e.success) {
-      successDays.add(new Date(e.ts).toDateString())
-    }
-  }
-
-  let streak = 0
-  const today = new Date()
-  for (let i = 0; i < 365; i++) {
-    const d = new Date(today)
-    d.setDate(today.getDate() - i)
-    if (successDays.has(d.toDateString())) {
-      streak++
-    } else {
-      break
-    }
-  }
-  return streak
-}
-
-// ── Load full audit history ────────────────────────────────────
-
-function loadAllAuditEntries(): Array<{ ts: number; success: boolean; tool?: string }> {
-  const auditDir  = path.join(process.cwd(), 'workspace', 'audit')
-  const auditFile = path.join(auditDir, 'audit.jsonl')
+function computeXP(): number {
   try {
-    if (!fs.existsSync(auditFile)) return []
-    return fs.readFileSync(auditFile, 'utf-8')
+    if (!fs.existsSync(AUDIT_PATH)) return 0
+    return fs.readFileSync(AUDIT_PATH, 'utf-8')
+      .trim().split('\n').filter(Boolean)
+      .map(l => { try { return JSON.parse(l) } catch { return null } })
+      .filter((e): e is { success: boolean } => e !== null && e.success === true)
+      .length
+  } catch {
+    return 0
+  }
+}
+
+// ── Top strength: most frequent tool category ─────────────────
+
+function computeTopStrength(): string {
+  try {
+    if (!fs.existsSync(AUDIT_PATH)) return 'Research'
+
+    const entries = fs.readFileSync(AUDIT_PATH, 'utf-8')
       .trim().split('\n').filter(Boolean)
       .map(l => { try { return JSON.parse(l) } catch { return null } })
       .filter(Boolean)
+
+    const counts: Record<string, number> = {
+      Research:   0,
+      Code:       0,
+      Automation: 0,
+      Analysis:   0,
+    }
+
+    for (const e of entries) {
+      const tool = (e.tool || '') as string
+      if (/web_search|deep_research|fetch/.test(tool))           counts.Research++
+      else if (/file_write|run_python|run_node|shell/.test(tool)) counts.Code++
+      else if (/mouse|keyboard|browser|vision/.test(tool))        counts.Automation++
+      else if (/system_info|get_stocks|get_market/.test(tool))    counts.Analysis++
+    }
+
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])[0][0] as string
   } catch {
-    return []
+    return 'Research'
   }
 }
 
-// ── Compute identity from audit data ──────────────────────────
+// ── Streak: consecutive days with session files ───────────────
+
+function computeStreakDays(): number {
+  try {
+    if (!fs.existsSync(SESSIONS_DIR)) return 0
+
+    const sessionDates = new Set<string>()
+    for (const f of fs.readdirSync(SESSIONS_DIR)) {
+      if (!f.endsWith('.md')) continue
+      try {
+        const mtime = fs.statSync(path.join(SESSIONS_DIR, f)).mtime
+        sessionDates.add(mtime.toISOString().slice(0, 10))
+      } catch {}
+    }
+
+    if (sessionDates.size === 0) return 0
+
+    // Also count today's audit entries
+    const auditDates = new Set<string>()
+    if (fs.existsSync(AUDIT_PATH)) {
+      for (const line of fs.readFileSync(AUDIT_PATH, 'utf-8').trim().split('\n').filter(Boolean)) {
+        try {
+          const e = JSON.parse(line)
+          if (e.ts) auditDates.add(new Date(e.ts).toISOString().slice(0, 10))
+        } catch {}
+      }
+    }
+
+    const allDates = new Set([...sessionDates, ...auditDates])
+    const sorted   = Array.from(allDates).sort().reverse()
+
+    let streak = 0
+    let cursor = new Date()
+    cursor.setHours(0, 0, 0, 0)
+
+    for (const d of sorted) {
+      const dateStr = cursor.toISOString().slice(0, 10)
+      if (d === dateStr) {
+        streak++
+        cursor.setDate(cursor.getDate() - 1)
+      } else {
+        break
+      }
+    }
+
+    return streak
+  } catch {
+    return 0
+  }
+}
+
+// ── Main compute ──────────────────────────────────────────────
 
 export function computeIdentity(): AidenIdentity {
-  const entries = loadAllAuditEntries()
+  const xp     = computeXP()
+  const level  = computeLevel(xp)
+  const title  = TITLES[level - 1]
+  const { xpToNext, progress } = computeProgress(xp, level)
 
-  // XP = number of successful non-system actions
-  const successEntries = entries.filter(e => e.success)
-  const xp             = successEntries.length
+  const stats        = skillTeacher.getStats()
+  const skillsLearned = stats.learned + stats.approved
 
-  // Top strength = most-used tool overall
-  const toolCounts: Record<string, number> = {}
-  for (const e of entries) {
-    if (e.tool) toolCounts[e.tool] = (toolCounts[e.tool] || 0) + 1
-  }
-  const topStrength = Object.entries(toolCounts)
-    .sort((a, b) => b[1] - a[1])[0]?.[0] || 'none'
-
-  // Unique tools used successfully
-  const uniqueTools = new Set(successEntries.filter(e => e.tool).map(e => e.tool))
-  const skillsLearned = uniqueTools.size
-
-  // Streak
-  const streakDays = computeStreak(entries)
-
-  // Level
-  const { level, title, nextLevelXp } = levelFromXp(xp)
-
-  return {
+  const identity: AidenIdentity = {
     level,
     title,
     xp,
-    nextLevelXp,
     skillsLearned,
-    streakDays,
-    topStrength,
-    lastUpdated: new Date().toISOString().slice(0, 10),
+    streakDays:   computeStreakDays(),
+    topStrength:  computeTopStrength(),
+    xpToNextLevel: xpToNext,
+    xpProgress:    progress,
+    lastUpdated:   new Date().toISOString(),
   }
+
+  return identity
 }
 
-// ── Persist identity ───────────────────────────────────────────
+// ── Persist & emit ─────────────────────────────────────────────
 
-export function saveIdentity(identity: AidenIdentity): void {
+export function refreshIdentity(): AidenIdentity {
+  const identity = computeIdentity()
+
   try {
     fs.mkdirSync(path.dirname(IDENTITY_PATH), { recursive: true })
     fs.writeFileSync(IDENTITY_PATH, JSON.stringify(identity, null, 2))
   } catch (e: any) {
-    console.warn('[AidenIdentity] Failed to save:', e.message)
+    console.error('[AidenIdentity] Write failed:', e.message)
   }
+
+  try {
+    eventBus.emit('identity_update', identity)
+  } catch {}
+
+  return identity
 }
+
+// ── Load persisted (fast, no compute) ─────────────────────────
 
 export function loadIdentity(): AidenIdentity | null {
   try {
@@ -159,46 +213,14 @@ export function loadIdentity(): AidenIdentity | null {
   }
 }
 
-// ── AidenIdentityManager class ─────────────────────────────────
+// ── getIdentity: load cached or compute fresh ─────────────────
 
-export class AidenIdentityManager {
-  private listeners: Array<(identity: AidenIdentity) => void> = []
-
-  // ── Refresh identity from audit data ──────────────────
-  refresh(): AidenIdentity {
-    const identity = computeIdentity()
-    saveIdentity(identity)
-    this.notifyListeners(identity)
-    return identity
-  }
-
-  // ── Get current identity (from cache or compute) ───────
-  get(): AidenIdentity {
-    const cached = loadIdentity()
-    if (cached && cached.lastUpdated === new Date().toISOString().slice(0, 10)) {
-      return cached
-    }
-    return this.refresh()
-  }
-
-  // ── Subscribe to identity updates (used by SSE broadcast) ─
-  onChange(listener: (identity: AidenIdentity) => void): () => void {
-    this.listeners.push(listener)
-    return () => { this.listeners = this.listeners.filter(l => l !== listener) }
-  }
-
-  // ── Format identity for system prompt injection ─────────
-  formatForPrompt(): string {
-    const id = this.get()
-    return `Aiden Identity: Level ${id.level} ${id.title} | XP: ${id.xp} | Skills: ${id.skillsLearned} | Streak: ${id.streakDays}d | Top strength: ${id.topStrength}`
-  }
-
-  private notifyListeners(identity: AidenIdentity): void {
-    for (const l of this.listeners) {
-      try { l(identity) } catch {}
-    }
-  }
+export function getIdentity(): AidenIdentity {
+  return loadIdentity() ?? refreshIdentity()
 }
 
-// ── Singleton ──────────────────────────────────────────────────
-export const aidenIdentity = new AidenIdentityManager()
+// ── Singleton initialisation on import ────────────────────────
+
+try {
+  fs.mkdirSync(path.dirname(IDENTITY_PATH), { recursive: true })
+} catch {}

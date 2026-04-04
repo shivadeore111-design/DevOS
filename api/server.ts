@@ -68,10 +68,11 @@ import { responseCache } from '../core/responseCache'
 import { scanAndRedact, containsSecret } from '../core/secretScanner'
 import { loadBriefingConfig, saveBriefingConfig, deliverBriefing } from '../core/morningBriefing'
 import { unifiedMemoryRecall, buildMemoryInjection } from '../core/memoryRecall'
-import { costTracker, DailyCost } from '../core/costTracker'
+import { costTracker }   from '../core/costTracker'
 import { sessionMemory } from '../core/sessionMemory'
 import { memoryExtractor } from '../core/memoryExtractor'
-import { aidenIdentity, AidenIdentity } from '../core/aidenIdentity'
+import { getIdentity, refreshIdentity } from '../core/aidenIdentity'
+import { eventBus } from '../core/eventBus'
 
 // —— Sprint 25: module-level WebSocket clients registry (shared between createApiServer routes and startApiServer WS setup)
 let wsBroadcastClients = new Set<any>()
@@ -449,7 +450,7 @@ export function createApiServer(): Express {
           await streamChat(resolvedMessage, history, userName, provider, activeModel, apiName, (data: object) => {
             const d = data as any
             if (d.token) jsonTokens.push(d.token)
-          })
+          }, sessionId)
           incrementUsage(apiName)
           fullReply = jsonTokens.join('')
           conversationMemory.addAssistantMessage(fullReply)
@@ -499,7 +500,7 @@ export function createApiServer(): Express {
             await streamChat(resolvedMessage, history, userName, provider, activeModel, apiName, (data: object) => {
               const d = data as any
               if (d.token) jsonTokens.push(d.token)
-            })
+            }, sessionId)
             fullReply = jsonTokens.join('')
           }
           incrementUsage(apiName)
@@ -531,6 +532,12 @@ export function createApiServer(): Express {
         conversationMemory.updateFromExecution(toolsUsed, filesCreated, searchQueries, plan.planId)
         conversationMemory.addAssistantMessage(fullReply, { toolsUsed, filesCreated, searchQueries, planId: plan.planId })
         incrementUsage(apiName)
+
+        // Sprint 30: session memory + identity refresh (non-blocking)
+        setTimeout(() => {
+          sessionMemory.addExchange(sessionId || 'default', resolvedMessage, fullReply, filesCreated)
+          refreshIdentity()
+        }, 100)
 
         res.json({ message: fullReply, provider: apiName, toolsUsed, filesCreated }); return
 
@@ -592,7 +599,7 @@ export function createApiServer(): Express {
         await streamChat(message, history, userName, provider, activeModel, apiName, (data: object) => {
           const d = data as any
           if (d.token) convTokens.push(d.token)
-        })
+        }, sessionId)
         const reply = convTokens.join('').trim() || 'Hey! What do you need?'
         const words = reply.split(' ')
         for (const word of words) {
@@ -623,7 +630,7 @@ export function createApiServer(): Express {
 
       // â”€â”€ FORCE CHAT MODE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       if (mode === 'chat') {
-        await streamChat(resolvedMessage, history, userName, provider, activeModel, apiName, send)
+        await streamChat(resolvedMessage, history, userName, provider, activeModel, apiName, send, sessionId)
         incrementUsage(apiName)
         send({ done: true, provider: apiName })
         res.end()
@@ -682,7 +689,7 @@ export function createApiServer(): Express {
             await new Promise(r => setTimeout(r, 10))
           }
         } else {
-          await streamChat(resolvedMessage, history, userName, provider, activeModel, apiName, send)
+          await streamChat(resolvedMessage, history, userName, provider, activeModel, apiName, send, sessionId)
         }
 
         incrementUsage(apiName)
@@ -760,16 +767,6 @@ export function createApiServer(): Express {
 
       streamEnded = true
       clearTimeout(timeout)
-      // Track assistant response in session memory (fire-and-forget)
-      setTimeout(() => { try { sessionMemory.addMessage('assistant', fullReply) } catch {} }, 0)
-      // Memory extraction -- fire in background 100ms after response (never blocks)
-      setTimeout(async () => {
-        try {
-          const msgs = [...history, { role: 'user', content: resolvedMessage }, { role: 'assistant', content: fullReply }]
-          await memoryExtractor.extractFromConversation(msgs)
-          sessionMemory.endSession()
-        } catch {}
-      }, 100)
 
       // â”€â”€ UPDATE CONVERSATION MEMORY â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       const toolsUsed     = results.map(r => r.tool)
@@ -783,6 +780,13 @@ export function createApiServer(): Express {
       conversationMemory.updateFromExecution(toolsUsed, filesCreated, searchQueries, plan.planId)
       conversationMemory.addAssistantMessage(fullReply, { toolsUsed, filesCreated, searchQueries, planId: plan.planId })
       userCognitionProfile.observe(resolvedMessage, fullReply)
+
+      // Sprint 30: session memory + identity refresh (non-blocking)
+      setTimeout(() => {
+        sessionMemory.addExchange(sessionId || 'default', resolvedMessage, fullReply, filesCreated)
+        memoryExtractor.extractFromSession(sessionId || 'default').catch(() => {})
+        refreshIdentity()
+      }, 100)
 
       incrementUsage(apiName)
       send({ done: true, provider: apiName })
@@ -1768,45 +1772,6 @@ export function createApiServer(): Express {
   })
 
   // GET /api/mcp/info — MCP server discovery
-
-  // GET /api/cost — today's cost summary + per-provider breakdown
-  app.get('/api/cost', (_req: Request, res: Response) => {
-    res.json(costTracker.getDaily())
-  })
-
-  // POST /api/cost/budget — set daily budget cap { budgetUSD: number }
-  app.post('/api/cost/budget', (req: Request, res: Response) => {
-    const { budgetUSD } = req.body as { budgetUSD?: number }
-    if (typeof budgetUSD !== 'number' || budgetUSD < 0) {
-      res.status(400).json({ error: 'budgetUSD must be a non-negative number' })
-      return
-    }
-    costTracker.setBudgetCap(budgetUSD)
-    res.json({ ok: true, budgetUSD })
-  })
-  // GET /api/session/last — last session info for dashboard Settings card
-  app.get('/api/session/last', (_req: Request, res: Response) => {
-    const info = sessionMemory.getLastSessionInfo()
-    if (!info) { res.json({ title: null, currentState: null }); return }
-    res.json(info)
-  })
-
-  // GET /api/session/list — list all session summaries
-  app.get('/api/session/list', (_req: Request, res: Response) => {
-    res.json(sessionMemory.listSessions())
-  })
-
-  // GET /api/identity — Aiden identity snapshot
-  app.get('/api/identity', (_req: Request, res: Response) => {
-    res.json(aidenIdentity.get())
-  })
-
-  // POST /api/identity/refresh — force recompute from audit trail
-  app.post('/api/identity/refresh', (_req: Request, res: Response) => {
-    res.json(aidenIdentity.refresh())
-  })
-
-
   app.get('/api/mcp/info', (_req: Request, res: Response) => {
     res.json({
       mcpServer:     'http://localhost:3001',
@@ -1895,32 +1860,53 @@ export function createApiServer(): Express {
     })
   })
 
-  // GET /api/stream â€” SSE keep-alive
+  // GET /api/stream — SSE keep-alive + cost_update + identity_update events
   app.get('/api/stream', (req: Request, res: Response) => {
     res.setHeader('Content-Type',  'text/event-stream')
     res.setHeader('Cache-Control', 'no-cache')
     res.setHeader('Connection',    'keep-alive')
+    res.setHeader('Access-Control-Allow-Origin', '*')
     res.flushHeaders()
-    const interval = setInterval(() => res.write('data: {"type":"ping"}\n\n'), 30_000)
-    req.on('close', () => clearInterval(interval))
+
+    const ping = setInterval(() => {
+      try { res.write('data: {“type”:”ping”}\n\n') } catch {}
+    }, 30_000)
+
+    const sendEvent = (type: string, data: object) => {
+      try {
+        res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`)
+      } catch {}
+    }
+
+    const onCostUpdate     = (data: object) => sendEvent('cost_update',     data)
+    const onIdentityUpdate = (data: object) => sendEvent('identity_update', data)
+
+    eventBus.on('cost_update',     onCostUpdate)
+    eventBus.on('identity_update', onIdentityUpdate)
+
+    req.on('close', () => {
+      clearInterval(ping)
+      eventBus.removeListener('cost_update',     onCostUpdate)
+      eventBus.removeListener('identity_update', onIdentityUpdate)
+    })
   })
 
-  // Wire cost_update — broadcast to WS clients whenever cost changes
-  costTracker.onChange((daily: DailyCost) => {
+  // GET /api/identity — Aiden identity snapshot
+  app.get('/api/identity', (_req: Request, res: Response) => {
     try {
-      wsBroadcastClients.forEach((ws: any) => {
-        try { ws.send(JSON.stringify({ type: 'cost_update', data: daily })) } catch {}
-      })
-    } catch {}
+      res.json(getIdentity())
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
   })
 
-  // Wire identity_update — broadcast whenever identity is refreshed
-  aidenIdentity.onChange((identity: AidenIdentity) => {
+  // GET /api/cost — today's cost summary
+  app.get('/api/cost', (_req: Request, res: Response) => {
     try {
-      wsBroadcastClients.forEach((ws: any) => {
-        try { ws.send(JSON.stringify({ type: 'identity_update', data: identity })) } catch {}
-      })
-    } catch {}
+      res.json(costTracker.getDailySummary())
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
   })
 
   // GET /api/pulse â€” SSE stream of LivePulse events (tool:start, tool:done, plan:start, plan:done)
@@ -2458,6 +2444,9 @@ export function startApiServer(portArg?: number): Express {
     }
   } catch {}
 
+  // Sprint 30: refresh Aiden identity on startup
+  setTimeout(() => { try { refreshIdentity() } catch {} }, 2000)
+
   // Run crash recovery on startup â€” non-blocking, finds 'running' tasks from prior session
   recoverTasks().catch(e => console.error('[Startup] Recovery error:', e.message))
 
@@ -2572,13 +2561,14 @@ async function raceProviders(
 // ── Pure-chat streaming helper (no planner, no tools) ─────────
 
 async function streamChat(
-  message:  string,
-  history:  { role: string; content: string }[],
-  userName: string,
+  message:   string,
+  history:   { role: string; content: string }[],
+  userName:  string,
   _provider: any,
-  model:    string,
-  apiName:  string,
-  send:     (data: object) => void,
+  model:     string,
+  apiName:   string,
+  send:      (data: object) => void,
+  sessionId?: string,
 ): Promise<void> {
   // ── Sprint 1: First Message WOW — silent system context gathering ───────────────────
   const isFirstMessage = history.length === 0
@@ -2609,7 +2599,23 @@ async function streamChat(
     }
   } catch {}
 
-  const chatPrompt = `You are Aiden — a personal AI OS built for ${userName}. You are sharp, direct, and slightly witty. You speak like a trusted co-founder. Today: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.${cognitionHint}${firstMessageContext}${memoryContext}`
+  // Sprint 30: inject last session context on first message
+  let sessionContext = ''
+  if (isFirstMessage && sessionId) {
+    try {
+      const lastCtx = sessionMemory.getLastContext(sessionId)
+      if (lastCtx) sessionContext = `\n\nPRIOR SESSION CONTEXT:\n${lastCtx}`
+    } catch {}
+  }
+
+  // Sprint 30: inject long-term memory index
+  let memoryIndex = ''
+  try {
+    const idx = memoryExtractor.loadMemoryIndex()
+    if (idx) memoryIndex = `\n\nMEMORY INDEX (topics you've learned about this user — use as background, not to recite):\n${idx}`
+  } catch {}
+
+  const chatPrompt = `You are Aiden — a personal AI OS built for ${userName}. You are sharp, direct, and slightly witty. You speak like a trusted co-founder. Today: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.${cognitionHint}${firstMessageContext}${memoryContext}${sessionContext}${memoryIndex}`
 
   const msgs = [
     { role: 'system', content: chatPrompt },
@@ -2799,14 +2805,4 @@ async function streamChat(
 
   streamEnded = true
   clearTimeout(timeout)
-}  // Wire cost_update SSE — broadcast to pulse clients whenever cost changes
-  costTracker.onChange((daily: DailyCost) => {
-    try {
-      const payload = JSON.stringify({ event: 'cost_update', data: daily, ts: Date.now() })
-      wsBroadcastClients.forEach((ws: any) => {
-        try { ws.send(JSON.stringify({ type: 'cost_update', data: daily })) } catch {}
-      })
-    } catch {}
-  })
-
-
+}

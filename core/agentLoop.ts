@@ -27,10 +27,10 @@ import { AIDEN_RESPONDER_SYSTEM } from './aidenPersonality'
 import { auditTrail }             from './auditTrail'
 import { mcpClient }             from './mcpClient'
 import { unifiedMemoryRecall, buildMemoryInjection } from './memoryRecall'
+import { costTracker } from './costTracker'
 import * as nodeFs             from 'fs'
 import * as nodePath           from 'path'
 import * as nodeOs             from 'os'
-import { costTracker, extractTokenUsage, calculateCost } from './costTracker'
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -1656,6 +1656,7 @@ export async function callLLM(
   apiKey:       string,
   model:        string,
   providerName: string,
+  opts?: { traceId?: string; isSystem?: boolean },
 ): Promise<string> {
   const messages = [{ role: 'user', content: prompt }]
   try {
@@ -1680,7 +1681,14 @@ export async function callLLM(
         throw new Error(`HTTP ${r.status} from ${providerName}`)
       }
       const d = await r.json() as any
-      try { costTracker.record({ provider: providerName, model, rawResponse: d, taskType: 'user' }) } catch {}
+      try {
+        costTracker.trackUsage(
+          providerName, model,
+          d?.usageMetadata?.promptTokenCount    ?? 0,
+          d?.usageMetadata?.candidatesTokenCount ?? 0,
+          opts?.traceId, opts?.isSystem ?? false,
+        )
+      } catch {}
       return d?.candidates?.[0]?.content?.parts?.[0]?.text || ''
 
     } else if (providerName === 'ollama') {
@@ -1698,7 +1706,14 @@ export async function callLLM(
         throw new Error(`HTTP ${r.status} from ${providerName}`)
       }
       const d = await r.json() as any
-      try { costTracker.record({ provider: providerName, model, rawResponse: d, taskType: 'user' }) } catch {}
+      try {
+        costTracker.trackUsage(
+          providerName, model,
+          d?.prompt_eval_count ?? 0,
+          d?.eval_count        ?? 0,
+          opts?.traceId, opts?.isSystem ?? false,
+        )
+      } catch {}
       return d?.message?.content || ''
 
     } else if (providerName === 'cloudflare') {
@@ -1719,6 +1734,9 @@ export async function callLLM(
       }
       if (!r.ok) throw new Error(`cloudflare ${r.status}`)
       const d = await r.json() as any
+      try {
+        costTracker.trackUsage(providerName, model, 0, 0, opts?.traceId, opts?.isSystem ?? false)
+      } catch {}
       return d?.result?.response || ''
 
     } else {
@@ -1739,7 +1757,14 @@ export async function callLLM(
         throw new Error(`HTTP ${r.status} from ${providerName}`)
       }
       const d = await r.json() as any
-      try { costTracker.record({ provider: providerName, model, rawResponse: d, taskType: 'user' }) } catch {}
+      try {
+        costTracker.trackUsage(
+          providerName, model,
+          d?.usage?.prompt_tokens    ?? 0,
+          d?.usage?.completion_tokens ?? 0,
+          opts?.traceId, opts?.isSystem ?? false,
+        )
+      } catch {}
       return d?.choices?.[0]?.message?.content || ''
     }
   } catch (e: any) {

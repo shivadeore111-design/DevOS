@@ -4,97 +4,48 @@
 // ============================================================
 
 // core/dreamEngine.ts — Background memory consolidation.
-// Runs every 6 hours (wired via scheduler), consolidates recent
-// session transcripts into workspace/memory/ using a 4-phase approach.
-//
-// Gates: time (24h since last), session count (5+ new), lock (no other dream).
-// Lock file: workspace/dream.lock — PID-based, stolen if holder is dead.
-// LLM: system cost only (Cerebras → Ollama fallback).
+// Runs when: time since last dream >= 24h AND 5+ new sessions AND no lock.
+// 4-phase: Orient → Gather → Consolidate → Prune.
+// Restricted to read-only bash + write to workspace/memory/ only.
 
 import fs   from 'fs'
 import path from 'path'
-import { costTracker } from './costTracker'
-import { memoryExtractor } from './memoryExtractor'
-import { auditTrail } from './auditTrail'
+import { callBgLLM }    from './bgLLM'
+import { auditTrail }   from './auditTrail'
 
-// ── Paths ──────────────────────────────────────────────────────
-
-const DREAM_LOCK   = path.join(process.cwd(), 'workspace', 'dream.lock')
-const SESSIONS_DIR = path.join(process.cwd(), 'workspace', 'sessions')
+const LOCK_FILE    = path.join(process.cwd(), 'workspace', 'dream.lock')
 const MEMORY_DIR   = path.join(process.cwd(), 'workspace', 'memory')
+const SESSIONS_DIR = path.join(process.cwd(), 'workspace', 'sessions')
+const INDEX_PATH   = path.join(MEMORY_DIR, 'MEMORY_INDEX.md')
 
-// ── Types ──────────────────────────────────────────────────────
+const GATE_HOURS    = 24   // hours since last dream
+const GATE_SESSIONS = 5    // new sessions required
 
-interface DreamLock {
+// ── Lock helpers ──────────────────────────────────────────────
+
+interface LockData {
   pid:       number
   startedAt: string
 }
 
-export interface DreamResult {
-  ran:             boolean
-  reason?:         string     // why it didn't run (gate name)
-  sessionsReviewed:number
-  filesUpdated:    number
-  durationMs:      number
-}
-
-// ── Gate checks ────────────────────────────────────────────────
-
-function checkTimeGate(minHours = 24): { pass: boolean; hoursAgo: number } {
-  try {
-    if (!fs.existsSync(DREAM_LOCK)) return { pass: true, hoursAgo: Infinity }
-    const stat    = fs.statSync(DREAM_LOCK)
-    const hoursAgo = (Date.now() - stat.mtimeMs) / (1000 * 60 * 60)
-    return { pass: hoursAgo >= minHours, hoursAgo: Math.round(hoursAgo * 10) / 10 }
-  } catch {
-    return { pass: true, hoursAgo: Infinity }
-  }
-}
-
-function checkSessionGate(minNewSessions = 5): { pass: boolean; newCount: number } {
-  try {
-    if (!fs.existsSync(SESSIONS_DIR)) return { pass: false, newCount: 0 }
-    let lastDreamMtime = 0
-    if (fs.existsSync(DREAM_LOCK)) {
-      lastDreamMtime = fs.statSync(DREAM_LOCK).mtimeMs
-    }
-    const newCount = fs.readdirSync(SESSIONS_DIR)
-      .filter(f => f.endsWith('.md'))
-      .filter(f => {
-        try { return fs.statSync(path.join(SESSIONS_DIR, f)).mtimeMs > lastDreamMtime } catch { return false }
-      })
-      .length
-    return { pass: newCount >= minNewSessions, newCount }
-  } catch {
-    return { pass: false, newCount: 0 }
-  }
-}
-
-// ── Lock management ────────────────────────────────────────────
-
 function acquireLock(): boolean {
   try {
-    fs.mkdirSync(path.dirname(DREAM_LOCK), { recursive: true })
+    fs.mkdirSync(path.dirname(LOCK_FILE), { recursive: true })
 
-    if (fs.existsSync(DREAM_LOCK)) {
-      // Check if holder is alive
-      try {
-        const raw  = fs.readFileSync(DREAM_LOCK, 'utf-8')
-        const lock = JSON.parse(raw) as DreamLock
-        try {
-          process.kill(lock.pid, 0)  // throws if PID is dead
-          return false               // PID is alive — lock is held
-        } catch {
-          // PID is dead — steal the lock
-          console.log(`[DreamEngine] Stealing lock from dead PID ${lock.pid}`)
-        }
-      } catch {
-        // lock file corrupt — steal it
+    if (fs.existsSync(LOCK_FILE)) {
+      // Check if the lock holder is still alive
+      const raw  = JSON.parse(fs.readFileSync(LOCK_FILE, 'utf-8')) as LockData
+      const alive = isPidAlive(raw.pid)
+      if (alive) {
+        console.log(`[DreamEngine] Lock held by PID ${raw.pid} — skipping`)
+        return false
       }
+      // PID is dead — steal the lock
+      console.log(`[DreamEngine] Stale lock (PID ${raw.pid} dead) — stealing`)
     }
 
-    const lockData: DreamLock = { pid: process.pid, startedAt: new Date().toISOString() }
-    fs.writeFileSync(DREAM_LOCK, JSON.stringify(lockData))
+    const data: LockData = { pid: process.pid, startedAt: new Date().toISOString() }
+    fs.writeFileSync(LOCK_FILE, JSON.stringify(data))
     return true
   } catch {
     return false
@@ -103,240 +54,302 @@ function acquireLock(): boolean {
 
 function releaseLock(prevMtime?: number): void {
   try {
-    if (!fs.existsSync(DREAM_LOCK)) return
-    const raw  = fs.readFileSync(DREAM_LOCK, 'utf-8')
-    const lock = JSON.parse(raw) as DreamLock
-    if (lock.pid !== process.pid) return  // don't release someone else's lock
-
     if (prevMtime !== undefined) {
-      // Failure: roll back mtime to previous value by writing back the old timestamp
-      // We can't set mtime directly on Windows easily — just leave mtime as-is
-      // The new mtime will be "now" which is close enough to the failure time
+      // Update mtime to now (marks lastConsolidatedAt)
+      const now = Date.now() / 1000
+      fs.utimesSync(LOCK_FILE, now, now)
+    } else {
+      // On failure — restore prev mtime or just remove
+      fs.unlinkSync(LOCK_FILE)
     }
-    // Update mtime to now (success path) by touching the file
-    fs.utimesSync(DREAM_LOCK, new Date(), new Date())
   } catch {}
 }
 
-function savePrevMtime(): number {
+function isPidAlive(pid: number): boolean {
   try {
-    if (!fs.existsSync(DREAM_LOCK)) return 0
-    return fs.statSync(DREAM_LOCK).mtimeMs
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function getLockMtime(): number {
+  try {
+    if (!fs.existsSync(LOCK_FILE)) return 0
+    return fs.statSync(LOCK_FILE).mtimeMs
   } catch {
     return 0
   }
 }
 
-// ── Cheap LLM caller ────────────────────────────────────────────
+// ── Gate checks ───────────────────────────────────────────────
 
-async function callCheapLLM(prompt: string, maxTokens = 1800): Promise<string> {
-  try {
-    const { loadConfig } = await import('../providers/index')
-    const config  = loadConfig()
-    const cerebras = config.providers.apis.find(
-      a => a.provider === 'cerebras' && a.enabled && !a.rateLimited,
-    )
-    if (cerebras) {
-      const key = cerebras.key.startsWith('env:')
-        ? (process.env[cerebras.key.replace('env:', '')] || '')
-        : cerebras.key
-      if (key) {
-        const r = await fetch('https://api.cerebras.ai/v1/chat/completions', {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-          body:    JSON.stringify({ model: cerebras.model || 'llama3.1-8b', messages: [{ role: 'user', content: prompt }], stream: false, max_tokens: maxTokens }),
-          signal:  AbortSignal.timeout(30000),
-        })
-        if (r.ok) {
-          const d = await r.json() as any
-          costTracker.record({ provider: 'cerebras', model: cerebras.model, rawResponse: d, taskType: 'system' })
-          return d?.choices?.[0]?.message?.content || ''
-        }
-      }
-    }
-  } catch {}
-
-  // Ollama fallback
-  try {
-    const { loadConfig } = await import('../providers/index')
-    const config    = loadConfig()
-    const ollamaModel = config.model?.activeModel || 'mistral:7b'
-    const r = await fetch('http://localhost:11434/api/chat', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ model: ollamaModel, stream: false, messages: [{ role: 'user', content: prompt }] }),
-      signal:  AbortSignal.timeout(60000),
-    })
-    if (r.ok) {
-      const d = await r.json() as any
-      costTracker.record({ provider: 'ollama', model: ollamaModel, rawResponse: d, taskType: 'system' })
-      return d?.message?.content || ''
-    }
-  } catch {}
-
-  return ''
+function checkTimeGate(lockMtime: number): boolean {
+  if (lockMtime === 0) return true // never run
+  const hoursSince = (Date.now() - lockMtime) / (1000 * 60 * 60)
+  return hoursSince >= GATE_HOURS
 }
 
-// ── Read recent session files ──────────────────────────────────
-
-function readRecentSessions(count = 10): Array<{ name: string; content: string }> {
+function checkSessionGate(lockMtime: number): boolean {
   try {
-    if (!fs.existsSync(SESSIONS_DIR)) return []
-    let lastDreamMtime = 0
-    if (fs.existsSync(DREAM_LOCK)) {
-      lastDreamMtime = fs.statSync(DREAM_LOCK).mtimeMs
-    }
-    return fs.readdirSync(SESSIONS_DIR)
+    if (!fs.existsSync(SESSIONS_DIR)) return false
+    const cutoff = lockMtime || 0
+    const newSessions = fs.readdirSync(SESSIONS_DIR)
       .filter(f => f.endsWith('.md'))
       .filter(f => {
-        try { return fs.statSync(path.join(SESSIONS_DIR, f)).mtimeMs > lastDreamMtime } catch { return false }
+        try {
+          return fs.statSync(path.join(SESSIONS_DIR, f)).mtimeMs > cutoff
+        } catch {
+          return false
+        }
       })
-      .slice(-count)
-      .map(f => ({
-        name:    f,
-        content: fs.readFileSync(path.join(SESSIONS_DIR, f), 'utf-8').slice(0, 1500),
-      }))
+    return newSessions.length >= GATE_SESSIONS
   } catch {
-    return []
+    return false
   }
 }
 
-// ── 4-phase consolidation ──────────────────────────────────────
+function allGatesPass(): boolean {
+  const lockMtime = getLockMtime()
+  return checkTimeGate(lockMtime) && checkSessionGate(lockMtime)
+}
 
-async function runConsolidation(sessions: Array<{ name: string; content: string }>): Promise<number> {
-  const sessionText = sessions
-    .map(s => `### Session: ${s.name}\n${s.content}`)
-    .join('\n\n---\n\n')
+// ── Dream phases ──────────────────────────────────────────────
 
-  // Phase 1: Orient — understand what memory we already have
-  const existingMemory = memoryExtractor.getMemoryInjection(2000)
+async function phaseOrient(): Promise<string> {
+  // List memory dir, read index, get overview
+  try {
+    const indexContent = fs.existsSync(INDEX_PATH)
+      ? fs.readFileSync(INDEX_PATH, 'utf-8')
+      : '(empty)'
 
-  // Phase 2+3+4: Gather, Consolidate, Prune in one LLM call
-  // (cheaper: avoid multiple round-trips for background tasks)
-  const prompt = `You are DevOS Dream Engine — a background memory consolidation agent.
+    const memFiles = fs.existsSync(MEMORY_DIR)
+      ? fs.readdirSync(MEMORY_DIR).filter(f => f.endsWith('.md') && f !== 'MEMORY_INDEX.md')
+      : []
 
-EXISTING MEMORY SUMMARY:
-${existingMemory || '(empty — no memories yet)'}
+    return `MEMORY DIRECTORY (${memFiles.length} files):\n${memFiles.join('\n')}\n\nCURRENT INDEX:\n${indexContent.slice(0, 2000)}`
+  } catch {
+    return '(unable to read memory directory)'
+  }
+}
 
-RECENT SESSIONS TO PROCESS:
-${sessionText.slice(0, 4000)}
+async function phaseGather(lockMtime: number): Promise<string> {
+  // Scan recent session transcripts for signal
+  try {
+    if (!fs.existsSync(SESSIONS_DIR)) return '(no sessions)'
 
-Your task (4 phases):
-1. ORIENT: What patterns or themes appear across these sessions?
-2. GATHER: What new facts, preferences, or patterns emerged that aren't in existing memory?
-3. CONSOLIDATE: For each new insight, output a JSON line (JSONL):
-   {"type": "user_preference|project_fact|tool_pattern|learned_behavior", "title": "5-10 word title", "content": "Concise, actionable content. Max 2 sentences.", "action": "create|update"}
-4. PRUNE: Which existing memory entries are now outdated or incorrect? Output:
-   {"action": "deprecate", "title": "exact title to mark stale"}
+    const recentSessions = fs.readdirSync(SESSIONS_DIR)
+      .filter(f => f.endsWith('.md'))
+      .filter(f => {
+        try { return fs.statSync(path.join(SESSIONS_DIR, f)).mtimeMs > lockMtime } catch { return false }
+      })
+      .slice(0, 10)
+
+    if (recentSessions.length === 0) return '(no new sessions)'
+
+    const excerpts = recentSessions.map(f => {
+      try {
+        const content = fs.readFileSync(path.join(SESSIONS_DIR, f), 'utf-8')
+        return `=== ${f} ===\n${content.slice(0, 800)}`
+      } catch {
+        return `=== ${f} === (unreadable)`
+      }
+    })
+
+    return excerpts.join('\n\n')
+  } catch {
+    return '(unable to gather sessions)'
+  }
+}
+
+async function phaseConsolidate(orientData: string, gatherData: string): Promise<{ filesUpdated: number }> {
+  const prompt = `You are the DevOS Dream Engine performing memory consolidation.
+
+CURRENT MEMORY STATE:
+${orientData}
+
+RECENT SESSION SIGNALS:
+${gatherData}
+
+Your job: identify facts from the sessions that should be preserved in long-term memory.
+
+For each memory to write/update, output JSON:
+[
+  {
+    "filename": "type_descriptor.md (e.g. user_coding_style.md, project_api_structure.md)",
+    "title": "Short descriptive title",
+    "type": "user_preference|project_fact|tool_pattern|learned_behavior",
+    "content": "Concise actionable content. 2-6 sentences. Convert relative dates to absolute (e.g. 'last week' → '2026-03-25').",
+    "summary": "One-line summary"
+  }
+]
 
 Rules:
-- Only extract GENUINELY new, persistent knowledge not already in memory
-- Prefer updating existing entries over creating near-duplicates
-- Output ONLY the JSONL lines (one per line, no prose)
-- Maximum 8 memory operations total
+- Merge with existing rather than create duplicates
+- Focus on patterns, not one-off events
+- Absolute dates only
+- Output ONLY valid JSON array`
 
-Begin JSONL output:`
+  try {
+    const raw  = await callBgLLM(prompt, 'dream_consolidate')
+    if (!raw) return { filesUpdated: 0 }
 
-  const raw = await callCheapLLM(prompt, 1000)
-  if (!raw) return 0
+    const jsonMatch = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').match(/\[[\s\S]*\]/)
+    if (!jsonMatch) return { filesUpdated: 0 }
 
-  let filesUpdated = 0
-  const lines = raw.trim().split('\n').filter(l => l.trim().startsWith('{'))
+    const items = JSON.parse(jsonMatch[0]) as Array<{
+      filename: string
+      title:    string
+      type:     string
+      content:  string
+      summary:  string
+    }>
 
-  for (const line of lines) {
-    try {
-      const op = JSON.parse(line) as any
-      if (op.action === 'deprecate') continue   // don't delete — mark is not implemented here
-      if (!op.type || !op.title || !op.content) continue
-      await memoryExtractor.upsertMemory(op.type, op.title, op.content)
-      filesUpdated++
-    } catch {}
-  }
+    if (!Array.isArray(items)) return { filesUpdated: 0 }
 
-  return filesUpdated
-}
+    let filesUpdated = 0
+    const now = new Date().toISOString().split('T')[0]
 
-// ── DreamEngine class ──────────────────────────────────────────
+    for (const item of items) {
+      if (!item.filename || !item.content) continue
+      const filePath = path.join(MEMORY_DIR, item.filename)
 
-export class DreamEngine {
-
-  // ── Check if dream should run (all 3 gates) ───────────
-
-  shouldRun(): { should: boolean; reason: string } {
-    const timeGate    = checkTimeGate(24)
-    const sessionGate = checkSessionGate(5)
-
-    if (!timeGate.pass) {
-      return { should: false, reason: `time_gate (last dream ${timeGate.hoursAgo}h ago, need 24h)` }
-    }
-    if (!sessionGate.pass) {
-      return { should: false, reason: `session_gate (only ${sessionGate.newCount} new sessions, need 5)` }
-    }
-    return { should: true, reason: 'all gates passed' }
-  }
-
-  // ── Run the dream consolidation ────────────────────────
-
-  async run(): Promise<DreamResult> {
-    const start = Date.now()
-    const { should, reason } = this.shouldRun()
-
-    if (!should) {
-      return { ran: false, reason, sessionsReviewed: 0, filesUpdated: 0, durationMs: 0 }
-    }
-
-    // Acquire lock
-    if (!acquireLock()) {
-      return { ran: false, reason: 'lock_gate (another dream is running)', sessionsReviewed: 0, filesUpdated: 0, durationMs: 0 }
-    }
-
-    const prevMtime      = savePrevMtime()
-    let   filesUpdated   = 0
-    let   sessionsReviewed = 0
-
-    try {
-      console.log('[DreamEngine] Starting consolidation...')
-      const sessions = readRecentSessions(10)
-      sessionsReviewed = sessions.length
-
-      if (sessions.length > 0) {
-        filesUpdated = await runConsolidation(sessions)
+      let created = now
+      if (fs.existsSync(filePath)) {
+        try {
+          const existing = fs.readFileSync(filePath, 'utf-8')
+          const m        = existing.match(/^created:\s*(.+)$/m)
+          if (m) created = m[1].trim()
+        } catch {}
       }
 
-      // Success — update lock mtime to now
-      releaseLock()
-      const durationMs = Date.now() - start
+      const fileContent = `---
+title: ${item.title}
+type: ${item.type}
+created: ${created}
+updated: ${now}
+---
 
-      // Log to AuditTrail
-      auditTrail.record({
-        action:     'system',
-        tool:       'dream_completed',
-        input:      `sessions_reviewed: ${sessionsReviewed}`,
-        output:     `files_updated: ${filesUpdated}`,
-        durationMs,
-        success:    true,
-        goal:       'Memory consolidation',
-      })
-
-      console.log(`[DreamEngine] Completed: ${filesUpdated} memory files updated from ${sessionsReviewed} sessions (${durationMs}ms)`)
-      return { ran: true, sessionsReviewed, filesUpdated, durationMs }
-
-    } catch (e: any) {
-      console.error('[DreamEngine] Consolidation failed:', e.message)
-      releaseLock(prevMtime)
-      auditTrail.record({
-        action:     'system',
-        tool:       'dream_completed',
-        input:      `sessions_reviewed: ${sessionsReviewed}`,
-        output:     `error: ${e.message}`,
-        durationMs: Date.now() - start,
-        success:    false,
-        error:      e.message,
-      })
-      return { ran: false, reason: `error: ${e.message}`, sessionsReviewed, filesUpdated, durationMs: Date.now() - start }
+${item.content.trim()}
+`
+      try {
+        fs.writeFileSync(filePath, fileContent, 'utf-8')
+        filesUpdated++
+      } catch {}
     }
+
+    return { filesUpdated }
+  } catch (e: any) {
+    console.error('[DreamEngine] Consolidate phase failed:', e.message)
+    return { filesUpdated: 0 }
   }
 }
 
-// ── Singleton ──────────────────────────────────────────────────
-export const dreamEngine = new DreamEngine()
+async function phasePrune(filesUpdated: number): Promise<void> {
+  // Rebuild MEMORY_INDEX.md — max 100 entries
+  try {
+    if (!fs.existsSync(MEMORY_DIR)) return
+
+    const files = fs.readdirSync(MEMORY_DIR)
+      .filter(f => f.endsWith('.md') && f !== 'MEMORY_INDEX.md')
+      .map(f => {
+        try {
+          const content = fs.readFileSync(path.join(MEMORY_DIR, f), 'utf-8')
+          const titleM  = content.match(/^title:\s*(.+)$/m)
+          const sumM    = content.match(/---\n+([\s\S]+?)(?:\n\n|$)/)
+          const title   = titleM ? titleM[1].trim() : f.replace('.md', '')
+          const summary = sumM
+            ? sumM[1].trim().replace(/\n/g, ' ').slice(0, 80)
+            : ''
+          return `- [${title}](${f}) — ${summary}`
+        } catch {
+          return null
+        }
+      })
+      .filter((l): l is string => l !== null)
+      .slice(0, 100)
+
+    fs.writeFileSync(INDEX_PATH, files.join('\n') + '\n', 'utf-8')
+    console.log(`[DreamEngine] Pruned index to ${files.length} entries (${filesUpdated} files updated)`)
+  } catch (e: any) {
+    console.error('[DreamEngine] Prune phase failed:', e.message)
+  }
+}
+
+// ── Main dream runner ─────────────────────────────────────────
+
+export async function runDream(): Promise<void> {
+  if (!allGatesPass()) {
+    console.log('[DreamEngine] Gates not met — skipping')
+    return
+  }
+
+  const prevMtime = getLockMtime()
+  if (!acquireLock()) return
+
+  const traceId = `dream_${Date.now()}`
+  console.log('[DreamEngine] Dream starting...')
+
+  let sessionsReviewed = 0
+  let filesUpdated     = 0
+
+  try {
+    fs.mkdirSync(MEMORY_DIR, { recursive: true })
+
+    // Phase 1: Orient
+    console.log('[DreamEngine] Phase 1: Orient')
+    const orientData = await phaseOrient()
+
+    // Phase 2: Gather
+    console.log('[DreamEngine] Phase 2: Gather')
+    const gatherData = await phaseGather(prevMtime)
+    sessionsReviewed = (gatherData.match(/=== .+\.md ===/g) || []).length
+
+    // Phase 3: Consolidate
+    console.log('[DreamEngine] Phase 3: Consolidate')
+    const result = await phaseConsolidate(orientData, gatherData)
+    filesUpdated = result.filesUpdated
+
+    // Phase 4: Prune
+    console.log('[DreamEngine] Phase 4: Prune')
+    await phasePrune(filesUpdated)
+
+    // Update lock mtime = lastConsolidatedAt
+    releaseLock(prevMtime)
+
+    // Log to AuditTrail
+    try {
+      auditTrail.record({
+        action:     'system',
+        tool:       'dream_completed',
+        input:      JSON.stringify({ traceId }),
+        output:     JSON.stringify({ filesUpdated, sessionsReviewed }),
+        durationMs: 0,
+        success:    true,
+        traceId,
+      })
+    } catch {}
+
+    console.log(`[DreamEngine] Dream complete — ${filesUpdated} files updated, ${sessionsReviewed} sessions reviewed`)
+
+  } catch (e: any) {
+    console.error('[DreamEngine] Dream failed:', e.message)
+    // Roll back lock mtime
+    try {
+      if (prevMtime > 0) {
+        const t = prevMtime / 1000
+        fs.utimesSync(LOCK_FILE, t, t)
+      } else {
+        fs.unlinkSync(LOCK_FILE)
+      }
+    } catch {}
+  }
+}
+
+// ── Check and run (called by scheduler) ───────────────────────
+
+export function checkAndRunDream(): void {
+  if (!allGatesPass()) return
+  runDream().catch(e => console.error('[DreamEngine] Unhandled error:', e.message))
+}
