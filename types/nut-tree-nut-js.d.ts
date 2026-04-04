@@ -3,6 +3,11 @@
 // All usage in computerControl.ts is inside try-catch blocks with
 // PowerShell fallbacks — this stub satisfies the TypeScript compiler only.
 
+// Also stub the fork variant used in screenAgent.ts
+declare module '@nut-tree-fork/nut-js' {
+  export { Point, mouse, keyboard, Button, Key } from '@nut-tree/nut-js'
+}
+
 declare module '@nut-tree/nut-js' {
   export class Point {
     constructor(x: number, y: number)
@@ -12,9 +17,13 @@ declare module '@nut-tree/nut-js' {
 
   export const mouse: {
     setPosition(point: Point): Promise<void>
+    move(points: Point[], speed?: number): Promise<void>
     click(button: Button): Promise<void>
     doubleClick(button: Button): Promise<void>
     getPosition(): Promise<Point>
+    scrollDown(amount: number): Promise<void>
+    scrollUp(amount: number): Promise<void>
+    drag(path: Point[]): Promise<void>
   }
 
   export const keyboard: {

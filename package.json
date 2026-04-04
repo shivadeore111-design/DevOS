@@ -1,6 +1,6 @@
 {
   "name": "devos-ai",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "Autonomous AI Operating System — Local, Private, Free. Runs on your machine with Ollama.",
   "author": "Shiva Deore <devosxprojects@gmail.com>",
   "license": "Apache-2.0",
@@ -27,7 +27,7 @@
     "devos-ai": "./dist/bin/npx-init.js",
     "devos": "./dist/index.js"
   },
-  "main": "./dist/index.js",
+  "main": "electron/main.js",
   "files": [
     "dist/",
     "dashboard-next/",
@@ -48,9 +48,63 @@
     "prepublishOnly": "npm run build",
     "postinstall": "node scripts/postinstall.js",
     "start": "node dist/index.js",
+    "electron": "electron .",
+    "dist": "node scripts/prepare-electron.js && electron-builder --win --publish never",
+    "dist:dir": "node scripts/prepare-electron.js && electron-builder --win --dir --publish never",
     "test": "vitest run",
     "test:ui": "vitest --ui",
     "stress-test": "npx ts-node tests/stressTest.ts"
+  },
+  "build": {
+    "appId": "com.taracod.aiden",
+    "productName": "Aiden",
+    "copyright": "Copyright 2026 Taracod / White Lotus",
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Aiden",
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico",
+      "deleteAppDataOnUninstall": false
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "assets/**/*",
+      "package.json",
+      "!dist/**/*.map"
+    ],
+    "extraResources": [
+      {
+        "from": "dashboard-next/.next/standalone",
+        "to": "dashboard/standalone",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "config",
+        "to": "config",
+        "filter": ["devos.config.json", "model-selection.json", "hardware.json"]
+      }
+    ],
+    "asar": true,
+    "npmRebuild": false,
+    "buildDependenciesFromSource": false,
+    "asarUnpack": [
+      "node_modules/screenshot-desktop/**",
+      "node_modules/bcrypt/**",
+      "node_modules/puppeteer/.local-chromium/**",
+      "node_modules/playwright/.local-browsers/**"
+    ]
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
@@ -66,13 +120,16 @@
     "discord.js": "^14.25.1",
     "dockerode": "^4.0.9",
     "dotenv": "^17.3.1",
+    "epub2": "^3.0.2",
     "execa": "^8.0.1",
     "express": "^4.18.2",
     "imap-simple": "^5.1.0",
+    "multer": "^1.4.5-lts.2",
     "node-telegram-bot-api": "^0.67.0",
     "nodemailer": "^8.0.3",
     "open": "^11.0.0",
     "ora": "^9.3.0",
+    "pdf-parse": "^1.1.1",
     "playwright": "^1.58.2",
     "puppeteer": "^24.39.1",
     "qrcode-terminal": "^0.12.0",
@@ -82,22 +139,21 @@
     "tar-stream": "^3.1.8",
     "uuid": "^9.0.0",
     "whatsapp-web.js": "^1.26.0",
-    "ws": "^8.20.0",
-    "pdf-parse": "^1.1.1",
-    "epub2": "^3.0.2",
-    "multer": "^1.4.5-lts.2"
+    "ws": "^8.20.0"
   },
   "devDependencies": {
     "@types/dockerode": "^4.0.1",
+    "@types/multer": "^1.4.12",
     "@types/node": "^25.3.0",
     "@types/node-telegram-bot-api": "^0.64.14",
     "@types/nodemailer": "^7.0.11",
+    "@types/pdf-parse": "^1.1.4",
     "@types/qrcode-terminal": "^0.12.2",
     "@types/tar-stream": "^3.1.4",
     "@types/uuid": "^9.0.0",
-    "@types/pdf-parse": "^1.1.4",
-    "@types/multer": "^1.4.12",
     "@vitest/ui": "^1.6.0",
+    "electron": "^41.1.1",
+    "electron-builder": "^26.8.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3",
     "vitest": "^1.6.0"
