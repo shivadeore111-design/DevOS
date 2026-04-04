@@ -8,6 +8,7 @@
 
 import path from 'path'
 import fs   from 'fs'
+import { getActiveNaturalEvents, formatEonetEvents, getEonetSummary } from '../tools/eonetTool'
 
 const BRIEFING_CONFIG_PATH = path.join(process.cwd(), 'workspace', 'morning-briefing.json')
 
@@ -137,14 +138,25 @@ export async function generateBriefing(config: BriefingConfig): Promise<string> 
     } catch {}
   }
 
+  // ── Section 6: NASA EONET natural events ──────────────────
+  try {
+    const eonetEvents = await getActiveNaturalEvents(1, 10)
+    const eonetSection = formatEonetEvents(eonetEvents)
+    if (eonetSection) parts.push(eonetSection)
+  } catch {}
+
   return parts.join('\n')
 }
 
 // ── Briefing delivery ─────────────────────────────────────────
 
 export async function deliverBriefing(config: BriefingConfig): Promise<void> {
-  const briefing = await generateBriefing(config)
-  const date     = new Date().toLocaleDateString('en-IN', { month: 'long', day: 'numeric' })
+  const [briefing, eonetEvents] = await Promise.all([
+    generateBriefing(config),
+    getActiveNaturalEvents(1, 10).catch(() => []),
+  ])
+  const eonetSummary = getEonetSummary(eonetEvents)
+  const date         = new Date().toLocaleDateString('en-IN', { month: 'long', day: 'numeric' })
 
   // Deliver to dashboard — POST as a special briefing event
   try {
@@ -168,9 +180,10 @@ export async function deliverBriefing(config: BriefingConfig): Promise<void> {
       .slice(0, 2)
       .join(' \u00b7 ')
       .slice(0, 100)
+    const notifyMsg = [firstLine, eonetSummary].filter(Boolean).join(' \u00b7 ').slice(0, 140)
     await executeTool('notify', {
       title:   `Good morning — Aiden briefing`,
-      message: firstLine,
+      message: notifyMsg,
     })
   } catch {}
 }

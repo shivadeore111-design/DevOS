@@ -2268,6 +2268,29 @@ export function createApiServer(): Express {
     }
   })
 
+  // ── GET /api/natural-events — NASA EONET (30-min memory cache) ──
+  {
+    interface EonetCache { events: any[]; summary: string; fetchedAt: number }
+    let _eonetCache: EonetCache | null = null
+    const EONET_TTL = 30 * 60 * 1000 // 30 minutes
+
+    app.get('/api/natural-events', async (_req: Request, res: Response) => {
+      try {
+        const now = Date.now()
+        if (_eonetCache && now - _eonetCache.fetchedAt < EONET_TTL) {
+          res.json(_eonetCache); return
+        }
+        const { getActiveNaturalEvents, getEonetSummary } = await import('../tools/eonetTool')
+        const events  = await getActiveNaturalEvents(3, 20)
+        const summary = getEonetSummary(events)
+        _eonetCache   = { events, summary, fetchedAt: now }
+        res.json(_eonetCache)
+      } catch (e: any) {
+        res.status(500).json({ error: e.message })
+      }
+    })
+  }
+
   app.use((_req: Request, res: Response) => {
     res.status(404).json({ error: 'Not found' })
   })

@@ -1586,6 +1586,116 @@ function GrowthCard() {
   )
 }
 
+// ── NasaLiveEventsCard ────────────────────────────────────────
+
+interface NasaEvent {
+  id:         string
+  title:      string
+  categories: { id: string; title: string }[]
+  geometry:   { date: string }[]
+}
+
+function NasaLiveEventsCard() {
+  const [events,    setEvents]    = useState<NasaEvent[]>([])
+  const [summary,   setSummary]   = useState('')
+  const [loading,   setLoading]   = useState(true)
+  const [fetchedAt, setFetchedAt] = useState(0)
+
+  const load = useCallback(async () => {
+    try {
+      const res  = await fetch('http://localhost:4200/api/natural-events')
+      if (!res.ok) return
+      const data = await res.json() as { events: NasaEvent[]; summary: string; fetchedAt: number }
+      setEvents(data.events ?? [])
+      setSummary(data.summary ?? '')
+      setFetchedAt(data.fetchedAt ?? Date.now())
+    } catch {}
+    setLoading(false)
+  }, [])
+
+  useEffect(() => {
+    load()
+    const id = setInterval(load, 30 * 60 * 1000)
+    return () => clearInterval(id)
+  }, [load])
+
+  if (!loading && events.length === 0) return null
+
+  const top3 = events.slice(0, 3)
+
+  const catEmoji = (id: string) =>
+    id === 'wildfires'    ? '🔥' :
+    id === 'severeStorms' ? '🌪️' :
+    id === 'volcanoes'    ? '🌋' :
+    id === 'floods'       ? '🌊' :
+    id === 'earthquakes'  ? '🫨' : '⚠️'
+
+  return (
+    <div style={{
+      margin: '0 10px 10px',
+      background: 'var(--bg2)',
+      border: '1px solid rgba(249,115,22,0.2)',
+      borderRadius: 8,
+      padding: '10px 12px',
+      flexShrink: 0,
+      fontFamily: 'var(--mono)',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--orange)', fontWeight: 700 }}>
+          <span>🌍</span>
+          <span>NASA Live Events</span>
+          {events.length > 0 && (
+            <span style={{
+              background: 'rgba(249,115,22,0.15)', color: 'var(--orange)',
+              borderRadius: 10, padding: '1px 7px', fontSize: 9, fontWeight: 700,
+            }}>{events.length}</span>
+          )}
+        </div>
+        {fetchedAt > 0 && (
+          <span style={{ fontSize: 9, color: 'var(--muted)' }}>
+            {new Date(fetchedAt).toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit', hour12: false })}
+          </span>
+        )}
+      </div>
+
+      {loading ? (
+        <div style={{ fontSize: 10, color: 'var(--muted)', textAlign: 'center', padding: '4px 0' }}>fetching…</div>
+      ) : top3.length === 0 ? (
+        <div style={{ fontSize: 10, color: 'var(--muted)' }}>No active high-impact events</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          {top3.map(ev => {
+            const catId  = ev.categories?.[0]?.id ?? ''
+            const emoji  = catEmoji(catId)
+            const latest = ev.geometry?.[ev.geometry.length - 1]
+            const date   = latest?.date
+              ? new Date(latest.date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })
+              : ''
+            return (
+              <div key={ev.id} style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                <span style={{ fontSize: 13, flexShrink: 0, lineHeight: '16px' }}>{emoji}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 10, color: 'var(--text)', lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {ev.title}
+                  </div>
+                  <div style={{ fontSize: 9, color: 'var(--muted)', marginTop: 1 }}>
+                    {ev.categories?.[0]?.title ?? catId}{date ? ` · ${date}` : ''}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+          {events.length > 3 && (
+            <div style={{ fontSize: 9, color: 'var(--muted)', marginTop: 2 }}>
+              +{events.length - 3} more active events
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── LiveViewPanel ─────────────────────────────────────────────
 
 interface PulseEntry {
@@ -1772,6 +1882,9 @@ function LiveViewPanel() {
 
       {/* Sprint 27: Growth Card */}
       <GrowthCard />
+
+      {/* NASA EONET natural events */}
+      <NasaLiveEventsCard />
 
       {/* Footer stats */}
       <div style={{
