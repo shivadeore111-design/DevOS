@@ -40,7 +40,9 @@
   "preferGlobal": true,
   "type": "commonjs",
   "scripts": {
-    "dev": "ts-node index.ts",
+    "dev": "concurrently --names \"API,DASHBOARD\" --prefix-colors \"yellow,cyan\" \"npm run dev:api\" \"npm run dev:dashboard\"",
+    "dev:api": "ts-node index.ts",
+    "dev:dashboard": "cd dashboard-next && npm run dev",
     "run": "ts-node index.ts run",
     "daemon": "ts-node index.ts daemon",
     "status": "ts-node index.ts status",
@@ -149,6 +151,7 @@
     "ws": "^8.20.0"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.19",
     "@types/dockerode": "^4.0.1",
     "@types/multer": "^1.4.12",
     "@types/node": "^25.3.0",
@@ -159,6 +162,7 @@
     "@types/tar-stream": "^3.1.4",
     "@types/uuid": "^9.0.0",
     "@vitest/ui": "^1.6.0",
+    "concurrently": "^9.2.1",
     "electron": "^41.1.1",
     "electron-builder": "^26.8.1",
     "ts-node": "^10.9.2",

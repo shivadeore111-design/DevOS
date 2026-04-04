@@ -25,6 +25,7 @@ import * as fs   from 'fs'
 import * as path from 'path'
 import * as http from 'http'
 import express, { Express, Request, Response, NextFunction } from 'express'
+import cors    from 'cors'
 import { WebSocketServer } from 'ws'
 
 // â”€â”€ Real imports only â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -190,13 +191,12 @@ export function createApiServer(): Express {
   })
 
   // CORS â€” allow any origin (dev mode)
-  app.use((req: Request, res: Response, next: NextFunction) => {
-    res.setHeader('Access-Control-Allow-Origin',  '*')
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
-    if (req.method === 'OPTIONS') { res.sendStatus(200); return }
-    next()
-  })
+  app.use(cors({
+    origin:         ['http://localhost:3000', 'http://localhost:4200', 'app://.'],
+    credentials:    true,
+    methods:        ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  }))
 
   // â”€â”€ Core routes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -943,9 +943,9 @@ export function createApiServer(): Express {
 
   // GET /api/providers â€” list all configured APIs with status
   app.get('/api/providers', (_req: Request, res: Response) => {
-    const config = loadConfig()
-    res.json({
-      apis: config.providers.apis.map(api => ({
+    try {
+      const config = loadConfig()
+      const apis   = (config.providers?.apis ?? []).map(api => ({
         name:          api.name,
         provider:      api.provider,
         model:         api.model,
@@ -959,19 +959,69 @@ export function createApiServer(): Express {
             : (api.key || '')
           return k.length > 0
         })(),
-      })),
-      routing: config.routing || { mode: 'auto', fallbackToOllama: true },
-      ollama:  config.providers.ollama,
-    })
+      }))
+
+      // Per-provider configured status (for the settings cards)
+      const configuredSet = new Set(apis.map(a => a.provider))
+      const status = {
+        groq:        { configured: configuredSet.has('groq'),        model: apis.find(a => a.provider === 'groq')?.model },
+        gemini:      { configured: configuredSet.has('gemini'),      model: apis.find(a => a.provider === 'gemini')?.model },
+        openrouter:  { configured: configuredSet.has('openrouter'),  model: apis.find(a => a.provider === 'openrouter')?.model },
+        cerebras:    { configured: configuredSet.has('cerebras'),    model: apis.find(a => a.provider === 'cerebras')?.model },
+        nvidia:      { configured: configuredSet.has('nvidia'),      model: apis.find(a => a.provider === 'nvidia')?.model },
+        ollama:      { configured: true, local: true },
+      }
+
+      res.json({
+        success: true,
+        apis,
+        providers: status,
+        routing:   config.routing || { mode: 'auto', fallbackToOllama: true },
+        ollama:    config.providers?.ollama,
+      })
+    } catch (e: any) {
+      // Never crash on a config read failure — return empty state
+      res.json({ success: true, apis: [], providers: {}, routing: { mode: 'auto', fallbackToOllama: true } })
+    }
   })
 
   // POST /api/providers/add â€” add or update a single API key
-  app.post('/api/providers/add', (req: Request, res: Response) => {
+  app.post('/api/providers/add', async (req: Request, res: Response) => {
     try {
       const { name, provider, key, model, enabled = true } = req.body as {
         name?: string; provider?: string; key?: string; model?: string; enabled?: boolean
       }
       if (!provider || !key) { res.status(400).json({ error: 'provider and key required' }); return }
+
+      // ── Key validation before writing to disk ─────────────────
+      if (provider === 'groq') {
+        try {
+          const test = await fetch('https://api.groq.com/openai/v1/models', {
+            headers: { Authorization: `Bearer ${key}` },
+          })
+          if (!test.ok) {
+            res.status(400).json({ error: 'Invalid Groq API key — check console.groq.com' })
+            return
+          }
+        } catch {
+          // Network failure during validation — allow save so offline installs still work
+        }
+      }
+
+      if (provider === 'gemini') {
+        try {
+          const test = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models?key=${key}`,
+          )
+          if (!test.ok) {
+            res.status(400).json({ error: 'Invalid Gemini API key — check aistudio.google.com' })
+            return
+          }
+        } catch {
+          // Network failure during validation — allow save
+        }
+      }
+      // ─────────────────────────────────────────────────────────
 
       const config = loadConfig()
       const entry: APIEntry = {
