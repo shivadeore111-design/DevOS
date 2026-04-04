@@ -23,7 +23,9 @@ import { loadConfig }     from '../providers/index'
 import { knowledgeBase } from './knowledgeBase'
 import { skillTeacher }  from './skillTeacher'
 import { growthEngine }  from './growthEngine'
-import { AIDEN_RESPONDER_SYSTEM } from './aidenPersonality'
+import { AIDEN_RESPONDER_SYSTEM, IdentityContext } from './aidenPersonality'
+import { getIdentity }           from './aidenIdentity'
+import { memoryExtractor }       from './memoryExtractor'
 import { auditTrail }             from './auditTrail'
 import { mcpClient }             from './mcpClient'
 import { unifiedMemoryRecall, buildMemoryInjection } from './memoryRecall'
@@ -75,6 +77,44 @@ export interface LoopResult {
   plan:     AgentPlan
   results:  StepResult[]
   response: string
+}
+
+// ── Capability list ────────────────────────────────────────────
+
+export function getCapabilityList(): string {
+  const capabilities = [
+    { name: 'Computer Control', tools: ['screenshot', 'mouse_click', 'keyboard_type'],     desc: 'see your screen, click, type, move mouse' },
+    { name: 'Files',            tools: ['file_read', 'file_write', 'file_list'],            desc: 'read, write, organise anything on your disk' },
+    { name: 'Code',             tools: ['run_python', 'shell_exec', 'run_node'],            desc: 'run bash, Python, JavaScript, PowerShell' },
+    { name: 'Web',              tools: ['web_search', 'fetch_page', 'open_browser'],        desc: 'browse sites, fill forms, extract data' },
+    { name: 'Markets',          tools: ['get_stocks', 'get_market_data'],                   desc: 'NSE/BSE live prices, gainers, losers' },
+    { name: 'Schedule',         tools: ['notify', 'shell_exec'],                            desc: 'plain English tasks, background execution' },
+    { name: 'Memory',           tools: ['deep_research', 'web_search'],                     desc: 'persistent across sessions, learns patterns' },
+    { name: 'Research',         tools: ['deep_research', 'web_search', 'fetch_page'],       desc: 'multi-pass deep research on any topic' },
+    { name: 'Vision',           tools: ['screenshot', 'screen_read', 'vision_loop'],        desc: 'see the screen, describe it, act on it' },
+  ]
+
+  const toolSet = new Set(Object.keys(TOOLS))
+  const available = capabilities.filter(cap => cap.tools.some(t => toolSet.has(t)))
+
+  return "Here's what I can do on your machine right now:\n\n" +
+    available.map(c => `— **${c.name}** — ${c.desc}`).join('\n') +
+    "\n\nWhat would you like me to do?"
+}
+
+// ── Response quality gate ──────────────────────────────────────
+
+const BANNED_PHRASES = [
+  'HSN code', 'GST rate', 'trademark registration',
+  'credit score', 'payroll processing', 'ledger software',
+  'import and export regulations', 'social media management',
+  'income tax preparation', 'general ledger', 'accounts payable',
+  'accounting software',
+]
+
+function validateResponse(response: string): boolean {
+  const lower = response.toLowerCase()
+  return !BANNED_PHRASES.some(phrase => lower.includes(phrase.toLowerCase()))
 }
 
 // ── Template resolver ──────────────────────────────────────────
@@ -1433,8 +1473,15 @@ function resolvePreviousOutput(
 
 // ── STEP 3: respondWithResults ────────────────────────────────
 
-function responderSystem(userName: string, date: string): string {
-  return AIDEN_RESPONDER_SYSTEM(userName, date)
+function responderSystem(
+  userName:     string,
+  date:         string,
+  identity?:    IdentityContext,
+  memIdx?:      string,
+  lastSession?: string,
+  userProfile?: string,
+): string {
+  return AIDEN_RESPONDER_SYSTEM(userName, date, identity, memIdx, lastSession, userProfile)
 }
 
 export async function respondWithResults(
@@ -1467,9 +1514,37 @@ export async function respondWithResults(
 
 
   // User profile — inject explicit user identity and preferences
-  const userProfileCtx = userProfileExists()
-    ? `\n\n## User Profile\n${loadUserProfile()}\n`
+  const userProfileContent = userProfileExists() ? loadUserProfile() : ''
+  const userProfileCtx = userProfileContent
+    ? `\n\n## User Profile\n${userProfileContent}\n`
     : ''
+
+  // Aiden identity — level, title, skills, streak
+  let aidenIdentityCtx: IdentityContext | undefined
+  try {
+    const id = getIdentity()
+    aidenIdentityCtx = { level: id.level, title: id.title, skillsLearned: id.skillsLearned, streakDays: id.streakDays }
+  } catch {}
+
+  // Memory index — long-term facts extracted from past sessions
+  let memoryIndexCtx = ''
+  try { memoryIndexCtx = memoryExtractor.loadMemoryIndex() } catch {}
+
+  // Last session context
+  let lastSessionCtx = ''
+  try {
+    const sessDir  = nodePath.join(process.cwd(), 'workspace', 'sessions')
+    if (nodeFs.existsSync(sessDir)) {
+      const files = nodeFs.readdirSync(sessDir)
+        .filter(f => f.endsWith('.md'))
+        .map(f => ({ f, mt: nodeFs.statSync(nodePath.join(sessDir, f)).mtimeMs }))
+        .sort((a, b) => b.mt - a.mt)
+      if (files.length > 0) {
+        const raw = nodeFs.readFileSync(nodePath.join(sessDir, files[0].f), 'utf-8')
+        lastSessionCtx = raw.slice(0, 800)
+      }
+    }
+  } catch {}
 
   // Knowledge context — relevant chunks from user's uploaded files
   const knowledgeCtxResponder = knowledgeBase.buildContext(originalMessage || '')
@@ -1512,7 +1587,7 @@ export async function respondWithResults(
     : ''
 
   const systemWithResults = toolResultsContext
-    ? `${capabilitiesSection}${responderSystem(userName, date)}${userProfileCtx}${responseSkillContext}${knowledgeResponderSection}
+    ? `${capabilitiesSection}${responderSystem(userName, date, aidenIdentityCtx, memoryIndexCtx, lastSessionCtx, userProfileContent)}${responseSkillContext}${knowledgeResponderSection}
 
 YOU JUST RAN THESE TOOLS AND GOT THESE RESULTS:
 ${toolResultsContext}
@@ -1525,15 +1600,23 @@ CRITICAL RULES FOR YOUR RESPONSE:
 - If system_info returned hardware data, show the data
 - Be direct: show the actual output, then provide context if needed
 - If a tool failed, say it failed and why`
-    : `${capabilitiesSection}${responderSystem(userName, date)}${userProfileCtx}${responseSkillContext}${knowledgeResponderSection}`
+    : `${capabilitiesSection}${responderSystem(userName, date, aidenIdentityCtx, memoryIndexCtx, lastSessionCtx, userProfileContent)}${responseSkillContext}${knowledgeResponderSection}`
 
   const userContent = executionSummary
     ? `User asked: "${originalMessage}"\n\nReal execution results:\n${executionSummary}\n\nRespond naturally based on these real results only. Show the actual output, not a description of it.${depthInstruction}${memSection}`
     : `${originalMessage}${memSection}`
 
+  // ── FIX 7: filter empty-content messages (streaming placeholders) ─
+  const cleanHistory = history.filter(h => h.content && h.content.trim().length > 0)
+
+  // ── FIX 7: debug log — confirm history depth on each call ─────────
+  console.log(`[DEBUG respondWithResults] history depth: ${cleanHistory.length}`,
+    cleanHistory.map(m => `${m.role}: ${String(m.content).slice(0, 60)}`),
+  )
+
   const messages = [
     { role: 'system', content: systemWithResults },
-    ...history.slice(-6),
+    ...cleanHistory.slice(-6),
     { role: 'user',   content: userContent },
   ]
 
@@ -1793,6 +1876,29 @@ export async function callLLM(
     console.error('[callLLM] error:', e.message)
     return ''
   }
+}
+
+// ── callLLM with response validation (banned-phrase gate) ─────
+// Wraps callLLM and retries up to 2 times if banned content is detected.
+
+export async function callLLMValidated(
+  prompt:       string,
+  apiKey:       string,
+  model:        string,
+  providerName: string,
+  opts?: { traceId?: string; isSystem?: boolean },
+): Promise<string> {
+  let response = await callLLM(prompt, apiKey, model, providerName, opts)
+  let attempts = 0
+
+  while (!validateResponse(response) && attempts < 2) {
+    console.warn('[Aiden] Banned content detected in LLM response — regenerating')
+    const retryPrompt = prompt + '\n\nIMPORTANT: Answer only about Aiden\'s actual capabilities. Do not mention any generic AI features, accounting tools, tax software, or anything unrelated to the task.'
+    response = await callLLM(retryPrompt, apiKey, model, providerName, opts)
+    attempts++
+  }
+
+  return response
 }
 
 // ── Deep research: 3-pass LLM-assisted research loop ─────────

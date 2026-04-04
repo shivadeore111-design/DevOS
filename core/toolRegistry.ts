@@ -123,9 +123,47 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
     const url = p.url || p.command || ''
     if (!url) return { success: false, output: '', error: 'No URL provided' }
     try {
-      const result = await openBrowser(url)
-      return { success: true, output: result }
-    } catch (e: any) { return { success: false, output: '', error: e.message } }
+      // Use Playwright for navigation so we can read page content back
+      const browser = await getBrowser()
+      const context = browser.contexts().length > 0
+        ? browser.contexts()[0]
+        : await browser.newContext()
+      const pages = context.pages()
+      const page  = pages.length > 0 ? pages[pages.length - 1] : await context.newPage()
+
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 })
+      await page.waitForTimeout(1500)
+
+      // Extract page info for the LLM to see what was opened
+      // Uses string-form evaluate() to avoid Node.js DOM type issues
+      let title       = ''
+      let h1Text      = ''
+      let description = ''
+      let bodySnippet = ''
+
+      try { title = await page.title() } catch {}
+      try { h1Text      = String(await page.evaluate('document.querySelector("h1")?.innerText?.trim() || ""')) } catch {}
+      try { description = String(await page.evaluate('document.querySelector(\'meta[name="description"]\')?.content?.trim() || ""')) } catch {}
+      try { bodySnippet = String(await page.evaluate('(document.body.innerText || "").slice(0, 500).trim()')) } catch {}
+
+      const lines = [
+        `Opened ${url}`,
+        title       && `Page: ${title}`,
+        h1Text      && `Heading: ${h1Text}`,
+        description && `About: ${description}`,
+        bodySnippet && `Content: ${bodySnippet}`,
+      ].filter(Boolean)
+
+      return { success: true, output: lines.join('\n') }
+    } catch (e: any) {
+      // Fallback: open via system browser (PowerShell) if Playwright fails
+      try {
+        const result = await openBrowser(url)
+        return { success: true, output: result }
+      } catch {
+        return { success: false, output: '', error: e.message }
+      }
+    }
   },
 
   browser_screenshot: async () => {

@@ -39,7 +39,7 @@ import { ollamaProvider } from '../providers/ollama'
 import { getSmartProvider, markRateLimited, incrementUsage, logProviderStatus, getModelForTask } from '../providers/router'
 import { executeTool } from '../core/toolRegistry'
 import { getScreenSize, takeScreenshot as captureScreen } from '../core/computerControl'
-import { planWithLLM, executePlan, respondWithResults, callLLM } from '../core/agentLoop'
+import { planWithLLM, executePlan, respondWithResults, callLLM, getCapabilityList } from '../core/agentLoop'
 import { TOOL_DESCRIPTIONS } from '../core/toolRegistry'
 import { runReActLoop, ReActStep }                                 from '../core/reactLoop'
 import { scheduler }                                              from '../core/scheduler'
@@ -292,12 +292,17 @@ export function createApiServer(): Express {
   // mode: 'auto' (default) | 'plan' (show plan only) | 'chat' (force chat, skip planner)
   // Supports both SSE streaming (Accept: text/event-stream) and JSON mode (Accept: application/json)
   app.post('/api/chat', async (req: Request, res: Response) => {
-    const { history = [], mode = 'auto', sessionId } = (req.body || {}) as {
+    const { history: rawHistory = [], mode = 'auto', sessionId } = (req.body || {}) as {
       message?:   string
       history?:   { role: string; content: string }[]
       mode?:      'auto' | 'plan' | 'chat' | 'react' | 'fast'
       sessionId?: string
     }
+
+    // FIX 7: strip empty-content messages (streaming placeholders from frontend)
+    // and deduplicate the current user message (frontend includes it in both
+    // history[] and message field, causing duplicate user turns in LLM context)
+    const history = rawHistory.filter(h => h.content && h.content.trim().length > 0)
 
     // â”€â”€ Sanitize input â€” strip null bytes and control chars â”€â”€â”€â”€
     let message = req.body?.message || ''
@@ -589,6 +594,7 @@ export function createApiServer(): Express {
       /^got it[!.]*$/i,
       /^what can you do/i,
       /^what are your (skills|capabilities|tools)/i,
+      /^capabilities$/i,
       /^who are you/i,
       /^are you (there|ready|online|working)/i,
     ]
@@ -677,11 +683,17 @@ export function createApiServer(): Express {
       if (!plan.requires_execution || plan.plan.length === 0) {
         let fullReply = ''
 
-        // Capability/skills questions must go through LLM with full context injection.
-        // direct_response from the planner has no capabilities awareness â€” it will lie.
-        const isCapabilityQuery = /what.*(can you do|skills|tools|capabilities|abilities)|how many skills|what are you capable/i.test(resolvedMessage)
+        // FIX 4: capability queries get a dynamic list directly — no LLM hallucination
+        const isCapabilityQuery = /what.*(can you do|skills|tools|capabilities|abilities)|how many skills|what are you capable|capabilities/i.test(resolvedMessage)
 
-        if (plan.direct_response && !isCapabilityQuery) {
+        if (isCapabilityQuery) {
+          fullReply = getCapabilityList()
+          const words = fullReply.split(' ')
+          for (const word of words) {
+            send({ token: word + ' ', done: false, provider: apiName })
+            await new Promise(r => setTimeout(r, 8))
+          }
+        } else if (plan.direct_response) {
           fullReply = plan.direct_response
           const words = plan.direct_response.split(' ')
           for (const word of words) {
@@ -750,8 +762,9 @@ export function createApiServer(): Express {
       // â”€â”€ STEP 3: RESPOND â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       send({ activity: { icon: 'âœï¸', agent: 'Aiden', message: 'Writing response...', style: 'thinking' }, done: false })
 
-      let streamEnded = false
-      let fullReply   = ''
+      let streamEnded    = false
+      let fullReply      = ''
+      const respondStart = Date.now()
       const timeout = setTimeout(() => {
         if (!streamEnded) { send({ done: true, error: 'Response timed out' }); res.end() }
       }, 30000)
@@ -768,6 +781,10 @@ export function createApiServer(): Express {
       streamEnded = true
       clearTimeout(timeout)
 
+      // FIX 6: model label with duration
+      const respondDuration = ((Date.now() - respondStart) / 1000).toFixed(1)
+      const modelLabel = `${providerName} · ${activeModel} · ${respondDuration}s`
+
       // â”€â”€ UPDATE CONVERSATION MEMORY â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       const toolsUsed     = results.map(r => r.tool)
       const filesCreated  = results
@@ -776,6 +793,21 @@ export function createApiServer(): Express {
       const searchQueries = results
         .filter(r => (r.tool === 'web_search' || r.tool === 'deep_research') && r.input?.query)
         .map(r => r.input.query as string)
+
+      // FIX 8: inject tool results into conversation memory so future turns can
+      // reference what was opened/done (e.g. “what did you just open?”)
+      if (results.length > 0) {
+        const toolSummary = results
+          .filter(r => r.success && r.output)
+          .map(r => `[${r.tool}]: ${r.output.slice(0, 300)}`)
+          .join('\n')
+        if (toolSummary) {
+          conversationMemory.addAssistantMessage(
+            `I ran the following tools:\n${toolSummary}`,
+            { toolsUsed, filesCreated, searchQueries, planId: plan.planId },
+          )
+        }
+      }
 
       conversationMemory.updateFromExecution(toolsUsed, filesCreated, searchQueries, plan.planId)
       conversationMemory.addAssistantMessage(fullReply, { toolsUsed, filesCreated, searchQueries, planId: plan.planId })
@@ -789,7 +821,7 @@ export function createApiServer(): Express {
       }, 100)
 
       incrementUsage(apiName)
-      send({ done: true, provider: apiName })
+      send({ done: true, provider: modelLabel ?? apiName })
       res.end()
       memoryLayers.write(`User: ${resolvedMessage}`, ['chat'])
 
