@@ -2268,6 +2268,48 @@ export function createApiServer(): Express {
     }
   })
 
+  // ── /api/user-profile — USER.md explicit profile ─────────────
+  app.get('/api/user-profile', (_req: Request, res: Response) => {
+    try {
+      const { loadUserProfile, userProfileExists, USER_PROFILE_PATH } = require('../core/userProfile')
+      if (!userProfileExists()) { res.json({ exists: false, content: '' }); return }
+      res.json({ exists: true, content: loadUserProfile(), path: USER_PROFILE_PATH })
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
+  app.post('/api/user-profile', async (req: Request, res: Response) => {
+    try {
+      const { createUserProfile } = require('../core/userProfile')
+      const answers = req.body as {
+        name: string; role: string; timezone: string
+        github?: string; monitoring?: string; responseStyle?: string
+      }
+      if (!answers.name || !answers.role || !answers.timezone) {
+        res.status(400).json({ error: 'name, role, and timezone are required' }); return
+      }
+      createUserProfile(answers)
+      res.json({ success: true })
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
+  app.put('/api/user-profile', async (req: Request, res: Response) => {
+    try {
+      const { updateUserProfile } = require('../core/userProfile')
+      const { content } = req.body as { content?: string }
+      if (!content || typeof content !== 'string') {
+        res.status(400).json({ error: 'content required' }); return
+      }
+      updateUserProfile(content)
+      res.json({ success: true })
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
   // ── GET /api/natural-events — NASA EONET (30-min memory cache) ──
   {
     interface EonetCache { events: any[]; summary: string; fetchedAt: number }

@@ -2325,9 +2325,105 @@ function DisclaimerBar() {
   )
 }
 
+// ── UserProfileTab ────────────────────────────────────────────
+
+function UserProfileTab() {
+  const [content,  setContent]  = useState('')
+  const [loading,  setLoading]  = useState(true)
+  const [saving,   setSaving]   = useState(false)
+  const [saved,    setSaved]    = useState(false)
+  const [exists,   setExists]   = useState(false)
+
+  useEffect(() => {
+    fetch('http://localhost:4200/api/user-profile')
+      .then(r => r.json())
+      .then((d: { exists: boolean; content: string }) => {
+        setExists(d.exists)
+        setContent(d.content ?? '')
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  async function save() {
+    setSaving(true)
+    setSaved(false)
+    try {
+      await fetch('http://localhost:4200/api/user-profile', {
+        method:  'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ content }),
+      })
+      setSaved(true)
+      setExists(true)
+      setTimeout(() => setSaved(false), 2500)
+    } catch {}
+    setSaving(false)
+  }
+
+  if (loading) return <div style={{ color: 'var(--muted)', fontSize: 11, padding: '20px 0' }}>Loading profile…</div>
+
+  return (
+    <div>
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: 12, color: 'var(--text)', fontWeight: 600, marginBottom: 4 }}>
+          {exists ? 'Edit Your Profile' : 'Create Your Profile'}
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--muted2)', lineHeight: 1.6 }}>
+          Aiden injects this into every conversation so it always knows who you are, your role, what to monitor, and how you like to communicate.
+        </div>
+      </div>
+
+      <textarea
+        value={content || "# User Profile\nName: \nRole: \nTimezone: \nLocation: \n\n# Preferences\nResponse style: Direct, concise, no fluff\nTechnical level: Expert\nAutonomy level: Assistant\n\n# Accounts & Tools\n- GitHub: \n- Primary browser: Chrome\n\n# Proactive Monitoring\n- Markets: \n- Email: \n- Folders to watch: \n- Repos to monitor: \n\n# Notes\n"}
+        onChange={e => setContent(e.target.value)}
+        spellCheck={false}
+        style={{
+          width: '100%', minHeight: 380,
+          background: 'var(--bg2)', border: '1px solid var(--border)',
+          borderRadius: 7, padding: '12px 14px',
+          fontFamily: 'var(--mono)', fontSize: 11,
+          color: 'var(--text)', lineHeight: 1.7,
+          resize: 'vertical', outline: 'none',
+          boxSizing: 'border-box',
+        }}
+      />
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
+        <button
+          onClick={save}
+          disabled={saving}
+          style={{
+            background: saving ? 'var(--bg3)' : 'var(--orange)',
+            border: 'none', borderRadius: 6,
+            padding: '8px 20px', fontSize: 11, fontWeight: 700,
+            color: saving ? 'var(--muted)' : '#000',
+            fontFamily: 'var(--mono)', cursor: saving ? 'default' : 'pointer',
+            transition: 'all 0.15s',
+          }}
+        >
+          {saving ? 'Saving…' : 'Save profile'}
+        </button>
+        {saved && (
+          <span style={{ fontSize: 11, color: 'var(--green)' }}>✓ Saved — Aiden will use this from next message</span>
+        )}
+      </div>
+
+      <div style={{ marginTop: 16, padding: '10px 12px', background: 'var(--bg2)', borderRadius: 6, border: '1px solid var(--border)' }}>
+        <div style={{ fontSize: 10, color: 'var(--muted)', lineHeight: 1.6 }}>
+          <strong style={{ color: 'var(--muted2)' }}>How it works:</strong> This markdown file is saved to{' '}
+          <code style={{ background: 'var(--bg3)', padding: '1px 5px', borderRadius: 3 }}>workspace/USER.md</code>{' '}
+          and prepended to Aiden&apos;s system prompt on every message. Edit freely — plain text or markdown both work.
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── SettingsDrawer ────────────────────────────────────────────
 
 const SETTINGS_TABS = [
+  { id: 'profile',  label: '👤 My Profile'  },
   { id: 'api',      label: '🔑 API Keys'    },
   { id: 'model',    label: '🧠 Model'        },
   { id: 'knowledge',label: '📚 Knowledge'   },
@@ -2392,6 +2488,7 @@ function SettingsDrawer() {
 
         {/* Content */}
         <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
+          {settingsTab === 'profile'   && <UserProfileTab />}
           {settingsTab === 'api'       && <ApiKeysTab />}
           {settingsTab === 'knowledge' && <KnowledgeBaseTab />}
 

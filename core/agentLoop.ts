@@ -28,6 +28,7 @@ import { auditTrail }             from './auditTrail'
 import { mcpClient }             from './mcpClient'
 import { unifiedMemoryRecall, buildMemoryInjection } from './memoryRecall'
 import { costTracker } from './costTracker'
+import { loadUserProfile, userProfileExists } from './userProfile'
 import * as nodeFs             from 'fs'
 import * as nodePath           from 'path'
 import * as nodeOs             from 'os'
@@ -419,6 +420,17 @@ export async function planWithLLM(
   memoryContext?: string,
 ): Promise<AgentPlan> {
 
+  // ── First-message profile prompt — ask if USER.md doesn't exist ──
+  if (!userProfileExists() && history.length === 0) {
+    return {
+      goal:               message,
+      requires_execution: false,
+      plan:               [],
+      phases:             [],
+      direct_response:    `Before we start — I'd love to know a bit about you so I can be more useful.\n\n1. **What's your name?**\n2. **What's your role?** (e.g. Solo founder, Developer, Trader, Student)\n3. **What should I monitor proactively?** (e.g. NIFTY, my email, a GitHub repo)\n\nJust reply and I'll remember this. You can also fill in your full profile anytime in **Settings → My Profile**. (Or skip and type your question — I'll work without it.)`,
+    }
+  }
+
   // ── Vague goal detection — ask for clarification before planning ──
   const VAGUE_PATTERNS = [/\bthe thing\b/i, /\bthe stuff\b/i, /\bthe place\b/i, /\bdo it\b$/i, /\bfix it\b$/i]
   if (VAGUE_PATTERNS.some(p => p.test(message))) {
@@ -480,6 +492,11 @@ export async function planWithLLM(
       memoryRecallSection = memoryInjected
     }
   } catch {}
+
+  // Build user profile section
+  const userProfileSection = userProfileExists()
+    ? `\n\n## User Profile\n${loadUserProfile()}\n`
+    : ''
 
   const plannerPrompt = `You are DevOS Planner. Analyze the user request and output a JSON plan.
 
@@ -549,7 +566,7 @@ OUTPUT FORMAT (strict JSON only):
 
 If requires_execution is false:
 { "goal": "...", "requires_execution": false, "reasoning": "...", "plan": [] }
-${skillContext}${memorySection}${learningSection}${knowledgeSection}${memoryRecallSection}
+${userProfileSection}${skillContext}${memorySection}${learningSection}${knowledgeSection}${memoryRecallSection}
 Output ONLY valid JSON, nothing else:`
 
   const messages = [
@@ -1449,6 +1466,11 @@ export async function respondWithResults(
     : ''
 
 
+  // User profile — inject explicit user identity and preferences
+  const userProfileCtx = userProfileExists()
+    ? `\n\n## User Profile\n${loadUserProfile()}\n`
+    : ''
+
   // Knowledge context — relevant chunks from user's uploaded files
   const knowledgeCtxResponder = knowledgeBase.buildContext(originalMessage || '')
   const knowledgeResponderSection = knowledgeCtxResponder
@@ -1490,7 +1512,7 @@ export async function respondWithResults(
     : ''
 
   const systemWithResults = toolResultsContext
-    ? `${capabilitiesSection}${responderSystem(userName, date)}${responseSkillContext}${knowledgeResponderSection}
+    ? `${capabilitiesSection}${responderSystem(userName, date)}${userProfileCtx}${responseSkillContext}${knowledgeResponderSection}
 
 YOU JUST RAN THESE TOOLS AND GOT THESE RESULTS:
 ${toolResultsContext}
@@ -1503,7 +1525,7 @@ CRITICAL RULES FOR YOUR RESPONSE:
 - If system_info returned hardware data, show the data
 - Be direct: show the actual output, then provide context if needed
 - If a tool failed, say it failed and why`
-    : `${capabilitiesSection}${responderSystem(userName, date)}${responseSkillContext}${knowledgeResponderSection}`
+    : `${capabilitiesSection}${responderSystem(userName, date)}${userProfileCtx}${responseSkillContext}${knowledgeResponderSection}`
 
   const userContent = executionSummary
     ? `User asked: "${originalMessage}"\n\nReal execution results:\n${executionSummary}\n\nRespond naturally based on these real results only. Show the actual output, not a description of it.${depthInstruction}${memSection}`

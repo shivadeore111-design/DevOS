@@ -12,6 +12,7 @@
 
 import fs   from 'fs'
 import path from 'path'
+import { syncCognitionToProfile } from './userProfile'
 
 // ── Paths ──────────────────────────────────────────────────────
 
@@ -266,6 +267,8 @@ export class UserCognitionProfile {
   private saveProfile(): void {
     try {
       fs.writeFileSync(PROFILE_PATH, JSON.stringify(this.profile, null, 2), 'utf-8')
+      // Keep USER.md in sync with learned preferences
+      syncCognitionToProfile(this.profile.verbosity, this.profile.technicalLevel)
     } catch {}
   }
 }
