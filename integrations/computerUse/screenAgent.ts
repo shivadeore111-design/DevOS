@@ -9,7 +9,6 @@
 // and verified by TruthChecker after execution.
 
 import screenshot from 'screenshot-desktop'
-import { keyboard, mouse, Button, Key } from '@nut-tree-fork/nut-js'
 import {
   ComputerUseAction,
   ClickAction,
@@ -20,6 +19,33 @@ import {
 import { commandGate }  from '../../coordination/commandGate'
 import { truthChecker } from '../../core/truthCheck'
 import { faultEngine }  from '../../core/faultEngine'
+
+// ── Lazy nut-js loader ────────────────────────────────────────
+// @nut-tree-fork/nut-js requires native build tools. We load it
+// lazily so the API server can start even when the native module
+// is not installed / built.
+
+let _nutjs: any = null
+
+async function getNut(): Promise<{
+  keyboard: any
+  mouse: any
+  Button: any
+  Key: any
+}> {
+  if (!_nutjs) {
+    try {
+      _nutjs = await import('@nut-tree-fork/nut-js')
+    } catch (err: any) {
+      throw new Error(
+        `@nut-tree-fork/nut-js is not installed or failed to build. ` +
+        `Run: npm install @nut-tree-fork/nut-js --build-from-source\n` +
+        `Original error: ${err?.message ?? err}`,
+      )
+    }
+  }
+  return _nutjs
+}
 
 // ── ScreenAgent ───────────────────────────────────────────────
 
@@ -70,6 +96,8 @@ class ScreenAgent {
     }
 
     try {
+      const { mouse, keyboard, Button, Key } = await getNut()
+
       switch (action.type) {
 
         case 'click': {
@@ -95,8 +123,8 @@ class ScreenAgent {
         case 'keypress': {
           const a = action as KeypressAction
           const mapped = a.keys
-            .map(k => Key[k as keyof typeof Key])
-            .filter((v): v is Key => v !== undefined)
+            .map((k: string) => Key[k as keyof typeof Key])
+            .filter((v: unknown) => v !== undefined)
           if (mapped.length === 1)       await keyboard.pressKey(mapped[0])
           else if (mapped.length > 1)    await keyboard.pressKey(...mapped)
           break

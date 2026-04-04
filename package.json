@@ -88,12 +88,18 @@
       {
         "from": "dashboard-next/.next/standalone",
         "to": "dashboard/standalone",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       },
       {
         "from": "config",
         "to": "config",
-        "filter": ["devos.config.json", "model-selection.json", "hardware.json"]
+        "filter": [
+          "devos.config.json",
+          "model-selection.json",
+          "hardware.json"
+        ]
       }
     ],
     "asar": true,
@@ -108,6 +114,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
+    "@nut-tree-fork/nut-js": "^4.2.6",
     "@slack/bolt": "^4.6.0",
     "@slack/web-api": "^7.15.0",
     "@types/bcrypt": "^6.0.0",
