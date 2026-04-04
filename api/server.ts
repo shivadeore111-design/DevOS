@@ -967,28 +967,32 @@ export function createApiServer(): Express {
 
   // POST /api/providers/add â€” add or update a single API key
   app.post('/api/providers/add', (req: Request, res: Response) => {
-    const { name, provider, key, model, enabled = true } = req.body as {
-      name?: string; provider?: string; key?: string; model?: string; enabled?: boolean
-    }
-    if (!provider || !key) { res.status(400).json({ error: 'provider and key required' }); return }
+    try {
+      const { name, provider, key, model, enabled = true } = req.body as {
+        name?: string; provider?: string; key?: string; model?: string; enabled?: boolean
+      }
+      if (!provider || !key) { res.status(400).json({ error: 'provider and key required' }); return }
 
-    const config = loadConfig()
-    const entry: APIEntry = {
-      name:        name || `${provider}-${config.providers.apis.filter(a => a.provider === provider).length + 1}`,
-      provider,
-      key,
-      model:       model || getDefaultModel(provider),
-      enabled:     enabled !== false,
-      rateLimited: false,
-      usageCount:  0,
-    }
-    const idx = config.providers.apis.findIndex(a => a.name === entry.name)
-    if (idx >= 0) config.providers.apis[idx] = { ...config.providers.apis[idx], ...entry }
-    else config.providers.apis.push(entry)
+      const config = loadConfig()
+      const entry: APIEntry = {
+        name:        name || `${provider}-${config.providers.apis.filter(a => a.provider === provider).length + 1}`,
+        provider,
+        key,
+        model:       model || getDefaultModel(provider),
+        enabled:     enabled !== false,
+        rateLimited: false,
+        usageCount:  0,
+      }
+      const idx = config.providers.apis.findIndex(a => a.name === entry.name)
+      if (idx >= 0) config.providers.apis[idx] = { ...config.providers.apis[idx], ...entry }
+      else config.providers.apis.push(entry)
 
-    if (!config.routing) config.routing = { mode: 'auto', fallbackToOllama: true }
-    saveConfig(config)
-    res.json({ success: true, entry: { ...entry, key: '***' } })
+      if (!config.routing) config.routing = { mode: 'auto', fallbackToOllama: true }
+      saveConfig(config)
+      res.json({ success: true, entry: { ...entry, key: '***' } })
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message || 'Failed to save API key' })
+    }
   })
 
   // DELETE /api/providers/:name â€” remove an API

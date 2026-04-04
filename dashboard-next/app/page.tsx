@@ -158,6 +158,7 @@ interface DevOSCtxType {
   providerModels: Record<string, string>
   setProviderModels:(v: React.SetStateAction<Record<string, string>>) => void
   savingKey:      boolean
+  saveKeyError:   string | null
   saveKey:        (providerID: string) => void
   toggleProvider: (name: string, enabled: boolean) => void
   deleteProvider: (name: string) => void
@@ -594,7 +595,7 @@ function ApiKeysTab() {
   const {
     providers, routing, addingProvider, setAddingProvider,
     providerKeys, setProviderKeys, providerModels, setProviderModels,
-    savingKey, saveKey, toggleProvider, deleteProvider, resetLimits,
+    savingKey, saveKeyError, saveKey, toggleProvider, deleteProvider, resetLimits,
   } = useDevOS()
 
   // ── Inline key validation ────────────────────────────────────
@@ -774,6 +775,15 @@ function ApiKeysTab() {
             >
               {savingKey ? 'Saving...' : 'Save API Key'}
             </button>
+            {saveKeyError && (
+              <div style={{
+                marginTop: 8, padding: '6px 10px', borderRadius: 4,
+                background: 'rgba(255,80,80,0.12)', border: '1px solid rgba(255,80,80,0.35)',
+                color: '#ff5050', fontSize: 11, fontFamily: 'var(--mono)',
+              }}>
+                ✗ {saveKeyError}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -2874,6 +2884,7 @@ export default function Home() {
   const [providerKeys,    setProviderKeys]    = useState<Record<string, string>>({})
   const [providerModels,  setProviderModels]  = useState<Record<string, string>>({})
   const [savingKey,       setSavingKey]       = useState(false)
+  const [saveKeyError,    setSaveKeyError]    = useState<string | null>(null)
 
   // ── Knowledge Base state ────────────────────────────────────
   const [knowledgeFiles,    setKnowledgeFiles]    = useState<any[]>([])
@@ -3262,18 +3273,25 @@ export default function Home() {
     const model = providerModels[providerID] || ''
     if (!key) return
     setSavingKey(true)
+    setSaveKeyError(null)
     try {
-      await fetch('http://localhost:4200/api/providers/add', {
+      const r = await fetch('http://localhost:4200/api/providers/add', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ provider: providerID, key, model: model || undefined }),
       })
+      if (!r.ok) {
+        const errBody = await r.json().catch(() => ({})) as any
+        throw new Error(errBody?.error || `Server error ${r.status}`)
+      }
       setProviderKeys(prev => { const n = { ...prev }; delete n[providerID]; return n })
       setProviderModels(prev => { const n = { ...prev }; delete n[providerID]; return n })
       setAddingProvider(null)
-      const d = await fetch('http://localhost:4200/api/providers').then(r => r.json()) as any
+      const d = await fetch('http://localhost:4200/api/providers').then(r2 => r2.json()) as any
       setProviders(d.apis || [])
-    } catch {}
+    } catch (e: any) {
+      setSaveKeyError(e?.message || 'Failed to save API key')
+    }
     setSavingKey(false)
   }, [providerKeys, providerModels])
 
@@ -3476,7 +3494,7 @@ export default function Home() {
     // API keys
     providers, routing, addingProvider, setAddingProvider,
     providerKeys, setProviderKeys, providerModels, setProviderModels,
-    savingKey, saveKey, toggleProvider, deleteProvider, resetLimits,
+    savingKey, saveKeyError, saveKey, toggleProvider, deleteProvider, resetLimits,
     // Knowledge base
     knowledgeFiles, knowledgeStats, uploadingFile,
     uploadCategory, setUploadCategory, knowledgeInputRef,
