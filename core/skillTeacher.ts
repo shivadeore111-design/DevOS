@@ -207,6 +207,28 @@ export class SkillTeacher {
       return
     }
 
+    // ── Quality gate — reject low-signal skill names ──────────
+    const isLowQuality = (
+      skillName.length < 5 ||
+      skillName.split('_').length < 2 ||
+      task.split(/\s+/).length < 3
+    )
+    if (isLowQuality) {
+      console.log(`[SkillTeacher] Rejected low-quality skill: "${skillName}"`)
+      return
+    }
+
+    // ── Deduplication — reject names already in approved/ ─────
+    const approvedNames = fs.existsSync(APPROVED_DIR)
+      ? fs.readdirSync(APPROVED_DIR).filter(d => {
+          try { return fs.statSync(path.join(APPROVED_DIR, d)).isDirectory() } catch { return false }
+        })
+      : []
+    if (approvedNames.includes(skillName)) {
+      console.log(`[SkillTeacher] Skipping duplicate (already approved): "${skillName}"`)
+      return
+    }
+
     // ── New skill — generate SKILL.md and write meta ──────────
     console.log(`[SkillTeacher] Learning new skill: "${skillName}" from task: "${task.slice(0, 60)}"`)
 
