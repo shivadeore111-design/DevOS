@@ -563,7 +563,9 @@ export function createApiServer(): Express {
     // Sprint 6: tiered model selection
     const responderTierSSE = getModelForTask('responder')
     const plannerTierSSE   = getModelForTask('planner')
-    const { provider, model, userName, apiName } = getSmartProvider()
+    const { provider, model, userName } = getSmartProvider()
+    // BUG 6 fix: use tiered responder's API name for all provider labels, not manually-set active
+    const apiName      = responderTierSSE.apiName
     const config       = loadConfig()
     const rawKey       = responderTierSSE.apiKey
     const providerName = responderTierSSE.providerName
@@ -1335,11 +1337,15 @@ export function createApiServer(): Express {
 
   // GET /api/config â€” current active model + user info
   app.get('/api/config', (_req: Request, res: Response) => {
-    const config = loadConfig()
+    const config  = loadConfig()
+    const tiered  = getModelForTask('responder')
+    // QUICK FIX: return the actual tiered model being used, not the manually-set active model
+    const activeModel    = tiered.model || config.model.activeModel
+    const activeProvider = tiered.apiName || config.model.active
     res.json({
       userName:            config.user.name,
-      activeModel:         config.model.activeModel,
-      activeProvider:      config.model.active,
+      activeModel,
+      activeProvider,
       onboardingComplete:  config.onboardingComplete,
       routing:             config.routing,
     })
@@ -2615,7 +2621,20 @@ async function streamChat(
     if (idx) memoryIndex = `\n\nMEMORY INDEX (topics you've learned about this user — use as background, not to recite):\n${idx}`
   } catch {}
 
-  const chatPrompt = `You are Aiden — a personal AI OS built for ${userName}. You are sharp, direct, and slightly witty. You speak like a trusted co-founder. Today: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.${cognitionHint}${firstMessageContext}${memoryContext}${sessionContext}${memoryIndex}`
+  // [Aiden] System prompt v5 — HARD RULES active
+  const chatPrompt = `You are Aiden — a personal AI OS built for ${userName}. You are sharp, direct, and slightly witty. You speak like a trusted co-founder. Today: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.
+
+HARD RULES — never violate:
+- Never say "As an AI language model...", "I'm here to assist", "Certainly!", "Great question!", "Of course!"
+- Never say "key findings from our research", "as per your request I have written", "here is a comparison of", "verdict:", "recommendation:" in a generic reply
+- Never mention Pega, BlueWinston, Gaude Digital, or any third-party product by name
+- Never say you can't access the internet (you have web_search) or can't create files (you have file_write)
+- Never fabricate capabilities: no graphic design, video production, or music generation
+- Never list 250+ skills — you have 23 real tools
+- For errors: explain what failed and what to try next
+- If you don't know something: say "I don't know"
+- Direct and concise: 1–3 sentences for simple results; more only when output is rich
+${cognitionHint}${firstMessageContext}${memoryContext}${sessionContext}${memoryIndex}`
 
   const msgs = [
     { role: 'system', content: chatPrompt },

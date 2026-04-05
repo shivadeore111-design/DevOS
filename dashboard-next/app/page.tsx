@@ -1586,6 +1586,116 @@ function GrowthCard() {
   )
 }
 
+// ── NasaLiveEventsCard ────────────────────────────────────────
+
+interface NasaEvent {
+  id:         string
+  title:      string
+  categories: { id: string; title: string }[]
+  geometry:   { date: string }[]
+}
+
+function NasaLiveEventsCard() {
+  const [events,    setEvents]    = useState<NasaEvent[]>([])
+  const [summary,   setSummary]   = useState('')
+  const [loading,   setLoading]   = useState(true)
+  const [fetchedAt, setFetchedAt] = useState(0)
+
+  const load = useCallback(async () => {
+    try {
+      const res  = await fetch('http://localhost:4200/api/natural-events')
+      if (!res.ok) return
+      const data = await res.json() as { events: NasaEvent[]; summary: string; fetchedAt: number }
+      setEvents(data.events ?? [])
+      setSummary(data.summary ?? '')
+      setFetchedAt(data.fetchedAt ?? Date.now())
+    } catch {}
+    setLoading(false)
+  }, [])
+
+  useEffect(() => {
+    load()
+    const id = setInterval(load, 30 * 60 * 1000)
+    return () => clearInterval(id)
+  }, [load])
+
+  if (!loading && events.length === 0) return null
+
+  const top3 = events.slice(0, 3)
+
+  const catEmoji = (id: string) =>
+    id === 'wildfires'    ? '🔥' :
+    id === 'severeStorms' ? '🌪️' :
+    id === 'volcanoes'    ? '🌋' :
+    id === 'floods'       ? '🌊' :
+    id === 'earthquakes'  ? '🫨' : '⚠️'
+
+  return (
+    <div style={{
+      margin: '0 10px 10px',
+      background: 'var(--bg2)',
+      border: '1px solid rgba(249,115,22,0.2)',
+      borderRadius: 8,
+      padding: '10px 12px',
+      flexShrink: 0,
+      fontFamily: 'var(--mono)',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--orange)', fontWeight: 700 }}>
+          <span>🌍</span>
+          <span>NASA Live Events</span>
+          {events.length > 0 && (
+            <span style={{
+              background: 'rgba(249,115,22,0.15)', color: 'var(--orange)',
+              borderRadius: 10, padding: '1px 7px', fontSize: 9, fontWeight: 700,
+            }}>{events.length}</span>
+          )}
+        </div>
+        {fetchedAt > 0 && (
+          <span style={{ fontSize: 9, color: 'var(--muted)' }}>
+            {new Date(fetchedAt).toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit', hour12: false })}
+          </span>
+        )}
+      </div>
+
+      {loading ? (
+        <div style={{ fontSize: 10, color: 'var(--muted)', textAlign: 'center', padding: '4px 0' }}>fetching…</div>
+      ) : top3.length === 0 ? (
+        <div style={{ fontSize: 10, color: 'var(--muted)' }}>No active high-impact events</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          {top3.map(ev => {
+            const catId  = ev.categories?.[0]?.id ?? ''
+            const emoji  = catEmoji(catId)
+            const latest = ev.geometry?.[ev.geometry.length - 1]
+            const date   = latest?.date
+              ? new Date(latest.date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })
+              : ''
+            return (
+              <div key={ev.id} style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                <span style={{ fontSize: 13, flexShrink: 0, lineHeight: '16px' }}>{emoji}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 10, color: 'var(--text)', lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {ev.title}
+                  </div>
+                  <div style={{ fontSize: 9, color: 'var(--muted)', marginTop: 1 }}>
+                    {ev.categories?.[0]?.title ?? catId}{date ? ` · ${date}` : ''}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+          {events.length > 3 && (
+            <div style={{ fontSize: 9, color: 'var(--muted)', marginTop: 2 }}>
+              +{events.length - 3} more active events
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── LiveViewPanel ─────────────────────────────────────────────
 
 interface PulseEntry {
@@ -1773,6 +1883,9 @@ function LiveViewPanel() {
       {/* Sprint 27: Growth Card */}
       <GrowthCard />
 
+      {/* NASA EONET natural events */}
+      <NasaLiveEventsCard />
+
       {/* Footer stats */}
       <div style={{
         borderTop: '1px solid var(--border)', padding: '8px 14px',
@@ -1944,7 +2057,10 @@ function SkillsView() {
         </div>
       ))}
       <button
-        onClick={() => fetch('http://localhost:4200/api/skills/refresh', { method: 'POST' }).then(() => window.location.reload()).catch(() => {})}
+        type="button"
+        onClick={() => fetch('http://localhost:4200/api/skills/refresh', { method: 'POST' })
+          .then(() => fetch('http://localhost:4200/api/skills').then(r => r.json()).then(d => setSkills(d.skills || [])))
+          .catch(() => {})}
         style={{
           width: '100%', padding: '8px', marginTop: 8,
           background: 'var(--bg2)', border: '1px solid var(--border2)',
@@ -2212,9 +2328,105 @@ function DisclaimerBar() {
   )
 }
 
+// ── UserProfileTab ────────────────────────────────────────────
+
+function UserProfileTab() {
+  const [content,  setContent]  = useState('')
+  const [loading,  setLoading]  = useState(true)
+  const [saving,   setSaving]   = useState(false)
+  const [saved,    setSaved]    = useState(false)
+  const [exists,   setExists]   = useState(false)
+
+  useEffect(() => {
+    fetch('http://localhost:4200/api/user-profile')
+      .then(r => r.json())
+      .then((d: { exists: boolean; content: string }) => {
+        setExists(d.exists)
+        setContent(d.content ?? '')
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  async function save() {
+    setSaving(true)
+    setSaved(false)
+    try {
+      await fetch('http://localhost:4200/api/user-profile', {
+        method:  'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ content }),
+      })
+      setSaved(true)
+      setExists(true)
+      setTimeout(() => setSaved(false), 2500)
+    } catch {}
+    setSaving(false)
+  }
+
+  if (loading) return <div style={{ color: 'var(--muted)', fontSize: 11, padding: '20px 0' }}>Loading profile…</div>
+
+  return (
+    <div>
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: 12, color: 'var(--text)', fontWeight: 600, marginBottom: 4 }}>
+          {exists ? 'Edit Your Profile' : 'Create Your Profile'}
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--muted2)', lineHeight: 1.6 }}>
+          Aiden injects this into every conversation so it always knows who you are, your role, what to monitor, and how you like to communicate.
+        </div>
+      </div>
+
+      <textarea
+        value={content || "# User Profile\nName: \nRole: \nTimezone: \nLocation: \n\n# Preferences\nResponse style: Direct, concise, no fluff\nTechnical level: Expert\nAutonomy level: Assistant\n\n# Accounts & Tools\n- GitHub: \n- Primary browser: Chrome\n\n# Proactive Monitoring\n- Markets: \n- Email: \n- Folders to watch: \n- Repos to monitor: \n\n# Notes\n"}
+        onChange={e => setContent(e.target.value)}
+        spellCheck={false}
+        style={{
+          width: '100%', minHeight: 380,
+          background: 'var(--bg2)', border: '1px solid var(--border)',
+          borderRadius: 7, padding: '12px 14px',
+          fontFamily: 'var(--mono)', fontSize: 11,
+          color: 'var(--text)', lineHeight: 1.7,
+          resize: 'vertical', outline: 'none',
+          boxSizing: 'border-box',
+        }}
+      />
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
+        <button
+          onClick={save}
+          disabled={saving}
+          style={{
+            background: saving ? 'var(--bg3)' : 'var(--orange)',
+            border: 'none', borderRadius: 6,
+            padding: '8px 20px', fontSize: 11, fontWeight: 700,
+            color: saving ? 'var(--muted)' : '#000',
+            fontFamily: 'var(--mono)', cursor: saving ? 'default' : 'pointer',
+            transition: 'all 0.15s',
+          }}
+        >
+          {saving ? 'Saving…' : 'Save profile'}
+        </button>
+        {saved && (
+          <span style={{ fontSize: 11, color: 'var(--green)' }}>✓ Saved — Aiden will use this from next message</span>
+        )}
+      </div>
+
+      <div style={{ marginTop: 16, padding: '10px 12px', background: 'var(--bg2)', borderRadius: 6, border: '1px solid var(--border)' }}>
+        <div style={{ fontSize: 10, color: 'var(--muted)', lineHeight: 1.6 }}>
+          <strong style={{ color: 'var(--muted2)' }}>How it works:</strong> This markdown file is saved to{' '}
+          <code style={{ background: 'var(--bg3)', padding: '1px 5px', borderRadius: 3 }}>workspace/USER.md</code>{' '}
+          and prepended to Aiden&apos;s system prompt on every message. Edit freely — plain text or markdown both work.
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── SettingsDrawer ────────────────────────────────────────────
 
 const SETTINGS_TABS = [
+  { id: 'profile',  label: '👤 My Profile'  },
   { id: 'api',      label: '🔑 API Keys'    },
   { id: 'model',    label: '🧠 Model'        },
   { id: 'knowledge',label: '📚 Knowledge'   },
@@ -2279,6 +2491,7 @@ function SettingsDrawer() {
 
         {/* Content */}
         <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
+          {settingsTab === 'profile'   && <UserProfileTab />}
           {settingsTab === 'api'       && <ApiKeysTab />}
           {settingsTab === 'knowledge' && <KnowledgeBaseTab />}
 

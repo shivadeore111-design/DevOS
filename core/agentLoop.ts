@@ -444,6 +444,7 @@ export async function planWithLLM(
     'clipboard_read', 'clipboard_write', 'window_list', 'window_focus',
     'app_launch', 'app_close',
     'watch_folder', 'watch_folder_list',
+    'get_briefing',
   ]
 
   // Sprint 13: append discovered MCP tools
@@ -548,13 +549,30 @@ OUTPUT FORMAT (strict JSON only):
 }
 
 If requires_execution is false:
-{ "goal": "...", "requires_execution": false, "reasoning": "...", "plan": [] }
+{ "goal": "...", "requires_execution": false, "reasoning": "...", "plan": [], "direct_response": "your answer here" }
+
+ACTION GATE RULES — apply BEFORE creating any plan:
+1. CAPABILITY GATE: If message is "Can you do X?" / "Can you X?" / "Are you able to X?" → requires_execution: false, direct_response: "Yes/No — [brief explanation]"
+2. EXPLICIT-ASK GATE: ONLY use file_write if user said "write", "save", "create file". ONLY use deep_research if user said "research", "find out", "look up"
+3. VAGUENESS GATE: If request is unclear → requires_execution: false, direct_response: one clarifying question
+4. NEVER create comparison tables, reports, or verdicts unless user explicitly asked for them
+5. NEVER mention Pega, BlueWinston, Gaude Digital, or any third-party product by name
+
+FAILURE REPLANNING RULES (when message contains "previous approach failed at"):
+- Keep new plan to max 2 steps
+- Use ONLY the specific alternative approach mentioned in the message
+- DO NOT add web_search, deep_research, file_write, or notify unless directly needed
+- DO NOT add unrelated analysis or comparison steps
 ${skillContext}${memorySection}${learningSection}${knowledgeSection}${memoryRecallSection}
 Output ONLY valid JSON, nothing else:`
 
+  const cleanHistory = history
+    .filter((h: any) => h.content && String(h.content).trim().length > 0)
+  console.log(`[Planner] History: ${cleanHistory.length} messages (${history.length} raw)`)
+
   const messages = [
     { role: 'system', content: plannerPrompt },
-    ...history.slice(-3).map((h: any) => ({
+    ...cleanHistory.slice(-3).map((h: any) => ({
       role:    h.role === 'assistant' ? 'assistant' : 'user',
       content: String(h.content).slice(0, 300),
     })),

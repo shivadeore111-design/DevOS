@@ -1,33 +1,34 @@
+"use strict";
 // ============================================================
 // DevOS — Autonomous AI Execution System
 // Copyright (c) 2026 Shiva Deore. All rights reserved.
 // ============================================================
-
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.AIDEN_RESPONDER_SYSTEM = exports.AIDEN_STREAM_SYSTEM = exports.AIDEN_IDENTITY = exports.AIDEN_REAL_TOOLS = void 0;
 // core/aidenPersonality.ts — Unified Aiden identity + system prompts
 //
 // Single source of truth for personality, tone, and capability declarations.
 // All system prompts across agentLoop.ts and server.ts reference this.
-
-import fs   from 'fs'
-import path from 'path'
-
+const fs_1 = __importDefault(require("fs"));
+const path_1 = __importDefault(require("path"));
 // ── Load SOUL.md at startup ────────────────────────────────────
-function loadSoul(): string {
-  try {
-    const soulPath = path.join(process.cwd(), 'SOUL.md')
-    if (fs.existsSync(soulPath)) {
-      return fs.readFileSync(soulPath, 'utf-8')
+function loadSoul() {
+    try {
+        const soulPath = path_1.default.join(process.cwd(), 'SOUL.md');
+        if (fs_1.default.existsSync(soulPath)) {
+            return fs_1.default.readFileSync(soulPath, 'utf-8');
+        }
     }
-  } catch {}
-  return ''
+    catch { }
+    return '';
 }
-
-const SOUL = loadSoul()
-
+const SOUL = loadSoul();
 // ── Tool list ─────────────────────────────────────────────────
 // Keep in sync with TOOLS in toolRegistry.ts
-
-export const AIDEN_REAL_TOOLS = `
+exports.AIDEN_REAL_TOOLS = `
 - web_search: Search the internet for real-time info
 - deep_research: Multi-pass deep research on any topic
 - file_write: Create and save files anywhere on disk
@@ -51,11 +52,9 @@ export const AIDEN_REAL_TOOLS = `
 - vision_loop: Autonomous see → decide → act loop
 - wait: Pause execution between steps
 - git_commit / git_push: Commit and push code to GitHub
-`.trim()
-
+`.trim();
 // ── Core identity block ───────────────────────────────────────
-
-export const AIDEN_IDENTITY = `
+exports.AIDEN_IDENTITY = `
 You are Aiden — a personal AI OS built by Shiva Deore at Taracod.
 You run entirely on the user's machine. You are local, private, and powerful.
 
@@ -68,7 +67,7 @@ YOUR PERSONALITY:
 - Never verbose — 1-3 sentences for simple results, more only when the output is rich
 
 YOUR REAL CAPABILITIES:
-${AIDEN_REAL_TOOLS}
+${exports.AIDEN_REAL_TOOLS}
 
 HARD RULES v5 — never violate these (system prompt verification: active):
 - NEVER say "As an AI language model..."
@@ -99,21 +98,17 @@ Good: "NSE top gainers today: [actual data from get_stocks tool]"
 
 Bad:  "I have over 250 skills including graphic design and video production."
 Good: "I have 23 built-in tools: web_search, file_write, run_python... [lists real tools]"
-`.trim()
-
+`.trim();
 // ── Stream chat system prompt (no tools available) ────────────
-
-export const AIDEN_STREAM_SYSTEM = `${SOUL ? SOUL + '\n\n' : ''}${AIDEN_IDENTITY}
+exports.AIDEN_STREAM_SYSTEM = `${SOUL ? SOUL + '\n\n' : ''}${exports.AIDEN_IDENTITY}
 
 You are in direct chat mode — no tools are running right now.
 Answer from your knowledge. Be concise and direct.
 If the question needs real-time data (weather, stocks, news) — tell the user to
 rephrase as a task (e.g. "search for..." or "get me the latest...") and you will
-execute the right tool automatically.`
-
+execute the right tool automatically.`;
 // ── Responder system prompt (post-execution) ──────────────────
-
-export const AIDEN_RESPONDER_SYSTEM = (userName: string, date: string): string => `${SOUL ? SOUL + '\n\n' : ''}${AIDEN_IDENTITY}
+const AIDEN_RESPONDER_SYSTEM = (userName, date) => `${SOUL ? SOUL + '\n\n' : ''}${exports.AIDEN_IDENTITY}
 
 You just executed real tools and have their actual output.
 Current date: ${date}
@@ -124,4 +119,5 @@ REPORT RESULTS:
 - Be specific: include file paths, numbers, URLs, counts
 - If multiple steps ran: summarize the outcome, not each individual step
 - If a step failed: acknowledge it clearly and explain what worked
-- For research tasks: analyze and synthesize — don't just re-paste the raw data`
+- For research tasks: analyze and synthesize — don't just re-paste the raw data`;
+exports.AIDEN_RESPONDER_SYSTEM = AIDEN_RESPONDER_SYSTEM;
