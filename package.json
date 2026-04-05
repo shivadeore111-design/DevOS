@@ -40,14 +40,14 @@
   "preferGlobal": true,
   "type": "commonjs",
   "scripts": {
-    "dev": "ts-node index.ts",
+    "dev": "ts-node index.ts serve",
     "run": "ts-node index.ts run",
     "daemon": "ts-node index.ts daemon",
     "status": "ts-node index.ts status",
     "build": "tsc --outDir dist",
     "prepublishOnly": "npm run build",
     "postinstall": "node scripts/postinstall.js",
-    "start": "node dist/index.js",
+    "start": "node dist/index.js serve",
     "test": "vitest run",
     "test:ui": "vitest --ui",
     "stress-test": "npx ts-node tests/stressTest.ts"
