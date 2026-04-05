@@ -678,7 +678,7 @@ Output ONLY valid JSON, nothing else:`
     // Discover which model is actually installed via api/tags
     try {
       const cfg = loadConfig()
-      let ollamaModel = process.env.OLLAMA_MODEL || cfg.model?.activeModel || 'mistral-nemo:12b'
+      let ollamaModel = process.env.OLLAMA_MODEL || cfg.ollama?.model || 'gemma4:e4b'
       try {
         const tagsRes = await fetch('http://localhost:11434/api/tags', { signal: AbortSignal.timeout(3000) })
         if (tagsRes.ok) {
@@ -1609,7 +1609,7 @@ CRITICAL RULES FOR YOUR RESPONSE:
       try {
         // Discover installed model via api/tags
         const cfg = loadConfig()
-        let ollamaModel = process.env.OLLAMA_MODEL || cfg.model?.activeModel || 'mistral-nemo:12b'
+        let ollamaModel = process.env.OLLAMA_MODEL || cfg.ollama?.model || 'gemma4:e4b'
         try {
           const tagsRes = await fetch('http://localhost:11434/api/tags', { signal: AbortSignal.timeout(2000) })
           if (tagsRes.ok) {

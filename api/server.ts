@@ -1866,6 +1866,27 @@ export function createApiServer(): Express {
     })
   })
 
+  // GET /api/ollama/models — list locally installed Ollama chat models
+  app.get('/api/ollama/models', async (_req: Request, res: Response) => {
+    try {
+      const r = await fetch('http://localhost:11434/api/tags', {
+        signal: AbortSignal.timeout(3000),
+      })
+      if (!r.ok) { res.json({ available: false, models: [] }); return }
+      const data = await r.json() as any
+      const chatModels = (data.models || [])
+        .filter((m: any) =>
+          !m.name.includes('embed') &&
+          !m.name.includes('nomic') &&
+          !m.name.includes('mxbai')
+        )
+        .map((m: any) => ({ name: m.name, size: m.size }))
+      res.json({ available: true, models: chatModels })
+    } catch {
+      res.json({ available: false, models: [] })
+    }
+  })
+
   // GET /api/stream — SSE keep-alive + cost_update + identity_update events
   app.get('/api/stream', (req: Request, res: Response) => {
     res.setHeader('Content-Type',  'text/event-stream')

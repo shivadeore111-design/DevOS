@@ -33,6 +33,11 @@ export interface DevOSConfig {
     ollama: { enabled: boolean; models: string[] }
     apis:   APIEntry[]
   }
+  ollama?: {
+    model:          string
+    fallbackModels: string[]
+    baseUrl:        string
+  }
   routing: {
     mode:            'auto' | 'manual'   // auto = cycle through, manual = use active only
     fallbackToOllama: boolean            // if all APIs rate limited, use Ollama
