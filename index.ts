@@ -33,6 +33,7 @@ import { buildCapabilityProfile }         from './core/capabilityProfile'
 import { verifyInstall, getCurrentLicense } from './core/licenseManager'
 import { scheduler }      from './core/scheduler'
 import { startMCPServer } from './core/mcpServer'
+import { initLocalModels } from './providers/router'
 
 // ── Bootstrap ─────────────────────────────────────────────────
 
@@ -105,6 +106,15 @@ async function main(): Promise<void> {
         // ── Background service PID management ─────────────────
         const { startBackgroundService } = await import('./core/backgroundService')
         startBackgroundService(4200)
+
+        // ── Local model discovery — runs once at startup ───────
+        initLocalModels().then(lm => {
+          console.log('[Aiden] Local model assignments:')
+          console.log('  Chat/Responder:', lm.responder || 'none — using cloud')
+          console.log('  Planner:       ', lm.planner   || 'none — using cloud')
+          console.log('  Code tasks:    ', lm.coder      || 'none — using cloud')
+          console.log('  Fast tasks:    ', lm.fast       || 'none — using cloud')
+        }).catch(() => { /* non-fatal */ })
 
         // ── Capability profile — detect hardware tier silently ─
         buildCapabilityProfile().then(profile => {

@@ -21,7 +21,13 @@ interface ProviderInfo {
 
 interface OllamaInfo {
   available: boolean
-  models:    { name: string; size: number }[]
+  models:    { name: string; role: string }[]
+  assigned?: {
+    planner:   string | null
+    responder: string | null
+    coder:     string | null
+    fast:      string | null
+  }
 }
 
 // ── Steps ─────────────────────────────────────────────────────
@@ -274,25 +280,40 @@ export default function OnboardingPage() {
               </div>
               {ollama.available && ollama.models.length > 0 ? (
                 <>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: '#22c55e', marginBottom: 6 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: '#22c55e', marginBottom: 8 }}>
                     ✓ Running — {ollama.models.length} model{ollama.models.length !== 1 ? 's' : ''} found
                   </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                    {ollama.models.map(m => (
-                      <span key={m.name} style={{
-                        fontSize: 10, padding: '3px 7px', borderRadius: 4,
-                        background: '#1e1e1e', color: '#aaa',
-                        border: '1px solid #2a2a2a',
-                      }}>
-                        {m.name}
-                      </span>
-                    ))}
-                  </div>
+                  {ollama.assigned && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 8 }}>
+                      {[
+                        { label: 'Chat',    val: ollama.assigned.responder },
+                        { label: 'Planner', val: ollama.assigned.planner   },
+                        { label: 'Code',    val: ollama.assigned.coder     },
+                        { label: 'Fast',    val: ollama.assigned.fast      },
+                      ].filter(r => r.val).map(r => (
+                        <div key={r.label} style={{ background: '#1a1a1a', borderRadius: 5, padding: '6px 8px' }}>
+                          <div style={{ fontSize: 8, color: '#555', textTransform: 'uppercase', marginBottom: 2 }}>{r.label}</div>
+                          <div style={{ fontSize: 10, color: '#aaa', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.val}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div style={{ fontSize: 10, color: '#555' }}>No API keys needed for basic use.</div>
                 </>
               ) : (
-                <div style={{ fontSize: 12, color: '#555' }}>
-                  Not detected — install Ollama for offline AI
-                </div>
+                <>
+                  <div style={{ fontSize: 12, color: '#666', marginBottom: 8 }}>
+                    No local AI detected
+                  </div>
+                  <div style={{ fontSize: 10, color: '#555', marginBottom: 6 }}>
+                    Install Ollama for free offline AI — no API keys needed.
+                  </div>
+                  <a href="https://ollama.com" target="_blank" rel="noopener noreferrer" style={{
+                    fontSize: 10, color: '#f97316', textDecoration: 'none',
+                  }}>
+                    Download Ollama →
+                  </a>
+                </>
               )}
             </div>
           )}

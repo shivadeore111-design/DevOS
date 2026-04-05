@@ -35,6 +35,9 @@ export interface DevOSConfig {
   }
   ollama?: {
     model:          string
+    plannerModel?:  string
+    coderModel?:    string
+    fastModel?:     string
     fallbackModels: string[]
     baseUrl:        string
   }

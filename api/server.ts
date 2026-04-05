@@ -35,7 +35,8 @@ import { modelRouter }    from '../core/modelRouter'
 import { registerComputerUseRoutes } from './routes/computerUse'
 import { loadConfig, saveConfig, APIEntry } from '../providers/index'
 import { ollamaProvider } from '../providers/ollama'
-import { getSmartProvider, markRateLimited, incrementUsage, logProviderStatus, getModelForTask } from '../providers/router'
+import { getSmartProvider, markRateLimited, incrementUsage, logProviderStatus, getModelForTask, getLocalModels } from '../providers/router'
+import { discoverLocalModels } from '../core/modelDiscovery'
 import { executeTool } from '../core/toolRegistry'
 import { getScreenSize, takeScreenshot as captureScreen } from '../core/computerControl'
 import { planWithLLM, executePlan, respondWithResults, callLLM } from '../core/agentLoop'
@@ -1866,24 +1867,50 @@ export function createApiServer(): Express {
     })
   })
 
-  // GET /api/ollama/models — list locally installed Ollama chat models
+  // GET /api/ollama/models — discover local models with role assignments
   app.get('/api/ollama/models', async (_req: Request, res: Response) => {
     try {
-      const r = await fetch('http://localhost:11434/api/tags', {
-        signal: AbortSignal.timeout(3000),
+      const discovered = await discoverLocalModels()
+      if (discovered.all.length === 0) {
+        res.json({ available: false, models: [] }); return
+      }
+      res.json({
+        available: true,
+        models: discovered.all.map(name => ({
+          name,
+          role: name === discovered.planner  ? 'planner'   :
+                name === discovered.coder    ? 'coder'     :
+                name === discovered.fast     ? 'fast'      : 'responder',
+        })),
+        assigned: {
+          planner:   discovered.planner,
+          responder: discovered.responder,
+          coder:     discovered.coder,
+          fast:      discovered.fast,
+        },
       })
-      if (!r.ok) { res.json({ available: false, models: [] }); return }
-      const data = await r.json() as any
-      const chatModels = (data.models || [])
-        .filter((m: any) =>
-          !m.name.includes('embed') &&
-          !m.name.includes('nomic') &&
-          !m.name.includes('mxbai')
-        )
-        .map((m: any) => ({ name: m.name, size: m.size }))
-      res.json({ available: true, models: chatModels })
-    } catch {
-      res.json({ available: false, models: [] })
+    } catch (e: any) {
+      res.json({ available: false, models: [], error: e.message })
+    }
+  })
+
+  // POST /api/ollama/config — save user's manual model overrides
+  app.post('/api/ollama/config', (req: Request, res: Response) => {
+    try {
+      const { responder, coder, fast } = req.body as {
+        responder?: string; coder?: string; fast?: string
+      }
+      const config = loadConfig()
+      config.ollama = {
+        ...(config.ollama || { fallbackModels: [], baseUrl: 'http://localhost:11434' }),
+        model:      responder || config.ollama?.model || 'gemma4:e4b',
+        coderModel: coder     || config.ollama?.coderModel,
+        fastModel:  fast      || config.ollama?.fastModel,
+      }
+      saveConfig(config)
+      res.json({ success: true })
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message })
     }
   })
 

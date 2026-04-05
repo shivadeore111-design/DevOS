@@ -588,6 +588,153 @@ function SettingsSection({ title, children }: { title: string; children: React.R
   )
 }
 
+// ── LocalAISection ────────────────────────────────────────────
+
+interface OllamaDiscovery {
+  available: boolean
+  models:    { name: string; role: string }[]
+  assigned?: { planner: string|null; responder: string|null; coder: string|null; fast: string|null }
+}
+
+function LocalAISection() {
+  const [data,    setData]    = useState<OllamaDiscovery | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [responder, setResponder] = useState('')
+  const [coder,     setCoder]     = useState('')
+  const [fast,      setFast]      = useState('')
+  const [saving,    setSaving]    = useState(false)
+  const [toast,     setToast]     = useState('')
+
+  const fetchModels = async () => {
+    setLoading(true)
+    try {
+      const r = await fetch('http://localhost:4200/api/ollama/models')
+      const d = await r.json() as OllamaDiscovery
+      setData(d)
+      if (d.assigned) {
+        setResponder(d.assigned.responder || '')
+        setCoder(d.assigned.coder     || '')
+        setFast(d.assigned.fast       || '')
+      }
+    } catch {
+      setData({ available: false, models: [] })
+    }
+    setLoading(false)
+  }
+
+  useEffect(() => { fetchModels() }, [])
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      await fetch('http://localhost:4200/api/ollama/config', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ responder, coder, fast }),
+      })
+      setToast('✅ Local AI models updated')
+      setTimeout(() => setToast(''), 3000)
+    } catch {}
+    setSaving(false)
+  }
+
+  const allModels = data?.models?.map(m => m.name) || []
+
+  return (
+    <div style={{
+      background: 'var(--bg2)', border: '1px solid var(--border)',
+      borderRadius: 8, padding: '12px 14px', marginBottom: 16,
+      borderLeft: `3px solid ${data?.available ? 'var(--green)' : 'var(--muted)'}`,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <span style={{ fontSize: 12, fontFamily: 'var(--mono)', color: 'var(--text)', fontWeight: 600 }}>
+          🖥 Local AI (Ollama)
+        </span>
+        <span style={{
+          marginLeft: 'auto', fontSize: 9, fontFamily: 'var(--mono)',
+          color: data?.available ? 'var(--green)' : 'var(--muted)',
+          background: data?.available ? 'rgba(34,197,94,0.1)' : 'var(--bg3)',
+          padding: '2px 7px', borderRadius: 10,
+        }}>
+          {loading ? 'detecting...' : data?.available
+            ? `✓ running — ${data.models.length} model${data.models.length !== 1 ? 's' : ''}`
+            : '● not running'}
+        </span>
+        <button onClick={fetchModels} title="Refresh" style={{
+          fontSize: 11, background: 'transparent', border: 'none',
+          color: 'var(--muted2)', cursor: 'pointer', padding: '0 4px',
+        }}>↺</button>
+      </div>
+
+      {data?.available && allModels.length > 0 ? (
+        <>
+          {[
+            { label: 'Chat / Responder', val: responder, set: setResponder },
+            { label: 'Code tasks',       val: coder,     set: setCoder     },
+            { label: 'Fast / Executor',  val: fast,      set: setFast      },
+          ].map(row => (
+            <div key={row.label} style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: 9, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3, fontFamily: 'var(--mono)' }}>
+                {row.label}
+              </div>
+              <select
+                value={row.val}
+                onChange={e => row.set(e.target.value)}
+                style={{
+                  width: '100%', background: 'var(--bg3)',
+                  border: '1px solid var(--border2)', borderRadius: 5,
+                  padding: '6px 10px', fontFamily: 'var(--mono)', fontSize: 11,
+                  color: 'var(--text)', outline: 'none',
+                }}
+              >
+                <option value="">— auto (best available) —</option>
+                {allModels.map(m => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            </div>
+          ))}
+          <button onClick={save} disabled={saving} style={{
+            width: '100%', marginTop: 6, padding: '7px', borderRadius: 5,
+            background: 'var(--orange)', border: 'none', color: '#000',
+            fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600,
+            cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.7 : 1,
+          }}>
+            {saving ? 'Saving...' : 'Save Local AI Settings'}
+          </button>
+          {toast && (
+            <div style={{ fontSize: 10, color: 'var(--green)', fontFamily: 'var(--mono)', marginTop: 6, textAlign: 'center' }}>
+              {toast}
+            </div>
+          )}
+        </>
+      ) : !loading ? (
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--muted2)', fontFamily: 'var(--mono)', marginBottom: 8 }}>
+            Run Aiden completely offline with free local AI models.
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <a href="https://ollama.com" target="_blank" rel="noopener noreferrer" style={{
+              flex: 1, padding: '6px', borderRadius: 5, textAlign: 'center',
+              background: 'var(--orange)', color: '#000', textDecoration: 'none',
+              fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600,
+            }}>
+              Download Ollama →
+            </a>
+            <button onClick={fetchModels} style={{
+              padding: '6px 12px', borderRadius: 5, background: 'transparent',
+              border: '1px solid var(--border2)', color: 'var(--muted2)',
+              fontFamily: 'var(--mono)', fontSize: 11, cursor: 'pointer',
+            }}>
+              Refresh ↺
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 // ── ApiKeysTab ────────────────────────────────────────────────
 
 function ApiKeysTab() {
@@ -617,6 +764,9 @@ function ApiKeysTab() {
 
   return (
     <div>
+      {/* Local AI section — shown above cloud providers */}
+      <LocalAISection />
+
       {/* Reset limits */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'var(--mono)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
