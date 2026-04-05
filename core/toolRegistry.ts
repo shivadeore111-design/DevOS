@@ -23,6 +23,7 @@ import {
 } from './computerControl'
 
 import { reliableWebSearch, deepResearch as deepResearchFn } from './webSearch'
+import { generateBriefing, loadBriefingConfig }              from './morningBriefing'
 import { getMarketData }   from './tools/marketDataTool'
 import { getCompanyInfo }  from './tools/companyFilingsTool'
 import { mcpClient }       from './mcpClient'
@@ -345,15 +346,15 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
 
   notify: async (p) => {
     const msg = (p.message || p.command || '').replace(/'/g, '').replace(/"/g, '')
+    if (!msg.trim()) return { success: false, output: '', error: 'No message provided for notification' }
     try {
       await execAsync(
         `powershell -WindowStyle Hidden -Command "Add-Type -AssemblyName System.Windows.Forms; $n = New-Object System.Windows.Forms.NotifyIcon; $n.Icon = [System.Drawing.SystemIcons]::Information; $n.Visible = $true; $n.ShowBalloonTip(3000, 'DevOS', '${msg}', [System.Windows.Forms.ToolTipIcon]::Info); Start-Sleep -s 4; $n.Dispose()"`,
         { shell: 'powershell.exe' }
       )
-      return { success: true, output: `Desktop notification sent: "${msg}". Done.` }
+      return { success: true, output: `Desktop notification sent: "${msg}".` }
     } catch (e: any) {
-      // Even if the powershell command fails (e.g. in sandbox), confirm the intent
-      return { success: true, output: `Desktop notification sent: "${msg}". Done. (Note: display may not be available in this environment)` }
+      return { success: false, output: '', error: `Notification failed: ${e.message}` }
     }
   },
 
@@ -1077,6 +1078,16 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
     const list = Array.from(activeWatchers.keys()).map((f, i) => `${i + 1}. ${f}`).join('\n')
     return { success: true, output: `Active watchers:\n${list}` }
   },
+
+  get_briefing: async (_p) => {
+    try {
+      const config   = loadBriefingConfig()
+      const briefing = await generateBriefing(config)
+      return { success: true, output: briefing }
+    } catch (e: any) {
+      return { success: false, output: '', error: `Briefing failed: ${e.message}` }
+    }
+  },
 }
 
 // ── Internal dispatcher — no retry, no timeout ────────────────
@@ -1239,4 +1250,5 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   app_close:               'Close an application by window title',
   watch_folder:            'Watch a folder and react automatically when new files appear',
   watch_folder_list:       'List all currently watched folder paths',
+  get_briefing:            'Run the morning briefing: weather, markets, news, and daily summary',
 }

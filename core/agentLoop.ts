@@ -23,14 +23,12 @@ import { loadConfig }     from '../providers/index'
 import { knowledgeBase } from './knowledgeBase'
 import { skillTeacher }  from './skillTeacher'
 import { growthEngine }  from './growthEngine'
-import { AIDEN_RESPONDER_SYSTEM, IdentityContext } from './aidenPersonality'
-import { getIdentity }           from './aidenIdentity'
-import { memoryExtractor }       from './memoryExtractor'
+import { AIDEN_RESPONDER_SYSTEM } from './aidenPersonality'
 import { auditTrail }             from './auditTrail'
 import { mcpClient }             from './mcpClient'
 import { unifiedMemoryRecall, buildMemoryInjection } from './memoryRecall'
 import { costTracker } from './costTracker'
-import { loadUserProfile, userProfileExists } from './userProfile'
+import { getOllamaTimeout } from './modelDiscovery'
 import * as nodeFs             from 'fs'
 import * as nodePath           from 'path'
 import * as nodeOs             from 'os'
@@ -77,50 +75,6 @@ export interface LoopResult {
   plan:     AgentPlan
   results:  StepResult[]
   response: string
-}
-
-// ── Capability list ────────────────────────────────────────────
-
-export function getCapabilityList(): string {
-  const capabilities = [
-    { name: 'Computer Control', tools: ['screenshot', 'mouse_click', 'keyboard_type'],     desc: 'see your screen, click, type, move mouse' },
-    { name: 'Files',            tools: ['file_read', 'file_write', 'file_list'],            desc: 'read, write, organise anything on your disk' },
-    { name: 'Code',             tools: ['run_python', 'shell_exec', 'run_node'],            desc: 'run bash, Python, JavaScript, PowerShell' },
-    { name: 'Web',              tools: ['web_search', 'fetch_page', 'open_browser'],        desc: 'browse sites, fill forms, extract data' },
-    { name: 'Markets',          tools: ['get_stocks', 'get_market_data'],                   desc: 'NSE/BSE live prices, gainers, losers' },
-    { name: 'Schedule',         tools: ['notify', 'shell_exec'],                            desc: 'plain English tasks, background execution' },
-    { name: 'Memory',           tools: ['deep_research', 'web_search'],                     desc: 'persistent across sessions, learns patterns' },
-    { name: 'Research',         tools: ['deep_research', 'web_search', 'fetch_page'],       desc: 'multi-pass deep research on any topic' },
-    { name: 'Vision',           tools: ['screenshot', 'screen_read', 'vision_loop'],        desc: 'see the screen, describe it, act on it' },
-  ]
-
-  const toolSet = new Set(Object.keys(TOOLS))
-  const available = capabilities.filter(cap => cap.tools.some(t => toolSet.has(t)))
-
-  return "Here's what I can do on your machine right now:\n\n" +
-    available.map(c => `— **${c.name}** — ${c.desc}`).join('\n') +
-    "\n\nWhat would you like me to do?"
-}
-
-// ── Response quality gate ──────────────────────────────────────
-
-const BANNED_PHRASES = [
-  'HSN code', 'GST rate', 'trademark registration',
-  'credit score', 'payroll processing', 'ledger software',
-  'import and export regulations', 'social media management',
-  'income tax preparation', 'general ledger', 'accounts payable',
-  'accounting software',
-  // v2 additions — third-party products and hallucinated research patterns
-  'BlueWinston', 'Pega', 'Gaude Digital',
-  'key findings from our research',
-  'as per your request, I have written',
-  'here is a comparison of',
-  'digital marketing strategies for NSE',
-]
-
-function validateResponse(response: string): boolean {
-  const lower = response.toLowerCase()
-  return !BANNED_PHRASES.some(phrase => lower.includes(phrase.toLowerCase()))
 }
 
 // ── Template resolver ──────────────────────────────────────────
@@ -466,17 +420,6 @@ export async function planWithLLM(
   memoryContext?: string,
 ): Promise<AgentPlan> {
 
-  // ── First-message profile prompt — ask if USER.md doesn't exist ──
-  if (!userProfileExists() && history.length === 0) {
-    return {
-      goal:               message,
-      requires_execution: false,
-      plan:               [],
-      phases:             [],
-      direct_response:    `Before we start — I'd love to know a bit about you so I can be more useful.\n\n1. **What's your name?**\n2. **What's your role?** (e.g. Solo founder, Developer, Trader, Student)\n3. **What should I monitor proactively?** (e.g. NIFTY, my email, a GitHub repo)\n\nJust reply and I'll remember this. You can also fill in your full profile anytime in **Settings → My Profile**. (Or skip and type your question — I'll work without it.)`,
-    }
-  }
-
   // ── Vague goal detection — ask for clarification before planning ──
   const VAGUE_PATTERNS = [/\bthe thing\b/i, /\bthe stuff\b/i, /\bthe place\b/i, /\bdo it\b$/i, /\bfix it\b$/i]
   if (VAGUE_PATTERNS.some(p => p.test(message))) {
@@ -502,6 +445,7 @@ export async function planWithLLM(
     'clipboard_read', 'clipboard_write', 'window_list', 'window_focus',
     'app_launch', 'app_close',
     'watch_folder', 'watch_folder_list',
+    'get_briefing',
   ]
 
   // Sprint 13: append discovered MCP tools
@@ -539,13 +483,6 @@ export async function planWithLLM(
     }
   } catch {}
 
-  // Build user profile section
-  const userProfileSection = userProfileExists()
-    ? `\n\n## User Profile\n${loadUserProfile()}\n`
-    : ''
-
-  console.log('[Aiden] Planner v4 loaded — action rules active')
-
   const plannerPrompt = `You are DevOS Planner. Analyze the user request and output a JSON plan.
 
 CRITICAL RULES:
@@ -558,51 +495,20 @@ CRITICAL RULES:
 7. For multi-step tasks: if step N+1 needs step N's output, use the literal string "PREVIOUS_OUTPUT"
 8. Output ONLY valid JSON — no text before or after
 
-## ACTION RULES — read before planning ANYTHING:
-
-STEP 1 — Is this a capability question or an action request?
-- "Can you do X?" = capability question → requires_execution: false, direct_response: "Yes, I can. What specifically do you need?"
-- "Do X" / "Please do X" / "I need X done" = action request → may use tools
-- "What can you do" → requires_execution: false
-- NEVER execute a task when the user is just asking if you CAN do it
-
-STEP 2 — Did the user explicitly ask for each tool you're planning?
-- file_write: ONLY if user said "write", "save", "create a file", "make a document"
-  → "can you do marketing" does NOT mean write a file
-  → "can you help me" does NOT mean write a file
-- deep_research: ONLY if user said "research", "find out", "look up", "investigate"
-  → "can you do X" does NOT mean research X
-- web_search: ONLY if user needs live/current data they couldn't know from training
-- run_python / shell_exec: ONLY if user said "run", "execute", "calculate", "script"
-
-STEP 3 — Is the request too vague to act on?
-- If you are not 100% sure what the user wants done, set requires_execution: false
-  and ask ONE clarifying question in direct_response
-- "Can you do marketing for me" → unclear what "marketing" means here
-  → direct_response: "Yes. What specifically — copy writing, competitor research, Product Hunt listing, content calendar, or social posts?"
-- NEVER guess and execute
-
-HARD ACTION RULES:
-- NEVER mention or recommend: Pega, BlueWinston, Gaude Digital, or any third-party product
-- NEVER plan deep_research on a vague topic the user didn't ask to research
-- NEVER plan file_write for an unsolicited report or summary
-- NEVER create comparison tables, research reports, or verdict/recommendation sections unless user explicitly asked
-
 WHEN TO USE TOOLS vs NOT:
 ✅ Use tools for:
 - Weather, news, current prices → web_search
 - Opening websites → open_browser
-- Writing/reading files → file_write, file_read (only when explicitly requested)
-- Running code → run_python, run_node (only when explicitly requested)
+- Writing/reading files → file_write, file_read
+- Running code → run_python, run_node
 - System info → system_info
-- Research with real sources → deep_research (only when explicitly requested)
+- Research with real sources → deep_research
 
 ❌ Do NOT use tools for:
 - "What is the capital of X" → just answer
 - "Who is [famous person]" → just answer
 - "Explain X concept" → just answer
 - "What do you think about X" → just answer
-- "Can you do X for me" → ask what specifically they need
 - Any question answerable from training knowledge
 
 TOOL INPUT RULES:
@@ -644,13 +550,30 @@ OUTPUT FORMAT (strict JSON only):
 }
 
 If requires_execution is false:
-{ "goal": "...", "requires_execution": false, "reasoning": "...", "plan": [] }
-${userProfileSection}${skillContext}${memorySection}${learningSection}${knowledgeSection}${memoryRecallSection}
+{ "goal": "...", "requires_execution": false, "reasoning": "...", "plan": [], "direct_response": "your answer here" }
+
+ACTION GATE RULES — apply BEFORE creating any plan:
+1. CAPABILITY GATE: If message is "Can you do X?" / "Can you X?" / "Are you able to X?" → requires_execution: false, direct_response: "Yes/No — [brief explanation]"
+2. EXPLICIT-ASK GATE: ONLY use file_write if user said "write", "save", "create file". ONLY use deep_research if user said "research", "find out", "look up"
+3. VAGUENESS GATE: If request is unclear → requires_execution: false, direct_response: one clarifying question
+4. NEVER create comparison tables, reports, or verdicts unless user explicitly asked for them
+5. NEVER mention Pega, BlueWinston, Gaude Digital, or any third-party product by name
+
+FAILURE REPLANNING RULES (when message contains "previous approach failed at"):
+- Keep new plan to max 2 steps
+- Use ONLY the specific alternative approach mentioned in the message
+- DO NOT add web_search, deep_research, file_write, or notify unless directly needed
+- DO NOT add unrelated analysis or comparison steps
+${skillContext}${memorySection}${learningSection}${knowledgeSection}${memoryRecallSection}
 Output ONLY valid JSON, nothing else:`
+
+  const cleanHistory = history
+    .filter((h: any) => h.content && String(h.content).trim().length > 0)
+  console.log(`[Planner] History: ${cleanHistory.length} messages (${history.length} raw)`)
 
   const messages = [
     { role: 'system', content: plannerPrompt },
-    ...history.slice(-3).map((h: any) => ({
+    ...cleanHistory.slice(-3).map((h: any) => ({
       role:    h.role === 'assistant' ? 'assistant' : 'user',
       content: String(h.content).slice(0, 300),
     })),
@@ -756,7 +679,7 @@ Output ONLY valid JSON, nothing else:`
     // Discover which model is actually installed via api/tags
     try {
       const cfg = loadConfig()
-      let ollamaModel = process.env.OLLAMA_MODEL || cfg.model?.activeModel || 'mistral-nemo:12b'
+      let ollamaModel = process.env.OLLAMA_MODEL || cfg.ollama?.model || 'gemma4:e4b'
       try {
         const tagsRes = await fetch('http://localhost:11434/api/tags', { signal: AbortSignal.timeout(3000) })
         if (tagsRes.ok) {
@@ -1512,15 +1435,8 @@ function resolvePreviousOutput(
 
 // ── STEP 3: respondWithResults ────────────────────────────────
 
-function responderSystem(
-  userName:     string,
-  date:         string,
-  identity?:    IdentityContext,
-  memIdx?:      string,
-  lastSession?: string,
-  userProfile?: string,
-): string {
-  return AIDEN_RESPONDER_SYSTEM(userName, date, identity, memIdx, lastSession, userProfile)
+function responderSystem(userName: string, date: string): string {
+  return AIDEN_RESPONDER_SYSTEM(userName, date)
 }
 
 export async function respondWithResults(
@@ -1552,39 +1468,6 @@ export async function respondWithResults(
     : ''
 
 
-  // User profile — inject explicit user identity and preferences
-  const userProfileContent = userProfileExists() ? loadUserProfile() : ''
-  const userProfileCtx = userProfileContent
-    ? `\n\n## User Profile\n${userProfileContent}\n`
-    : ''
-
-  // Aiden identity — level, title, skills, streak
-  let aidenIdentityCtx: IdentityContext | undefined
-  try {
-    const id = getIdentity()
-    aidenIdentityCtx = { level: id.level, title: id.title, skillsLearned: id.skillsLearned, streakDays: id.streakDays }
-  } catch {}
-
-  // Memory index — long-term facts extracted from past sessions
-  let memoryIndexCtx = ''
-  try { memoryIndexCtx = memoryExtractor.loadMemoryIndex() } catch {}
-
-  // Last session context
-  let lastSessionCtx = ''
-  try {
-    const sessDir  = nodePath.join(process.cwd(), 'workspace', 'sessions')
-    if (nodeFs.existsSync(sessDir)) {
-      const files = nodeFs.readdirSync(sessDir)
-        .filter(f => f.endsWith('.md'))
-        .map(f => ({ f, mt: nodeFs.statSync(nodePath.join(sessDir, f)).mtimeMs }))
-        .sort((a, b) => b.mt - a.mt)
-      if (files.length > 0) {
-        const raw = nodeFs.readFileSync(nodePath.join(sessDir, files[0].f), 'utf-8')
-        lastSessionCtx = raw.slice(0, 800)
-      }
-    }
-  } catch {}
-
   // Knowledge context — relevant chunks from user's uploaded files
   const knowledgeCtxResponder = knowledgeBase.buildContext(originalMessage || '')
   const knowledgeResponderSection = knowledgeCtxResponder
@@ -1614,8 +1497,6 @@ export async function respondWithResults(
       ).join('\n\n')
     : ''
 
-  console.log('[Aiden] System prompt v4 loaded — HARD RULES active')
-
   // Inject conversation memory so responder can answer questions about past work
   const memCtx    = conversationMemory.buildContext()
   const memSection = memCtx
@@ -1628,7 +1509,7 @@ export async function respondWithResults(
     : ''
 
   const systemWithResults = toolResultsContext
-    ? `${capabilitiesSection}${responderSystem(userName, date, aidenIdentityCtx, memoryIndexCtx, lastSessionCtx, userProfileContent)}${responseSkillContext}${knowledgeResponderSection}
+    ? `${capabilitiesSection}${responderSystem(userName, date)}${responseSkillContext}${knowledgeResponderSection}
 
 YOU JUST RAN THESE TOOLS AND GOT THESE RESULTS:
 ${toolResultsContext}
@@ -1641,23 +1522,15 @@ CRITICAL RULES FOR YOUR RESPONSE:
 - If system_info returned hardware data, show the data
 - Be direct: show the actual output, then provide context if needed
 - If a tool failed, say it failed and why`
-    : `${capabilitiesSection}${responderSystem(userName, date, aidenIdentityCtx, memoryIndexCtx, lastSessionCtx, userProfileContent)}${responseSkillContext}${knowledgeResponderSection}`
+    : `${capabilitiesSection}${responderSystem(userName, date)}${responseSkillContext}${knowledgeResponderSection}`
 
   const userContent = executionSummary
     ? `User asked: "${originalMessage}"\n\nReal execution results:\n${executionSummary}\n\nRespond naturally based on these real results only. Show the actual output, not a description of it.${depthInstruction}${memSection}`
     : `${originalMessage}${memSection}`
 
-  // ── FIX 7: filter empty-content messages (streaming placeholders) ─
-  const cleanHistory = history.filter(h => h.content && h.content.trim().length > 0)
-
-  // ── FIX 7: debug log — confirm history depth on each call ─────────
-  console.log(`[DEBUG respondWithResults] history depth: ${cleanHistory.length}`,
-    cleanHistory.map(m => `${m.role}: ${String(m.content).slice(0, 60)}`),
-  )
-
   const messages = [
     { role: 'system', content: systemWithResults },
-    ...cleanHistory.slice(-6),
+    ...history.slice(-6),
     { role: 'user',   content: userContent },
   ]
 
@@ -1737,7 +1610,7 @@ CRITICAL RULES FOR YOUR RESPONSE:
       try {
         // Discover installed model via api/tags
         const cfg = loadConfig()
-        let ollamaModel = process.env.OLLAMA_MODEL || cfg.model?.activeModel || 'mistral-nemo:12b'
+        let ollamaModel = process.env.OLLAMA_MODEL || cfg.ollama?.model || 'gemma4:e4b'
         try {
           const tagsRes = await fetch('http://localhost:11434/api/tags', { signal: AbortSignal.timeout(2000) })
           if (tagsRes.ok) {
@@ -1751,7 +1624,7 @@ CRITICAL RULES FOR YOUR RESPONSE:
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ model: ollamaModel, stream: true, messages }),
-          signal: AbortSignal.timeout(8000),
+          signal: AbortSignal.timeout(getOllamaTimeout(ollamaModel)),
         })
         if (r.ok && r.body) {
           const reader  = (r.body as any).getReader()
@@ -1842,7 +1715,7 @@ export async function callLLM(
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: model || 'mistral:7b', stream: false, messages }),
-        signal: AbortSignal.timeout(12000),
+        signal: AbortSignal.timeout(getOllamaTimeout(model || '')),
       })
       if (r.status === 429) {
         try { markRateLimited(providerName) } catch {}
@@ -1917,29 +1790,6 @@ export async function callLLM(
     console.error('[callLLM] error:', e.message)
     return ''
   }
-}
-
-// ── callLLM with response validation (banned-phrase gate) ─────
-// Wraps callLLM and retries up to 2 times if banned content is detected.
-
-export async function callLLMValidated(
-  prompt:       string,
-  apiKey:       string,
-  model:        string,
-  providerName: string,
-  opts?: { traceId?: string; isSystem?: boolean },
-): Promise<string> {
-  let response = await callLLM(prompt, apiKey, model, providerName, opts)
-  let attempts = 0
-
-  while (!validateResponse(response) && attempts < 2) {
-    console.warn('[Aiden] Banned content detected in LLM response — regenerating')
-    const retryPrompt = prompt + '\n\nIMPORTANT: Answer only about Aiden\'s actual capabilities. Do not mention any generic AI features, accounting tools, tax software, or anything unrelated to the task.'
-    response = await callLLM(retryPrompt, apiKey, model, providerName, opts)
-    attempts++
-  }
-
-  return response
 }
 
 // ── Deep research: 3-pass LLM-assisted research loop ─────────

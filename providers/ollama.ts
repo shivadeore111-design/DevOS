@@ -6,6 +6,7 @@
 // providers/ollama.ts — Local Ollama provider
 
 import { Provider } from './types'
+import { getOllamaTimeout } from '../core/modelDiscovery'
 
 export const ollamaProvider: Provider = {
   name: 'ollama',
@@ -15,6 +16,7 @@ export const ollamaProvider: Provider = {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ model, stream: false, messages }),
+      signal:  AbortSignal.timeout(getOllamaTimeout(model || '')),
     })
     const data = await res.json() as any
     return data?.message?.content || ''
@@ -25,6 +27,7 @@ export const ollamaProvider: Provider = {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ model, stream: true, messages }),
+      signal:  AbortSignal.timeout(getOllamaTimeout(model || '')),
     })
     if (!res.body) return
     const reader  = (res.body as any).getReader()

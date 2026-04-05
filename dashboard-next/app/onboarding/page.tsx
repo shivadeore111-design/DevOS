@@ -19,6 +19,17 @@ interface ProviderInfo {
   model:  string
 }
 
+interface OllamaInfo {
+  available: boolean
+  models:    { name: string; role: string }[]
+  assigned?: {
+    planner:   string | null
+    responder: string | null
+    coder:     string | null
+    fast:      string | null
+  }
+}
+
 // ── Steps ─────────────────────────────────────────────────────
 
 const STEPS = [
@@ -36,6 +47,7 @@ export default function OnboardingPage() {
   const [step,     setStep]     = useState(0)
   const [hw,       setHw]       = useState<HardwareInfo | null>(null)
   const [provider, setProvider] = useState<ProviderInfo | null>(null)
+  const [ollama,   setOllama]   = useState<OllamaInfo | null>(null)
   const [loading,  setLoading]  = useState(true)
   const [done,     setDone]     = useState(false)
   const [showProfile, setShowProfile] = useState(false)
@@ -54,6 +66,12 @@ export default function OnboardingPage() {
     async function init() {
       await delay(600)
       setStep(1)
+
+      // Detect Ollama local models
+      try {
+        const om = await fetch('http://localhost:4200/api/ollama/models').then(r => r.json()).catch(() => null)
+        if (om) setOllama(om)
+      } catch {}
 
       try {
         const r = await fetch('http://localhost:4200/api/status').then(r => r.json()).catch(() => null)
@@ -238,15 +256,67 @@ export default function OnboardingPage() {
       {!loading && hw && provider && !showProfile && (
         <div style={{
           width: '100%', maxWidth: 440,
-          display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10,
+          display: 'flex', flexDirection: 'column', gap: 10,
           marginBottom: 40,
         }}>
-          <InfoCard title="AI Provider" value={provider.name}
-            sub={provider.type === 'local' ? '100% on your machine' : 'Cloud API'}
-            accent={provider.type === 'local' ? '#22c55e' : '#3b82f6'} />
-          <InfoCard title="Model" value={provider.model} sub="active model" accent="#f97316" />
-          <InfoCard title="RAM" value={hw.ram}    sub="available memory"    accent="#888" />
-          <InfoCard title="System"  value={hw.os} sub={hw.disk}             accent="#888" />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <InfoCard title="AI Provider" value={provider.name}
+              sub={provider.type === 'local' ? '100% on your machine' : 'Cloud API'}
+              accent={provider.type === 'local' ? '#22c55e' : '#3b82f6'} />
+            <InfoCard title="Model" value={provider.model} sub="active model" accent="#f97316" />
+            <InfoCard title="RAM" value={hw.ram}    sub="available memory"    accent="#888" />
+            <InfoCard title="System"  value={hw.os} sub={hw.disk}             accent="#888" />
+          </div>
+
+          {/* Ollama local models */}
+          {ollama && (
+            <div style={{
+              background: '#141414', border: '1px solid #1e1e1e', borderRadius: 8,
+              padding: '14px 16px',
+              borderLeft: `3px solid ${ollama.available ? '#22c55e' : '#555'}`,
+            }}>
+              <div style={{ fontSize: 9, color: '#444', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>
+                Local AI (Ollama)
+              </div>
+              {ollama.available && ollama.models.length > 0 ? (
+                <>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: '#22c55e', marginBottom: 8 }}>
+                    ✓ Running — {ollama.models.length} model{ollama.models.length !== 1 ? 's' : ''} found
+                  </div>
+                  {ollama.assigned && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 8 }}>
+                      {[
+                        { label: 'Chat',    val: ollama.assigned.responder },
+                        { label: 'Planner', val: ollama.assigned.planner   },
+                        { label: 'Code',    val: ollama.assigned.coder     },
+                        { label: 'Fast',    val: ollama.assigned.fast      },
+                      ].filter(r => r.val).map(r => (
+                        <div key={r.label} style={{ background: '#1a1a1a', borderRadius: 5, padding: '6px 8px' }}>
+                          <div style={{ fontSize: 8, color: '#555', textTransform: 'uppercase', marginBottom: 2 }}>{r.label}</div>
+                          <div style={{ fontSize: 10, color: '#aaa', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.val}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div style={{ fontSize: 10, color: '#555' }}>No API keys needed for basic use.</div>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: 12, color: '#666', marginBottom: 8 }}>
+                    No local AI detected
+                  </div>
+                  <div style={{ fontSize: 10, color: '#555', marginBottom: 6 }}>
+                    Install Ollama for free offline AI — no API keys needed.
+                  </div>
+                  <a href="https://ollama.com" target="_blank" rel="noopener noreferrer" style={{
+                    fontSize: 10, color: '#f97316', textDecoration: 'none',
+                  }}>
+                    Download Ollama →
+                  </a>
+                </>
+              )}
+            </div>
+          )}
         </div>
       )}
 

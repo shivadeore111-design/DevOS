@@ -14,6 +14,7 @@ import { createGeminiProvider } from './gemini'
 import { createCerebrasProvider } from './cerebras'
 import { createNvidiaProvider } from './nvidia'
 import { Provider } from './types'
+import { discoverLocalModels, DiscoveredModels } from '../core/modelDiscovery'
 
 // Per-provider rate-limit windows — tuned to actual reset characteristics.
 // Previous flat 1-hour window was far too conservative for fast-reset APIs.
@@ -38,6 +39,59 @@ const DEFAULT_RATE_LIMIT_MS = 60 * 1000 // 1 minute fallback
 // In-memory response-time tracking (EWMA per provider)
 // Separate from the config file so it resets on restart without persisting stale values.
 const responseTimesMs = new Map<string, number>()
+
+// ── Local model discovery cache ───────────────────────────────
+// Populated once at startup via initLocalModels(). Read-only after that.
+
+let localModels: DiscoveredModels = {
+  planner: null, responder: null, coder: null, fast: null, all: [],
+}
+
+export function getLocalModels(): DiscoveredModels { return localModels }
+
+export async function initLocalModels(): Promise<DiscoveredModels> {
+  localModels = await discoverLocalModels()
+
+  if (localModels.all.length > 0) {
+    console.log('[ModelDiscovery] Found local models:')
+    console.log('  Planner:   ', localModels.planner)
+    console.log('  Responder: ', localModels.responder)
+    console.log('  Coder:     ', localModels.coder)
+    console.log('  Fast:      ', localModels.fast)
+
+    // Persist discovered assignments to config so agentLoop can read them
+    const config = loadConfig()
+    config.ollama = {
+      ...(config.ollama || { fallbackModels: [], baseUrl: 'http://localhost:11434' }),
+      model:        localModels.responder || config.ollama?.model || 'gemma4:e4b',
+      plannerModel: localModels.planner   || undefined,
+      coderModel:   localModels.coder     || undefined,
+      fastModel:    localModels.fast      || undefined,
+    }
+    saveConfig(config)
+  } else {
+    console.log('[ModelDiscovery] No local models found — cloud only')
+  }
+
+  return localModels
+}
+
+// ── Per-task Ollama model selector ────────────────────────────
+
+export function getOllamaModelForTask(
+  task: 'planner' | 'responder' | 'executor',
+): string {
+  // Prefer user overrides from config, then discovered models, then safe default
+  const config = loadConfig()
+  switch (task) {
+    case 'planner':
+      return config.ollama?.plannerModel  || localModels.planner   || localModels.responder || 'llama3.2'
+    case 'executor':
+      return config.ollama?.fastModel     || localModels.fast      || localModels.responder || 'llama3.2'
+    case 'responder':
+      return config.ollama?.model         || localModels.responder || 'llama3.2'
+  }
+}
 
 // ── Provider factory ──────────────────────────────────────────
 
@@ -160,14 +214,23 @@ export function logProviderStatus(): void {
     const status    = !api.enabled ? 'disabled' : api.rateLimited ? 'rate-limited' : resolvedKey.length === 0 ? 'SKIPPED (no key)' : `#${order++} active`
     console.log(`  ${api.name} (${api.provider}/${api.model}) — ${keyStatus} — ${status}`)
   }
-  console.log(`  ollama — local — #${order} guaranteed fallback`)
+  console.log(`  ollama (${OLLAMA_FALLBACK_MODEL}) — local — #${order} guaranteed fallback`)
 }
 
 // ── Task-type model tiering ───────────────────────────────────
 // Returns the best available key+model for a specific task role.
 // Planner needs strong reasoning; executor needs speed; responder needs quality.
+//
+// Full fallback chains:
+//   Planner:   gemini → groq → openrouter → cerebras → gemma4:e4b (Ollama)
+//   Responder: groq → gemini → openrouter → cerebras → gemma4:e4b (Ollama)
+//   Executor:  cerebras → groq → nvidia → gemma4:e4b (Ollama)
+//
+// Aiden ALWAYS works — even with zero internet.
 
 export type TaskType = 'planner' | 'executor' | 'responder'
+
+const OLLAMA_FALLBACK_MODEL = 'gemma4:e4b'
 
 function resolveKey(api: APIEntry): {
   apiKey: string; model: string; providerName: string; apiName: string
@@ -182,6 +245,10 @@ function resolveKey(api: APIEntry): {
   }
 }
 
+const OLLAMA_RESULT = {
+  apiKey: '', model: OLLAMA_FALLBACK_MODEL, providerName: 'ollama', apiName: 'ollama',
+}
+
 export function getModelForTask(task: TaskType): {
   apiKey: string; model: string; providerName: string; apiName: string
 } {
@@ -193,34 +260,42 @@ export function getModelForTask(task: TaskType): {
     return k.length > 0
   })
 
-  // Planner: strongest reasoning — openrouter > groq > gemini > cerebras > others
+  // Planner: strongest reasoning — gemini > groq > openrouter > cerebras → discovered planner model
   if (task === 'planner') {
-    for (const p of ['openrouter', 'groq', 'gemini', 'cerebras']) {
+    for (const p of ['gemini', 'groq', 'openrouter', 'cerebras']) {
       const api = available.find(a => a.provider === p)
       if (api) return resolveKey(api)
     }
+    const model = getOllamaModelForTask('planner')
+    console.log(`[Router] Planner: all cloud providers unavailable — falling back to Ollama ${model}`)
+    return { apiKey: '', model, providerName: 'ollama', apiName: 'ollama' }
   }
 
-  // Executor: fastest — cerebras > groq > nvidia > others
-  if (task === 'executor') {
-    for (const p of ['cerebras', 'groq', 'nvidia', 'openai']) {
-      const api = available.find(a => a.provider === p)
-      if (api) return resolveKey(api)
-    }
-  }
-
-  // Responder: best quality — groq > gemini > openrouter > cerebras > others
+  // Responder: best quality — groq > gemini > openrouter > cerebras → discovered responder model
   if (task === 'responder') {
     for (const p of ['groq', 'gemini', 'openrouter', 'cerebras']) {
       const api = available.find(a => a.provider === p)
       if (api) return resolveKey(api)
     }
+    const model = getOllamaModelForTask('responder')
+    console.log(`[Router] Responder: all cloud providers unavailable — falling back to Ollama ${model}`)
+    return { apiKey: '', model, providerName: 'ollama', apiName: 'ollama' }
   }
 
-  // Generic fallback — any available API, then Ollama
+  // Executor: fastest — cerebras > groq > nvidia → discovered fast model
+  if (task === 'executor') {
+    for (const p of ['cerebras', 'groq', 'nvidia', 'openai']) {
+      const api = available.find(a => a.provider === p)
+      if (api) return resolveKey(api)
+    }
+    const model = getOllamaModelForTask('executor')
+    console.log(`[Router] Executor: all cloud providers unavailable — falling back to Ollama ${model}`)
+    return { apiKey: '', model, providerName: 'ollama', apiName: 'ollama' }
+  }
+
+  // Generic fallback — any available API, then gemma4:e4b
   if (available.length > 0) return resolveKey(available[0])
-  const ollamaModel = config.model?.activeModel || 'mistral:7b'
-  return { apiKey: '', model: ollamaModel, providerName: 'ollama', apiName: 'ollama' }
+  return OLLAMA_RESULT
 }
 
 // ── Main entry: get smart provider with full fallback chain ───
@@ -237,7 +312,7 @@ export function getSmartProvider(): {
   // MANUAL MODE: use the explicitly selected active provider
   if (config.routing?.mode === 'manual') {
     if (config.model.active === 'ollama') {
-      return { provider: ollamaProvider, model: config.model.activeModel || 'mistral:7b', userName, apiName: 'ollama' }
+      return { provider: ollamaProvider, model: config.model.activeModel || OLLAMA_FALLBACK_MODEL, userName, apiName: 'ollama' }
     }
     const active = config.providers.apis.find(a => a.name === config.model.active)
     if (active && active.enabled && !active.rateLimited) {
@@ -252,12 +327,14 @@ export function getSmartProvider(): {
     return { provider: next.provider, model: next.entry.model || 'llama-3.3-70b-versatile', userName, apiName: next.entry.name }
   }
 
-  // FALLBACK: Ollama
+  // FALLBACK: best discovered Ollama model
   if (config.routing?.fallbackToOllama !== false) {
-    console.log('[Router] All APIs unavailable — falling back to Ollama')
-    return { provider: ollamaProvider, model: config.model.activeModel || 'mistral:7b', userName, apiName: 'ollama' }
+    const model = getOllamaModelForTask('responder')
+    console.log(`[Router] All APIs unavailable — falling back to Ollama ${model}`)
+    return { provider: ollamaProvider, model, userName, apiName: 'ollama' }
   }
 
   // Last resort
-  return { provider: ollamaProvider, model: 'mistral:7b', userName, apiName: 'ollama' }
+  const model = getOllamaModelForTask('responder')
+  return { provider: ollamaProvider, model, userName, apiName: 'ollama' }
 }

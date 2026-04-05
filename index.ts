@@ -33,8 +33,7 @@ import { buildCapabilityProfile }         from './core/capabilityProfile'
 import { verifyInstall, getCurrentLicense } from './core/licenseManager'
 import { scheduler }      from './core/scheduler'
 import { startMCPServer } from './core/mcpServer'
-import { checkAndRunDream }  from './core/dreamEngine'
-import { getIdentity, refreshIdentity } from './core/aidenIdentity'
+import { initLocalModels } from './providers/router'
 
 // ── Bootstrap ─────────────────────────────────────────────────
 
@@ -104,26 +103,18 @@ async function main(): Promise<void> {
         // ── Sprint 25: register morning briefing ───────────────
         scheduler.registerMorningBriefing()
 
-        // ── Dream Engine: memory consolidation every 6 hours ──
-        setInterval(async () => {
-          try { checkAndRunDream() } catch {}
-        }, 6 * 60 * 60 * 1000)
-        // Also run once on startup (gates will skip if not due)
-        setTimeout(async () => {
-          try { checkAndRunDream() } catch {}
-        }, 30_000)
-
-        // ── Aiden Identity: refresh on startup + every hour ───
-        setTimeout(() => {
-          try { refreshIdentity() } catch {}
-        }, 5_000)
-        setInterval(() => {
-          try { refreshIdentity() } catch {}
-        }, 60 * 60 * 1000)
-
         // ── Background service PID management ─────────────────
         const { startBackgroundService } = await import('./core/backgroundService')
         startBackgroundService(4200)
+
+        // ── Local model discovery — runs once at startup ───────
+        initLocalModels().then(lm => {
+          console.log('[Aiden] Local model assignments:')
+          console.log('  Chat/Responder:', lm.responder || 'none — using cloud')
+          console.log('  Planner:       ', lm.planner   || 'none — using cloud')
+          console.log('  Code tasks:    ', lm.coder      || 'none — using cloud')
+          console.log('  Fast tasks:    ', lm.fast       || 'none — using cloud')
+        }).catch(() => { /* non-fatal */ })
 
         // ── Capability profile — detect hardware tier silently ─
         buildCapabilityProfile().then(profile => {

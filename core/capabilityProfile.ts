@@ -38,37 +38,72 @@ function detectTier(ramGB: number, gpuVRAM: number): HardwareTier {
   return 'low'
 }
 
+// ── Ollama chat-model detection (checks API, not GPU) ────────
+
+async function detectOllamaLocalLLM(): Promise<boolean> {
+  try {
+    const r = await fetch('http://localhost:11434/api/tags', {
+      signal: AbortSignal.timeout(2000),
+    })
+    if (!r.ok) return false
+    const data = await r.json() as any
+    const hasChat = data.models?.some((m: any) =>
+      !m.name.includes('embed') &&
+      !m.name.includes('nomic') &&
+      !m.name.includes('mxbai')
+    )
+    return hasChat || false
+  } catch { return false }
+}
+
 export async function buildCapabilityProfile(): Promise<CapabilityProfile> {
-  // ── Detect RAM ──────────────────────────────────────────────
+  // ── Detect RAM (CIM — wmic deprecated on Windows 11) ────────
   let ramGB = 8
   try {
-    const out = execSync('wmic computersystem get TotalPhysicalMemory /value', { timeout: 3000 }).toString()
-    const match = out.match(/TotalPhysicalMemory=(\d+)/)
-    if (match) ramGB = Math.round(parseInt(match[1]) / (1024 ** 3))
+    const out = execSync(
+      'powershell -command "(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory"',
+      { timeout: 5000 },
+    ).toString().trim()
+    const bytes = parseInt(out)
+    if (!isNaN(bytes) && bytes > 0) ramGB = Math.round(bytes / (1024 ** 3))
   } catch {}
 
   // ── Detect CPU cores ────────────────────────────────────────
   let cpuCores = 4
   try {
-    const out = execSync('wmic cpu get NumberOfCores /value', { timeout: 3000 }).toString()
-    const match = out.match(/NumberOfCores=(\d+)/)
-    if (match) cpuCores = parseInt(match[1])
+    const out = execSync(
+      'powershell -command "Get-CimInstance Win32_Processor | Select-Object -ExpandProperty NumberOfCores"',
+      { timeout: 5000 },
+    ).toString().trim()
+    const n = parseInt(out)
+    if (!isNaN(n) && n > 0) cpuCores = n
   } catch {}
 
-  // ── Detect GPU VRAM ─────────────────────────────────────────
-  let gpuVRAM = 0
-  let hasGPU  = false
+  // ── Detect GPU VRAM (CIM) ────────────────────────────────────
+  let gpuVRAM   = 0
+  let hasGPU    = false
+  let gpuName   = ''
   try {
-    const out = execSync('wmic path win32_VideoController get AdapterRAM /value', { timeout: 3000 }).toString()
-    const match = out.match(/AdapterRAM=(\d+)/)
-    if (match && parseInt(match[1]) > 0) {
-      gpuVRAM = Math.round(parseInt(match[1]) / (1024 ** 3))
-      hasGPU  = true
+    const out = execSync(
+      'powershell -command "Get-CimInstance Win32_VideoController | Select-Object Name, AdapterRAM | ConvertTo-Json -Compress"',
+      { timeout: 5000 },
+    ).toString().trim()
+    const parsed = JSON.parse(out.startsWith('[') ? out : `[${out}]`)
+    for (const gpu of parsed) {
+      const vram = Math.round((gpu.AdapterRAM || 0) / (1024 ** 3))
+      if (vram > gpuVRAM) {
+        gpuVRAM = vram
+        gpuName = gpu.Name || ''
+        hasGPU  = true
+      }
     }
   } catch {}
 
-  const tier    = detectTier(ramGB, gpuVRAM)
-  const localLLM = gpuVRAM >= 6
+  // ── Detect local LLM via Ollama API ─────────────────────────
+  const localLLM = await detectOllamaLocalLLM()
+
+  const tier = detectTier(ramGB, gpuVRAM)
+  console.log(`[Capability] Tier: ${tier} | RAM: ${ramGB}GB | GPU: ${gpuName || (hasGPU ? `${gpuVRAM}GB` : 'none')} | Local LLM: ${localLLM}`)
 
   const profile: CapabilityProfile = {
     tier,

@@ -25,7 +25,6 @@ import * as fs   from 'fs'
 import * as path from 'path'
 import * as http from 'http'
 import express, { Express, Request, Response, NextFunction } from 'express'
-import cors    from 'cors'
 import { WebSocketServer } from 'ws'
 
 // â”€â”€ Real imports only â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -36,10 +35,11 @@ import { modelRouter }    from '../core/modelRouter'
 import { registerComputerUseRoutes } from './routes/computerUse'
 import { loadConfig, saveConfig, APIEntry } from '../providers/index'
 import { ollamaProvider } from '../providers/ollama'
-import { getSmartProvider, markRateLimited, incrementUsage, logProviderStatus, getModelForTask } from '../providers/router'
+import { getSmartProvider, markRateLimited, incrementUsage, logProviderStatus, getModelForTask, getLocalModels } from '../providers/router'
+import { discoverLocalModels } from '../core/modelDiscovery'
 import { executeTool } from '../core/toolRegistry'
 import { getScreenSize, takeScreenshot as captureScreen } from '../core/computerControl'
-import { planWithLLM, executePlan, respondWithResults, callLLM, getCapabilityList } from '../core/agentLoop'
+import { planWithLLM, executePlan, respondWithResults, callLLM } from '../core/agentLoop'
 import { TOOL_DESCRIPTIONS } from '../core/toolRegistry'
 import { runReActLoop, ReActStep }                                 from '../core/reactLoop'
 import { scheduler }                                              from '../core/scheduler'
@@ -191,12 +191,13 @@ export function createApiServer(): Express {
   })
 
   // CORS â€” allow any origin (dev mode)
-  app.use(cors({
-    origin:         ['http://localhost:3000', 'http://localhost:4200', 'app://.'],
-    credentials:    true,
-    methods:        ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-  }))
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    res.setHeader('Access-Control-Allow-Origin',  '*')
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+    if (req.method === 'OPTIONS') { res.sendStatus(200); return }
+    next()
+  })
 
   // â”€â”€ Core routes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -292,17 +293,12 @@ export function createApiServer(): Express {
   // mode: 'auto' (default) | 'plan' (show plan only) | 'chat' (force chat, skip planner)
   // Supports both SSE streaming (Accept: text/event-stream) and JSON mode (Accept: application/json)
   app.post('/api/chat', async (req: Request, res: Response) => {
-    const { history: rawHistory = [], mode = 'auto', sessionId } = (req.body || {}) as {
+    const { history = [], mode = 'auto', sessionId } = (req.body || {}) as {
       message?:   string
       history?:   { role: string; content: string }[]
       mode?:      'auto' | 'plan' | 'chat' | 'react' | 'fast'
       sessionId?: string
     }
-
-    // FIX 7: strip empty-content messages (streaming placeholders from frontend)
-    // and deduplicate the current user message (frontend includes it in both
-    // history[] and message field, causing duplicate user turns in LLM context)
-    const history = rawHistory.filter(h => h.content && h.content.trim().length > 0)
 
     // â”€â”€ Sanitize input â€” strip null bytes and control chars â”€â”€â”€â”€
     let message = req.body?.message || ''
@@ -568,7 +564,9 @@ export function createApiServer(): Express {
     // Sprint 6: tiered model selection
     const responderTierSSE = getModelForTask('responder')
     const plannerTierSSE   = getModelForTask('planner')
-    const { provider, model, userName, apiName } = getSmartProvider()
+    const { provider, model, userName } = getSmartProvider()
+    // BUG 6 fix: use tiered responder's API name for all provider labels, not manually-set active
+    const apiName      = responderTierSSE.apiName
     const config       = loadConfig()
     const rawKey       = responderTierSSE.apiKey
     const providerName = responderTierSSE.providerName
@@ -594,7 +592,6 @@ export function createApiServer(): Express {
       /^got it[!.]*$/i,
       /^what can you do/i,
       /^what are your (skills|capabilities|tools)/i,
-      /^capabilities$/i,
       /^who are you/i,
       /^are you (there|ready|online|working)/i,
     ]
@@ -683,17 +680,11 @@ export function createApiServer(): Express {
       if (!plan.requires_execution || plan.plan.length === 0) {
         let fullReply = ''
 
-        // FIX 4: capability queries get a dynamic list directly — no LLM hallucination
-        const isCapabilityQuery = /what.*(can you do|skills|tools|capabilities|abilities)|how many skills|what are you capable|capabilities/i.test(resolvedMessage)
+        // Capability/skills questions must go through LLM with full context injection.
+        // direct_response from the planner has no capabilities awareness â€” it will lie.
+        const isCapabilityQuery = /what.*(can you do|skills|tools|capabilities|abilities)|how many skills|what are you capable/i.test(resolvedMessage)
 
-        if (isCapabilityQuery) {
-          fullReply = getCapabilityList()
-          const words = fullReply.split(' ')
-          for (const word of words) {
-            send({ token: word + ' ', done: false, provider: apiName })
-            await new Promise(r => setTimeout(r, 8))
-          }
-        } else if (plan.direct_response) {
+        if (plan.direct_response && !isCapabilityQuery) {
           fullReply = plan.direct_response
           const words = plan.direct_response.split(' ')
           for (const word of words) {
@@ -762,9 +753,8 @@ export function createApiServer(): Express {
       // â”€â”€ STEP 3: RESPOND â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       send({ activity: { icon: 'âœï¸', agent: 'Aiden', message: 'Writing response...', style: 'thinking' }, done: false })
 
-      let streamEnded    = false
-      let fullReply      = ''
-      const respondStart = Date.now()
+      let streamEnded = false
+      let fullReply   = ''
       const timeout = setTimeout(() => {
         if (!streamEnded) { send({ done: true, error: 'Response timed out' }); res.end() }
       }, 30000)
@@ -781,10 +771,6 @@ export function createApiServer(): Express {
       streamEnded = true
       clearTimeout(timeout)
 
-      // FIX 6: model label with duration
-      const respondDuration = ((Date.now() - respondStart) / 1000).toFixed(1)
-      const modelLabel = `${providerName} · ${activeModel} · ${respondDuration}s`
-
       // â”€â”€ UPDATE CONVERSATION MEMORY â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       const toolsUsed     = results.map(r => r.tool)
       const filesCreated  = results
@@ -793,21 +779,6 @@ export function createApiServer(): Express {
       const searchQueries = results
         .filter(r => (r.tool === 'web_search' || r.tool === 'deep_research') && r.input?.query)
         .map(r => r.input.query as string)
-
-      // FIX 8: inject tool results into conversation memory so future turns can
-      // reference what was opened/done (e.g. “what did you just open?”)
-      if (results.length > 0) {
-        const toolSummary = results
-          .filter(r => r.success && r.output)
-          .map(r => `[${r.tool}]: ${r.output.slice(0, 300)}`)
-          .join('\n')
-        if (toolSummary) {
-          conversationMemory.addAssistantMessage(
-            `I ran the following tools:\n${toolSummary}`,
-            { toolsUsed, filesCreated, searchQueries, planId: plan.planId },
-          )
-        }
-      }
 
       conversationMemory.updateFromExecution(toolsUsed, filesCreated, searchQueries, plan.planId)
       conversationMemory.addAssistantMessage(fullReply, { toolsUsed, filesCreated, searchQueries, planId: plan.planId })
@@ -821,7 +792,7 @@ export function createApiServer(): Express {
       }, 100)
 
       incrementUsage(apiName)
-      send({ done: true, provider: modelLabel ?? apiName })
+      send({ done: true, provider: apiName })
       res.end()
       memoryLayers.write(`User: ${resolvedMessage}`, ['chat'])
 
@@ -975,9 +946,9 @@ export function createApiServer(): Express {
 
   // GET /api/providers â€” list all configured APIs with status
   app.get('/api/providers', (_req: Request, res: Response) => {
-    try {
-      const config = loadConfig()
-      const apis   = (config.providers?.apis ?? []).map(api => ({
+    const config = loadConfig()
+    res.json({
+      apis: config.providers.apis.map(api => ({
         name:          api.name,
         provider:      api.provider,
         model:         api.model,
@@ -991,90 +962,36 @@ export function createApiServer(): Express {
             : (api.key || '')
           return k.length > 0
         })(),
-      }))
-
-      // Per-provider configured status (for the settings cards)
-      const configuredSet = new Set(apis.map(a => a.provider))
-      const status = {
-        groq:        { configured: configuredSet.has('groq'),        model: apis.find(a => a.provider === 'groq')?.model },
-        gemini:      { configured: configuredSet.has('gemini'),      model: apis.find(a => a.provider === 'gemini')?.model },
-        openrouter:  { configured: configuredSet.has('openrouter'),  model: apis.find(a => a.provider === 'openrouter')?.model },
-        cerebras:    { configured: configuredSet.has('cerebras'),    model: apis.find(a => a.provider === 'cerebras')?.model },
-        nvidia:      { configured: configuredSet.has('nvidia'),      model: apis.find(a => a.provider === 'nvidia')?.model },
-        ollama:      { configured: true, local: true },
-      }
-
-      res.json({
-        success: true,
-        apis,
-        providers: status,
-        routing:   config.routing || { mode: 'auto', fallbackToOllama: true },
-        ollama:    config.providers?.ollama,
-      })
-    } catch (e: any) {
-      // Never crash on a config read failure — return empty state
-      res.json({ success: true, apis: [], providers: {}, routing: { mode: 'auto', fallbackToOllama: true } })
-    }
+      })),
+      routing: config.routing || { mode: 'auto', fallbackToOllama: true },
+      ollama:  config.providers.ollama,
+    })
   })
 
   // POST /api/providers/add â€” add or update a single API key
-  app.post('/api/providers/add', async (req: Request, res: Response) => {
-    try {
-      const { name, provider, key, model, enabled = true } = req.body as {
-        name?: string; provider?: string; key?: string; model?: string; enabled?: boolean
-      }
-      if (!provider || !key) { res.status(400).json({ error: 'provider and key required' }); return }
-
-      // ── Key validation before writing to disk ─────────────────
-      if (provider === 'groq') {
-        try {
-          const test = await fetch('https://api.groq.com/openai/v1/models', {
-            headers: { Authorization: `Bearer ${key}` },
-          })
-          if (!test.ok) {
-            res.status(400).json({ error: 'Invalid Groq API key — check console.groq.com' })
-            return
-          }
-        } catch {
-          // Network failure during validation — allow save so offline installs still work
-        }
-      }
-
-      if (provider === 'gemini') {
-        try {
-          const test = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models?key=${key}`,
-          )
-          if (!test.ok) {
-            res.status(400).json({ error: 'Invalid Gemini API key — check aistudio.google.com' })
-            return
-          }
-        } catch {
-          // Network failure during validation — allow save
-        }
-      }
-      // ─────────────────────────────────────────────────────────
-
-      const config = loadConfig()
-      const entry: APIEntry = {
-        name:        name || `${provider}-${config.providers.apis.filter(a => a.provider === provider).length + 1}`,
-        provider,
-        key,
-        model:       model || getDefaultModel(provider),
-        enabled:     enabled !== false,
-        rateLimited: false,
-        usageCount:  0,
-      }
-      const idx = config.providers.apis.findIndex(a => a.name === entry.name)
-      if (idx >= 0) config.providers.apis[idx] = { ...config.providers.apis[idx], ...entry }
-      else config.providers.apis.push(entry)
-
-      if (!config.routing) config.routing = { mode: 'auto', fallbackToOllama: true }
-      saveConfig(config)
-      res.json({ success: true, entry: { ...entry, key: '***' } })
-    } catch (e: any) {
-      res.status(500).json({ error: e?.message || 'Failed to save API key' })
+  app.post('/api/providers/add', (req: Request, res: Response) => {
+    const { name, provider, key, model, enabled = true } = req.body as {
+      name?: string; provider?: string; key?: string; model?: string; enabled?: boolean
     }
+    if (!provider || !key) { res.status(400).json({ error: 'provider and key required' }); return }
+
+    const config = loadConfig()
+    const entry: APIEntry = {
+      name:        name || `${provider}-${config.providers.apis.filter(a => a.provider === provider).length + 1}`,
+      provider,
+      key,
+      model:       model || getDefaultModel(provider),
+      enabled:     enabled !== false,
+      rateLimited: false,
+      usageCount:  0,
+    }
+    const idx = config.providers.apis.findIndex(a => a.name === entry.name)
+    if (idx >= 0) config.providers.apis[idx] = { ...config.providers.apis[idx], ...entry }
+    else config.providers.apis.push(entry)
+
+    if (!config.routing) config.routing = { mode: 'auto', fallbackToOllama: true }
+    saveConfig(config)
+    res.json({ success: true, entry: { ...entry, key: '***' } })
   })
 
   // DELETE /api/providers/:name â€” remove an API
@@ -1421,11 +1338,15 @@ export function createApiServer(): Express {
 
   // GET /api/config â€” current active model + user info
   app.get('/api/config', (_req: Request, res: Response) => {
-    const config = loadConfig()
+    const config  = loadConfig()
+    const tiered  = getModelForTask('responder')
+    // QUICK FIX: return the actual tiered model being used, not the manually-set active model
+    const activeModel    = tiered.model || config.model.activeModel
+    const activeProvider = tiered.apiName || config.model.active
     res.json({
       userName:            config.user.name,
-      activeModel:         config.model.activeModel,
-      activeProvider:      config.model.active,
+      activeModel,
+      activeProvider,
       onboardingComplete:  config.onboardingComplete,
       routing:             config.routing,
     })
@@ -1946,6 +1867,53 @@ export function createApiServer(): Express {
     })
   })
 
+  // GET /api/ollama/models — discover local models with role assignments
+  app.get('/api/ollama/models', async (_req: Request, res: Response) => {
+    try {
+      const discovered = await discoverLocalModels()
+      if (discovered.all.length === 0) {
+        res.json({ available: false, models: [] }); return
+      }
+      res.json({
+        available: true,
+        models: discovered.all.map(name => ({
+          name,
+          role: name === discovered.planner  ? 'planner'   :
+                name === discovered.coder    ? 'coder'     :
+                name === discovered.fast     ? 'fast'      : 'responder',
+        })),
+        assigned: {
+          planner:   discovered.planner,
+          responder: discovered.responder,
+          coder:     discovered.coder,
+          fast:      discovered.fast,
+        },
+      })
+    } catch (e: any) {
+      res.json({ available: false, models: [], error: e.message })
+    }
+  })
+
+  // POST /api/ollama/config — save user's manual model overrides
+  app.post('/api/ollama/config', (req: Request, res: Response) => {
+    try {
+      const { responder, coder, fast } = req.body as {
+        responder?: string; coder?: string; fast?: string
+      }
+      const config = loadConfig()
+      config.ollama = {
+        ...(config.ollama || { fallbackModels: [], baseUrl: 'http://localhost:11434' }),
+        model:      responder || config.ollama?.model || 'gemma4:e4b',
+        coderModel: coder     || config.ollama?.coderModel,
+        fastModel:  fast      || config.ollama?.fastModel,
+      }
+      saveConfig(config)
+      res.json({ success: true })
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message })
+    }
+  })
+
   // GET /api/stream — SSE keep-alive + cost_update + identity_update events
   app.get('/api/stream', (req: Request, res: Response) => {
     res.setHeader('Content-Type',  'text/event-stream')
@@ -2354,71 +2322,6 @@ export function createApiServer(): Express {
     }
   })
 
-  // ── /api/user-profile — USER.md explicit profile ─────────────
-  app.get('/api/user-profile', (_req: Request, res: Response) => {
-    try {
-      const { loadUserProfile, userProfileExists, USER_PROFILE_PATH } = require('../core/userProfile')
-      if (!userProfileExists()) { res.json({ exists: false, content: '' }); return }
-      res.json({ exists: true, content: loadUserProfile(), path: USER_PROFILE_PATH })
-    } catch (e: any) {
-      res.status(500).json({ error: e.message })
-    }
-  })
-
-  app.post('/api/user-profile', async (req: Request, res: Response) => {
-    try {
-      const { createUserProfile } = require('../core/userProfile')
-      const answers = req.body as {
-        name: string; role: string; timezone: string
-        github?: string; monitoring?: string; responseStyle?: string
-      }
-      if (!answers.name || !answers.role || !answers.timezone) {
-        res.status(400).json({ error: 'name, role, and timezone are required' }); return
-      }
-      createUserProfile(answers)
-      res.json({ success: true })
-    } catch (e: any) {
-      res.status(500).json({ error: e.message })
-    }
-  })
-
-  app.put('/api/user-profile', async (req: Request, res: Response) => {
-    try {
-      const { updateUserProfile } = require('../core/userProfile')
-      const { content } = req.body as { content?: string }
-      if (!content || typeof content !== 'string') {
-        res.status(400).json({ error: 'content required' }); return
-      }
-      updateUserProfile(content)
-      res.json({ success: true })
-    } catch (e: any) {
-      res.status(500).json({ error: e.message })
-    }
-  })
-
-  // ── GET /api/natural-events — NASA EONET (30-min memory cache) ──
-  {
-    interface EonetCache { events: any[]; summary: string; fetchedAt: number }
-    let _eonetCache: EonetCache | null = null
-    const EONET_TTL = 30 * 60 * 1000 // 30 minutes
-
-    app.get('/api/natural-events', async (_req: Request, res: Response) => {
-      try {
-        const now = Date.now()
-        if (_eonetCache && now - _eonetCache.fetchedAt < EONET_TTL) {
-          res.json(_eonetCache); return
-        }
-        const { getActiveNaturalEvents, getEonetSummary } = await import('../tools/eonetTool')
-        const events  = await getActiveNaturalEvents(3, 20)
-        const summary = getEonetSummary(events)
-        _eonetCache   = { events, summary, fetchedAt: now }
-        res.json(_eonetCache)
-      } catch (e: any) {
-        res.status(500).json({ error: e.message })
-      }
-    })
-  }
-
   app.use((_req: Request, res: Response) => {
     res.status(404).json({ error: 'Not found' })
   })
@@ -2766,19 +2669,19 @@ async function streamChat(
     if (idx) memoryIndex = `\n\nMEMORY INDEX (topics you've learned about this user — use as background, not to recite):\n${idx}`
   } catch {}
 
-  console.log('[Aiden] System prompt v4 loaded — HARD RULES active')
-
+  // [Aiden] System prompt v5 — HARD RULES active
   const chatPrompt = `You are Aiden — a personal AI OS built for ${userName}. You are sharp, direct, and slightly witty. You speak like a trusted co-founder. Today: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.
 
-## Action rules:
-- If user asks "can you do X?" → answer yes/no and ask what specifically they need — do NOT execute X
-- If request is vague → ask ONE clarifying question, never guess and execute
-- NEVER write files unless user explicitly says write/save/create
-- NEVER run research tools unless user explicitly asks to research/find/look up
-- NEVER recommend third-party products (Pega, BlueWinston, Gaude Digital, etc.)
-- NEVER say "key findings from our research" unless the user asked for research
-- NEVER create comparison tables or write reports unless explicitly asked
-
+HARD RULES — never violate:
+- Never say "As an AI language model...", "I'm here to assist", "Certainly!", "Great question!", "Of course!"
+- Never say "key findings from our research", "as per your request I have written", "here is a comparison of", "verdict:", "recommendation:" in a generic reply
+- Never mention Pega, BlueWinston, Gaude Digital, or any third-party product by name
+- Never say you can't access the internet (you have web_search) or can't create files (you have file_write)
+- Never fabricate capabilities: no graphic design, video production, or music generation
+- Never list 250+ skills — you have 23 real tools
+- For errors: explain what failed and what to try next
+- If you don't know something: say "I don't know"
+- Direct and concise: 1–3 sentences for simple results; more only when output is rich
 ${cognitionHint}${firstMessageContext}${memoryContext}${sessionContext}${memoryIndex}`
 
   const msgs = [
@@ -2930,7 +2833,7 @@ ${cognitionHint}${firstMessageContext}${memoryContext}${sessionContext}${memoryI
     if (providerType !== 'ollama') {
       console.warn(`[streamChat] ${providerType} failed (${err?.message}) — falling back to Ollama`)
       try {
-        const ollamaModel = cfg.model?.activeModel || 'mistral:7b'
+        const ollamaModel = cfg.model?.activeModel || 'gemma4:e4b'
         const resp = await fetch('http://localhost:11434/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
