@@ -115,3 +115,13 @@ function getProfile(modelName: string): ModelProfile {
 function emptyDiscovery(): DiscoveredModels {
   return { planner: null, responder: null, coder: null, fast: null, all: [] }
 }
+
+// ── Timeout scaling by model size ───────────────────────────────
+// gemma4:e4b / 70b models need up to 2 min on first token generation.
+
+export function getOllamaTimeout(modelName: string): number {
+  const n = modelName.toLowerCase()
+  if (n.includes('70b') || n.includes('e4b') || n.includes('34b')) return 120_000
+  if (n.includes('14b') || n.includes('12b') || n.includes('13b')) return  60_000
+  return 30_000  // 8b and smaller
+}

@@ -28,6 +28,7 @@ import { auditTrail }             from './auditTrail'
 import { mcpClient }             from './mcpClient'
 import { unifiedMemoryRecall, buildMemoryInjection } from './memoryRecall'
 import { costTracker } from './costTracker'
+import { getOllamaTimeout } from './modelDiscovery'
 import * as nodeFs             from 'fs'
 import * as nodePath           from 'path'
 import * as nodeOs             from 'os'
@@ -1623,7 +1624,7 @@ CRITICAL RULES FOR YOUR RESPONSE:
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ model: ollamaModel, stream: true, messages }),
-          signal: AbortSignal.timeout(8000),
+          signal: AbortSignal.timeout(getOllamaTimeout(ollamaModel)),
         })
         if (r.ok && r.body) {
           const reader  = (r.body as any).getReader()
@@ -1714,7 +1715,7 @@ export async function callLLM(
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: model || 'mistral:7b', stream: false, messages }),
-        signal: AbortSignal.timeout(12000),
+        signal: AbortSignal.timeout(getOllamaTimeout(model || '')),
       })
       if (r.status === 429) {
         try { markRateLimited(providerName) } catch {}
