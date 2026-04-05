@@ -110,6 +110,12 @@ const BANNED_PHRASES = [
   'import and export regulations', 'social media management',
   'income tax preparation', 'general ledger', 'accounts payable',
   'accounting software',
+  // v2 additions — third-party products and hallucinated research patterns
+  'BlueWinston', 'Pega', 'Gaude Digital',
+  'key findings from our research',
+  'as per your request, I have written',
+  'here is a comparison of',
+  'digital marketing strategies for NSE',
 ]
 
 function validateResponse(response: string): boolean {
@@ -538,6 +544,8 @@ export async function planWithLLM(
     ? `\n\n## User Profile\n${loadUserProfile()}\n`
     : ''
 
+  console.log('[Aiden] Planner v4 loaded — action rules active')
+
   const plannerPrompt = `You are DevOS Planner. Analyze the user request and output a JSON plan.
 
 CRITICAL RULES:
@@ -550,20 +558,51 @@ CRITICAL RULES:
 7. For multi-step tasks: if step N+1 needs step N's output, use the literal string "PREVIOUS_OUTPUT"
 8. Output ONLY valid JSON — no text before or after
 
+## ACTION RULES — read before planning ANYTHING:
+
+STEP 1 — Is this a capability question or an action request?
+- "Can you do X?" = capability question → requires_execution: false, direct_response: "Yes, I can. What specifically do you need?"
+- "Do X" / "Please do X" / "I need X done" = action request → may use tools
+- "What can you do" → requires_execution: false
+- NEVER execute a task when the user is just asking if you CAN do it
+
+STEP 2 — Did the user explicitly ask for each tool you're planning?
+- file_write: ONLY if user said "write", "save", "create a file", "make a document"
+  → "can you do marketing" does NOT mean write a file
+  → "can you help me" does NOT mean write a file
+- deep_research: ONLY if user said "research", "find out", "look up", "investigate"
+  → "can you do X" does NOT mean research X
+- web_search: ONLY if user needs live/current data they couldn't know from training
+- run_python / shell_exec: ONLY if user said "run", "execute", "calculate", "script"
+
+STEP 3 — Is the request too vague to act on?
+- If you are not 100% sure what the user wants done, set requires_execution: false
+  and ask ONE clarifying question in direct_response
+- "Can you do marketing for me" → unclear what "marketing" means here
+  → direct_response: "Yes. What specifically — copy writing, competitor research, Product Hunt listing, content calendar, or social posts?"
+- NEVER guess and execute
+
+HARD ACTION RULES:
+- NEVER mention or recommend: Pega, BlueWinston, Gaude Digital, or any third-party product
+- NEVER plan deep_research on a vague topic the user didn't ask to research
+- NEVER plan file_write for an unsolicited report or summary
+- NEVER create comparison tables, research reports, or verdict/recommendation sections unless user explicitly asked
+
 WHEN TO USE TOOLS vs NOT:
 ✅ Use tools for:
 - Weather, news, current prices → web_search
 - Opening websites → open_browser
-- Writing/reading files → file_write, file_read
-- Running code → run_python, run_node
+- Writing/reading files → file_write, file_read (only when explicitly requested)
+- Running code → run_python, run_node (only when explicitly requested)
 - System info → system_info
-- Research with real sources → deep_research
+- Research with real sources → deep_research (only when explicitly requested)
 
 ❌ Do NOT use tools for:
 - "What is the capital of X" → just answer
 - "Who is [famous person]" → just answer
 - "Explain X concept" → just answer
 - "What do you think about X" → just answer
+- "Can you do X for me" → ask what specifically they need
 - Any question answerable from training knowledge
 
 TOOL INPUT RULES:
@@ -1574,6 +1613,8 @@ export async function respondWithResults(
         `Step ${i + 1} [${r.tool}]: ${r.success ? r.output.slice(0, 500) : 'FAILED — ' + r.error}`,
       ).join('\n\n')
     : ''
+
+  console.log('[Aiden] System prompt v4 loaded — HARD RULES active')
 
   // Inject conversation memory so responder can answer questions about past work
   const memCtx    = conversationMemory.buildContext()
