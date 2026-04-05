@@ -144,8 +144,9 @@ function logProviderStatus() {
         const status = !api.enabled ? 'disabled' : api.rateLimited ? 'rate-limited' : resolvedKey.length === 0 ? 'SKIPPED (no key)' : `#${order++} active`;
         console.log(`  ${api.name} (${api.provider}/${api.model}) — ${keyStatus} — ${status}`);
     }
-    console.log(`  ollama — local — #${order} guaranteed fallback`);
+    console.log(`  ollama (${OLLAMA_FALLBACK_MODEL}) — local — #${order} guaranteed fallback`);
 }
+const OLLAMA_FALLBACK_MODEL = 'gemma4:e4b';
 function resolveKey(api) {
     return {
         apiKey: api.key.startsWith('env:')
@@ -156,6 +157,9 @@ function resolveKey(api) {
         apiName: api.name,
     };
 }
+const OLLAMA_RESULT = {
+    apiKey: '', model: OLLAMA_FALLBACK_MODEL, providerName: 'ollama', apiName: 'ollama',
+};
 function getModelForTask(task) {
     autoResetExpiredLimits();
     const config = (0, index_1.loadConfig)();
@@ -165,35 +169,40 @@ function getModelForTask(task) {
         const k = a.key.startsWith('env:') ? (process.env[a.key.replace('env:', '')] || '') : a.key;
         return k.length > 0;
     });
-    // Planner: strongest reasoning — openrouter > groq > gemini > cerebras > others
+    // Planner: strongest reasoning — gemini > groq > openrouter > cerebras → gemma4:e4b
     if (task === 'planner') {
-        for (const p of ['openrouter', 'groq', 'gemini', 'cerebras']) {
+        for (const p of ['gemini', 'groq', 'openrouter', 'cerebras']) {
             const api = available.find(a => a.provider === p);
             if (api)
                 return resolveKey(api);
         }
+        console.log('[Router] Planner: all cloud providers unavailable — falling back to Ollama gemma4:e4b');
+        return OLLAMA_RESULT;
     }
-    // Executor: fastest — cerebras > groq > nvidia > others
-    if (task === 'executor') {
-        for (const p of ['cerebras', 'groq', 'nvidia', 'openai']) {
-            const api = available.find(a => a.provider === p);
-            if (api)
-                return resolveKey(api);
-        }
-    }
-    // Responder: best quality — groq > gemini > openrouter > cerebras > others
+    // Responder: best quality — groq > gemini > openrouter > cerebras → gemma4:e4b
     if (task === 'responder') {
         for (const p of ['groq', 'gemini', 'openrouter', 'cerebras']) {
             const api = available.find(a => a.provider === p);
             if (api)
                 return resolveKey(api);
         }
+        console.log('[Router] Responder: all cloud providers unavailable — falling back to Ollama gemma4:e4b');
+        return OLLAMA_RESULT;
     }
-    // Generic fallback — any available API, then Ollama
+    // Executor: fastest — cerebras > groq > nvidia → gemma4:e4b
+    if (task === 'executor') {
+        for (const p of ['cerebras', 'groq', 'nvidia', 'openai']) {
+            const api = available.find(a => a.provider === p);
+            if (api)
+                return resolveKey(api);
+        }
+        console.log('[Router] Executor: all cloud providers unavailable — falling back to Ollama gemma4:e4b');
+        return OLLAMA_RESULT;
+    }
+    // Generic fallback — any available API, then gemma4:e4b
     if (available.length > 0)
         return resolveKey(available[0]);
-    const ollamaModel = config.model?.activeModel || 'mistral:7b';
-    return { apiKey: '', model: ollamaModel, providerName: 'ollama', apiName: 'ollama' };
+    return OLLAMA_RESULT;
 }
 // ── Main entry: get smart provider with full fallback chain ───
 function getSmartProvider() {
@@ -202,7 +211,7 @@ function getSmartProvider() {
     // MANUAL MODE: use the explicitly selected active provider
     if (config.routing?.mode === 'manual') {
         if (config.model.active === 'ollama') {
-            return { provider: ollama_1.ollamaProvider, model: config.model.activeModel || 'mistral:7b', userName, apiName: 'ollama' };
+            return { provider: ollama_1.ollamaProvider, model: config.model.activeModel || OLLAMA_FALLBACK_MODEL, userName, apiName: 'ollama' };
         }
         const active = config.providers.apis.find(a => a.name === config.model.active);
         if (active && active.enabled && !active.rateLimited) {
@@ -215,11 +224,11 @@ function getSmartProvider() {
     if (next) {
         return { provider: next.provider, model: next.entry.model || 'llama-3.3-70b-versatile', userName, apiName: next.entry.name };
     }
-    // FALLBACK: Ollama
+    // FALLBACK: Ollama gemma4:e4b
     if (config.routing?.fallbackToOllama !== false) {
-        console.log('[Router] All APIs unavailable — falling back to Ollama');
-        return { provider: ollama_1.ollamaProvider, model: config.model.activeModel || 'mistral:7b', userName, apiName: 'ollama' };
+        console.log('[Router] All APIs unavailable — falling back to Ollama gemma4:e4b');
+        return { provider: ollama_1.ollamaProvider, model: OLLAMA_FALLBACK_MODEL, userName, apiName: 'ollama' };
     }
     // Last resort
-    return { provider: ollama_1.ollamaProvider, model: 'mistral:7b', userName, apiName: 'ollama' };
+    return { provider: ollama_1.ollamaProvider, model: OLLAMA_FALLBACK_MODEL, userName, apiName: 'ollama' };
 }

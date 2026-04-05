@@ -2743,7 +2743,7 @@ ${cognitionHint}${firstMessageContext}${memoryContext}${sessionContext}${memoryI
         if (providerType !== 'ollama') {
             console.warn(`[streamChat] ${providerType} failed (${err?.message}) — falling back to Ollama`);
             try {
-                const ollamaModel = cfg.model?.activeModel || 'mistral:7b';
+                const ollamaModel = cfg.model?.activeModel || 'gemma4:e4b';
                 const resp = await fetch('http://localhost:11434/api/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
