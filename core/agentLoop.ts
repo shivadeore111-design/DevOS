@@ -32,6 +32,23 @@ import { getOllamaTimeout } from './modelDiscovery'
 import * as nodeFs             from 'fs'
 import * as nodePath           from 'path'
 import * as nodeOs             from 'os'
+import { fireHook }            from './hooks'
+
+// ── Standing Orders loader ─────────────────────────────────────
+// Loads workspace/STANDING_ORDERS.md once and injects it into
+// every system prompt so standing instructions always apply.
+
+function loadStandingOrders(): string {
+  try {
+    const ordersPath = nodePath.join(process.cwd(), 'workspace', 'STANDING_ORDERS.md')
+    if (nodeFs.existsSync(ordersPath)) {
+      return nodeFs.readFileSync(ordersPath, 'utf-8').trim()
+    }
+  } catch {}
+  return ''
+}
+
+const STANDING_ORDERS = loadStandingOrders()
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -419,6 +436,19 @@ export async function planWithLLM(
   provider:      string,
   memoryContext?: string,
 ): Promise<AgentPlan> {
+
+  // ── message_received hook — allows intercept before planning ─
+  const hookResult = await fireHook('message_received', { message })
+  if (hookResult?.intercepted) {
+    return {
+      goal:               message,
+      requires_execution: false,
+      plan:               [],
+      phases:             [],
+      direct_response:    hookResult.response || 'Request intercepted.',
+      reason:             'hook_intercepted',
+    }
+  }
 
   // ── Vague goal detection — ask for clarification before planning ──
   const VAGUE_PATTERNS = [/\bthe thing\b/i, /\bthe stuff\b/i, /\bthe place\b/i, /\bdo it\b$/i, /\bfix it\b$/i]
@@ -1138,6 +1168,23 @@ async function executeSingleStep(
   // Mark step started in persistent state
   taskStateManager.startStep(state, step.step, step.tool, resolvedInput)
 
+  // before_tool_call hook — allows blocking a tool execution
+  const preHook = await fireHook('before_tool_call', { toolName: step.tool, input: resolvedInput })
+  if (preHook?.blocked) {
+    const blocked: StepResult = {
+      step:     step.step,
+      tool:     step.tool,
+      input:    resolvedInput,
+      success:  false,
+      output:   '',
+      error:    preHook.reason || 'blocked by hook',
+      duration: 0,
+    }
+    onStep(step, blocked)
+    return blocked
+  }
+
+  const toolStartTime = Date.now()
   // Execute the tool (retries + per-tool timeout handled internally)
   let toolResult = await executeTool(step.tool, resolvedInput)
 
@@ -1153,6 +1200,15 @@ async function executeSingleStep(
       }
     }
   }
+
+  // after_tool_call hook — notify observers with result data
+  await fireHook('after_tool_call', {
+    toolName: step.tool,
+    input:    resolvedInput,
+    output:   toolResult.output,
+    success:  toolResult.success,
+    duration: Date.now() - toolStartTime,
+  })
 
   if (toolResult.retries > 0) {
     livePulse.act('Aiden', `${step.tool} succeeded after ${toolResult.retries} retry(s)`)
@@ -1508,8 +1564,12 @@ export async function respondWithResults(
     ? results.map(r => `[${r.tool} result]: ${r.success ? r.output.slice(0, 1000) : 'FAILED: ' + r.error}`).join('\n')
     : ''
 
+  const standingOrdersSection = STANDING_ORDERS
+    ? `\n\n## Standing Orders\n${STANDING_ORDERS}`
+    : ''
+
   const systemWithResults = toolResultsContext
-    ? `${capabilitiesSection}${responderSystem(userName, date)}${responseSkillContext}${knowledgeResponderSection}
+    ? `${capabilitiesSection}${responderSystem(userName, date)}${responseSkillContext}${knowledgeResponderSection}${standingOrdersSection}
 
 YOU JUST RAN THESE TOOLS AND GOT THESE RESULTS:
 ${toolResultsContext}
@@ -1522,7 +1582,7 @@ CRITICAL RULES FOR YOUR RESPONSE:
 - If system_info returned hardware data, show the data
 - Be direct: show the actual output, then provide context if needed
 - If a tool failed, say it failed and why`
-    : `${capabilitiesSection}${responderSystem(userName, date)}${responseSkillContext}${knowledgeResponderSection}`
+    : `${capabilitiesSection}${responderSystem(userName, date)}${responseSkillContext}${knowledgeResponderSection}${standingOrdersSection}`
 
   const userContent = executionSummary
     ? `User asked: "${originalMessage}"\n\nReal execution results:\n${executionSummary}\n\nRespond naturally based on these real results only. Show the actual output, not a description of it.${depthInstruction}${memSection}`

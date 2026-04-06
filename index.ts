@@ -34,6 +34,7 @@ import { verifyInstall, getCurrentLicense } from './core/licenseManager'
 import { scheduler }      from './core/scheduler'
 import { startMCPServer } from './core/mcpServer'
 import { initLocalModels } from './providers/router'
+import { registerHook }   from './core/hooks'
 
 // ── Bootstrap ─────────────────────────────────────────────────
 
@@ -95,6 +96,21 @@ async function main(): Promise<void> {
         }
 
         startApiServer()
+
+        // ── Built-in hooks ─────────────────────────────────────
+        // Audit trail: log every tool call result
+        registerHook('after_tool_call', async (data) => {
+          auditTrail.record({
+            action:     'tool',
+            tool:       data.toolName,
+            input:      JSON.stringify(data.input || {}).slice(0, 200),
+            output:     String(data.output || '').slice(0, 200),
+            durationMs: data.duration || 0,
+            success:    data.success ?? true,
+          })
+          return data
+        })
+        console.log('[Hooks] Built-in hooks registered')
 
         // ── Sprint 29: start MCP server ────────────────────────
         startMCPServer(3001)
