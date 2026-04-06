@@ -79,25 +79,59 @@ export async function buildCapabilityProfile(): Promise<CapabilityProfile> {
     if (!isNaN(n) && n > 0) cpuCores = n
   } catch {}
 
-  // ── Detect GPU VRAM (CIM) ────────────────────────────────────
+  // ── Detect GPU VRAM ─────────────────────────────────────────
+  // Strategy: nvidia-smi first (accurate), then CIM AdapterRAM
+  // Note: Win32_VideoController.AdapterRAM is a 32-bit field and
+  // overflows for GPUs with >4GB VRAM (e.g. GTX 1060 6GB reports 4GB or 0)
   let gpuVRAM   = 0
   let hasGPU    = false
   let gpuName   = ''
+  // Try nvidia-smi first — most accurate source
   try {
-    const out = execSync(
-      'powershell -command "Get-CimInstance Win32_VideoController | Select-Object Name, AdapterRAM | ConvertTo-Json -Compress"',
-      { timeout: 5000 },
+    const smiOut = execSync(
+      'nvidia-smi --query-gpu=name,memory.total --format=csv,noheader,nounits',
+      { timeout: 4000 },
     ).toString().trim()
-    const parsed = JSON.parse(out.startsWith('[') ? out : `[${out}]`)
-    for (const gpu of parsed) {
-      const vram = Math.round((gpu.AdapterRAM || 0) / (1024 ** 3))
-      if (vram > gpuVRAM) {
-        gpuVRAM = vram
-        gpuName = gpu.Name || ''
-        hasGPU  = true
+    const lines = smiOut.split('\n').filter(l => l.trim())
+    for (const line of lines) {
+      const parts = line.split(',').map(s => s.trim())
+      if (parts.length >= 2) {
+        const vramMB = parseInt(parts[1])
+        if (!isNaN(vramMB) && vramMB > 0) {
+          const vram = Math.round(vramMB / 1024)
+          if (vram > gpuVRAM) {
+            gpuVRAM = vram
+            gpuName = parts[0]
+            hasGPU  = true
+          }
+        }
       }
     }
-  } catch {}
+  } catch { /* nvidia-smi not available — fall through to CIM */ }
+  // CIM fallback for non-NVIDIA or when nvidia-smi unavailable
+  if (!hasGPU) {
+    try {
+      const out = execSync(
+        'powershell -command "Get-CimInstance Win32_VideoController | Select-Object Name, AdapterRAM | ConvertTo-Json -Compress"',
+        { timeout: 5000 },
+      ).toString().trim()
+      const parsed = JSON.parse(out.startsWith('[') ? out : `[${out}]`)
+      for (const gpu of parsed) {
+        // AdapterRAM is uint32 — anything < 128MB is likely an overflow or integrated
+        const rawBytes = gpu.AdapterRAM || 0
+        const vram = rawBytes > 0 ? Math.round(rawBytes / (1024 ** 3)) : 0
+        if (vram > gpuVRAM) {
+          gpuVRAM = vram
+          gpuName = gpu.Name || ''
+          hasGPU  = true
+        } else if (gpu.Name && !hasGPU) {
+          // GPU exists even if VRAM unreadable
+          gpuName = gpu.Name
+          hasGPU  = true
+        }
+      }
+    } catch {}
+  }
 
   // ── Detect local LLM via Ollama API ─────────────────────────
   const localLLM = await detectOllamaLocalLLM()

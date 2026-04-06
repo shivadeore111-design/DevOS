@@ -40,7 +40,7 @@
   "preferGlobal": true,
   "type": "commonjs",
   "scripts": {
-    "dev": "ts-node index.ts serve",
+    "dev": "node scripts/kill-ports.js && ts-node index.ts serve",
     "run": "ts-node index.ts run",
     "daemon": "ts-node index.ts daemon",
     "status": "ts-node index.ts status",
