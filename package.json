@@ -50,7 +50,9 @@
     "start": "node dist/index.js serve",
     "test": "vitest run",
     "test:ui": "vitest --ui",
-    "stress-test": "npx ts-node tests/stressTest.ts"
+    "stress-test": "npx ts-node tests/stressTest.ts",
+    "test:chat": "npx ts-node tests/e2e/masterTestSuite.ts --part2",
+    "test:all": "npx ts-node tests/e2e/masterTestSuite.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
