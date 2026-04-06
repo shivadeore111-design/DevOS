@@ -17,7 +17,7 @@ import { taskStateManager, TaskState }     from './taskState'
 import { skillLoader }                     from './skillLoader'
 import { learningMemory }                  from './learningMemory'
 import { conversationMemory }             from './conversationMemory'
-import { getNextAvailableAPI, markRateLimited, incrementUsage, getModelForTask } from '../providers/router'
+import { getNextAvailableAPI, markRateLimited, incrementUsage, getModelForTask, getOllamaModelForTask } from '../providers/router'
 import { ollamaProvider } from '../providers/ollama'
 import { loadConfig }     from '../providers/index'
 import { knowledgeBase } from './knowledgeBase'
@@ -446,6 +446,7 @@ export async function planWithLLM(
     'app_launch', 'app_close',
     'watch_folder', 'watch_folder_list',
     'get_briefing',
+    'respond',
   ]
 
   // Sprint 13: append discovered MCP tools
@@ -552,10 +553,20 @@ OUTPUT FORMAT (strict JSON only):
 If requires_execution is false:
 { "goal": "...", "requires_execution": false, "reasoning": "...", "plan": [], "direct_response": "your answer here" }
 
+THE 'respond' TOOL — use this for ALL conversational messages:
+- 'respond' is ALWAYS a valid plan. When no external tool is needed, plan a single respond step.
+- respond: { "message": "your answer text here" }
+- Use respond for: greetings, capability questions, simple facts from training data, clarifying questions, short answers.
+- Example: user says "hi" → { "goal": "hi", "requires_execution": true, "plan": [{ "step": 1, "tool": "respond", "input": { "message": "Hi! What can I help you with today?" } }] }
+
 ACTION GATE RULES — apply BEFORE creating any plan:
-1. CAPABILITY GATE: If message is "Can you do X?" / "Can you X?" / "Are you able to X?" → requires_execution: false, direct_response: "Yes/No — [brief explanation]"
+1. CAPABILITY GATE: If message is "Can you do X?" / "Can you X?" / "Are you able to X?" → plan respond with answer
 2. EXPLICIT-ASK GATE: ONLY use file_write if user said "write", "save", "create file". ONLY use deep_research if user said "research", "find out", "look up"
-3. VAGUENESS GATE: If request is unclear → requires_execution: false, direct_response: one clarifying question
+3. VAGUENESS GATE: If request is AMBIGUOUS, plan a respond step that asks ONE clarifying question:
+   - "do marketing" → respond: "What specifically? Copywriting, competitor research, Product Hunt listing, or content calendar?"
+   - "check my system" → respond: "What aspect? Hardware specs, running processes, disk space, or network?"
+   - "build something" → respond: "What would you like me to build?"
+   - Clear requests execute directly: "check NIFTY price" → get_market_data, "write a Python script to X" → run_python
 4. NEVER create comparison tables, reports, or verdicts unless user explicitly asked for them
 5. NEVER mention Pega, BlueWinston, Gaude Digital, or any third-party product by name
 
@@ -571,9 +582,37 @@ Output ONLY valid JSON, nothing else:`
     .filter((h: any) => h.content && String(h.content).trim().length > 0)
   console.log(`[Planner] History: ${cleanHistory.length} messages (${history.length} raw)`)
 
+  // ── Sliding context window — keep last 10, summarize older messages ──
+  const RECENT_WINDOW = 10
+  let contextHistory = cleanHistory
+  if (cleanHistory.length > RECENT_WINDOW) {
+    const recent = cleanHistory.slice(-RECENT_WINDOW)
+    const older  = cleanHistory.slice(
+      Math.max(0, cleanHistory.length - RECENT_WINDOW * 2),
+      cleanHistory.length - RECENT_WINDOW,
+    )
+    if (older.length > 0) {
+      try {
+        const summaryInput = older.map((m: any) => `${m.role}: ${String(m.content).slice(0, 200)}`).join('\n')
+        const summary = await callLLM(
+          `Summarize these messages in 2-3 sentences, keeping key facts and decisions:\n\n${summaryInput}`,
+          '', getOllamaModelForTask('executor'), 'ollama',
+        ).catch(() => null)
+        if (summary) {
+          contextHistory = [{ role: 'system', content: `Earlier conversation summary: ${summary}` }, ...recent]
+          console.log(`[Planner] Context window: summarized ${older.length} older messages`)
+        } else {
+          contextHistory = recent
+        }
+      } catch {
+        contextHistory = recent
+      }
+    }
+  }
+
   const messages = [
     { role: 'system', content: plannerPrompt },
-    ...cleanHistory.slice(-3).map((h: any) => ({
+    ...contextHistory.slice(-3).map((h: any) => ({
       role:    h.role === 'assistant' ? 'assistant' : 'user',
       content: String(h.content).slice(0, 300),
     })),
@@ -719,13 +758,12 @@ Output ONLY valid JSON, nothing else:`
   }
 
   if (!parsed) {
-    console.warn('[Planner] All attempts including Ollama failed — direct answer fallback')
+    console.warn('[Planner] All LLM attempts failed — respond fallback')
     return {
       goal:               message,
-      requires_execution: false,
-      plan:               [],
+      requires_execution: true,
+      plan:               [{ step: 1, tool: 'respond', input: { message: "I'm not sure how to help with that right now. Could you rephrase your request?" }, description: 'Fallback response' }],
       phases:             [],
-      direct_response:    "I couldn't create a plan for that. Could you rephrase your request?",
     }
   }
 
@@ -1124,7 +1162,7 @@ async function executeSingleStep(
   }
 
   // Tools that legitimately take zero input
-  const NO_INPUT_TOOLS = ['system_info', 'screenshot', 'get_hardware', 'screen_read', 'vision_loop', 'health_check']
+  const NO_INPUT_TOOLS = ['system_info', 'screenshot', 'get_hardware', 'screen_read', 'vision_loop', 'health_check', 'respond']
   if (!NO_INPUT_TOOLS.includes(step.tool)) {
     if (!step.input || Object.keys(step.input).length === 0) {
       console.log(`[ExecutePlan] Skipping step ${step.step} (${step.tool}) — empty input`)

@@ -120,6 +120,13 @@ const TOOL_TIMEOUTS: Record<string, number> = {
 
 export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
 
+  // ── respond — direct conversational reply (no external tools needed) ──
+  respond: async (p) => {
+    const message = p.message || p.text || p.response || ''
+    if (!message) return { success: false, output: '', error: 'No message provided' }
+    return { success: true, output: message }
+  },
+
   open_browser: async (p) => {
     const url = p.url || p.command || ''
     if (!url) return { success: false, output: '', error: 'No URL provided' }
@@ -1213,4 +1220,5 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   watch_folder:            'Watch a folder and react automatically when new files appear',
   watch_folder_list:       'List all currently watched folder paths',
   get_briefing:            'Run the morning briefing: weather, markets, news, and daily summary',
+  respond:                 'Send a direct conversational response to the user. Use for greetings, capability questions, clarifications, simple factual answers, and anything that does NOT require external tools. This is the default tool when no other tool is needed.',
 }
