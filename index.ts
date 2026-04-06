@@ -382,7 +382,13 @@ Commands:
   }
 }
 
-main().catch(err => {
+main().then(() => {
+  // For one-shot commands (doctor, status, hardware, etc.) exit cleanly.
+  // 'serve' keeps the process alive via the HTTP server — process.exit is never reached.
+  if (command !== 'serve' && command !== 'daemon') {
+    process.exit(0)
+  }
+}).catch(err => {
   console.error(`[DevOS] Fatal: ${err?.message ?? err}`)
   process.exit(1)
 })
