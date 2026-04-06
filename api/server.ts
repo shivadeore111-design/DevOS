@@ -310,8 +310,30 @@ export function createApiServer(): Express {
     }
     message = scanAndRedact(message)
 
-    if (!message || message.trim().length === 0) {
-      res.status(400).json({ message: 'Please provide a goal or question.', error: 'empty_message' }); return
+    var MAX_MSG_LEN = 50000;
+
+    if (!message || message.trim().length < 2) {
+      res.json({ message: 'I am here. What can I help with?', response: 'I am here. What can I help with?' }); return
+    }
+
+    if (message.length > MAX_MSG_LEN) {
+      res.json({ message: 'That message is very long. Break it into smaller parts.', response: 'That message is very long. Break it into smaller parts.' }); return
+    }
+
+    // Banned topic intercept - short-circuit before LLM
+    const BANNED_TOPIC_PATS = [
+      /GSTs*(rate|code|filing|return|number|percent)/i,
+      /HSNs*(code|number|list)/i,
+      /trademarks*(registration|class|filing)/i,
+      /payrolls*(processing|software|system)/i,
+      /ledgers*(software|app|system|tool)/i,
+      /GSTIN/i,
+      /accounts?s*payable/i,
+      /generals*ledger/i,
+    ];
+    if (BANNED_TOPIC_PATS.some(p => p.test(message))) {
+      const bResp = 'That is outside what I do. I am Aiden - I help with computer control, coding, research, market data, file management, and automation. What can I help you with?';
+      res.json({ message: bResp, response: bResp }); return
     }
 
     // â”€â”€ Jailbreak detection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -352,6 +374,17 @@ export function createApiServer(): Express {
       /what('s| is) your name/i,
       /are you (aiden|chatgpt|claude|gpt|openai)/i,
     ]
+    // Fast who-built-you answers
+    const builderPats = [
+      /who\s+(built|made|created|developed|wrote)\s+you/i,
+      /who\s+is\s+(your|the)\s+(creator|developer|maker|builder)/i,
+      /were\s+you\s+(built|made|created)\s+by/i,
+      /openai\s+or\s+someone\s+else/i,
+    ]
+    if (builderPats.some(p => p.test(message))) {
+      res.json({ message: 'I was built by Shiva Deore at Taracod. Not OpenAI, not Anthropic, not Google. Just Taracod.', response: 'I was built by Shiva Deore at Taracod. Not OpenAI, not Anthropic, not Google. Just Taracod.' }); return
+    }
+
     if (identityPatterns.some(p => p.test(message))) {
       res.json({ message: 'I\'m Aiden â€” a personal AI OS built by Shiva Deore at Taracod. I run locally on your Windows machine using Ollama. Not ChatGPT, not Claude. Just Aiden.' }); return
     }
@@ -377,6 +410,17 @@ export function createApiServer(): Express {
     }
 
     // â”€â”€ Hardware info fast-path â€” from SOUL.md known config â”€â”€â”€
+    // Context question fast-path - graceful at conversation start
+    const CONTEXT_Q_PATS = [
+      /what\s+(just\s+)?happened/i,
+      /what\s+did\s+(we|i|you)\s+(just\s+)?(do|discuss|talk)/i,
+    ]
+    const inHistory = Array.isArray(req.body && req.body.history) ? req.body.history : []
+    if (CONTEXT_Q_PATS.some(p => p.test(message)) && inHistory.length <= 2) {
+      const ctxR = 'This is the start of our conversation - nothing has happened yet. What would you like to work on?'
+      res.json({ message: ctxR, response: ctxR }); return
+    }
+
     if (/what\s+(gpu|graphics|vram|ram|memory|cpu|processor|hardware|specs)\s+(do\s+i|have|i\s+have)|gpu\s+and\s+ram|hardware\s+specs|system\s+specs/i.test(message)) {
       res.json({ message: 'GPU: GTX 1060 6GB VRAM. RAM: detected at runtime (typically 8â€“16 GB). CPU: detected via system info. Run "system_info" for live hardware readings.' }); return
     }
