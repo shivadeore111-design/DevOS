@@ -159,6 +159,7 @@ export class Scheduler {
   constructor() {
     this.load()
     this.registerDreamSchedule()
+    this.registerHeartbeatSchedule()
     loadHeartbeatConfig()
   }
 
@@ -216,6 +217,71 @@ export class Scheduler {
     }, 6 * 60 * 60 * 1000)
 
     console.log('[Scheduler] Dream engine scheduled (every 6h, startup+30s)')
+  }
+
+  // ── Feature 16: HEARTBEAT_OK suppression pattern ──────────────
+  // Runs every 30 min during active hours (8 AM–11 PM).
+  // Uses local Ollama (zero API cost). Silent unless alert found.
+
+  registerHeartbeatSchedule(): void {
+    async function runHeartbeat(): Promise<void> {
+      const hour         = new Date().getHours()
+      const ACTIVE_START = 8
+      const ACTIVE_END   = 23
+      if (hour < ACTIVE_START || hour >= ACTIVE_END) return
+      if (!fs.existsSync(HEARTBEAT_PATH)) return
+
+      const checklist = fs.readFileSync(HEARTBEAT_PATH, 'utf-8').trim()
+      if (!checklist) return
+
+      console.log('[Heartbeat] Running checks...')
+      try {
+        const resp = await fetch('http://localhost:11434/api/chat', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model:  'llama3.2:latest',
+            stream: false,
+            messages: [
+              {
+                role:    'system',
+                content: "You are Aiden running a background heartbeat. Check the items in the list. If NOTHING needs the user's attention, reply ONLY: HEARTBEAT_OK\nIf something IS urgent or interesting, describe it in 1-2 sentences. Do NOT include HEARTBEAT_OK if you have alerts.",
+              },
+              { role: 'user', content: checklist },
+            ],
+          }),
+          signal: AbortSignal.timeout(30_000),
+        })
+
+        if (!resp.ok) { console.log('[Heartbeat] Ollama unavailable — skipping'); return }
+
+        const data     = await resp.json() as any
+        const response = (data?.message?.content || '') as string
+        const cleaned  = response.replace(/HEARTBEAT_OK/gi, '').trim()
+
+        if (!cleaned || cleaned.length < 10) {
+          console.log('[Heartbeat] All clear')
+          return
+        }
+
+        console.log('[Heartbeat] Alert:', cleaned)
+
+        // Deliver alert via API server (non-blocking)
+        fetch('http://localhost:4200/api/chat', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ message: `notify user with desktop alert: ${cleaned}` }),
+          signal:  AbortSignal.timeout(10_000),
+        }).catch(() => { /* server may not be up yet */ })
+      } catch (e: any) {
+        console.log('[Heartbeat] Check skipped:', e.message)
+      }
+    }
+
+    // Run 60s after startup, then every 30 minutes
+    setTimeout(() => runHeartbeat(), 60_000)
+    setInterval(() => runHeartbeat(), 30 * 60 * 1000)
+    console.log('[Heartbeat] Scheduled (every 30m, active hours 8 AM–11 PM)')
   }
 
   // ── Sprint 25: morning briefing registration ────────────

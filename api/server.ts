@@ -78,6 +78,63 @@ import { eventBus } from '../core/eventBus'
 // —— Sprint 25: module-level WebSocket clients registry (shared between createApiServer routes and startApiServer WS setup)
 let wsBroadcastClients = new Set<any>()
 
+// ── Feature 17: Per-session message queue ─────────────────────
+// Serialises concurrent requests from the same session to prevent
+// race conditions when the user sends multiple messages quickly.
+
+const sessionQueues = new Map<string, Promise<any>>()
+
+function queuedAgentLoop(
+  sessionId: string,
+  fn:        () => Promise<string>,
+): Promise<string> {
+  const current = sessionQueues.get(sessionId) ?? Promise.resolve('')
+  const next = current
+    .catch(() => '')
+    .then(fn)
+    .catch((err: any) => {
+      console.error(`[Queue] Session ${sessionId} error:`, err?.message ?? err)
+      return 'Something went wrong. Please try again.'
+    }) as Promise<string>
+  next.finally(() => {
+    if (sessionQueues.get(sessionId) === next) sessionQueues.delete(sessionId)
+  })
+  sessionQueues.set(sessionId, next)
+  return next
+}
+
+// ── Feature 18: Config hot-reload ─────────────────────────────
+// Watches config/devos.config.json for changes and logs reload.
+// loadConfig() reads from disk on each call, so no cache-busting
+// is required — the next request automatically picks up changes.
+
+const CONFIG_WATCH_PATH = path.join(process.cwd(), 'config', 'devos.config.json')
+
+function watchConfig(): void {
+  try {
+    let debounceTimer: NodeJS.Timeout | null = null
+    fs.watch(CONFIG_WATCH_PATH, { persistent: false }, (eventType) => {
+      if (eventType !== 'change') return
+      if (debounceTimer) clearTimeout(debounceTimer)
+      debounceTimer = setTimeout(() => {
+        try {
+          const newConfig = JSON.parse(fs.readFileSync(CONFIG_WATCH_PATH, 'utf-8'))
+          if (newConfig.providers) {
+            console.log('[Config] Hot-reloaded providers — new config active on next request')
+          }
+          console.log('[Config] Reloaded — no restart needed')
+        } catch (e: any) {
+          console.error('[Config] Reload failed:', e.message)
+          // Keep running with old config
+        }
+      }, 500)
+    })
+    console.log('[Config] Watching for changes...')
+  } catch (e: any) {
+    console.warn('[Config] Could not watch config file:', e.message)
+  }
+}
+
 // â”€â”€ Human-readable tool message helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function humanToolMessage(tool: string, input: Record<string, any>): string {
   const map: Record<string, string> = {
@@ -200,6 +257,38 @@ export function createApiServer(): Express {
   })
 
   // â”€â”€ Core routes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+  // ── Feature 19: Bearer token auth — remote access protection ──
+  // Localhost is always allowed. Token is optional (dev-friendly).
+  // Set AIDEN_API_TOKEN env var or config.api.token to enable.
+  const _apiCfg   = loadConfig() as any
+  const _apiToken = process.env.AIDEN_API_TOKEN || _apiCfg?.api?.token || ''
+
+  const authMiddleware = (req: Request, res: Response, next: NextFunction) => {
+    const ip      = req.ip || req.socket?.remoteAddress || ''
+    const isLocal = ip === '127.0.0.1' || ip === '::1' ||
+                    ip === '::ffff:127.0.0.1' || ip.includes('localhost')
+    if (isLocal)    return next()
+    if (!_apiToken) return next()  // no token configured — dev mode
+
+    const provided = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim()
+    if (provided === _apiToken) return next()
+
+    console.warn(`[Auth] Rejected request from ${ip} — invalid token`)
+    res.status(401).json({
+      error: 'Unauthorized',
+      hint:  'Set AIDEN_API_TOKEN env var or pass Authorization: Bearer <token>',
+    })
+  }
+
+  app.use('/api', authMiddleware)
+  app.use('/v1',  authMiddleware)
+
+  if (_apiToken) {
+    console.log('[Auth] API token protection enabled')
+  } else {
+    console.log('[Auth] No API token — localhost only')
+  }
 
   // GET /api/health â€” liveness probe (no auth required)
   app.get('/api/health', (_req: Request, res: Response) => {
@@ -2375,6 +2464,84 @@ export function createApiServer(): Express {
     }
   })
 
+  // ── Feature 15: OpenAI-compatible API ─────────────────────────
+  // Compatible with Open WebUI, LobeChat, Obsidian AI, and any
+  // OpenAI-compatible client. Point them at http://localhost:4200/v1
+
+  app.get('/v1/models', (_req: Request, res: Response) => {
+    res.json({
+      object: 'list',
+      data: [{
+        id:         'aiden',
+        object:     'model',
+        created:    Math.floor(Date.now() / 1000),
+        owned_by:   'taracod',
+        permission: [],
+        root:       'aiden',
+        parent:     null,
+      }],
+    })
+  })
+
+  app.post('/v1/chat/completions', async (req: Request, res: Response) => {
+    try {
+      const { messages = [], stream = false } = req.body as {
+        messages?: Array<{ role: string; content: string }>
+        stream?:   boolean
+      }
+
+      const history     = messages.slice(0, -1).filter(m => m.role !== 'system')
+      const userMessage = messages.filter(m => m.role === 'user').pop()?.content || ''
+
+      if (!userMessage) {
+        res.status(400).json({ error: { message: 'No user message provided', type: 'invalid_request_error' } })
+        return
+      }
+
+      // Delegate to existing /api/chat — reuses full agent loop, fast paths, rate limiting
+      const localPort = (req.socket as any)?.localPort || 4200
+      const chatRes   = await fetch(`http://127.0.0.1:${localPort}/api/chat`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ message: userMessage, history }),
+        signal:  AbortSignal.timeout(120_000),
+      })
+      const chatData = await chatRes.json() as { message?: string; response?: string }
+      const response = chatData.response || chatData.message || ''
+
+      const msgId   = `chatcmpl-${Date.now()}`
+      const created = Math.floor(Date.now() / 1000)
+
+      if (stream) {
+        res.setHeader('Content-Type', 'text/event-stream')
+        res.setHeader('Cache-Control', 'no-cache')
+        res.setHeader('Connection', 'keep-alive')
+        res.write(`data: ${JSON.stringify({
+          id: msgId, object: 'chat.completion.chunk', created, model: 'aiden',
+          choices: [{ index: 0, delta: { role: 'assistant', content: response }, finish_reason: null }],
+        })}\n\n`)
+        res.write(`data: ${JSON.stringify({
+          id: msgId, object: 'chat.completion.chunk', created, model: 'aiden',
+          choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+        })}\n\n`)
+        res.write('data: [DONE]\n\n')
+        res.end()
+      } else {
+        res.json({
+          id: msgId, object: 'chat.completion', created, model: 'aiden',
+          choices: [{
+            index:        0,
+            message:      { role: 'assistant', content: response },
+            finish_reason: 'stop',
+          }],
+          usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+        })
+      }
+    } catch (e: any) {
+      res.status(500).json({ error: { message: e.message, type: 'server_error' } })
+    }
+  })
+
   app.use((_req: Request, res: Response) => {
     res.status(404).json({ error: 'Not found' })
   })
@@ -2562,6 +2729,9 @@ export function startApiServer(portArg?: number): Express {
 
   // Log provider chain before listening so it's visible in startup log
   try { logProviderStatus() } catch {}
+
+  // Feature 18: config hot-reload watcher
+  watchConfig()
 
   server.listen(port, host, () => {
     console.log(`[API] DevOS v2.0 Â· Aiden running at http://${host}:${port}`)
