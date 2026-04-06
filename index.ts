@@ -61,6 +61,48 @@ const goalArgs = args.slice(1)
 // ── Main ──────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
+
+  // ── Feature 11: devos -p "prompt" [--json] ────────────────────
+  if (args[0] === '-p' || args[0] === '--prompt') {
+    const isJson      = args.includes('--json')
+    const promptArgs  = args.filter(a => a !== '--json').slice(1)
+    const prompt      = promptArgs.join(' ').replace(/^["']|["']$/g, '').trim()
+
+    if (!prompt) {
+      console.log('Usage: devos -p "your prompt here"')
+      process.exit(1)
+    }
+
+    try {
+      const res = await fetch('http://localhost:4200/api/chat', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ message: prompt, history: [] }),
+        signal:  AbortSignal.timeout(120_000),
+      })
+
+      if (!res.ok) {
+        console.error(`Server error: HTTP ${res.status}. Is DevOS running? Try: devos serve`)
+        process.exit(1)
+      }
+
+      const data      = await res.json() as { response?: string; message?: string }
+      const response  = data.response || data.message || ''
+
+      if (isJson) {
+        console.log(JSON.stringify({ response, prompt }, null, 2))
+      } else {
+        console.log(response)
+      }
+    } catch (e: any) {
+      console.error(`Could not reach DevOS server. Is it running? Try: devos serve`)
+      console.error(`Error: ${e.message}`)
+      process.exit(1)
+    }
+
+    process.exit(0)
+  }
+
   switch (command) {
 
     // ── devos serve ─────────────────────────────────────────
@@ -368,6 +410,170 @@ async function main(): Promise<void> {
       break
     }
 
+    // ── devos backup ────────────────────────────────────────
+    case 'backup': {
+      try {
+        let archiver: any
+        try {
+          archiver = require('archiver')
+        } catch {
+          console.log('  archiver package not found. Run: npm install archiver @types/archiver')
+          break
+        }
+
+        const timestamp  = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+        const backupName = `aiden-backup-${timestamp}.zip`
+
+        console.log(`\n  Creating backup: ${backupName}`)
+
+        const output  = fs.createWriteStream(backupName)
+        const archive = archiver('zip', { zlib: { level: 9 } })
+
+        archive.pipe(output)
+
+        const dirs = [
+          'workspace/memory',
+          'workspace/sessions',
+          'workspace/skills',
+          'workspace/knowledge',
+        ]
+        for (const dir of dirs) {
+          if (fs.existsSync(dir)) archive.directory(dir, dir)
+        }
+
+        const files = [
+          'workspace/USER.md',
+          'workspace/HEARTBEAT.md',
+          'workspace/STANDING_ORDERS.md',
+          'workspace/identity.json',
+          'workspace/scheduled-tasks.json',
+        ]
+        for (const file of files) {
+          if (fs.existsSync(file)) archive.file(file, { name: file })
+        }
+
+        // NEVER include config/devos.config.json — contains API keys
+
+        await new Promise<void>((resolve, reject) => {
+          output.on('close', resolve)
+          archive.on('error', reject)
+          archive.finalize()
+        })
+
+        const stats = fs.statSync(backupName)
+        console.log(`  ✓ Saved: ${backupName}`)
+        console.log(`  Size: ${(stats.size / 1024 / 1024).toFixed(1)} MB`)
+        console.log(`  Restore: devos restore ${backupName}`)
+      } catch (err: any) {
+        console.error(`[backup] Error: ${err?.message ?? err}`)
+      }
+      break
+    }
+
+    // ── devos security ───────────────────────────────────────
+    case 'security': {
+      try {
+        console.log('\n  AIDEN SECURITY AUDIT\n')
+        let issues = 0
+
+        // Check 1: API keys in session history
+        const sessionDir = 'workspace/sessions'
+        if (fs.existsSync(sessionDir)) {
+          const sessions    = fs.readdirSync(sessionDir)
+          const keyPatterns = [
+            /sk-[a-zA-Z0-9]{20,}/,
+            /gsk_[a-zA-Z0-9]{20,}/,
+            /AIza[a-zA-Z0-9_-]{33}/,
+            /ghp_[a-zA-Z0-9]{36}/,
+          ]
+          let found = false
+          for (const file of sessions) {
+            try {
+              const content = fs.readFileSync(path.join(sessionDir, file), 'utf-8')
+              for (const pattern of keyPatterns) {
+                if (pattern.test(content)) {
+                  console.log(`  ✗ API key found in ${file}`)
+                  issues++
+                  found = true
+                }
+              }
+            } catch { /* skip unreadable files */ }
+          }
+          if (!found) console.log('  ✓ No API keys in session history')
+        }
+
+        // Check 2: Config has API keys (expected — just note it)
+        const configPath = 'config/devos.config.json'
+        if (fs.existsSync(configPath)) {
+          const config   = JSON.parse(fs.readFileSync(configPath, 'utf-8'))
+          const keyCount = (JSON.stringify(config).match(/apiKey/gi) || []).length
+          console.log(`  ⚠  ${keyCount} API key(s) in config — ensure config is gitignored`)
+        }
+
+        // Check 3: Suspicious skills
+        const skillDir = 'workspace/skills/learned'
+        if (fs.existsSync(skillDir)) {
+          const suspicious = fs.readdirSync(skillDir).filter(s =>
+            s.includes('password') || s.includes('token') || s.includes('secret')
+          )
+          if (suspicious.length > 0) {
+            console.log(`  ✗ Suspicious skills: ${suspicious.join(', ')}`)
+            issues++
+          } else {
+            console.log('  ✓ No suspicious skills found')
+          }
+        }
+
+        // Check 4: GitHub visibility reminder
+        console.log('  ⚠  Verify GitHub repo is private: github.com/shivadeore111-design/DevOS')
+
+        console.log(`\n  ${issues === 0 ? '✓ Clean' : `✗ ${issues} issue(s) found`}\n`)
+      } catch (err: any) {
+        console.error(`[security] Error: ${err?.message ?? err}`)
+      }
+      break
+    }
+
+    // ── devos cleanup ────────────────────────────────────────
+    case 'cleanup': {
+      try {
+        const sessionDir = 'workspace/sessions'
+        if (!fs.existsSync(sessionDir)) {
+          console.log('No sessions found')
+          break
+        }
+
+        const MAX_AGE_DAYS = 30
+        const now          = Date.now()
+        const files        = fs.readdirSync(sessionDir)
+        let deleted        = 0
+        let kept           = 0
+        let freedBytes     = 0
+
+        for (const file of files) {
+          const filePath  = path.join(sessionDir, file)
+          const stats     = fs.statSync(filePath)
+          const ageInDays = (now - stats.mtimeMs) / 86400000
+
+          if (ageInDays > MAX_AGE_DAYS) {
+            freedBytes += stats.size
+            fs.unlinkSync(filePath)
+            deleted++
+          } else {
+            kept++
+          }
+        }
+
+        console.log(`\n  Session cleanup:`)
+        console.log(`  Deleted: ${deleted} file(s) older than ${MAX_AGE_DAYS} days`)
+        console.log(`  Kept:    ${kept} recent file(s)`)
+        console.log(`  Freed:   ${(freedBytes / 1024).toFixed(0)} KB\n`)
+      } catch (err: any) {
+        console.error(`[cleanup] Error: ${err?.message ?? err}`)
+      }
+      break
+    }
+
     // ── devos help / default ─────────────────────────────────
     case 'help':
     case '--help':
@@ -392,6 +598,11 @@ Commands:
   models recommend   Show recommended model per task type
   memory stats       Show memory statistics
   automate:stop      Stop running computer automation
+  backup             Create a .zip backup of workspace data
+  security           Run a security audit
+  cleanup            Delete session files older than 30 days
+  -p "<prompt>"      Send a single prompt (server must be running)
+  -p "<prompt>" --json  Same, output as JSON
 `)
       break
     }

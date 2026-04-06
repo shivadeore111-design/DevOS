@@ -12,7 +12,26 @@ import path from 'path'
 import { loadBriefingConfig, deliverBriefing } from './morningBriefing'
 import { checkAndRunDream } from './dreamEngine'
 
-const TASKS_PATH = path.join(process.cwd(), 'workspace', 'scheduled-tasks.json')
+const TASKS_PATH     = path.join(process.cwd(), 'workspace', 'scheduled-tasks.json')
+const HEARTBEAT_PATH = path.join(process.cwd(), 'workspace', 'HEARTBEAT.md')
+
+// ── Feature 8: HEARTBEAT.md config loader ─────────────────────
+
+function loadHeartbeatConfig(): void {
+  try {
+    if (!fs.existsSync(HEARTBEAT_PATH)) return
+    const content  = fs.readFileSync(HEARTBEAT_PATH, 'utf-8')
+    const sections = content.split(/^## /m).slice(1)
+    for (const section of sections) {
+      const title = section.split('\n')[0]
+      const scheduleMatch = title.match(/\((.+)\)/)
+      if (!scheduleMatch) continue
+      console.log(`[Heartbeat] Loaded: ${title.split('(')[0].trim()}`)
+    }
+  } catch (e: any) {
+    console.warn(`[Heartbeat] Could not load HEARTBEAT.md: ${e.message}`)
+  }
+}
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -140,6 +159,7 @@ export class Scheduler {
   constructor() {
     this.load()
     this.registerDreamSchedule()
+    loadHeartbeatConfig()
   }
 
   // ── Public API ─────────────────────────────────────────
