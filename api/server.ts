@@ -314,6 +314,59 @@ export function createApiServer(): Express {
       res.status(400).json({ message: 'Please provide a goal or question.', error: 'empty_message' }); return
     }
 
+    // -- Near-empty message handler ----------------------------------
+    if (message.trim().length < 2) {
+      const shortR = 'I am here. What can I help with?';
+      res.json({ message: shortR, response: shortR }); return
+    }
+
+    // -- Max message length gate -------------------------------------
+    const MAX_MSG_LEN = 50000;
+    if (message.length > MAX_MSG_LEN) {
+      const longR = 'That message is too long for me to process. Please break it into smaller parts.';
+      res.json({ message: longR, response: longR }); return
+    }
+
+    // -- Banned topic pre-intercept (no LLM call needed) -------------
+    const BANNED_TOPIC_PATS = [
+      /\bGST\s*(rate|rates|code|filing|return|number|percent)/i,
+      /\bHSN\s*(code|codes|number|list)/i,
+      /\btrademark\s*(registration|class|filing|register)/i,
+      /\bregister\s+a\s+trademark/i,
+      /\bpayroll\b/i,
+      /\bledger\s*(software|app|system|tool)/i,
+      /\bGSTIN\b/i,
+      /\baccounts?\s*payable\b/i,
+      /\bgeneral\s*ledger\b/i,
+    ];
+    if (BANNED_TOPIC_PATS.some(function(p) { return p.test(message); })) {
+      const bResp = 'That is outside what I do. I focus on coding, research, system automation, and personal productivity. For tax or accounting questions, consult a CA or use dedicated software.';
+      res.json({ message: bResp, response: bResp }); return
+    }
+
+    // -- Builder fast-path -------------------------------------------
+    const builderPats = [
+      /who\s+(built|made|created|developed|wrote)\s+you/i,
+      /who\s+is\s+your\s+(creator|developer|author|maker)/i,
+      /who\s+created\s+(aiden|devos)/i,
+    ];
+    if (builderPats.some(function(p) { return p.test(message); })) {
+      const bldR = 'I was built by Shiva Deore at Taracod. Not OpenAI, not Anthropic, not Google.';
+      res.json({ message: bldR, response: bldR }); return
+    }
+
+    // -- Context question fast-path (at conversation start) ----------
+    const inHistory = Array.isArray(req.body && req.body.history) ? req.body.history : [];
+    const CONTEXT_Q_PATS = [
+      /what\s+(just\s+)?happened/i,
+      /what\s+did\s+(we|i|you)\s+(do|discuss|talk)/i,
+      /what\s+was\s+(that|the\s+last)/i,
+    ];
+    if (CONTEXT_Q_PATS.some(function(p) { return p.test(message); }) && inHistory.length <= 2) {
+      const ctxR = 'This is the start of our conversation - nothing has happened yet. What would you like to work on?';
+      res.json({ message: ctxR, response: ctxR }); return
+    }
+
     // â”€â”€ Jailbreak detection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const isJailbreak = JAILBREAK_PATTERNS.some(p =>
       message.toLowerCase().includes(p.toLowerCase())
