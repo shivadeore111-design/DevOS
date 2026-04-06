@@ -50,6 +50,38 @@ function loadStandingOrders(): string {
 
 const STANDING_ORDERS = loadStandingOrders()
 
+// ── Feature 7: Tool loop detection ────────────────────────────
+// Prevents the agent from calling the same tool with the same
+// params more than 3 times in a 5-minute window.
+
+const toolCallHistory: Array<{
+  tool:      string
+  params:    string
+  timestamp: number
+}> = []
+
+function detectLoop(toolName: string, params: any): boolean {
+  const paramsKey = JSON.stringify(params).slice(0, 200)
+  const now       = Date.now()
+
+  // Evict entries older than 5 minutes
+  while (toolCallHistory.length > 0 && now - toolCallHistory[0].timestamp > 300000) {
+    toolCallHistory.shift()
+  }
+
+  const similarCalls = toolCallHistory.filter(
+    h => h.tool === toolName && h.params === paramsKey
+  ).length
+
+  toolCallHistory.push({ tool: toolName, params: paramsKey, timestamp: now })
+
+  if (similarCalls >= 3) {
+    console.log(`[LoopDetect] ${toolName} called ${similarCalls + 1} times — breaking loop`)
+    return true
+  }
+  return false
+}
+
 // ── Types ─────────────────────────────────────────────────────
 
 export interface ToolStep {
@@ -1167,6 +1199,21 @@ async function executeSingleStep(
 
   // Mark step started in persistent state
   taskStateManager.startStep(state, step.step, step.tool, resolvedInput)
+
+  // Loop detection — break if same tool+params called 3+ times
+  if (detectLoop(step.tool, resolvedInput)) {
+    const loopResult: StepResult = {
+      step:     step.step,
+      tool:     step.tool,
+      input:    resolvedInput,
+      success:  false,
+      output:   '',
+      error:    `Loop detected: ${step.tool} called too many times with the same parameters. Try a different approach.`,
+      duration: 0,
+    }
+    onStep(step, loopResult)
+    return loopResult
+  }
 
   // before_tool_call hook — allows blocking a tool execution
   const preHook = await fireHook('before_tool_call', { toolName: step.tool, input: resolvedInput })

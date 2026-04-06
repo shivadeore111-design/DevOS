@@ -1252,3 +1252,34 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   watch_folder_list:       'List all currently watched folder paths',
   get_briefing:            'Run the morning briefing: weather, markets, news, and daily summary',
 }
+
+// ── Feature 6: Tool groups and agent scope enforcement ────────
+
+export const TOOL_GROUPS: Record<string, string[]> = {
+  'group:runtime': ['run_python', 'run_node', 'shell_exec', 'run_powershell'],
+  'group:fs':      ['file_read', 'file_write', 'file_list'],
+  'group:web':     ['web_search', 'fetch_url', 'fetch_page', 'deep_research'],
+  'group:browser': ['open_browser', 'browser_open', 'browser_click', 'browser_screenshot', 'browser_extract'],
+  'group:market':  ['get_market_data', 'get_stocks', 'get_company_info', 'nse_data'],
+  'group:system':  ['system_info', 'screenshot', 'screen_read', 'notify'],
+  'group:ui':      ['mouse_move', 'mouse_click', 'keyboard_type', 'keyboard_press', 'vision_loop'],
+  'group:memory':  ['memory_search', 'memory_store'],
+  'group:chat':    ['respond'],
+  'group:all':     ['*'],
+}
+
+export const AGENT_TOOL_SCOPES: Record<string, string[]> = {
+  ceo:        ['group:all'],
+  engineer:   ['group:all'],
+  researcher: ['group:web', 'group:memory', 'group:chat'],
+  verifier:   ['group:fs', 'group:web', 'group:chat'],
+  analyst:    ['group:market', 'group:web', 'group:memory', 'group:chat'],
+}
+
+export function isToolAllowed(agentId: string, toolName: string): boolean {
+  const scopes     = AGENT_TOOL_SCOPES[agentId] || ['group:all']
+  if (scopes.includes('group:all')) return true
+
+  const allowedTools = scopes.flatMap(scope => TOOL_GROUPS[scope] || [scope])
+  return allowedTools.includes('*') || allowedTools.includes(toolName)
+}
