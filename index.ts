@@ -22,7 +22,7 @@ import { modelRouter }                     from './core/modelRouter'
 import { memoryLayers }                    from './memory/memoryLayers'
 import { livePulse }                       from './coordination/livePulse'
 import { commandGate }                     from './coordination/commandGate'
-import { runDoctor }                       from './core/doctor'
+import { runDoctor, cleanCorruptedSkills }  from './core/doctor'
 import { visionLoop }                      from './integrations/computerUse/visionLoop'
 import { executor }                        from './core/executor'
 import { memoryStrategy }                  from './core/memoryStrategy'
@@ -181,9 +181,21 @@ async function main(): Promise<void> {
       break
     }
 
-    // ── devos doctor ────────────────────────────────────────
+    // ── devos doctor [--clean-skills] ───────────────────────
     case 'doctor': {
       try {
+        if (goalArgs.includes('--clean-skills')) {
+          console.log('\n[Doctor] Cleaning corrupted skills...\n')
+          const result = cleanCorruptedSkills()
+          if (result.deleted.length === 0) {
+            console.log('  No corrupted skills found.')
+          } else {
+            console.log(`  Deleted ${result.deleted.length} corrupted skill(s):`)
+            result.deleted.forEach(name => console.log(`    - ${name}`))
+          }
+          console.log(`  Kept: ${result.kept} clean skill(s)\n`)
+          break
+        }
         const report = await runDoctor()
         console.log('\n[Doctor] System Health Report\n')
         for (const check of report.checks) {
