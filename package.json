@@ -52,7 +52,8 @@
     "test:ui": "vitest --ui",
     "stress-test": "npx ts-node tests/stressTest.ts",
     "test:chat": "npx ts-node tests/e2e/masterTestSuite.ts --part2",
-    "test:all": "npx ts-node tests/e2e/masterTestSuite.ts"
+    "test:all": "npx ts-node tests/e2e/masterTestSuite.ts",
+    "livepulse": "powershell -ExecutionPolicy Bypass -File scripts\\livepulse.ps1"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
