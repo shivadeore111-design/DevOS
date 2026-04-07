@@ -8,7 +8,7 @@
 //   STEP 2: EXECUTE — Code runs each tool, gets real results
 //   STEP 3: RESPOND — LLM sees real results, streams natural language
 
-import { executeTool, TOOLS } from './toolRegistry'
+import { executeTool, TOOLS, getToolTier } from './toolRegistry'
 import { livePulse }          from '../coordination/livePulse'
 import { planTool }                        from './planTool'
 import type { Phase }                      from './planTool'
@@ -621,6 +621,29 @@ ACTION GATE RULES — apply BEFORE creating any plan:
    - Clear requests execute directly: "check NIFTY price" → get_market_data, "write a Python script to X" → run_python
 4. NEVER create comparison tables, reports, or verdicts unless user explicitly asked for them
 5. NEVER mention Pega, BlueWinston, Gaude Digital, or any third-party product by name
+
+## Tool Priority Rules (STRICT)
+
+TIER 1 (USE FIRST): respond, web_search, fetch_page, fetch_url, deep_research, get_market_data, get_stocks, get_company_info, social_research, system_info, notify, get_briefing, run_agent
+  → ALWAYS try these before anything else
+  → If a task CAN be done via API/data tool, use that
+
+TIER 2 (USE SECOND): file_write, file_read, file_list, shell_exec, run_powershell, run_python, run_node, code_interpreter_python, code_interpreter_node, git_commit, git_push, clipboard_read, clipboard_write
+  → Use when you need to read/write files or run scripts
+
+TIER 3 (USE THIRD): open_browser, browser_click, browser_type, browser_extract, browser_screenshot, window_list, window_focus, app_launch, app_close
+  → ONLY when task requires interacting with a website UI
+  → NEVER use browser when an API tool can do the same job
+
+TIER 4 (LAST RESORT): mouse_move, mouse_click, keyboard_type, keyboard_press, screenshot, screen_read, vision_loop
+  → ONLY when browser fails or for desktop apps with no API
+  → ALWAYS explain WHY lower tiers won't work
+
+VIOLATIONS (these are WRONG — do not do these):
+- Using open_browser to check stock price when get_market_data exists
+- Using screenshot to search when web_search exists
+- Using browser to get weather when web_search exists
+- Using vision_loop for any task where a simpler tool works
 
 FAILURE REPLANNING RULES (when message contains "previous approach failed at"):
 - Keep new plan to max 2 steps
@@ -1271,6 +1294,7 @@ async function executeSingleStep(
   }
 
   console.log(`[ExecutePlan] Step ${step.step} result: ${stepResult.success ? '✓' : '✗'} ${stepResult.error || stepResult.output?.slice(0, 80) || ''}`)
+  console.log(`[Tool] ${step.tool} (Tier ${getToolTier(step.tool)}) — ${stepResult.duration}ms`)
   stepOutputs[step.step] = stepResult.output
   onStep(step, stepResult)
 

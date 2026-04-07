@@ -1222,3 +1222,71 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   get_briefing:            'Run the morning briefing: weather, markets, news, and daily summary',
   respond:                 'Send a direct conversational response to the user. Use for greetings, capability questions, clarifications, simple factual answers, and anything that does NOT require external tools. This is the default tool when no other tool is needed.',
 }
+
+// ── Tool tier hierarchy ────────────────────────────────────────
+// Tier 1: APIs, data, search — fastest, most reliable, zero side effects
+// Tier 2: File system, shell, code execution — local side effects
+// Tier 3: Browser automation — slow, brittle, UI-dependent
+// Tier 4: Screen/mouse/keyboard control — last resort only
+
+export type ToolTier = 1 | 2 | 3 | 4
+
+const TOOL_TIERS: Record<string, ToolTier> = {
+  // Tier 1 — APIs, data, search, notify, respond
+  respond:                 1,
+  web_search:              1,
+  fetch_url:               1,
+  fetch_page:              1,
+  deep_research:           1,
+  get_stocks:              1,
+  get_market_data:         1,
+  get_company_info:        1,
+  social_research:         1,
+  system_info:             1,
+  notify:                  1,
+  wait:                    1,
+  get_briefing:            1,
+  run_agent:               1,
+
+  // Tier 2 — File system, shell, code execution
+  file_write:              2,
+  file_read:               2,
+  file_list:               2,
+  shell_exec:              2,
+  run_powershell:          2,
+  run_python:              2,
+  run_node:                2,
+  code_interpreter_python: 2,
+  code_interpreter_node:   2,
+  git_commit:              2,
+  git_push:                2,
+  clipboard_read:          2,
+  clipboard_write:         2,
+  watch_folder:            2,
+  watch_folder_list:       2,
+
+  // Tier 3 — Browser automation
+  open_browser:            3,
+  browser_click:           3,
+  browser_type:            3,
+  browser_extract:         3,
+  browser_screenshot:      3,
+  window_list:             3,
+  window_focus:            3,
+  app_launch:              3,
+  app_close:               3,
+
+  // Tier 4 — Screen/mouse/keyboard (last resort)
+  mouse_move:              4,
+  mouse_click:             4,
+  keyboard_type:           4,
+  keyboard_press:          4,
+  screenshot:              4,
+  screen_read:             4,
+  vision_loop:             4,
+}
+
+export function getToolTier(toolName: string): ToolTier {
+  if (toolName.startsWith('mcp_')) return 1
+  return TOOL_TIERS[toolName] ?? 2
+}
