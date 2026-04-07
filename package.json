@@ -1,6 +1,6 @@
 {
   "name": "devos-ai",
-  "version": "2.0.0",
+  "version": "3.1.0",
   "description": "Autonomous AI Operating System — Local, Private, Free. Runs on your machine with Ollama.",
   "author": "Shiva Deore <devosxprojects@gmail.com>",
   "license": "Apache-2.0",
@@ -48,6 +48,10 @@
     "prepublishOnly": "npm run build",
     "postinstall": "node scripts/postinstall.js",
     "start": "node dist/index.js serve",
+    "electron": "electron .",
+    "dist": "node scripts/prepare-electron.js && electron-builder --win --publish never",
+    "dist:dir": "node scripts/prepare-electron.js && electron-builder --win --dir --publish never",
+    "build:win": "npm run dist",
     "test": "vitest run",
     "test:ui": "vitest --ui",
     "stress-test": "npx ts-node tests/stressTest.ts",
@@ -56,6 +60,63 @@
     "test:api": "npx ts-node tests/e2e/masterTestSuite.ts --part1 --part2",
     "test:chat": "npx ts-node tests/e2e/masterTestSuite.ts --part3",
     "livepulse": "powershell -ExecutionPolicy Bypass -File scripts\\livepulse.ps1"
+  },
+  "build": {
+    "appId": "com.taracod.aiden",
+    "productName": "Aiden",
+    "copyright": "Copyright 2026 Taracod / White Lotus",
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Aiden",
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico",
+      "deleteAppDataOnUninstall": false
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "assets/**/*",
+      "package.json",
+      "!dist/**/*.map"
+    ],
+    "extraResources": [
+      {
+        "from": "dashboard-next/.next/standalone",
+        "to": "dashboard/standalone",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "config",
+        "to": "config",
+        "filter": [
+          "devos.config.json",
+          "model-selection.json",
+          "hardware.json"
+        ]
+      }
+    ],
+    "asar": true,
+    "npmRebuild": false,
+    "buildDependenciesFromSource": false,
+    "asarUnpack": [
+      "node_modules/screenshot-desktop/**",
+      "node_modules/bcrypt/**",
+      "node_modules/puppeteer/.local-chromium/**",
+      "node_modules/playwright/.local-browsers/**"
+    ]
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
@@ -105,6 +166,8 @@
     "@types/tar-stream": "^3.1.4",
     "@types/uuid": "^9.0.0",
     "@vitest/ui": "^1.6.0",
+    "electron": "^41.1.1",
+    "electron-builder": "^26.8.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3",
     "vitest": "^1.6.0"
