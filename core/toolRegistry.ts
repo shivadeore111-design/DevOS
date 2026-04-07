@@ -23,6 +23,7 @@ import {
 } from './computerControl'
 
 import { reliableWebSearch, deepResearch as deepResearchFn } from './webSearch'
+import { conversationMemory } from './conversationMemory'
 import { generateBriefing, loadBriefingConfig }              from './morningBriefing'
 import { getMarketData }   from './tools/marketDataTool'
 import { getCompanyInfo }  from './tools/companyFilingsTool'
@@ -615,6 +616,15 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
     const task      = p.task || p.command || ''
     if (!task) return { success: false, output: '', error: 'No task provided' }
 
+    // ── Fork guard: only top-level agents can spawn specialists ──
+    // Prevents sub-agents from recursively spawning more agents
+    const FORK_CAPABLE_AGENTS = ['ceo', 'engineer']
+    const callerAgent = (p._callerAgent || '').toLowerCase()
+    if (callerAgent && !FORK_CAPABLE_AGENTS.includes(callerAgent)) {
+      console.warn(`[run_agent] ${callerAgent} attempted to fork ${agentName} — blocked (non-fork-capable)`)
+      return { success: false, output: '', error: `Agent '${callerAgent}' cannot spawn sub-agents. Only CEO-level agents can delegate.` }
+    }
+
     const agentPersonas: Record<string, string> = {
       engineer:     'Senior TypeScript/JavaScript engineer — writes clean, working code with full error handling.',
       security:     'Security auditor — analyzes for OWASP Top 10, provides specific fixes with code examples.',
@@ -626,14 +636,30 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
 
     const persona = agentPersonas[agentName] || agentPersonas.engineer
 
+    // ── Context inheritance for complex tasks ─────────────────────
+    // Complex tasks (long description or explicit context request) get conversation history
+    const isComplex = task.length > 100 || p.inheritContext === true
+    let contextBlock = ''
+    if (isComplex) {
+      const memCtx = conversationMemory.buildContext()
+      if (memCtx && memCtx.trim()) {
+        contextBlock = `\n## Conversation Context\nThe user has been discussing:\n${memCtx.slice(0, 1200)}\n`
+        console.log(`[run_agent] Injecting conversation context into ${agentName} task (${memCtx.length} chars)`)
+      }
+    }
+
     try {
       const { memoryLayers } = await import('../memory/memoryLayers')
       memoryLayers.write(`Agent ${agentName} task: ${task}`, ['agent', agentName])
     } catch {}
 
+    const fullTask = contextBlock
+      ? `${contextBlock}\n## Your Task\n${task}`
+      : task
+
     return {
       success: true,
-      output:  `Agent: ${agentName}\nPersona: ${persona}\nTask: ${task}\n\n[Specialist agent will synthesize this task in the response phase with full context]`,
+      output:  `Agent: ${agentName}\nPersona: ${persona}\nTask: ${fullTask}\n\n[Specialist agent will synthesize this task in the response phase with full context]`,
     }
   },
 

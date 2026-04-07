@@ -7,9 +7,11 @@
 // Parses structured task notifications, decides delegation,
 // tracks session cost, warns on budget approach.
 
-import { callBgLLM }   from '../core/bgLLM'
-import { auditTrail }  from '../core/auditTrail'
-import { costTracker } from '../core/costTracker'
+import { callBgLLM }          from '../core/bgLLM'
+import { auditTrail }         from '../core/auditTrail'
+import { costTracker }        from '../core/costTracker'
+import { conversationMemory } from '../core/conversationMemory'
+import { executeTool }        from '../core/toolRegistry'
 
 // ── Task notification XML schema ──────────────────────────────
 
@@ -90,6 +92,41 @@ export function formatTaskNotification(n: TaskNotification): string {
 </task-notification>`
 }
 
+// ── Fork pattern — context-aware agent delegation ─────────────
+
+const FORK_CAPABLE_AGENTS = ['ceo']
+
+export async function forkAgent(
+  agentType:   string,
+  taskPrompt:  string,
+  inheritContext: boolean = false,
+): Promise<{ success: boolean; output: string; error?: string }> {
+  let contextBlock = ''
+
+  if (inheritContext) {
+    const memCtx = conversationMemory.buildContext()
+    if (memCtx && memCtx.trim()) {
+      contextBlock =
+        '\n## Conversation Context\n' +
+        'The user has been discussing:\n' +
+        memCtx.slice(0, 1200) + '\n'
+    }
+  }
+
+  const fullPrompt = contextBlock
+    ? `${contextBlock}\n## Your Task\n${taskPrompt}`
+    : taskPrompt
+
+  const result = await executeTool('run_agent', {
+    agent:          agentType,
+    task:           fullPrompt,
+    inheritContext: false,  // already injected above — don't double-inject
+    _callerAgent:   'ceo',
+  })
+
+  return { success: result.success, output: result.output, error: result.error }
+}
+
 // ── CEO system prompt ─────────────────────────────────────────
 
 function buildCEOSystem(sessionCostUSD: number, dailyBudget: number): string {
@@ -104,6 +141,15 @@ DELEGATION RULES:
 2. When delegating: tell the user what you're launching, then STOP — never fabricate results before the task notification arrives
 3. Continue existing agents via taskId to reuse their loaded context
 4. Track cumulative session cost from notifications — warn user when approaching daily budget
+
+## Delegation Quality Rules
+When delegating to specialists:
+- ALWAYS include WHY the user wants this, not just WHAT to do
+- Include what was already tried and what failed
+- Include specific file paths, variable names, and details from context
+- NEVER write "based on your findings, fix it" — give the specialist the exact context they need
+- For complex tasks (long description or dependencies), the specialist receives full conversation context automatically
+- Specialists CANNOT spawn their own sub-agents — only CEO-level agents can delegate
 
 TASK NOTIFICATIONS: When you receive a <task-notification> block, parse it and act accordingly:
 - completed: summarize the result for the user
