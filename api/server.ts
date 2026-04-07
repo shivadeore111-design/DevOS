@@ -569,9 +569,9 @@ export function createApiServer(): Express {
 
       const collectToken = (token: string) => { jsonTokens.push(token) }
 
-      // Sprint 6: tiered model selection per role
+      // Sprint 6: tiered model selection per role (+ complexity routing for responder)
       // Responder drives chat mode; planner drives plan/auto mode
-      const responderTier = getModelForTask('responder')
+      const responderTier = getModelForTask('responder', message)
       const plannerTier   = getModelForTask('planner')
       const { provider, model, userName, apiName } = getSmartProvider()
       const config   = loadConfig()
@@ -704,7 +704,7 @@ export function createApiServer(): Express {
     }
 
     // Sprint 6: tiered model selection
-    const responderTierSSE = getModelForTask('responder')
+    const responderTierSSE = getModelForTask('responder', message)
     const plannerTierSSE   = getModelForTask('planner')
     const { provider, model, userName } = getSmartProvider()
     // BUG 6 fix: use tiered responder's API name for all provider labels, not manually-set active

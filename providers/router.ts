@@ -217,6 +217,39 @@ export function logProviderStatus(): void {
   console.log(`  ollama (${OLLAMA_FALLBACK_MODEL}) — local — #${order} guaranteed fallback`)
 }
 
+// ── Complexity scorer ─────────────────────────────────────────
+// Returns 0–1 where 0 = trivially simple (local Ollama) and
+// 1 = highly complex (needs best cloud model).
+
+export function assessComplexity(message: string): number {
+  let score = 0.3
+
+  if (message.length > 500)  score += 0.15
+  if (message.length > 1000) score += 0.10
+
+  const complexPatterns = [
+    /research|analyze|compare|explain in detail/i,
+    /plan|strategy|architecture|design/i,
+    /write.*code|build|create|implement/i,
+    /debug|fix.*error|troubleshoot/i,
+    /multi.*step|comprehensive|deep.research/i,
+  ]
+  const simplePatterns = [
+    /^(hi|hello|hey|thanks|thank you|ok|yes|no|sure)\b/i,
+    /what time|what date|who are you|what can you do/i,
+    /^.{1,30}$/,
+    /^(good morning|good night|bye)\b/i,
+  ]
+
+  if (complexPatterns.some(p => p.test(message))) score += 0.30
+  if (simplePatterns.some(p => p.test(message)))   score -= 0.30
+  if (/open|launch|run|execute|deploy/i.test(message)) score += 0.10
+  const qMarks = (message.match(/\?/g) || []).length
+  if (qMarks > 2) score += 0.15
+
+  return Math.max(0, Math.min(1, score))
+}
+
 // ── Task-type model tiering ───────────────────────────────────
 // Returns the best available key+model for a specific task role.
 // Planner needs strong reasoning; executor needs speed; responder needs quality.
@@ -227,6 +260,8 @@ export function logProviderStatus(): void {
 //   Executor:  cerebras → groq → nvidia → gemma4:e4b (Ollama)
 //
 // Aiden ALWAYS works — even with zero internet.
+// When message is provided for 'responder', complexity is assessed and simple
+// queries are routed to local Ollama (zero API cost).
 
 export type TaskType = 'planner' | 'executor' | 'responder'
 
@@ -249,9 +284,25 @@ const OLLAMA_RESULT = {
   apiKey: '', model: OLLAMA_FALLBACK_MODEL, providerName: 'ollama', apiName: 'ollama',
 }
 
-export function getModelForTask(task: TaskType): {
-  apiKey: string; model: string; providerName: string; apiName: string
-} {
+export function getModelForTask(
+  task:     TaskType,
+  message?: string,
+): { apiKey: string; model: string; providerName: string; apiName: string } {
+
+  // ── Complexity gate — responder only ─────────────────────────
+  // Simple queries go to local Ollama (zero cost).
+  // Complex or tool-using queries proceed to cloud chain below.
+  if (task === 'responder' && message) {
+    const complexity = assessComplexity(message)
+    console.log(`[Router] Complexity: ${complexity.toFixed(2)} — "${message.substring(0, 40)}"`)
+
+    if (complexity < 0.35) {
+      console.log('[Router] Simple → local Ollama (zero cost)')
+      const model = getOllamaModelForTask('responder')
+      return { apiKey: '', model, providerName: 'ollama', apiName: 'ollama' }
+    }
+  }
+
   autoResetExpiredLimits()
   const config    = loadConfig()
   const available = config.providers.apis.filter(a => {
