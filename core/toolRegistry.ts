@@ -1183,6 +1183,23 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
         return { success: false, output: '', error: `Unknown action: ${p.action}. Use: list, add, update, complete, suggest` }
     }
   },
+
+  // ── compact_context — summarize and compress conversation history ──
+  compact_context: async (p) => {
+    const { sessionMemory } = await import('./sessionMemory')
+    const { memoryExtractor } = await import('./memoryExtractor')
+    const sessionId = p.sessionId || 'default'
+
+    try {
+      // Trigger session write to persist current conversation state
+      await sessionMemory.writeSession(sessionId)
+      // Extract durable memories from session
+      await memoryExtractor.extractFromSession(sessionId)
+      return { success: true, output: `Context compacted for session ${sessionId}. Memory extracted and persisted.` }
+    } catch (e: any) {
+      return { success: false, output: '', error: `Compact failed: ${e.message}` }
+    }
+  },
 }
 
 // ── Internal dispatcher — no retry, no timeout ────────────────
@@ -1348,6 +1365,7 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   get_briefing:            'Run the morning briefing: weather, markets, news, and daily summary',
   respond:                 'Send a direct conversational response to the user. Use for greetings, capability questions, clarifications, simple factual answers, and anything that does NOT require external tools. This is the default tool when no other tool is needed.',
   manage_goals:            'Track and manage goals and projects. Use when user asks what to work on, mentions a project, deadline, or launch plan. Actions: list, add, update, complete, suggest.',
+  compact_context:         'Summarize and compress the current conversation context. Saves session to disk and extracts durable memories. Call when context is getting long.',
 }
 
 // ── Tool tier hierarchy ────────────────────────────────────────
@@ -1362,6 +1380,7 @@ const TOOL_TIERS: Record<string, ToolTier> = {
   // Tier 1 — APIs, data, search, notify, respond
   respond:                 1,
   manage_goals:            1,
+  compact_context:         1,
   web_search:              1,
   fetch_url:               1,
   fetch_page:              1,

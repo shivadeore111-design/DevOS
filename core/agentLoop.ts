@@ -31,9 +31,14 @@ import { costTracker } from './costTracker'
 import { getOllamaTimeout } from './modelDiscovery'
 import { semanticMemory }          from './semanticMemory'
 import { getActiveGoalsSummary }  from './goalTracker'
+import { fireHook }               from './hooks'
 import * as nodeFs             from 'fs'
 import * as nodePath           from 'path'
 import * as nodeOs             from 'os'
+
+// ── Pre-compact threshold ──────────────────────────────────────
+// Fire pre_compact hook when history has this many messages
+const COMPACT_THRESHOLD = 40
 
 // ── Proactive memory surfacing ─────────────────────────────────
 
@@ -472,6 +477,11 @@ export async function planWithLLM(
   provider:      string,
   memoryContext?: string,
 ): Promise<AgentPlan> {
+
+  // ── Pre-compact hook — fire when history is getting long ─────
+  if (history.length >= COMPACT_THRESHOLD) {
+    fireHook('pre_compact', { historyLength: history.length, message }).catch(() => {})
+  }
 
   // ── Vague goal detection — ask for clarification before planning ──
   const VAGUE_PATTERNS = [/\bthe thing\b/i, /\bthe stuff\b/i, /\bthe place\b/i, /\bdo it\b$/i, /\bfix it\b$/i]

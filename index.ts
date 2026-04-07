@@ -34,6 +34,10 @@ import { verifyInstall, getCurrentLicense } from './core/licenseManager'
 import { scheduler }      from './core/scheduler'
 import { startMCPServer } from './core/mcpServer'
 import { initLocalModels } from './providers/router'
+import { registerHook }   from './core/hooks'
+import { sessionMemory }  from './core/sessionMemory'
+import { memoryExtractor } from './core/memoryExtractor'
+import { refreshIdentity } from './core/aidenIdentity'
 
 // ── Bootstrap ─────────────────────────────────────────────────
 
@@ -102,6 +106,26 @@ async function main(): Promise<void> {
 
         // ── Sprint 25: register morning briefing ───────────────
         scheduler.registerMorningBriefing()
+
+        // ── Lifecycle hooks ────────────────────────────────────
+        registerHook('pre_compact', async ({ historyLength, message } = {}) => {
+          const sessionId = 'default'
+          console.log(`[Hooks] pre_compact — history=${historyLength}, saving session...`)
+          await sessionMemory.writeSession(sessionId)
+          await memoryExtractor.extractFromSession(sessionId)
+        })
+
+        registerHook('session_stop', async ({ sessionId } = {}) => {
+          const sid = (sessionId as string | undefined) || 'default'
+          console.log(`[Hooks] session_stop — saving session ${sid}...`)
+          sessionMemory.endSession(sid)
+          await memoryExtractor.extractFromSession(sid)
+          refreshIdentity()
+        })
+
+        // session_stop on process exit
+        process.on('SIGINT',  () => { void (async () => { const { fireHook } = await import('./core/hooks'); await fireHook('session_stop') })().finally(() => process.exit(0)) })
+        process.on('SIGTERM', () => { void (async () => { const { fireHook } = await import('./core/hooks'); await fireHook('session_stop') })().finally(() => process.exit(0)) })
 
         // ── Background service PID management ─────────────────
         const { startBackgroundService } = await import('./core/backgroundService')
