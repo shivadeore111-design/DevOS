@@ -34,6 +34,31 @@ import { responseCache }   from './responseCache'
 
 const execAsync = promisify(exec)
 
+// ── Protected files — cannot be written by agents ─────────────
+
+const PROTECTED_FILES = [
+  'config/devos.config.json',
+  'workspace/STANDING_ORDERS.md',
+  'workspace/SOUL.md',
+  'workspace/USER.md',
+  'workspace/HEARTBEAT.md',
+  'workspace/GOALS.md',
+  '.env',
+  '.env.local',
+  'tsconfig.json',
+  'package.json',
+  'vitest.config.ts',
+  'jest.config.ts',
+]
+
+function isProtectedFile(filePath: string): boolean {
+  const normalized = filePath.replace(/\\/g, '/').replace(/^\.\//, '')
+  // Block test/config file writes (prevents agents from cheating tests)
+  if (normalized.endsWith('.test.ts') || normalized.endsWith('.spec.ts')) return true
+  if (normalized.endsWith('vitest.config.ts') || normalized.endsWith('jest.config.ts')) return true
+  return PROTECTED_FILES.some(f => normalized.endsWith(f) || normalized === f)
+}
+
 // ── Path deny rules ───────────────────────────────────────────
 
 const DENIED_PATHS = [
@@ -265,6 +290,10 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
     let   filePath = p.path || p.file || ''
     const content  = p.content || ''
     if (!filePath) return { success: false, output: '', error: 'No path' }
+    if (isProtectedFile(filePath)) {
+      console.warn(`[Security] file_write BLOCKED (protected): ${filePath}`)
+      return { success: false, output: '', error: `Protected file: ${filePath} cannot be modified by agents. Use 'devos config' or edit manually.` }
+    }
     if (isPathDenied(filePath)) {
       console.warn(`[Security] file_write DENIED: ${filePath}`)
       return { success: false, output: '', error: 'Access denied: protected path. Aiden cannot write credentials, SSH keys, or env files.' }
