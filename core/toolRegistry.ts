@@ -1404,6 +1404,7 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   respond:                 'Send a direct conversational response to the user. Use for greetings, capability questions, clarifications, simple factual answers, and anything that does NOT require external tools. This is the default tool when no other tool is needed.',
   manage_goals:            'Track and manage goals and projects. Use when user asks what to work on, mentions a project, deadline, or launch plan. Actions: list, add, update, complete, suggest.',
   compact_context:         'Summarize and compress the current conversation context. Saves session to disk and extracts durable memories. Call when context is getting long.',
+  get_natural_events:      'Fetch active natural events from NASA EONET API. Returns current earthquakes, wildfires, storms, floods, and other natural events worldwide.',
 }
 
 // ── Tool tier hierarchy ────────────────────────────────────────
@@ -1431,6 +1432,7 @@ const TOOL_TIERS: Record<string, ToolTier> = {
   notify:                  1,
   wait:                    1,
   get_briefing:            1,
+  get_natural_events:      1,
   run_agent:               1,
 
   // Tier 2 — File system, shell, code execution
