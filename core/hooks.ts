@@ -11,6 +11,7 @@
 export type HookEvent =
   | 'pre_compact'    // Fired when conversation history approaches context limit
   | 'session_stop'   // Fired when a session ends (process exit or explicit stop)
+  | 'after_tool_call' // Fired after every tool execution (toolName, input, success)
 
 export type HookHandler = (payload?: Record<string, any>) => Promise<void> | void
 

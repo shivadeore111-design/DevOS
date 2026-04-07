@@ -38,6 +38,7 @@ import { registerHook }   from './core/hooks'
 import { sessionMemory }  from './core/sessionMemory'
 import { memoryExtractor } from './core/memoryExtractor'
 import { refreshIdentity } from './core/aidenIdentity'
+import { initInstinctSystem, instinctSystem } from './core/instinctSystem'
 
 // ── Bootstrap ─────────────────────────────────────────────────
 
@@ -107,7 +108,20 @@ async function main(): Promise<void> {
         // ── Sprint 25: register morning briefing ───────────────
         scheduler.registerMorningBriefing()
 
+        // ── Instinct system ────────────────────────────────────
+        const workspaceDir = path.join(process.cwd(), 'workspace')
+        initInstinctSystem(workspaceDir)
+
         // ── Lifecycle hooks ────────────────────────────────────
+        registerHook('after_tool_call', async (data = {}) => {
+          instinctSystem?.observe(
+            data.toolName as string,
+            data.input as Record<string, any>,
+            data.success as boolean,
+            (data.sessionId as string | undefined) ?? 'unknown',
+          )
+        })
+
         registerHook('pre_compact', async ({ historyLength, message } = {}) => {
           const sessionId = 'default'
           console.log(`[Hooks] pre_compact — history=${historyLength}, saving session...`)

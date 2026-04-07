@@ -32,6 +32,7 @@ import { getOllamaTimeout } from './modelDiscovery'
 import { semanticMemory }          from './semanticMemory'
 import { getActiveGoalsSummary }  from './goalTracker'
 import { fireHook }               from './hooks'
+import { instinctSystem }         from './instinctSystem'
 import * as nodeFs             from 'fs'
 import * as nodePath           from 'path'
 import * as nodeOs             from 'os'
@@ -522,9 +523,13 @@ export async function planWithLLM(
   const relevantSkills = skillLoader.findRelevant(message)
   const skillContext   = skillLoader.formatForPrompt(relevantSkills)
 
+  // Append instinct context to memory (micro-patterns learned from past tool calls)
+  const instinctCtx  = instinctSystem?.getRelevantInstincts(message) || ''
+  const fullMemCtx   = (memoryContext || '') + (instinctCtx ? '\n\n' + instinctCtx : '')
+
   // Build memory section — inject when available
-  const memorySection = memoryContext && memoryContext.trim()
-    ? `\n\nCONVERSATION MEMORY (use to resolve references like "that file", "the report", "it"):\n${memoryContext}\n\nWhen the user says "that file", "the report", "the script" etc., use the paths/queries above to resolve them into concrete values in your plan inputs.\n`
+  const memorySection = fullMemCtx.trim()
+    ? `\n\nCONVERSATION MEMORY (use to resolve references like "that file", "the report", "it"):\n${fullMemCtx}\n\nWhen the user says "that file", "the report", "the script" etc., use the paths/queries above to resolve them into concrete values in your plan inputs.\n`
     : ''
 
   // Build learning context — past experiences with similar tasks
@@ -1381,6 +1386,13 @@ async function executeSingleStep(
     goal:       plan.goal,
     traceId:    plan.planId,
   })
+
+  // Fire after_tool_call hook (non-blocking) — feeds instinct system
+  fireHook('after_tool_call', {
+    toolName: step.tool,
+    input:    resolvedInput,
+    success:  stepResult.success,
+  }).catch(() => {})
 
   // Persist step result to task state
   if (stepResult.success) {
