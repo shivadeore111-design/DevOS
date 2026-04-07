@@ -79,6 +79,9 @@ import { eventBus } from '../core/eventBus'
 // —— Sprint 25: module-level WebSocket clients registry (shared between createApiServer routes and startApiServer WS setup)
 let wsBroadcastClients = new Set<any>()
 
+// ── Bookmarklet — clip selected text from any page ────────────
+const BOOKMARKLET = `javascript:void(fetch('http://localhost:4200/api/clip',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:window.getSelection().toString()||document.title,source:window.location.href,title:document.title})}).then(()=>alert('Clipped!')))`
+
 // â”€â”€ Human-readable tool message helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function humanToolMessage(tool: string, input: Record<string, any>): string {
   const map: Record<string, string> = {
@@ -1797,6 +1800,76 @@ export function createApiServer(): Express {
     const task = taskQueue.getStatus(String(req.params.id))
     if (!task) return res.status(404).json({ error: 'Task not found' }) as any
     res.json(task)
+  })
+
+  // POST /api/clip — store a clipped text snippet in semantic memory + disk
+  app.post('/api/clip', async (req: Request, res: Response) => {
+    try {
+      const { content, source, title, tags } = req.body as {
+        content?: string; source?: string; title?: string; tags?: string[]
+      }
+
+      if (!content || content.trim().length < 10) {
+        return res.status(400).json({ error: 'content required (min 10 chars)' }) as any
+      }
+
+      const id        = `clip_${Date.now()}`
+      const trimmed   = content.trim()
+      const entryTitle = title || trimmed.slice(0, 60)
+      const entrySource = source || 'manual'
+      const entryTags   = tags || []
+      const clippedAt   = new Date().toISOString()
+
+      // Store in semantic memory
+      semanticMemory.add(trimmed, 'fact', entryTags)
+
+      // Write to workspace/knowledge/clips/
+      const clipsDir = path.join(process.cwd(), 'workspace', 'knowledge', 'clips')
+      fs.mkdirSync(clipsDir, { recursive: true })
+      fs.writeFileSync(
+        path.join(clipsDir, `${id}.md`),
+        `# ${entryTitle}\n\n` +
+        `Source: ${entrySource}\n` +
+        `Clipped: ${clippedAt}\n` +
+        (entryTags.length ? `Tags: ${entryTags.join(', ')}\n` : '') +
+        `\n---\n\n${trimmed}`,
+      )
+
+      console.log(`[Clip] Saved: "${entryTitle.slice(0, 50)}" from ${entrySource}`)
+      res.json({ success: true, id, title: entryTitle })
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
+  // GET /api/clips — list recent clips + bookmarklet
+  app.get('/api/clips', (_req: Request, res: Response) => {
+    try {
+      const clipsDir = path.join(process.cwd(), 'workspace', 'knowledge', 'clips')
+      if (!fs.existsSync(clipsDir)) {
+        return res.json({ clips: [], count: 0, bookmarklet: BOOKMARKLET }) as any
+      }
+
+      const files = fs.readdirSync(clipsDir)
+        .filter(f => f.endsWith('.md'))
+        .sort()
+        .reverse()
+        .slice(0, 20)
+
+      const clips = files.map(f => {
+        const raw   = fs.readFileSync(path.join(clipsDir, f), 'utf8')
+        const lines = raw.split('\n')
+        return {
+          id:      f.replace('.md', ''),
+          title:   lines[0].replace('# ', ''),
+          preview: lines.slice(5, 7).join(' ').slice(0, 100),
+        }
+      })
+
+      res.json({ clips, count: clips.length, bookmarklet: BOOKMARKLET })
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
   })
 
   // POST /api/briefing — receive briefing content, broadcast to WebSocket clients
