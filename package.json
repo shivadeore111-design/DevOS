@@ -59,7 +59,8 @@
     "test:unit": "npx ts-node tests/e2e/masterTestSuite.ts --part1",
     "test:api": "npx ts-node tests/e2e/masterTestSuite.ts --part1 --part2",
     "test:chat": "npx ts-node tests/e2e/masterTestSuite.ts --part3",
-    "livepulse": "powershell -ExecutionPolicy Bypass -File scripts\\livepulse.ps1"
+    "livepulse": "powershell -ExecutionPolicy Bypass -File scripts\\livepulse.ps1",
+    "obfuscate": "javascript-obfuscator dist/ --output dist/ --compact true --string-array true --rotate-string-array true --string-array-threshold 0.75"
   },
   "build": {
     "appId": "com.taracod.aiden",
@@ -168,6 +169,7 @@
     "@vitest/ui": "^1.6.0",
     "electron": "^41.1.1",
     "electron-builder": "^26.8.1",
+    "javascript-obfuscator": "^5.4.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3",
     "vitest": "^1.6.0"
