@@ -33,6 +33,7 @@ import * as nodeFs             from 'fs'
 import * as nodePath           from 'path'
 import * as nodeOs             from 'os'
 import { fireHook }            from './hooks'
+import { getActiveGoalsSummary } from './goalTracker'
 
 // ── Standing Orders loader ─────────────────────────────────────
 // Loads workspace/STANDING_ORDERS.md once and injects it into
@@ -1615,8 +1616,13 @@ export async function respondWithResults(
     ? `\n\n## Standing Orders\n${STANDING_ORDERS}`
     : ''
 
+  const _goalsSummary  = getActiveGoalsSummary()
+  const goalsSection   = _goalsSummary
+    ? `\n\n## Your Active Goals\n${_goalsSummary}`
+    : ''
+
   const systemWithResults = toolResultsContext
-    ? `${capabilitiesSection}${responderSystem(userName, date)}${responseSkillContext}${knowledgeResponderSection}${standingOrdersSection}
+    ? `${capabilitiesSection}${responderSystem(userName, date)}${responseSkillContext}${knowledgeResponderSection}${standingOrdersSection}${goalsSection}
 
 YOU JUST RAN THESE TOOLS AND GOT THESE RESULTS:
 ${toolResultsContext}
@@ -1629,7 +1635,7 @@ CRITICAL RULES FOR YOUR RESPONSE:
 - If system_info returned hardware data, show the data
 - Be direct: show the actual output, then provide context if needed
 - If a tool failed, say it failed and why`
-    : `${capabilitiesSection}${responderSystem(userName, date)}${responseSkillContext}${knowledgeResponderSection}${standingOrdersSection}`
+    : `${capabilitiesSection}${responderSystem(userName, date)}${responseSkillContext}${knowledgeResponderSection}${standingOrdersSection}${goalsSection}`
 
   const userContent = executionSummary
     ? `User asked: "${originalMessage}"\n\nReal execution results:\n${executionSummary}\n\nRespond naturally based on these real results only. Show the actual output, not a description of it.${depthInstruction}${memSection}`

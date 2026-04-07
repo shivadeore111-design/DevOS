@@ -29,6 +29,7 @@ import { getCompanyInfo }  from './tools/companyFilingsTool'
 import { mcpClient }       from './mcpClient'
 import { runInSandbox }    from './codeInterpreter'
 import { responseCache }   from './responseCache'
+import { loadGoals, saveGoals } from './goalTracker'
 
 const execAsync = promisify(exec)
 
@@ -1088,6 +1089,66 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
       return { success: false, output: '', error: `Briefing failed: ${e.message}` }
     }
   },
+
+  // ── Feature 20: goal tracking ─────────────────────────────────
+  manage_goals: async (p) => {
+    try {
+      const goals = loadGoals()
+      const today = new Date().toISOString().split('T')[0]
+
+      switch (p.action) {
+        case 'list': {
+          const active = goals.filter((g: any) => g.status !== 'done')
+          return { success: true, output: JSON.stringify({ goals: active, count: active.length }, null, 2) }
+        }
+        case 'add': {
+          if (!p.title) return { success: false, output: '', error: 'title required' }
+          goals.push({
+            id:          Date.now().toString(),
+            title:       p.title,
+            status:      'not_started',
+            target:      p.target,
+            nextAction:  p.nextAction,
+            lastUpdated: today,
+          })
+          saveGoals(goals)
+          return { success: true, output: `Added goal: "${p.title}"` }
+        }
+        case 'update': {
+          const goal = goals.find((g: any) =>
+            g.title.toLowerCase().includes((p.title || '').toLowerCase())
+          )
+          if (!goal) return { success: false, output: '', error: 'Goal not found' }
+          if (p.status)     (goal as any).status     = p.status
+          if (p.nextAction) (goal as any).nextAction  = p.nextAction
+          if (p.target)     (goal as any).target      = p.target
+          ;(goal as any).lastUpdated = today
+          saveGoals(goals)
+          return { success: true, output: `Updated: "${(goal as any).title}"` }
+        }
+        case 'complete': {
+          const idx = goals.findIndex((g: any) =>
+            g.title.toLowerCase().includes((p.title || '').toLowerCase())
+          )
+          if (idx < 0) return { success: false, output: '', error: 'Goal not found' }
+          ;(goals[idx] as any).status      = 'done'
+          ;(goals[idx] as any).lastUpdated = today
+          saveGoals(goals)
+          return { success: true, output: `Completed: "${(goals[idx] as any).title}"` }
+        }
+        case 'suggest': {
+          const pending = goals.filter((g: any) => g.status !== 'done')
+          if (pending.length === 0) return { success: true, output: 'No active goals. What are you working on?' }
+          const top = pending[0] as any
+          return { success: true, output: `Focus on: ${top.title} — Next: ${top.nextAction || 'Define next step'}` }
+        }
+        default:
+          return { success: false, output: '', error: 'Unknown action. Use: list, add, update, complete, suggest' }
+      }
+    } catch (e: any) {
+      return { success: false, output: '', error: e.message }
+    }
+  },
 }
 
 // ── Internal dispatcher — no retry, no timeout ────────────────
@@ -1251,6 +1312,7 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   watch_folder:            'Watch a folder and react automatically when new files appear',
   watch_folder_list:       'List all currently watched folder paths',
   get_briefing:            'Run the morning briefing: weather, markets, news, and daily summary',
+  manage_goals:            'Track and manage user goals. Actions: list, add, update, complete, suggest. Use when user mentions a project, deadline, or asks what to work on today.',
 }
 
 // ── Feature 6: Tool groups and agent scope enforcement ────────

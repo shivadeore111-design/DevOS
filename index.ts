@@ -410,6 +410,24 @@ async function main(): Promise<void> {
       break
     }
 
+    // ── devos patterns ──────────────────────────────────────
+    case 'patterns': {
+      console.log('\n  Analyzing usage patterns...\n')
+      try {
+        const { detectPatterns, getPatternSummary } = await import('./core/patternDetector')
+        const patterns = await detectPatterns()
+        if (patterns.length === 0) {
+          console.log('  No patterns detected yet — need more sessions (30+) to analyze')
+        } else {
+          console.log(getPatternSummary(patterns))
+          console.log(`\n  ${patterns.length} pattern(s) detected\n`)
+        }
+      } catch (err: any) {
+        console.error(`[patterns] Error: ${err?.message ?? err}`)
+      }
+      break
+    }
+
     // ── devos backup ────────────────────────────────────────
     case 'backup': {
       try {
@@ -598,6 +616,7 @@ Commands:
   models recommend   Show recommended model per task type
   memory stats       Show memory statistics
   automate:stop      Stop running computer automation
+  patterns           Analyze usage patterns from session history
   backup             Create a .zip backup of workspace data
   security           Run a security audit
   cleanup            Delete session files older than 30 days

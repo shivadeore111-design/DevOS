@@ -11,6 +11,8 @@ import fs   from 'fs'
 import path from 'path'
 import { loadBriefingConfig, deliverBriefing } from './morningBriefing'
 import { checkAndRunDream } from './dreamEngine'
+import { getActiveGoalsSummary } from './goalTracker'
+import { detectPatterns, getPatternSummary } from './patternDetector'
 
 const TASKS_PATH     = path.join(process.cwd(), 'workspace', 'scheduled-tasks.json')
 const HEARTBEAT_PATH = path.join(process.cwd(), 'workspace', 'HEARTBEAT.md')
@@ -234,6 +236,18 @@ export class Scheduler {
       const checklist = fs.readFileSync(HEARTBEAT_PATH, 'utf-8').trim()
       if (!checklist) return
 
+      // Build heartbeat prompt: checklist + active goals + patterns
+      let heartbeatPrompt = checklist
+
+      const goalsSummary = getActiveGoalsSummary()
+      if (goalsSummary) heartbeatPrompt += '\n\n' + goalsSummary
+
+      try {
+        const patterns       = await detectPatterns()
+        const patternSummary = getPatternSummary(patterns)
+        if (patternSummary) heartbeatPrompt += '\n\n' + patternSummary
+      } catch { /* pattern detection is non-critical */ }
+
       console.log('[Heartbeat] Running checks...')
       try {
         const resp = await fetch('http://localhost:11434/api/chat', {
@@ -247,7 +261,7 @@ export class Scheduler {
                 role:    'system',
                 content: "You are Aiden running a background heartbeat. Check the items in the list. If NOTHING needs the user's attention, reply ONLY: HEARTBEAT_OK\nIf something IS urgent or interesting, describe it in 1-2 sentences. Do NOT include HEARTBEAT_OK if you have alerts.",
               },
-              { role: 'user', content: checklist },
+              { role: 'user', content: heartbeatPrompt },
             ],
           }),
           signal: AbortSignal.timeout(30_000),

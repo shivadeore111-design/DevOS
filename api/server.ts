@@ -2464,6 +2464,17 @@ export function createApiServer(): Express {
     }
   })
 
+  // ── Feature 21: Pattern detection API ────────────────────────
+  app.get('/api/patterns', async (_req: Request, res: Response) => {
+    try {
+      const { detectPatterns } = await import('../core/patternDetector')
+      const patterns = await detectPatterns()
+      res.json({ patterns, count: patterns.length })
+    } catch (e: any) {
+      res.json({ patterns: [], error: e.message })
+    }
+  })
+
   // ── Feature 15: OpenAI-compatible API ─────────────────────────
   // Compatible with Open WebUI, LobeChat, Obsidian AI, and any
   // OpenAI-compatible client. Point them at http://localhost:4200/v1
