@@ -24,6 +24,7 @@ import {
 
 import { reliableWebSearch, deepResearch as deepResearchFn } from './webSearch'
 import { conversationMemory } from './conversationMemory'
+import { minimatch } from 'minimatch'
 import { generateBriefing, loadBriefingConfig }              from './morningBriefing'
 import { getMarketData }   from './tools/marketDataTool'
 import { getCompanyInfo }  from './tools/companyFilingsTool'
@@ -32,6 +33,35 @@ import { runInSandbox }    from './codeInterpreter'
 import { responseCache }   from './responseCache'
 
 const execAsync = promisify(exec)
+
+// ── Path deny rules ───────────────────────────────────────────
+
+const DENIED_PATHS = [
+  '**/.ssh/**', '**/.aws/**', '**/.env*', '**/.gnupg/**',
+  '**/credentials*', '**/*.pem', '**/*.key',
+  '**/id_rsa*', '**/id_ed25519*',
+]
+
+function isPathDenied(filePath: string): boolean {
+  const normalized = filePath.replace(/\\/g, '/')
+  return DENIED_PATHS.some(pattern => minimatch(normalized, pattern, { dot: true }))
+}
+
+// ── Command deny rules ────────────────────────────────────────
+
+const DENIED_COMMANDS: RegExp[] = [
+  /curl\s+.*\|\s*bash/i,
+  /wget\s+.*\|\s*bash/i,
+  /rm\s+-rf\s+\//,
+  /powershell.*-enc\s/i,
+  /powershell.*-encodedcommand/i,
+  /iex\s*\(/i,
+  /Invoke-Expression/i,
+]
+
+function isCommandDenied(cmd: string): boolean {
+  return DENIED_COMMANDS.some(p => p.test(cmd))
+}
 
 // ── Sprint 24: active folder-watcher registry ─────────────────
 const activeWatchers = new Map<string, fs.FSWatcher>()
@@ -188,6 +218,10 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
   shell_exec: async (p) => {
     const cmd = p.command || p.cmd || ''
     if (!cmd) return { success: false, output: '', error: 'No command' }
+    if (isCommandDenied(cmd)) {
+      console.warn(`[Security] shell_exec DENIED pattern: ${cmd.slice(0, 120)}`)
+      return { success: false, output: '', error: 'Blocked: this command pattern is not allowed. Dangerous operations require explicit user approval.' }
+    }
     if (isShellDangerous(cmd)) {
       console.warn(`[CommandGate] BLOCKED shell_exec: ${cmd.slice(0, 120)}`)
       return { success: false, output: '', error: `CommandGate: Blocked potentially dangerous command. User approval required before running: ${cmd.slice(0, 80)}` }
@@ -206,6 +240,10 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
   run_powershell: async (p) => {
     const script  = p.script || p.command || ''
     if (!script) return { success: false, output: '', error: 'No script' }
+    if (isCommandDenied(script)) {
+      console.warn(`[Security] run_powershell DENIED pattern: ${script.slice(0, 120)}`)
+      return { success: false, output: '', error: 'Blocked: this command pattern is not allowed. Dangerous operations require explicit user approval.' }
+    }
     if (isShellDangerous(script)) {
       console.warn(`[CommandGate] BLOCKED run_powershell: ${script.slice(0, 120)}`)
       return { success: false, output: '', error: `CommandGate: Blocked potentially dangerous PowerShell script. User approval required before running.` }
@@ -227,6 +265,10 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
     let   filePath = p.path || p.file || ''
     const content  = p.content || ''
     if (!filePath) return { success: false, output: '', error: 'No path' }
+    if (isPathDenied(filePath)) {
+      console.warn(`[Security] file_write DENIED: ${filePath}`)
+      return { success: false, output: '', error: 'Access denied: protected path. Aiden cannot write credentials, SSH keys, or env files.' }
+    }
     try {
       // Expand Desktop and ~ shorthands to full Windows paths
       const userName = process.env.USERNAME || process.env.USER || 'User'
@@ -252,6 +294,10 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
   file_read: async (p) => {
     const filePath = p.path || p.file || ''
     if (!filePath) return { success: false, output: '', error: 'No path' }
+    if (isPathDenied(filePath)) {
+      console.warn(`[Security] file_read DENIED: ${filePath}`)
+      return { success: false, output: '', error: 'Access denied: protected path. Aiden cannot read credentials, SSH keys, or env files.' }
+    }
     try {
       // Resolve path: absolute paths (Windows C:\ or Unix /) used as-is; relative joined with cwd
       const resolved = filePath.match(/^[A-Z]:/i) || filePath.startsWith('/')

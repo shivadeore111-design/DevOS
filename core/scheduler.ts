@@ -231,14 +231,27 @@ export class Scheduler {
   // ── Internal ───────────────────────────────────────────
 
   private scheduleTask(task: ScheduledTask): void {
+    const TASK_TIMEOUT_MS = 5 * 60 * 1000  // 5-minute dead-man switch
+
     // Poll every minute and fire when cron expression matches current time
     const interval = setInterval(() => {
       if (!task.enabled) return
       if (this.shouldRun(task)) {
         task.lastRun = Date.now()
         this.save()
-        this.runTask(task).catch(e =>
-          console.error(`[Scheduler] Task "${task.description}" threw: ${e.message}`)
+
+        const taskWithTimeout = Promise.race([
+          this.runTask(task),
+          new Promise<never>((_, reject) =>
+            setTimeout(
+              () => reject(new Error(`Task timeout after 5 minutes: ${task.description}`)),
+              TASK_TIMEOUT_MS,
+            )
+          ),
+        ])
+
+        taskWithTimeout.catch(e =>
+          console.log(`[Security] Task killed: "${task.description}": ${e.message}`)
         )
       }
     }, 60 * 1000)

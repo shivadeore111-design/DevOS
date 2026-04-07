@@ -9,6 +9,29 @@
 import fs   from 'fs'
 import path from 'path'
 
+// ── Skill injection guard ─────────────────────────────────────
+
+const SKILL_INJECTION_PATTERNS: RegExp[] = [
+  /ignore\s+(all\s+)?(previous|above|prior)/i,
+  /disregard\s+(all\s+)?(previous|above)/i,
+  /you\s+are\s+now\s+/i,
+  /new\s+instructions\s*:/i,
+  /override\s+system/i,
+  /curl\s+.*\|\s*bash/i,
+  /ANTHROPIC_BASE_URL/i,
+  /\]\s*\(\s*javascript:/i,
+]
+
+function sanitizeSkill(content: string, filename: string): string | null {
+  for (const pattern of SKILL_INJECTION_PATTERNS) {
+    if (pattern.test(content)) {
+      console.warn(`[Security] BLOCKED skill "${filename}": contains injection pattern`)
+      return null
+    }
+  }
+  return content
+}
+
 // ── Types ──────────────────────────────────────────────────────
 
 export interface Skill {
@@ -61,8 +84,10 @@ export class SkillLoader {
           const skillPath = path.join(dir, entry.name, 'SKILL.md')
           if (!fs.existsSync(skillPath)) continue
           try {
-            const raw    = fs.readFileSync(skillPath, 'utf-8')
-            const parsed = this.parse(raw, skillPath)
+            const raw       = fs.readFileSync(skillPath, 'utf-8')
+            const sanitized = sanitizeSkill(raw, entry.name)
+            if (!sanitized) continue
+            const parsed = this.parse(sanitized, skillPath)
             if (parsed) skills.push(parsed)
           } catch {}
         }
