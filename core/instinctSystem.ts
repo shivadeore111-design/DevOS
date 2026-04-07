@@ -16,6 +16,7 @@ import { dirname, join } from 'path'
 interface Instinct {
   id:             string
   action:         string        // "When X, do Y"
+  words:          string[]      // pre-tokenized words for findSimilar() — not persisted
   evidence:       string[]      // session IDs where observed
   confidence:     number        // 0.0 to 1.0
   category:       'user_preference' | 'tool_pattern' | 'error_fix'
@@ -36,10 +37,15 @@ const EVOLUTION_MIN_CONFIDENCE = 2.0   // sum of confidences across group
 
 // ── InstinctSystem ─────────────────────────────────────────────
 
+function tokenize(text: string): string[] {
+  return text.toLowerCase().split(/\W+/).filter(w => w.length > 3)
+}
+
 class InstinctSystem {
-  private instincts: Instinct[] = []
-  private savePath:  string
-  private learnedDir: string
+  private instincts:   Instinct[] = []
+  private savePath:    string
+  private learnedDir:  string
+  private _saveTimer:  ReturnType<typeof setTimeout> | null = null
 
   constructor(workspaceDir: string) {
     // CRITICAL: instincts are workspace-scoped.
@@ -62,7 +68,8 @@ class InstinctSystem {
       ? `Use ${toolName} with args like ${argSnippet}`
       : `Avoid ${toolName} when args like ${argSnippet} — fails`
 
-    const existing = this.findSimilar(action)
+    const words    = tokenize(action)
+    const existing = this.findSimilar(words)
 
     if (existing) {
       if (success) {
@@ -83,6 +90,7 @@ class InstinctSystem {
       this.instincts.push({
         id:             `inst_${Date.now()}`,
         action,
+        words,
         evidence:       [sessionId],
         confidence:     0.3,
         category:       'tool_pattern',
@@ -98,24 +106,26 @@ class InstinctSystem {
   }
 
   // ── Word-overlap similarity — 3+ shared words = same instinct ─
+  // Accepts pre-tokenized words to avoid re-tokenizing the incoming action.
+  // Uses inst.words cache so each stored instinct is tokenized only once.
 
-  private findSimilar(action: string): Instinct | undefined {
-    const words = new Set(
-      action.toLowerCase().split(/\W+/).filter(w => w.length > 3),
-    )
+  private findSimilar(incomingWords: string[]): Instinct | undefined {
+    const wordSet = new Set(incomingWords)
     return this.instincts.find(inst => {
       if (inst.status !== 'active') return false
-      const instWords = new Set(
-        inst.action.toLowerCase().split(/\W+/).filter(w => w.length > 3),
-      )
-      const overlap = [...words].filter(w => instWords.has(w))
-      return overlap.length >= 3
+      // inst.words may be absent on instincts loaded from disk before this field existed
+      const instWords = inst.words ?? (inst.words = tokenize(inst.action))
+      return instWords.filter(w => wordSet.has(w)).length >= 3
     })
   }
 
   // ── Evolution check — cluster 3+ high-confidence instincts ────
 
   private checkEvolution(): void {
+    // Skip when too few active instincts to possibly meet EVOLUTION_MIN_COUNT
+    const activeCount = this.instincts.filter(i => i.status === 'active').length
+    if (activeCount < EVOLUTION_MIN_COUNT) return
+
     const byCategory = new Map<string, Instinct[]>()
     for (const inst of this.instincts) {
       if (inst.status !== 'active') continue
@@ -209,11 +219,16 @@ class InstinctSystem {
     }
   }
 
+  // Debounced — coalesces rapid bursts of tool calls into one disk write
   private save(): void {
-    try {
-      mkdirSync(dirname(this.savePath), { recursive: true })
-      writeFileSync(this.savePath, JSON.stringify(this.instincts, null, 2))
-    } catch {}
+    if (this._saveTimer) return
+    this._saveTimer = setTimeout(() => {
+      this._saveTimer = null
+      try {
+        mkdirSync(dirname(this.savePath), { recursive: true })
+        writeFileSync(this.savePath, JSON.stringify(this.instincts, null, 2))
+      } catch {}
+    }, 2000)
   }
 }
 

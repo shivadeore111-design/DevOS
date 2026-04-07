@@ -230,9 +230,9 @@ export class Scheduler {
 
   // ── Internal ───────────────────────────────────────────
 
-  private scheduleTask(task: ScheduledTask): void {
-    const TASK_TIMEOUT_MS = 5 * 60 * 1000  // 5-minute dead-man switch
+  private static readonly TASK_TIMEOUT_MS = 5 * 60 * 1000  // 5-minute dead-man switch
 
+  private scheduleTask(task: ScheduledTask): void {
     // Poll every minute and fire when cron expression matches current time
     const interval = setInterval(() => {
       if (!task.enabled) return
@@ -245,7 +245,7 @@ export class Scheduler {
           new Promise<never>((_, reject) =>
             setTimeout(
               () => reject(new Error(`Task timeout after 5 minutes: ${task.description}`)),
-              TASK_TIMEOUT_MS,
+              Scheduler.TASK_TIMEOUT_MS,
             )
           ),
         ])

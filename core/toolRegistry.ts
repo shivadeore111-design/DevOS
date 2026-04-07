@@ -34,7 +34,16 @@ import { responseCache }   from './responseCache'
 
 const execAsync = promisify(exec)
 
+// ── Shared path normalizer ─────────────────────────────────────
+
+function normalizeFilePath(filePath: string): string {
+  return filePath.replace(/\\/g, '/')
+}
+
 // ── Protected files — cannot be written by agents ─────────────
+// GOALS.md is here to prevent arbitrary file_write overwrites.
+// The manage_goals tool writes it directly (bypasses file_write),
+// so goal management still works — only uncontrolled writes are blocked.
 
 const PROTECTED_FILES = [
   'config/devos.config.json',
@@ -52,7 +61,7 @@ const PROTECTED_FILES = [
 ]
 
 function isProtectedFile(filePath: string): boolean {
-  const normalized = filePath.replace(/\\/g, '/').replace(/^\.\//, '')
+  const normalized = normalizeFilePath(filePath).replace(/^\.\//, '')
   // Block test/config file writes (prevents agents from cheating tests)
   if (normalized.endsWith('.test.ts') || normalized.endsWith('.spec.ts')) return true
   if (normalized.endsWith('vitest.config.ts') || normalized.endsWith('jest.config.ts')) return true
@@ -68,7 +77,7 @@ const DENIED_PATHS = [
 ]
 
 function isPathDenied(filePath: string): boolean {
-  const normalized = filePath.replace(/\\/g, '/')
+  const normalized = normalizeFilePath(filePath)
   return DENIED_PATHS.some(pattern => minimatch(normalized, pattern, { dot: true }))
 }
 

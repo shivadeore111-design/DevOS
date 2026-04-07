@@ -1843,7 +1843,7 @@ export function createApiServer(): Express {
   })
 
   // GET /api/clips — list recent clips + bookmarklet
-  app.get('/api/clips', (_req: Request, res: Response) => {
+  app.get('/api/clips', async (_req: Request, res: Response) => {
     try {
       const clipsDir = path.join(process.cwd(), 'workspace', 'knowledge', 'clips')
       if (!fs.existsSync(clipsDir)) {
@@ -1856,15 +1856,15 @@ export function createApiServer(): Express {
         .reverse()
         .slice(0, 20)
 
-      const clips = files.map(f => {
-        const raw   = fs.readFileSync(path.join(clipsDir, f), 'utf8')
+      const clips = await Promise.all(files.map(async f => {
+        const raw   = await fs.promises.readFile(path.join(clipsDir, f), 'utf8')
         const lines = raw.split('\n')
         return {
           id:      f.replace('.md', ''),
           title:   lines[0].replace('# ', ''),
           preview: lines.slice(5, 7).join(' ').slice(0, 100),
         }
-      })
+      }))
 
       res.json({ clips, count: clips.length, bookmarklet: BOOKMARKLET })
     } catch (e: any) {

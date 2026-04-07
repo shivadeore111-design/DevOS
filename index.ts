@@ -34,7 +34,7 @@ import { verifyInstall, getCurrentLicense } from './core/licenseManager'
 import { scheduler }      from './core/scheduler'
 import { startMCPServer } from './core/mcpServer'
 import { initLocalModels } from './providers/router'
-import { registerHook }   from './core/hooks'
+import { registerHook, fireHook } from './core/hooks'
 import { sessionMemory }  from './core/sessionMemory'
 import { memoryExtractor } from './core/memoryExtractor'
 import { refreshIdentity } from './core/aidenIdentity'
@@ -99,6 +99,10 @@ async function main(): Promise<void> {
           }
         }
 
+        // ── Instinct system — init before API server so first request has context ─
+        const workspaceDir = path.join(process.cwd(), 'workspace')
+        initInstinctSystem(workspaceDir)
+
         startApiServer()
 
         // ── Sprint 29: start MCP server ────────────────────────
@@ -107,10 +111,6 @@ async function main(): Promise<void> {
 
         // ── Sprint 25: register morning briefing ───────────────
         scheduler.registerMorningBriefing()
-
-        // ── Instinct system ────────────────────────────────────
-        const workspaceDir = path.join(process.cwd(), 'workspace')
-        initInstinctSystem(workspaceDir)
 
         // ── Lifecycle hooks ────────────────────────────────────
         registerHook('after_tool_call', async (data = {}) => {
@@ -138,8 +138,8 @@ async function main(): Promise<void> {
         })
 
         // session_stop on process exit
-        process.on('SIGINT',  () => { void (async () => { const { fireHook } = await import('./core/hooks'); await fireHook('session_stop') })().finally(() => process.exit(0)) })
-        process.on('SIGTERM', () => { void (async () => { const { fireHook } = await import('./core/hooks'); await fireHook('session_stop') })().finally(() => process.exit(0)) })
+        process.on('SIGINT',  () => { void fireHook('session_stop').finally(() => process.exit(0)) })
+        process.on('SIGTERM', () => { void fireHook('session_stop').finally(() => process.exit(0)) })
 
         // ── Background service PID management ─────────────────
         const { startBackgroundService } = await import('./core/backgroundService')

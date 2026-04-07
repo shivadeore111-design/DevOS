@@ -479,8 +479,9 @@ export async function planWithLLM(
   memoryContext?: string,
 ): Promise<AgentPlan> {
 
-  // ── Pre-compact hook — fire when history is getting long ─────
-  if (history.length >= COMPACT_THRESHOLD) {
+  // ── Pre-compact hook — fire at multiples of COMPACT_THRESHOLD ─
+  // Fires at 40, 80, 120 … to avoid triggering on every message after crossing 40.
+  if (history.length >= COMPACT_THRESHOLD && history.length % COMPACT_THRESHOLD === 0) {
     fireHook('pre_compact', { historyLength: history.length, message }).catch(() => {})
   }
 
