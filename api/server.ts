@@ -50,6 +50,7 @@ import type { AgentPlan, StepResult, ToolStep }        from '../core/agentLoop'
 import { planTool }                                     from '../core/planTool'
 import type { Phase }                                   from '../core/planTool'
 import { taskStateManager }                             from '../core/taskState'
+import { taskQueue }                                    from '../core/taskQueue'
 import { recoverTasks }                                 from '../core/taskRecovery'
 import { skillLoader }                                  from '../core/skillLoader'
 import { conversationMemory }                           from '../core/conversationMemory'
@@ -1756,6 +1757,35 @@ export function createApiServer(): Express {
     saveBriefingConfig(config)
     scheduler.registerMorningBriefing()
     res.json({ success: true })
+  })
+
+  // GET  /api/queue — list pending and recent tasks
+  app.get('/api/queue', (_req: Request, res: Response) => {
+    res.json({
+      pending: taskQueue.getPending(),
+      recent:  taskQueue.getRecent(20),
+    })
+  })
+
+  // POST /api/queue — enqueue a new task for async execution
+  app.post('/api/queue', (req: Request, res: Response) => {
+    const { message, priority, source } = req.body as {
+      message?: string; priority?: string; source?: string
+    }
+    if (!message) return res.status(400).json({ error: 'message required' }) as any
+    const id = taskQueue.enqueue({
+      source:   (source as any) || 'api',
+      message,
+      priority: (priority as any) || 'normal',
+    })
+    res.json({ taskId: id, status: 'queued' })
+  })
+
+  // GET  /api/queue/:id — check status of a specific queued task
+  app.get('/api/queue/:id', (req: Request, res: Response) => {
+    const task = taskQueue.getStatus(String(req.params.id))
+    if (!task) return res.status(404).json({ error: 'Task not found' }) as any
+    res.json(task)
   })
 
   // POST /api/briefing — receive briefing content, broadcast to WebSocket clients
