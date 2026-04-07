@@ -29,9 +29,61 @@ import { mcpClient }             from './mcpClient'
 import { unifiedMemoryRecall, buildMemoryInjection } from './memoryRecall'
 import { costTracker } from './costTracker'
 import { getOllamaTimeout } from './modelDiscovery'
+import { semanticMemory } from './semanticMemory'
 import * as nodeFs             from 'fs'
 import * as nodePath           from 'path'
 import * as nodeOs             from 'os'
+
+// ── Proactive memory surfacing ─────────────────────────────────
+
+const SKIP_MEMORY_PATTERNS = [
+  /^(hi|hello|hey|thanks|ok|yes|no|sure|bye)\b/i,
+  /^.{1,15}$/,
+]
+
+export async function surfaceRelevantMemories(userMessage: string): Promise<string> {
+  if (SKIP_MEMORY_PATTERNS.some(p => p.test(userMessage.trim()))) return ''
+
+  const memories: string[] = []
+
+  // 1. Semantic memory search
+  try {
+    const results = semanticMemory.search(userMessage, 5)
+    for (const r of results) {
+      memories.push(`[Memory] ${r.text}`)
+    }
+  } catch {}
+
+  // 2. Memory directory files — keyword match
+  try {
+    const memDir = nodePath.join(process.cwd(), 'workspace', 'memory')
+    if (nodeFs.existsSync(memDir)) {
+      const files    = nodeFs.readdirSync(memDir).filter((f: string) => f.endsWith('.md'))
+      const keywords = userMessage.toLowerCase().split(/\s+/).filter((k: string) => k.length > 3)
+
+      for (const file of files) {
+        try {
+          const content      = nodeFs.readFileSync(nodePath.join(memDir, file), 'utf8')
+          const contentLower = content.toLowerCase()
+          const matches      = keywords.filter((k: string) => contentLower.includes(k))
+          if (matches.length >= 2) {
+            const body = content.split('---').slice(2).join('---').trim()
+            if (body.length > 0 && body.length < 500) {
+              memories.push(`[Memory] ${body}`)
+            }
+          }
+        } catch {}
+      }
+    }
+  } catch {}
+
+  if (memories.length === 0) return ''
+
+  const unique = [...new Set(memories)].slice(0, 8)
+  console.log(`[Memory] Surfaced ${unique.length} memories for: "${userMessage.substring(0, 40)}"`)
+
+  return '\n## Relevant Context from Memory\n' + unique.join('\n') + '\n'
+}
 
 // ── Types ─────────────────────────────────────────────────────
 

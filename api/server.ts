@@ -39,7 +39,7 @@ import { getSmartProvider, markRateLimited, incrementUsage, logProviderStatus, g
 import { discoverLocalModels } from '../core/modelDiscovery'
 import { executeTool } from '../core/toolRegistry'
 import { getScreenSize, takeScreenshot as captureScreen } from '../core/computerControl'
-import { planWithLLM, executePlan, respondWithResults, callLLM } from '../core/agentLoop'
+import { planWithLLM, executePlan, respondWithResults, callLLM, surfaceRelevantMemories } from '../core/agentLoop'
 import { TOOL_DESCRIPTIONS } from '../core/toolRegistry'
 import { runReActLoop, ReActStep }                                 from '../core/reactLoop'
 import { scheduler }                                              from '../core/scheduler'
@@ -535,8 +535,10 @@ export function createApiServer(): Express {
           res.json({ response: quickReply, message: quickReply, provider: apiName2 }); return
         }
 
-        const memoryContext = conversationMemory.buildContext()
-        const plan: AgentPlan = await planWithLLM(resolvedMessage, history, plannerKey, plannerModel, plannerProv, memoryContext)
+        const memoryContext    = conversationMemory.buildContext()
+        const proactiveMemory  = await surfaceRelevantMemories(resolvedMessage)
+        const fullMemoryCtx    = memoryContext + proactiveMemory
+        const plan: AgentPlan = await planWithLLM(resolvedMessage, history, plannerKey, plannerModel, plannerProv, fullMemoryCtx)
 
         if (!plan.requires_execution || plan.plan.length === 0) {
           if (plan.direct_response) {
@@ -702,8 +704,10 @@ export function createApiServer(): Express {
 
       send({ activity: { icon: 'ðŸ§ ', agent: 'Aiden', message: 'Working out a plan...', style: 'thinking' }, done: false })
 
-      const memoryContext = conversationMemory.buildContext()
-      const plan: AgentPlan = await planWithLLM(resolvedMessage, history, plannerKeySSE, plannerModelSSE, plannerProvSSE, memoryContext)
+      const memoryContext    = conversationMemory.buildContext()
+      const proactiveMemory  = await surfaceRelevantMemories(resolvedMessage)
+      const fullMemoryCtx    = memoryContext + proactiveMemory
+      const plan: AgentPlan = await planWithLLM(resolvedMessage, history, plannerKeySSE, plannerModelSSE, plannerProvSSE, fullMemoryCtx)
 
       // â”€â”€ PLAN-ONLY MODE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       if (mode === 'plan') {
