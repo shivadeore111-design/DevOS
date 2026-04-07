@@ -33,6 +33,7 @@ import { semanticMemory }          from './semanticMemory'
 import { getActiveGoalsSummary }  from './goalTracker'
 import { fireHook }               from './hooks'
 import { instinctSystem }         from './instinctSystem'
+import { startWorkflow, addNode, updateNode, completeWorkflow } from './workflowTracker'
 import * as nodeFs             from 'fs'
 import * as nodePath           from 'path'
 import * as nodeOs             from 'os'
@@ -1238,6 +1239,10 @@ export async function executePlan(
 
   console.log(`[ExecutePlan] Starting: ${plan.plan.length} steps, goal: "${plan.goal.slice(0, 60)}"`)
 
+  // Workflow tracking — feed the Watch Mode node graph
+  startWorkflow(plan.goal)
+  addNode({ id: 'main', agent: 'aiden', label: plan.goal.slice(0, 50), status: 'active', toolCalls: 0, startedAt: Date.now() })
+
   // Workspace memory for persisting intermediate artifacts
   const workspace = plan.planId ? new WorkspaceMemory(plan.planId) : null
 
@@ -1373,6 +1378,7 @@ async function executeSingleStep(
   console.log(`[ExecutePlan] Step ${step.step} result: ${stepResult.success ? '✓' : '✗'} ${stepResult.error || stepResult.output?.slice(0, 80) || ''}`)
   console.log(`[Tool] ${step.tool} (Tier ${getToolTier(step.tool)}) — ${stepResult.duration}ms`)
   stepOutputs[step.step] = stepResult.output
+  updateNode('main', { currentTool: step.tool, toolCalls: Object.keys(stepOutputs).length, tier: getToolTier(step.tool), status: 'active' })
   onStep(step, stepResult)
 
   // Audit trail
@@ -1542,6 +1548,10 @@ async function executeSingleStep(
     const failed = results.filter(r => !r.success).map(r => r.tool).join(', ')
     taskStateManager.fail(state, failed ? `Steps failed: ${failed}` : 'Incomplete execution')
   }
+
+  // Workflow tracking — close the node graph
+  updateNode('main', { status: allSucceeded ? 'completed' : 'failed', completedAt: Date.now() })
+  completeWorkflow(allSucceeded ? 'completed' : 'failed')
 
   // Record experience for self-learning
   const filesCreatedInPlan = results

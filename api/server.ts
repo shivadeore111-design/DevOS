@@ -75,6 +75,7 @@ import { sessionMemory } from '../core/sessionMemory'
 import { memoryExtractor } from '../core/memoryExtractor'
 import { getIdentity, refreshIdentity } from '../core/aidenIdentity'
 import { eventBus } from '../core/eventBus'
+import { getWorkflow } from '../core/workflowTracker'
 
 // —— Sprint 25: module-level WebSocket clients registry (shared between createApiServer routes and startApiServer WS setup)
 let wsBroadcastClients = new Set<any>()
@@ -2096,15 +2097,25 @@ export function createApiServer(): Express {
 
     const onCostUpdate     = (data: object) => sendEvent('cost_update',     data)
     const onIdentityUpdate = (data: object) => sendEvent('identity_update', data)
+    const onWorkflowEvent  = (data: object) => sendEvent('workflow_event',  data)
 
     eventBus.on('cost_update',     onCostUpdate)
     eventBus.on('identity_update', onIdentityUpdate)
+    eventBus.on('workflow_event',  onWorkflowEvent)
 
     req.on('close', () => {
       clearInterval(ping)
       eventBus.removeListener('cost_update',     onCostUpdate)
       eventBus.removeListener('identity_update', onIdentityUpdate)
+      eventBus.removeListener('workflow_event',  onWorkflowEvent)
     })
+  })
+
+  // GET /api/workflow — current workflow state snapshot
+  app.get('/api/workflow', (_req: Request, res: Response) => {
+    const wf = getWorkflow()
+    if (!wf) return res.status(204).end()
+    res.json(wf)
   })
 
   // GET /api/identity — Aiden identity snapshot
