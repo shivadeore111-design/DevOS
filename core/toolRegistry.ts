@@ -23,15 +23,79 @@ import {
 } from './computerControl'
 
 import { reliableWebSearch, deepResearch as deepResearchFn } from './webSearch'
+import { conversationMemory } from './conversationMemory'
+import { minimatch } from 'minimatch'
 import { generateBriefing, loadBriefingConfig }              from './morningBriefing'
 import { getMarketData }   from './tools/marketDataTool'
 import { getCompanyInfo }  from './tools/companyFilingsTool'
 import { mcpClient }       from './mcpClient'
 import { runInSandbox }    from './codeInterpreter'
 import { responseCache }   from './responseCache'
-import { loadGoals, saveGoals } from './goalTracker'
 
 const execAsync = promisify(exec)
+
+// ── Shared path normalizer ─────────────────────────────────────
+
+function normalizeFilePath(filePath: string): string {
+  return filePath.replace(/\\/g, '/')
+}
+
+// ── Protected files — cannot be written by agents ─────────────
+// GOALS.md is here to prevent arbitrary file_write overwrites.
+// The manage_goals tool writes it directly (bypasses file_write),
+// so goal management still works — only uncontrolled writes are blocked.
+
+const PROTECTED_FILES = [
+  'config/devos.config.json',
+  'workspace/STANDING_ORDERS.md',
+  'workspace/SOUL.md',
+  'workspace/USER.md',
+  'workspace/HEARTBEAT.md',
+  'workspace/GOALS.md',
+  '.env',
+  '.env.local',
+  'tsconfig.json',
+  'package.json',
+  'vitest.config.ts',
+  'jest.config.ts',
+]
+
+function isProtectedFile(filePath: string): boolean {
+  const normalized = normalizeFilePath(filePath).replace(/^\.\//, '')
+  // Block test/config file writes (prevents agents from cheating tests)
+  if (normalized.endsWith('.test.ts') || normalized.endsWith('.spec.ts')) return true
+  if (normalized.endsWith('vitest.config.ts') || normalized.endsWith('jest.config.ts')) return true
+  return PROTECTED_FILES.some(f => normalized.endsWith(f) || normalized === f)
+}
+
+// ── Path deny rules ───────────────────────────────────────────
+
+const DENIED_PATHS = [
+  '**/.ssh/**', '**/.aws/**', '**/.env*', '**/.gnupg/**',
+  '**/credentials*', '**/*.pem', '**/*.key',
+  '**/id_rsa*', '**/id_ed25519*',
+]
+
+function isPathDenied(filePath: string): boolean {
+  const normalized = normalizeFilePath(filePath)
+  return DENIED_PATHS.some(pattern => minimatch(normalized, pattern, { dot: true }))
+}
+
+// ── Command deny rules ────────────────────────────────────────
+
+const DENIED_COMMANDS: RegExp[] = [
+  /curl\s+.*\|\s*bash/i,
+  /wget\s+.*\|\s*bash/i,
+  /rm\s+-rf\s+\//,
+  /powershell.*-enc\s/i,
+  /powershell.*-encodedcommand/i,
+  /iex\s*\(/i,
+  /Invoke-Expression/i,
+]
+
+function isCommandDenied(cmd: string): boolean {
+  return DENIED_COMMANDS.some(p => p.test(cmd))
+}
 
 // ── Sprint 24: active folder-watcher registry ─────────────────
 const activeWatchers = new Map<string, fs.FSWatcher>()
@@ -121,51 +185,20 @@ const TOOL_TIMEOUTS: Record<string, number> = {
 
 export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
 
+  // ── respond — direct conversational reply (no external tools needed) ──
+  respond: async (p) => {
+    const message = p.message || p.text || p.response || ''
+    if (!message) return { success: false, output: '', error: 'No message provided' }
+    return { success: true, output: message }
+  },
+
   open_browser: async (p) => {
     const url = p.url || p.command || ''
     if (!url) return { success: false, output: '', error: 'No URL provided' }
     try {
-      // Use Playwright for navigation so we can read page content back
-      const browser = await getBrowser()
-      const context = browser.contexts().length > 0
-        ? browser.contexts()[0]
-        : await browser.newContext()
-      const pages = context.pages()
-      const page  = pages.length > 0 ? pages[pages.length - 1] : await context.newPage()
-
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 })
-      await page.waitForTimeout(1500)
-
-      // Extract page info for the LLM to see what was opened
-      // Uses string-form evaluate() to avoid Node.js DOM type issues
-      let title       = ''
-      let h1Text      = ''
-      let description = ''
-      let bodySnippet = ''
-
-      try { title = await page.title() } catch {}
-      try { h1Text      = String(await page.evaluate('document.querySelector("h1")?.innerText?.trim() || ""')) } catch {}
-      try { description = String(await page.evaluate('document.querySelector(\'meta[name="description"]\')?.content?.trim() || ""')) } catch {}
-      try { bodySnippet = String(await page.evaluate('(document.body.innerText || "").slice(0, 500).trim()')) } catch {}
-
-      const lines = [
-        `Opened ${url}`,
-        title       && `Page: ${title}`,
-        h1Text      && `Heading: ${h1Text}`,
-        description && `About: ${description}`,
-        bodySnippet && `Content: ${bodySnippet}`,
-      ].filter(Boolean)
-
-      return { success: true, output: lines.join('\n') }
-    } catch (e: any) {
-      // Fallback: open via system browser (PowerShell) if Playwright fails
-      try {
-        const result = await openBrowser(url)
-        return { success: true, output: result }
-      } catch {
-        return { success: false, output: '', error: e.message }
-      }
-    }
+      const result = await openBrowser(url)
+      return { success: true, output: result }
+    } catch (e: any) { return { success: false, output: '', error: e.message } }
   },
 
   browser_screenshot: async () => {
@@ -219,6 +252,10 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
   shell_exec: async (p) => {
     const cmd = p.command || p.cmd || ''
     if (!cmd) return { success: false, output: '', error: 'No command' }
+    if (isCommandDenied(cmd)) {
+      console.warn(`[Security] shell_exec DENIED pattern: ${cmd.slice(0, 120)}`)
+      return { success: false, output: '', error: 'Blocked: this command pattern is not allowed. Dangerous operations require explicit user approval.' }
+    }
     if (isShellDangerous(cmd)) {
       console.warn(`[CommandGate] BLOCKED shell_exec: ${cmd.slice(0, 120)}`)
       return { success: false, output: '', error: `CommandGate: Blocked potentially dangerous command. User approval required before running: ${cmd.slice(0, 80)}` }
@@ -237,6 +274,10 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
   run_powershell: async (p) => {
     const script  = p.script || p.command || ''
     if (!script) return { success: false, output: '', error: 'No script' }
+    if (isCommandDenied(script)) {
+      console.warn(`[Security] run_powershell DENIED pattern: ${script.slice(0, 120)}`)
+      return { success: false, output: '', error: 'Blocked: this command pattern is not allowed. Dangerous operations require explicit user approval.' }
+    }
     if (isShellDangerous(script)) {
       console.warn(`[CommandGate] BLOCKED run_powershell: ${script.slice(0, 120)}`)
       return { success: false, output: '', error: `CommandGate: Blocked potentially dangerous PowerShell script. User approval required before running.` }
@@ -258,6 +299,14 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
     let   filePath = p.path || p.file || ''
     const content  = p.content || ''
     if (!filePath) return { success: false, output: '', error: 'No path' }
+    if (isProtectedFile(filePath)) {
+      console.warn(`[Security] file_write BLOCKED (protected): ${filePath}`)
+      return { success: false, output: '', error: `Protected file: ${filePath} cannot be modified by agents. Use 'devos config' or edit manually.` }
+    }
+    if (isPathDenied(filePath)) {
+      console.warn(`[Security] file_write DENIED: ${filePath}`)
+      return { success: false, output: '', error: 'Access denied: protected path. Aiden cannot write credentials, SSH keys, or env files.' }
+    }
     try {
       // Expand Desktop and ~ shorthands to full Windows paths
       const userName = process.env.USERNAME || process.env.USER || 'User'
@@ -283,6 +332,10 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
   file_read: async (p) => {
     const filePath = p.path || p.file || ''
     if (!filePath) return { success: false, output: '', error: 'No path' }
+    if (isPathDenied(filePath)) {
+      console.warn(`[Security] file_read DENIED: ${filePath}`)
+      return { success: false, output: '', error: 'Access denied: protected path. Aiden cannot read credentials, SSH keys, or env files.' }
+    }
     try {
       // Resolve path: absolute paths (Windows C:\ or Unix /) used as-is; relative joined with cwd
       const resolved = filePath.match(/^[A-Z]:/i) || filePath.startsWith('/')
@@ -647,6 +700,15 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
     const task      = p.task || p.command || ''
     if (!task) return { success: false, output: '', error: 'No task provided' }
 
+    // ── Fork guard: only top-level agents can spawn specialists ──
+    // Prevents sub-agents from recursively spawning more agents
+    const FORK_CAPABLE_AGENTS = ['ceo', 'engineer']
+    const callerAgent = (p._callerAgent || '').toLowerCase()
+    if (callerAgent && !FORK_CAPABLE_AGENTS.includes(callerAgent)) {
+      console.warn(`[run_agent] ${callerAgent} attempted to fork ${agentName} — blocked (non-fork-capable)`)
+      return { success: false, output: '', error: `Agent '${callerAgent}' cannot spawn sub-agents. Only CEO-level agents can delegate.` }
+    }
+
     const agentPersonas: Record<string, string> = {
       engineer:     'Senior TypeScript/JavaScript engineer — writes clean, working code with full error handling.',
       security:     'Security auditor — analyzes for OWASP Top 10, provides specific fixes with code examples.',
@@ -658,14 +720,30 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
 
     const persona = agentPersonas[agentName] || agentPersonas.engineer
 
+    // ── Context inheritance for complex tasks ─────────────────────
+    // Complex tasks (long description or explicit context request) get conversation history
+    const isComplex = task.length > 100 || p.inheritContext === true
+    let contextBlock = ''
+    if (isComplex) {
+      const memCtx = conversationMemory.buildContext()
+      if (memCtx && memCtx.trim()) {
+        contextBlock = `\n## Conversation Context\nThe user has been discussing:\n${memCtx.slice(0, 1200)}\n`
+        console.log(`[run_agent] Injecting conversation context into ${agentName} task (${memCtx.length} chars)`)
+      }
+    }
+
     try {
       const { memoryLayers } = await import('../memory/memoryLayers')
       memoryLayers.write(`Agent ${agentName} task: ${task}`, ['agent', agentName])
     } catch {}
 
+    const fullTask = contextBlock
+      ? `${contextBlock}\n## Your Task\n${task}`
+      : task
+
     return {
       success: true,
-      output:  `Agent: ${agentName}\nPersona: ${persona}\nTask: ${task}\n\n[Specialist agent will synthesize this task in the response phase with full context]`,
+      output:  `Agent: ${agentName}\nPersona: ${persona}\nTask: ${fullTask}\n\n[Specialist agent will synthesize this task in the response phase with full context]`,
     }
   },
 
@@ -1090,63 +1168,74 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
     }
   },
 
-  // ── Feature 20: goal tracking ─────────────────────────────────
+  // ── manage_goals — track and manage long-running goals ────────
   manage_goals: async (p) => {
-    try {
-      const goals = loadGoals()
-      const today = new Date().toISOString().split('T')[0]
+    const { loadGoals, saveGoals } = await import('./goalTracker')
+    const goals = loadGoals()
+    const today = new Date().toISOString().split('T')[0]
 
-      switch (p.action) {
-        case 'list': {
-          const active = goals.filter((g: any) => g.status !== 'done')
-          return { success: true, output: JSON.stringify({ goals: active, count: active.length }, null, 2) }
-        }
-        case 'add': {
-          if (!p.title) return { success: false, output: '', error: 'title required' }
-          goals.push({
-            id:          Date.now().toString(),
-            title:       p.title,
-            status:      'not_started',
-            target:      p.target,
-            nextAction:  p.nextAction,
-            lastUpdated: today,
-          })
-          saveGoals(goals)
-          return { success: true, output: `Added goal: "${p.title}"` }
-        }
-        case 'update': {
-          const goal = goals.find((g: any) =>
-            g.title.toLowerCase().includes((p.title || '').toLowerCase())
-          )
-          if (!goal) return { success: false, output: '', error: 'Goal not found' }
-          if (p.status)     (goal as any).status     = p.status
-          if (p.nextAction) (goal as any).nextAction  = p.nextAction
-          if (p.target)     (goal as any).target      = p.target
-          ;(goal as any).lastUpdated = today
-          saveGoals(goals)
-          return { success: true, output: `Updated: "${(goal as any).title}"` }
-        }
-        case 'complete': {
-          const idx = goals.findIndex((g: any) =>
-            g.title.toLowerCase().includes((p.title || '').toLowerCase())
-          )
-          if (idx < 0) return { success: false, output: '', error: 'Goal not found' }
-          ;(goals[idx] as any).status      = 'done'
-          ;(goals[idx] as any).lastUpdated = today
-          saveGoals(goals)
-          return { success: true, output: `Completed: "${(goals[idx] as any).title}"` }
-        }
-        case 'suggest': {
-          const pending = goals.filter((g: any) => g.status !== 'done')
-          if (pending.length === 0) return { success: true, output: 'No active goals. What are you working on?' }
-          const top = pending[0] as any
-          return { success: true, output: `Focus on: ${top.title} — Next: ${top.nextAction || 'Define next step'}` }
-        }
-        default:
-          return { success: false, output: '', error: 'Unknown action. Use: list, add, update, complete, suggest' }
+    switch (p.action) {
+      case 'list':
+        return { success: true, output: JSON.stringify(goals.filter(g => g.status !== 'done'), null, 2) }
+
+      case 'add':
+        if (!p.title) return { success: false, output: '', error: 'Title required' }
+        goals.push({
+          id:          Date.now().toString(),
+          title:       p.title,
+          status:      'not_started',
+          target:      p.target,
+          nextAction:  p.nextAction,
+          lastUpdated: today,
+        })
+        saveGoals(goals)
+        return { success: true, output: `Goal added: ${p.title}` }
+
+      case 'update': {
+        const g = goals.find(g => g.title.toLowerCase().includes((p.title || '').toLowerCase()))
+        if (!g) return { success: false, output: '', error: 'Goal not found' }
+        if (p.status)     g.status     = p.status
+        if (p.nextAction) g.nextAction = p.nextAction
+        if (p.target)     g.target     = p.target
+        g.lastUpdated = today
+        saveGoals(goals)
+        return { success: true, output: `Updated: ${g.title}` }
       }
+
+      case 'complete': {
+        const idx = goals.findIndex(g => g.title.toLowerCase().includes((p.title || '').toLowerCase()))
+        if (idx < 0) return { success: false, output: '', error: 'Goal not found' }
+        goals[idx].status      = 'done'
+        goals[idx].lastUpdated = today
+        saveGoals(goals)
+        return { success: true, output: `Completed: ${goals[idx].title}` }
+      }
+
+      case 'suggest': {
+        const active = goals.filter(g => g.status !== 'done')
+        if (active.length === 0) return { success: true, output: 'No active goals. What are you working on?' }
+        return { success: true, output: `Focus on: ${active[0].title} — Next: ${active[0].nextAction || 'Define next step'}` }
+      }
+
+      default:
+        return { success: false, output: '', error: `Unknown action: ${p.action}. Use: list, add, update, complete, suggest` }
+    }
+  },
+
+  // ── compact_context — summarize and compress conversation history ──
+  compact_context: async (p) => {
+    const { sessionMemory } = await import('./sessionMemory')
+    const { memoryExtractor } = await import('./memoryExtractor')
+    const sessionId = p.sessionId || 'default'
+
+    try {
+      // Trigger session write to persist current conversation state
+      await sessionMemory.writeSession(sessionId)
+      // Extract durable memories from session
+      await memoryExtractor.extractFromSession(sessionId)
+      return { success: true, output: `Context compacted for session ${sessionId}. Memory extracted and persisted.` }
     } catch (e: any) {
-      return { success: false, output: '', error: e.message }
+      return { success: false, output: '', error: `Compact failed: ${e.message}` }
     }
   },
 }
@@ -1312,36 +1401,77 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   watch_folder:            'Watch a folder and react automatically when new files appear',
   watch_folder_list:       'List all currently watched folder paths',
   get_briefing:            'Run the morning briefing: weather, markets, news, and daily summary',
-  manage_goals:            'Track and manage user goals. Actions: list, add, update, complete, suggest. Use when user mentions a project, deadline, or asks what to work on today.',
+  respond:                 'Send a direct conversational response to the user. Use for greetings, capability questions, clarifications, simple factual answers, and anything that does NOT require external tools. This is the default tool when no other tool is needed.',
+  manage_goals:            'Track and manage goals and projects. Use when user asks what to work on, mentions a project, deadline, or launch plan. Actions: list, add, update, complete, suggest.',
+  compact_context:         'Summarize and compress the current conversation context. Saves session to disk and extracts durable memories. Call when context is getting long.',
 }
 
-// ── Feature 6: Tool groups and agent scope enforcement ────────
+// ── Tool tier hierarchy ────────────────────────────────────────
+// Tier 1: APIs, data, search — fastest, most reliable, zero side effects
+// Tier 2: File system, shell, code execution — local side effects
+// Tier 3: Browser automation — slow, brittle, UI-dependent
+// Tier 4: Screen/mouse/keyboard control — last resort only
 
-export const TOOL_GROUPS: Record<string, string[]> = {
-  'group:runtime': ['run_python', 'run_node', 'shell_exec', 'run_powershell'],
-  'group:fs':      ['file_read', 'file_write', 'file_list'],
-  'group:web':     ['web_search', 'fetch_url', 'fetch_page', 'deep_research'],
-  'group:browser': ['open_browser', 'browser_open', 'browser_click', 'browser_screenshot', 'browser_extract'],
-  'group:market':  ['get_market_data', 'get_stocks', 'get_company_info', 'nse_data'],
-  'group:system':  ['system_info', 'screenshot', 'screen_read', 'notify'],
-  'group:ui':      ['mouse_move', 'mouse_click', 'keyboard_type', 'keyboard_press', 'vision_loop'],
-  'group:memory':  ['memory_search', 'memory_store'],
-  'group:chat':    ['respond'],
-  'group:all':     ['*'],
+export type ToolTier = 1 | 2 | 3 | 4
+
+const TOOL_TIERS: Record<string, ToolTier> = {
+  // Tier 1 — APIs, data, search, notify, respond
+  respond:                 1,
+  manage_goals:            1,
+  compact_context:         1,
+  web_search:              1,
+  fetch_url:               1,
+  fetch_page:              1,
+  deep_research:           1,
+  get_stocks:              1,
+  get_market_data:         1,
+  get_company_info:        1,
+  social_research:         1,
+  system_info:             1,
+  notify:                  1,
+  wait:                    1,
+  get_briefing:            1,
+  run_agent:               1,
+
+  // Tier 2 — File system, shell, code execution
+  file_write:              2,
+  file_read:               2,
+  file_list:               2,
+  shell_exec:              2,
+  run_powershell:          2,
+  run_python:              2,
+  run_node:                2,
+  code_interpreter_python: 2,
+  code_interpreter_node:   2,
+  git_commit:              2,
+  git_push:                2,
+  clipboard_read:          2,
+  clipboard_write:         2,
+  watch_folder:            2,
+  watch_folder_list:       2,
+
+  // Tier 3 — Browser automation
+  open_browser:            3,
+  browser_click:           3,
+  browser_type:            3,
+  browser_extract:         3,
+  browser_screenshot:      3,
+  window_list:             3,
+  window_focus:            3,
+  app_launch:              3,
+  app_close:               3,
+
+  // Tier 4 — Screen/mouse/keyboard (last resort)
+  mouse_move:              4,
+  mouse_click:             4,
+  keyboard_type:           4,
+  keyboard_press:          4,
+  screenshot:              4,
+  screen_read:             4,
+  vision_loop:             4,
 }
 
-export const AGENT_TOOL_SCOPES: Record<string, string[]> = {
-  ceo:        ['group:all'],
-  engineer:   ['group:all'],
-  researcher: ['group:web', 'group:memory', 'group:chat'],
-  verifier:   ['group:fs', 'group:web', 'group:chat'],
-  analyst:    ['group:market', 'group:web', 'group:memory', 'group:chat'],
-}
-
-export function isToolAllowed(agentId: string, toolName: string): boolean {
-  const scopes     = AGENT_TOOL_SCOPES[agentId] || ['group:all']
-  if (scopes.includes('group:all')) return true
-
-  const allowedTools = scopes.flatMap(scope => TOOL_GROUPS[scope] || [scope])
-  return allowedTools.includes('*') || allowedTools.includes(toolName)
+export function getToolTier(toolName: string): ToolTier {
+  if (toolName.startsWith('mcp_')) return 1
+  return TOOL_TIERS[toolName] ?? 2
 }

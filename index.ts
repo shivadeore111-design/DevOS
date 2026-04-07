@@ -34,7 +34,11 @@ import { verifyInstall, getCurrentLicense } from './core/licenseManager'
 import { scheduler }      from './core/scheduler'
 import { startMCPServer } from './core/mcpServer'
 import { initLocalModels } from './providers/router'
-import { registerHook }   from './core/hooks'
+import { registerHook, fireHook } from './core/hooks'
+import { sessionMemory }  from './core/sessionMemory'
+import { memoryExtractor } from './core/memoryExtractor'
+import { refreshIdentity } from './core/aidenIdentity'
+import { initInstinctSystem, instinctSystem } from './core/instinctSystem'
 
 // ── Bootstrap ─────────────────────────────────────────────────
 
@@ -137,6 +141,10 @@ async function main(): Promise<void> {
           }
         }
 
+        // ── Instinct system — init before API server so first request has context ─
+        const workspaceDir = path.join(process.cwd(), 'workspace')
+        initInstinctSystem(workspaceDir)
+
         startApiServer()
 
         // ── Built-in hooks ─────────────────────────────────────
@@ -161,18 +169,47 @@ async function main(): Promise<void> {
         // ── Sprint 25: register morning briefing ───────────────
         scheduler.registerMorningBriefing()
 
+        // ── Lifecycle hooks ────────────────────────────────────
+        registerHook('after_tool_call', async (data = {}) => {
+          instinctSystem?.observe(
+            data.toolName as string,
+            data.input as Record<string, any>,
+            data.success as boolean,
+            (data.sessionId as string | undefined) ?? 'unknown',
+          )
+        })
+
+        registerHook('pre_compact', async ({ historyLength, message } = {}) => {
+          const sessionId = 'default'
+          console.log(`[Hooks] pre_compact — history=${historyLength}, saving session...`)
+          await sessionMemory.writeSession(sessionId)
+          await memoryExtractor.extractFromSession(sessionId)
+        })
+
+        registerHook('session_stop', async ({ sessionId } = {}) => {
+          const sid = (sessionId as string | undefined) || 'default'
+          console.log(`[Hooks] session_stop — saving session ${sid}...`)
+          sessionMemory.endSession(sid)
+          await memoryExtractor.extractFromSession(sid)
+          refreshIdentity()
+        })
+
+        // session_stop on process exit
+        process.on('SIGINT',  () => { void fireHook('session_stop').finally(() => process.exit(0)) })
+        process.on('SIGTERM', () => { void fireHook('session_stop').finally(() => process.exit(0)) })
+
         // ── Background service PID management ─────────────────
         const { startBackgroundService } = await import('./core/backgroundService')
         startBackgroundService(4200)
 
-        // ── Local model discovery — runs once at startup ───────
-        initLocalModels().then(lm => {
+        // ── Local model discovery — delayed 3s to let Ollama start ─
+        setTimeout(() => initLocalModels().then(lm => {
           console.log('[Aiden] Local model assignments:')
           console.log('  Chat/Responder:', lm.responder || 'none — using cloud')
           console.log('  Planner:       ', lm.planner   || 'none — using cloud')
           console.log('  Code tasks:    ', lm.coder      || 'none — using cloud')
           console.log('  Fast tasks:    ', lm.fast       || 'none — using cloud')
-        }).catch(() => { /* non-fatal */ })
+        }).catch(() => { /* non-fatal */ }), 3000)
 
         // ── Capability profile — detect hardware tier silently ─
         buildCapabilityProfile().then(profile => {
@@ -412,15 +449,14 @@ async function main(): Promise<void> {
 
     // ── devos patterns ──────────────────────────────────────
     case 'patterns': {
-      console.log('\n  Analyzing usage patterns...\n')
       try {
+        console.log('\n  Analyzing usage patterns...\n')
         const { detectPatterns, getPatternSummary } = await import('./core/patternDetector')
         const patterns = await detectPatterns()
         if (patterns.length === 0) {
-          console.log('  No patterns detected yet — need more sessions (30+) to analyze')
+          console.log('  No patterns detected yet — need more sessions (30+) to analyze\n')
         } else {
-          console.log(getPatternSummary(patterns))
-          console.log(`\n  ${patterns.length} pattern(s) detected\n`)
+          console.log(getPatternSummary(patterns) + '\n')
         }
       } catch (err: any) {
         console.error(`[patterns] Error: ${err?.message ?? err}`)
@@ -623,6 +659,7 @@ Commands:
   -p "<prompt>"      Send a single prompt (server must be running)
   -p "<prompt>" --json  Same, output as JSON
 `)
+
       break
     }
   }

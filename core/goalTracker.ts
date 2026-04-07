@@ -3,12 +3,15 @@
 // Copyright (c) 2026 Shiva Deore. All rights reserved.
 // ============================================================
 
-// core/goalTracker.ts — Feature 20: active goal tracking via workspace/GOALS.md
+// core/goalTracker.ts — Reads/writes workspace/GOALS.md,
+// exposes active goal summaries for planner injection.
 
-import { existsSync, readFileSync, writeFileSync } from 'fs'
-import * as nodePath from 'path'
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
+import { join, dirname }                                       from 'path'
 
-// ── Types ──────────────────────────────────────────────────────
+const GOALS_PATH = join(process.cwd(), 'workspace', 'GOALS.md')
+
+// ── Types ─────────────────────────────────────────────────────
 
 export interface Goal {
   id:          string
@@ -21,13 +24,7 @@ export interface Goal {
   notes?:      string[]
 }
 
-// ── Path helpers ───────────────────────────────────────────────
-
-function goalsPath(): string {
-  return nodePath.join(process.cwd(), 'workspace', 'GOALS.md')
-}
-
-// ── Parser ─────────────────────────────────────────────────────
+// ── Parser ────────────────────────────────────────────────────
 
 function parseGoalSection(section: string): Goal {
   const lines = section.split('\n')
@@ -41,52 +38,53 @@ function parseGoalSection(section: string): Goal {
 
   for (const line of lines.slice(1)) {
     const t = line.trim()
-    if (t.startsWith('- Status:')) {
-      goal.status = t.replace('- Status:', '').trim() as Goal['status']
-    } else if (t.startsWith('- Target:')) {
-      goal.target = t.replace('- Target:', '').trim()
-    } else if (t.startsWith('- Next action:')) {
-      goal.nextAction = t.replace('- Next action:', '').trim()
-    } else if (t.startsWith('- Blockers:')) {
-      goal.blockers = t.replace('- Blockers:', '').split(',').map(s => s.trim())
-    } else if (t.startsWith('- Note:')) {
+    if      (t.startsWith('- Status:'))      goal.status      = t.replace('- Status:', '').trim() as any
+    else if (t.startsWith('- Target:'))      goal.target      = t.replace('- Target:', '').trim()
+    else if (t.startsWith('- Next action:')) goal.nextAction  = t.replace('- Next action:', '').trim()
+    else if (t.startsWith('- Note:')) {
       if (!goal.notes) goal.notes = []
       goal.notes.push(t.replace('- Note:', '').trim())
     }
   }
+
   return goal
 }
 
-// ── Public API ─────────────────────────────────────────────────
+// ── Public API ────────────────────────────────────────────────
 
 export function loadGoals(): Goal[] {
-  const p = goalsPath()
-  if (!existsSync(p)) return []
+  if (!existsSync(GOALS_PATH)) return []
   try {
-    const content  = readFileSync(p, 'utf-8')
-    const sections = content.split(/^## /m).slice(1)
-    return sections.map(parseGoalSection)
+    return readFileSync(GOALS_PATH, 'utf8')
+      .split(/^## /m)
+      .slice(1)
+      .map(parseGoalSection)
   } catch { return [] }
 }
 
 export function saveGoals(goals: Goal[]): void {
-  const md = '# Active Goals\n\n' +
+  const today = new Date().toISOString().split('T')[0]
+  const md =
+    '# Active Goals\n\n' +
     goals.map(g =>
       `## ${g.title}\n` +
       `- Status: ${g.status}\n` +
-      (g.target     ? `- Target: ${g.target}\n`                          : '') +
-      (g.blockers?.length ? `- Blockers: ${g.blockers.join(', ')}\n`     : '') +
-      (g.nextAction ? `- Next action: ${g.nextAction}\n`                 : '') +
-      `- Last updated: ${g.lastUpdated}\n` +
-      (g.notes?.length ? g.notes.map(n => `- Note: ${n}`).join('\n') + '\n' : '')
+      (g.target     ? `- Target: ${g.target}\n`           : '') +
+      (g.nextAction ? `- Next action: ${g.nextAction}\n`  : '') +
+      `- Last updated: ${today}\n` +
+      (g.notes?.map(n => `- Note: ${n}\n`).join('') ?? '')
     ).join('\n')
-  writeFileSync(goalsPath(), md)
+
+  try {
+    mkdirSync(dirname(GOALS_PATH), { recursive: true })
+    writeFileSync(GOALS_PATH, md)
+  } catch {}
 }
 
 export function getActiveGoalsSummary(): string {
   const active = loadGoals().filter(g => g.status !== 'done')
   if (active.length === 0) return ''
   return 'Active goals:\n' + active.map(g =>
-    `- ${g.title} [${g.status}]: ${g.nextAction || 'No next action defined'}`
+    `- ${g.title} [${g.status}]: ${g.nextAction || 'No next action'}`
   ).join('\n')
 }

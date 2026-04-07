@@ -3,43 +3,39 @@
 // Copyright (c) 2026 Shiva Deore. All rights reserved.
 // ============================================================
 
-// core/hooks.ts — Lightweight hook system for extensibility.
-// Allows pre/post processing of messages and tool calls without
-// modifying agentLoop internals directly.
+// core/hooks.ts — Lifecycle hook registry.
+// Provides register/fire primitives for system lifecycle events.
+
+// ── Types ──────────────────────────────────────────────────────
 
 export type HookEvent =
-  | 'message_received'
-  | 'before_tool_call'
-  | 'after_tool_call'
-  | 'session_start'
-  | 'session_end'
+  | 'pre_compact'    // Fired when conversation history approaches context limit
+  | 'session_stop'   // Fired when a session ends (process exit or explicit stop)
+  | 'after_tool_call' // Fired after every tool execution (toolName, input, success)
 
-export type HookHandler = (data: any) => Promise<any>
+export type HookHandler = (payload?: Record<string, any>) => Promise<void> | void
 
-const hooks: Map<HookEvent, HookHandler[]> = new Map()
+// ── Registry ───────────────────────────────────────────────────
+
+const registry = new Map<HookEvent, HookHandler[]>()
 
 export function registerHook(event: HookEvent, handler: HookHandler): void {
-  if (!hooks.has(event)) hooks.set(event, [])
-  hooks.get(event)!.push(handler)
+  const handlers = registry.get(event) ?? []
+  handlers.push(handler)
+  registry.set(event, handlers)
 }
 
-export async function fireHook(event: HookEvent, data: any): Promise<any> {
-  const handlers = hooks.get(event) || []
-  let result = data
+export async function fireHook(event: HookEvent, payload?: Record<string, any>): Promise<void> {
+  const handlers = registry.get(event)
+  if (!handlers || handlers.length === 0) return
+
+  console.log(`[Hooks] Firing "${event}" (${handlers.length} handler(s))`)
+
   for (const handler of handlers) {
-    result = (await handler(result)) || result
+    try {
+      await handler(payload)
+    } catch (e: any) {
+      console.error(`[Hooks] Handler error for "${event}": ${e.message}`)
+    }
   }
-  return result
-}
-
-export function clearHooks(event?: HookEvent): void {
-  if (event) hooks.delete(event)
-  else hooks.clear()
-}
-
-export function hookCount(event?: HookEvent): number {
-  if (event) return hooks.get(event)?.length ?? 0
-  let total = 0
-  hooks.forEach(h => { total += h.length })
-  return total
 }

@@ -8,7 +8,7 @@
 //   STEP 2: EXECUTE — Code runs each tool, gets real results
 //   STEP 3: RESPOND — LLM sees real results, streams natural language
 
-import { executeTool, TOOLS } from './toolRegistry'
+import { executeTool, TOOLS, getToolTier } from './toolRegistry'
 import { livePulse }          from '../coordination/livePulse'
 import { planTool }                        from './planTool'
 import type { Phase }                      from './planTool'
@@ -17,7 +17,7 @@ import { taskStateManager, TaskState }     from './taskState'
 import { skillLoader }                     from './skillLoader'
 import { learningMemory }                  from './learningMemory'
 import { conversationMemory }             from './conversationMemory'
-import { getNextAvailableAPI, markRateLimited, incrementUsage, getModelForTask } from '../providers/router'
+import { getNextAvailableAPI, markRateLimited, incrementUsage, getModelForTask, getOllamaModelForTask } from '../providers/router'
 import { ollamaProvider } from '../providers/ollama'
 import { loadConfig }     from '../providers/index'
 import { knowledgeBase } from './knowledgeBase'
@@ -29,58 +29,68 @@ import { mcpClient }             from './mcpClient'
 import { unifiedMemoryRecall, buildMemoryInjection } from './memoryRecall'
 import { costTracker } from './costTracker'
 import { getOllamaTimeout } from './modelDiscovery'
+import { semanticMemory }          from './semanticMemory'
+import { getActiveGoalsSummary }  from './goalTracker'
+import { fireHook }               from './hooks'
+import { instinctSystem }         from './instinctSystem'
+import { startWorkflow, addNode, updateNode, completeWorkflow } from './workflowTracker'
 import * as nodeFs             from 'fs'
 import * as nodePath           from 'path'
 import * as nodeOs             from 'os'
-import { fireHook }            from './hooks'
-import { getActiveGoalsSummary } from './goalTracker'
 
-// ── Standing Orders loader ─────────────────────────────────────
-// Loads workspace/STANDING_ORDERS.md once and injects it into
-// every system prompt so standing instructions always apply.
+// ── Pre-compact threshold ──────────────────────────────────────
+// Fire pre_compact hook when history has this many messages
+const COMPACT_THRESHOLD = 40
 
-function loadStandingOrders(): string {
+// ── Proactive memory surfacing ─────────────────────────────────
+
+const SKIP_MEMORY_PATTERNS = [
+  /^(hi|hello|hey|thanks|ok|yes|no|sure|bye)\b/i,
+  /^.{1,15}$/,
+]
+
+export async function surfaceRelevantMemories(userMessage: string): Promise<string> {
+  if (SKIP_MEMORY_PATTERNS.some(p => p.test(userMessage.trim()))) return ''
+
+  const memories: string[] = []
+
+  // 1. Semantic memory search
   try {
-    const ordersPath = nodePath.join(process.cwd(), 'workspace', 'STANDING_ORDERS.md')
-    if (nodeFs.existsSync(ordersPath)) {
-      return nodeFs.readFileSync(ordersPath, 'utf-8').trim()
+    const results = semanticMemory.search(userMessage, 5)
+    for (const r of results) {
+      memories.push(`[Memory] ${r.text}`)
     }
   } catch {}
-  return ''
-}
 
-const STANDING_ORDERS = loadStandingOrders()
+  // 2. Memory directory files — keyword match
+  try {
+    const memDir = nodePath.join(process.cwd(), 'workspace', 'memory')
+    if (nodeFs.existsSync(memDir)) {
+      const files    = nodeFs.readdirSync(memDir).filter((f: string) => f.endsWith('.md'))
+      const keywords = userMessage.toLowerCase().split(/\s+/).filter((k: string) => k.length > 3)
 
-// ── Feature 7: Tool loop detection ────────────────────────────
-// Prevents the agent from calling the same tool with the same
-// params more than 3 times in a 5-minute window.
+      for (const file of files) {
+        try {
+          const content      = nodeFs.readFileSync(nodePath.join(memDir, file), 'utf8')
+          const contentLower = content.toLowerCase()
+          const matches      = keywords.filter((k: string) => contentLower.includes(k))
+          if (matches.length >= 2) {
+            const body = content.split('---').slice(2).join('---').trim()
+            if (body.length > 0 && body.length < 500) {
+              memories.push(`[Memory] ${body}`)
+            }
+          }
+        } catch {}
+      }
+    }
+  } catch {}
 
-const toolCallHistory: Array<{
-  tool:      string
-  params:    string
-  timestamp: number
-}> = []
+  if (memories.length === 0) return ''
 
-function detectLoop(toolName: string, params: any): boolean {
-  const paramsKey = JSON.stringify(params).slice(0, 200)
-  const now       = Date.now()
+  const unique = [...new Set(memories)].slice(0, 8)
+  console.log(`[Memory] Surfaced ${unique.length} memories for: "${userMessage.substring(0, 40)}"`)
 
-  // Evict entries older than 5 minutes
-  while (toolCallHistory.length > 0 && now - toolCallHistory[0].timestamp > 300000) {
-    toolCallHistory.shift()
-  }
-
-  const similarCalls = toolCallHistory.filter(
-    h => h.tool === toolName && h.params === paramsKey
-  ).length
-
-  toolCallHistory.push({ tool: toolName, params: paramsKey, timestamp: now })
-
-  if (similarCalls >= 3) {
-    console.log(`[LoopDetect] ${toolName} called ${similarCalls + 1} times — breaking loop`)
-    return true
-  }
-  return false
+  return '\n## Relevant Context from Memory\n' + unique.join('\n') + '\n'
 }
 
 // ── Types ─────────────────────────────────────────────────────
@@ -470,17 +480,10 @@ export async function planWithLLM(
   memoryContext?: string,
 ): Promise<AgentPlan> {
 
-  // ── message_received hook — allows intercept before planning ─
-  const hookResult = await fireHook('message_received', { message })
-  if (hookResult?.intercepted) {
-    return {
-      goal:               message,
-      requires_execution: false,
-      plan:               [],
-      phases:             [],
-      direct_response:    hookResult.response || 'Request intercepted.',
-      reason:             'hook_intercepted',
-    }
+  // ── Pre-compact hook — fire at multiples of COMPACT_THRESHOLD ─
+  // Fires at 40, 80, 120 … to avoid triggering on every message after crossing 40.
+  if (history.length >= COMPACT_THRESHOLD && history.length % COMPACT_THRESHOLD === 0) {
+    fireHook('pre_compact', { historyLength: history.length, message }).catch(() => {})
   }
 
   // ── Vague goal detection — ask for clarification before planning ──
@@ -509,6 +512,7 @@ export async function planWithLLM(
     'app_launch', 'app_close',
     'watch_folder', 'watch_folder_list',
     'get_briefing',
+    'respond',
   ]
 
   // Sprint 13: append discovered MCP tools
@@ -521,9 +525,13 @@ export async function planWithLLM(
   const relevantSkills = skillLoader.findRelevant(message)
   const skillContext   = skillLoader.formatForPrompt(relevantSkills)
 
+  // Append instinct context to memory (micro-patterns learned from past tool calls)
+  const instinctCtx  = instinctSystem?.getRelevantInstincts(message) || ''
+  const fullMemCtx   = (memoryContext || '') + (instinctCtx ? '\n\n' + instinctCtx : '')
+
   // Build memory section — inject when available
-  const memorySection = memoryContext && memoryContext.trim()
-    ? `\n\nCONVERSATION MEMORY (use to resolve references like "that file", "the report", "it"):\n${memoryContext}\n\nWhen the user says "that file", "the report", "the script" etc., use the paths/queries above to resolve them into concrete values in your plan inputs.\n`
+  const memorySection = fullMemCtx.trim()
+    ? `\n\nCONVERSATION MEMORY (use to resolve references like "that file", "the report", "it"):\n${fullMemCtx}\n\nWhen the user says "that file", "the report", "the script" etc., use the paths/queries above to resolve them into concrete values in your plan inputs.\n`
     : ''
 
   // Build learning context — past experiences with similar tasks
@@ -615,28 +623,89 @@ OUTPUT FORMAT (strict JSON only):
 If requires_execution is false:
 { "goal": "...", "requires_execution": false, "reasoning": "...", "plan": [], "direct_response": "your answer here" }
 
+THE 'respond' TOOL — use this for ALL conversational messages:
+- 'respond' is ALWAYS a valid plan. When no external tool is needed, plan a single respond step.
+- respond: { "message": "your answer text here" }
+- Use respond for: greetings, capability questions, simple facts from training data, clarifying questions, short answers.
+- Example: user says "hi" → { "goal": "hi", "requires_execution": true, "plan": [{ "step": 1, "tool": "respond", "input": { "message": "Hi! What can I help you with today?" } }] }
+
 ACTION GATE RULES — apply BEFORE creating any plan:
-1. CAPABILITY GATE: If message is "Can you do X?" / "Can you X?" / "Are you able to X?" → requires_execution: false, direct_response: "Yes/No — [brief explanation]"
+1. CAPABILITY GATE: If message is "Can you do X?" / "Can you X?" / "Are you able to X?" → plan respond with answer
 2. EXPLICIT-ASK GATE: ONLY use file_write if user said "write", "save", "create file". ONLY use deep_research if user said "research", "find out", "look up"
-3. VAGUENESS GATE: If request is unclear → requires_execution: false, direct_response: one clarifying question
+3. VAGUENESS GATE: If request is AMBIGUOUS, plan a respond step that asks ONE clarifying question:
+   - "do marketing" → respond: "What specifically? Copywriting, competitor research, Product Hunt listing, or content calendar?"
+   - "check my system" → respond: "What aspect? Hardware specs, running processes, disk space, or network?"
+   - "build something" → respond: "What would you like me to build?"
+   - Clear requests execute directly: "check NIFTY price" → get_market_data, "write a Python script to X" → run_python
 4. NEVER create comparison tables, reports, or verdicts unless user explicitly asked for them
 5. NEVER mention Pega, BlueWinston, Gaude Digital, or any third-party product by name
+
+## Tool Priority Rules (STRICT)
+
+TIER 1 (USE FIRST): respond, web_search, fetch_page, fetch_url, deep_research, get_market_data, get_stocks, get_company_info, social_research, system_info, notify, get_briefing, run_agent
+  → ALWAYS try these before anything else
+  → If a task CAN be done via API/data tool, use that
+
+TIER 2 (USE SECOND): file_write, file_read, file_list, shell_exec, run_powershell, run_python, run_node, code_interpreter_python, code_interpreter_node, git_commit, git_push, clipboard_read, clipboard_write
+  → Use when you need to read/write files or run scripts
+
+TIER 3 (USE THIRD): open_browser, browser_click, browser_type, browser_extract, browser_screenshot, window_list, window_focus, app_launch, app_close
+  → ONLY when task requires interacting with a website UI
+  → NEVER use browser when an API tool can do the same job
+
+TIER 4 (LAST RESORT): mouse_move, mouse_click, keyboard_type, keyboard_press, screenshot, screen_read, vision_loop
+  → ONLY when browser fails or for desktop apps with no API
+  → ALWAYS explain WHY lower tiers won't work
+
+VIOLATIONS (these are WRONG — do not do these):
+- Using open_browser to check stock price when get_market_data exists
+- Using screenshot to search when web_search exists
+- Using browser to get weather when web_search exists
+- Using vision_loop for any task where a simpler tool works
 
 FAILURE REPLANNING RULES (when message contains "previous approach failed at"):
 - Keep new plan to max 2 steps
 - Use ONLY the specific alternative approach mentioned in the message
 - DO NOT add web_search, deep_research, file_write, or notify unless directly needed
 - DO NOT add unrelated analysis or comparison steps
-${skillContext}${memorySection}${learningSection}${knowledgeSection}${memoryRecallSection}
+${skillContext}${memorySection}${learningSection}${knowledgeSection}${memoryRecallSection}${(() => { const s = getActiveGoalsSummary(); return s ? `\n\n## Your Active Goals\n${s}` : '' })()}
 Output ONLY valid JSON, nothing else:`
 
   const cleanHistory = history
     .filter((h: any) => h.content && String(h.content).trim().length > 0)
   console.log(`[Planner] History: ${cleanHistory.length} messages (${history.length} raw)`)
 
+  // ── Sliding context window — keep last 10, summarize older messages ──
+  const RECENT_WINDOW = 10
+  let contextHistory = cleanHistory
+  if (cleanHistory.length > RECENT_WINDOW) {
+    const recent = cleanHistory.slice(-RECENT_WINDOW)
+    const older  = cleanHistory.slice(
+      Math.max(0, cleanHistory.length - RECENT_WINDOW * 2),
+      cleanHistory.length - RECENT_WINDOW,
+    )
+    if (older.length > 0) {
+      try {
+        const summaryInput = older.map((m: any) => `${m.role}: ${String(m.content).slice(0, 200)}`).join('\n')
+        const summary = await callLLM(
+          `Summarize these messages in 2-3 sentences, keeping key facts and decisions:\n\n${summaryInput}`,
+          '', getOllamaModelForTask('executor'), 'ollama',
+        ).catch(() => null)
+        if (summary) {
+          contextHistory = [{ role: 'system', content: `Earlier conversation summary: ${summary}` }, ...recent]
+          console.log(`[Planner] Context window: summarized ${older.length} older messages`)
+        } else {
+          contextHistory = recent
+        }
+      } catch {
+        contextHistory = recent
+      }
+    }
+  }
+
   const messages = [
     { role: 'system', content: plannerPrompt },
-    ...cleanHistory.slice(-3).map((h: any) => ({
+    ...contextHistory.slice(-3).map((h: any) => ({
       role:    h.role === 'assistant' ? 'assistant' : 'user',
       content: String(h.content).slice(0, 300),
     })),
@@ -782,13 +851,12 @@ Output ONLY valid JSON, nothing else:`
   }
 
   if (!parsed) {
-    console.warn('[Planner] All attempts including Ollama failed — direct answer fallback')
+    console.warn('[Planner] All LLM attempts failed — respond fallback')
     return {
       goal:               message,
-      requires_execution: false,
-      plan:               [],
+      requires_execution: true,
+      plan:               [{ step: 1, tool: 'respond', input: { message: "I'm not sure how to help with that right now. Could you rephrase your request?" }, description: 'Fallback response' }],
       phases:             [],
-      direct_response:    "I couldn't create a plan for that. Could you rephrase your request?",
     }
   }
 
@@ -1009,6 +1077,65 @@ export function validatePlan(plan: AgentPlan): ValidationResult {
   }
 }
 
+// ── Smart replan on failure ────────────────────────────────────
+
+const MAX_REPLANS = 2
+
+interface ReplanState {
+  failedSteps: Map<string, { error: string; attempts: number }>
+  replanCount: number
+}
+
+async function handleToolFailure(
+  replanState:  ReplanState,
+  failedTool:   string,
+  error:        string,
+  userMessage:  string,
+  completedResults: StepResult[],
+  apiKey:       string,
+  model:        string,
+  provider:     string,
+): Promise<ToolStep[] | null> {
+  const existing = replanState.failedSteps.get(failedTool)
+  if (existing) { existing.attempts++; existing.error = error }
+  else          { replanState.failedSteps.set(failedTool, { error, attempts: 1 }) }
+
+  if (replanState.replanCount >= MAX_REPLANS) {
+    console.log('[Replan] Max replans reached — reporting failure')
+    return null
+  }
+
+  replanState.replanCount++
+  const succeeded = completedResults.filter(r => r.success)
+  const failed    = Array.from(replanState.failedSteps.entries())
+  console.log(`[Replan] Replanning (${replanState.replanCount}/${MAX_REPLANS}) after ${failedTool} failed: ${error.slice(0, 80)}`)
+
+  const replanContext =
+    `Previous approach failed. Use a DIFFERENT strategy.\n\n` +
+    `Original request: ${userMessage}\n\n` +
+    `Already completed:\n` +
+    (succeeded.map(s => `✅ ${s.tool}: ${s.output.substring(0, 100)}`).join('\n') || 'Nothing yet') +
+    `\n\nWhat failed:\n` +
+    failed.map(([tool, f]) => `❌ ${tool}: ${f.error} (tried ${f.attempts}x)`).join('\n') +
+    `\n\nRULES:\n` +
+    `- Do NOT retry ${failedTool} with same approach\n` +
+    `- Use a completely different tool or strategy\n` +
+    `- Build on completed steps — don't redo them\n` +
+    `- If API failed, try different data source\n` +
+    `- If browser failed on a site, try fetch_url instead`
+
+  try {
+    const newPlan = await planWithLLM(replanContext, [], apiKey, model, provider)
+    if (newPlan?.plan?.length > 0) {
+      console.log(`[Replan] New plan: ${newPlan.plan.map(s => s.tool).join(' → ')}`)
+      return newPlan.plan
+    }
+  } catch (e: any) {
+    console.warn(`[Replan] planWithLLM failed: ${e.message}`)
+  }
+  return null
+}
+
 // ── Sprint 28: shouldReplan ────────────────────────────────────
 // After each failed step, ask the LLM: should we replan?
 
@@ -1105,11 +1232,16 @@ export async function executePlan(
   replanProvider?: string,
 ): Promise<StepResult[]> {
 
-  const results:     StepResult[]           = []
-  const stepOutputs: Record<number, string> = {}
-  const planStart    = Date.now()
+  const results:      StepResult[]           = []
+  const stepOutputs:  Record<number, string> = {}
+  const planStart     = Date.now()
+  const replanState:  ReplanState            = { failedSteps: new Map(), replanCount: 0 }
 
   console.log(`[ExecutePlan] Starting: ${plan.plan.length} steps, goal: "${plan.goal.slice(0, 60)}"`)
+
+  // Workflow tracking — feed the Watch Mode node graph
+  startWorkflow(plan.goal)
+  addNode({ id: 'main', agent: 'aiden', label: plan.goal.slice(0, 50), status: 'active', toolCalls: 0, startedAt: Date.now() })
 
   // Workspace memory for persisting intermediate artifacts
   const workspace = plan.planId ? new WorkspaceMemory(plan.planId) : null
@@ -1187,7 +1319,7 @@ async function executeSingleStep(
   }
 
   // Tools that legitimately take zero input
-  const NO_INPUT_TOOLS = ['system_info', 'screenshot', 'get_hardware', 'screen_read', 'vision_loop', 'health_check']
+  const NO_INPUT_TOOLS = ['system_info', 'screenshot', 'get_hardware', 'screen_read', 'vision_loop', 'health_check', 'respond']
   if (!NO_INPUT_TOOLS.includes(step.tool)) {
     if (!step.input || Object.keys(step.input).length === 0) {
       console.log(`[ExecutePlan] Skipping step ${step.step} (${step.tool}) — empty input`)
@@ -1201,38 +1333,6 @@ async function executeSingleStep(
   // Mark step started in persistent state
   taskStateManager.startStep(state, step.step, step.tool, resolvedInput)
 
-  // Loop detection — break if same tool+params called 3+ times
-  if (detectLoop(step.tool, resolvedInput)) {
-    const loopResult: StepResult = {
-      step:     step.step,
-      tool:     step.tool,
-      input:    resolvedInput,
-      success:  false,
-      output:   '',
-      error:    `Loop detected: ${step.tool} called too many times with the same parameters. Try a different approach.`,
-      duration: 0,
-    }
-    onStep(step, loopResult)
-    return loopResult
-  }
-
-  // before_tool_call hook — allows blocking a tool execution
-  const preHook = await fireHook('before_tool_call', { toolName: step.tool, input: resolvedInput })
-  if (preHook?.blocked) {
-    const blocked: StepResult = {
-      step:     step.step,
-      tool:     step.tool,
-      input:    resolvedInput,
-      success:  false,
-      output:   '',
-      error:    preHook.reason || 'blocked by hook',
-      duration: 0,
-    }
-    onStep(step, blocked)
-    return blocked
-  }
-
-  const toolStartTime = Date.now()
   // Execute the tool (retries + per-tool timeout handled internally)
   let toolResult = await executeTool(step.tool, resolvedInput)
 
@@ -1248,15 +1348,6 @@ async function executeSingleStep(
       }
     }
   }
-
-  // after_tool_call hook — notify observers with result data
-  await fireHook('after_tool_call', {
-    toolName: step.tool,
-    input:    resolvedInput,
-    output:   toolResult.output,
-    success:  toolResult.success,
-    duration: Date.now() - toolStartTime,
-  })
 
   if (toolResult.retries > 0) {
     livePulse.act('Aiden', `${step.tool} succeeded after ${toolResult.retries} retry(s)`)
@@ -1285,7 +1376,9 @@ async function executeSingleStep(
   }
 
   console.log(`[ExecutePlan] Step ${step.step} result: ${stepResult.success ? '✓' : '✗'} ${stepResult.error || stepResult.output?.slice(0, 80) || ''}`)
+  console.log(`[Tool] ${step.tool} (Tier ${getToolTier(step.tool)}) — ${stepResult.duration}ms`)
   stepOutputs[step.step] = stepResult.output
+  updateNode('main', { currentTool: step.tool, toolCalls: Object.keys(stepOutputs).length, tier: getToolTier(step.tool), status: 'active' })
   onStep(step, stepResult)
 
   // Audit trail
@@ -1300,6 +1393,13 @@ async function executeSingleStep(
     goal:       plan.goal,
     traceId:    plan.planId,
   })
+
+  // Fire after_tool_call hook (non-blocking) — feeds instinct system
+  fireHook('after_tool_call', {
+    toolName: step.tool,
+    input:    resolvedInput,
+    success:  stepResult.success,
+  }).catch(() => {})
 
   // Persist step result to task state
   if (stepResult.success) {
@@ -1353,7 +1453,7 @@ async function executeSingleStep(
       stepOutputs[step.step] = stepResult.output
       results.push(stepResult)
 
-      // ── Sprint 28: mid-execution replan on failure ─────────────────
+      // ── Smart replan on failure ────────────────────────────────────
       if (!stepResult.success) {
         // Resolve credentials: prefer explicit params, then route through getNextAvailableAPI
         let _rpKey      = replanApiKey   || ''
@@ -1372,40 +1472,40 @@ async function executeSingleStep(
           } catch {}
         }
         if (_rpKey || _rpProvider === 'ollama') {
-          const replanDecision = await shouldReplan(
+          const newSteps = await handleToolFailure(
+            replanState,
+            step.tool,
+            stepResult.error || 'unknown error',
             plan.goal,
             results,
-            step,
-            stepResult.error || 'unknown error',
             _rpKey, _rpModel, _rpProvider,
           )
-          if (replanDecision.replan && replanDecision.newApproach) {
-            livePulse.act('Aiden', `Replanning: ${replanDecision.newApproach}`)
+          if (newSteps && newSteps.length > 0) {
+            livePulse.act('Aiden', `Replanning with different strategy (${replanState.replanCount}/${MAX_REPLANS})`)
             auditTrail.record({
               action:     'system',
               tool:       'replan',
               input:      `Failed: ${step.tool}`,
-              output:     replanDecision.newApproach,
+              output:     `New plan: ${newSteps.map(s => s.tool).join(' → ')}`,
               durationMs: 0,
               success:    true,
               goal:       plan.goal,
               traceId:    plan.planId,
             })
-            try {
-              const newPlan = await planWithLLM(
-                `${plan.goal} — previous approach failed at ${step.tool}: ${replanDecision.newApproach}`,
-                [],
-                _rpKey, _rpModel, _rpProvider,
-              )
-              if (newPlan && newPlan.plan && newPlan.plan.length > 0) {
-                const newGroups = buildDependencyGroups(newPlan.plan)
-                // Replace remaining groups with the new plan's groups
-                groups.splice(_gi, groups.length - _gi, ...newGroups)
-                console.log(`[ExecutePlan] Replan spliced ${newGroups.length} new group(s) from step ${_gi}`)
-              }
-            } catch (e: any) {
-              console.warn(`[ExecutePlan] Replan planWithLLM failed: ${e.message}`)
-            }
+            const newGroups = buildDependencyGroups(newSteps)
+            groups.splice(_gi, groups.length - _gi, ...newGroups)
+            console.log(`[Replan] Spliced ${newGroups.length} new group(s) into execution from position ${_gi}`)
+          } else if (replanState.replanCount >= MAX_REPLANS) {
+            const failedList = Array.from(replanState.failedSteps.entries())
+              .map(([tool, f]) => `- ${tool}: ${f.error}`)
+              .join('\n')
+            console.log(`[Replan] All ${MAX_REPLANS} replans exhausted for goal: "${plan.goal.slice(0, 60)}"`)
+            results.push({
+              step: step.step + 1, tool: 'replan_exhausted', input: {},
+              success: false, output: '',
+              error: `Tried ${MAX_REPLANS + 1} different approaches:\n${failedList}\n\nWould you like me to try a different approach?`,
+              duration: 0,
+            })
           }
         }
       }
@@ -1448,6 +1548,10 @@ async function executeSingleStep(
     const failed = results.filter(r => !r.success).map(r => r.tool).join(', ')
     taskStateManager.fail(state, failed ? `Steps failed: ${failed}` : 'Incomplete execution')
   }
+
+  // Workflow tracking — close the node graph
+  updateNode('main', { status: allSucceeded ? 'completed' : 'failed', completedAt: Date.now() })
+  completeWorkflow(allSucceeded ? 'completed' : 'failed')
 
   // Record experience for self-learning
   const filesCreatedInPlan = results
@@ -1612,17 +1716,8 @@ export async function respondWithResults(
     ? results.map(r => `[${r.tool} result]: ${r.success ? r.output.slice(0, 1000) : 'FAILED: ' + r.error}`).join('\n')
     : ''
 
-  const standingOrdersSection = STANDING_ORDERS
-    ? `\n\n## Standing Orders\n${STANDING_ORDERS}`
-    : ''
-
-  const _goalsSummary  = getActiveGoalsSummary()
-  const goalsSection   = _goalsSummary
-    ? `\n\n## Your Active Goals\n${_goalsSummary}`
-    : ''
-
   const systemWithResults = toolResultsContext
-    ? `${capabilitiesSection}${responderSystem(userName, date)}${responseSkillContext}${knowledgeResponderSection}${standingOrdersSection}${goalsSection}
+    ? `${capabilitiesSection}${responderSystem(userName, date)}${responseSkillContext}${knowledgeResponderSection}
 
 YOU JUST RAN THESE TOOLS AND GOT THESE RESULTS:
 ${toolResultsContext}
@@ -1635,7 +1730,7 @@ CRITICAL RULES FOR YOUR RESPONSE:
 - If system_info returned hardware data, show the data
 - Be direct: show the actual output, then provide context if needed
 - If a tool failed, say it failed and why`
-    : `${capabilitiesSection}${responderSystem(userName, date)}${responseSkillContext}${knowledgeResponderSection}${standingOrdersSection}${goalsSection}`
+    : `${capabilitiesSection}${responderSystem(userName, date)}${responseSkillContext}${knowledgeResponderSection}`
 
   const userContent = executionSummary
     ? `User asked: "${originalMessage}"\n\nReal execution results:\n${executionSummary}\n\nRespond naturally based on these real results only. Show the actual output, not a description of it.${depthInstruction}${memSection}`

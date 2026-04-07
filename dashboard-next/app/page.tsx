@@ -8,6 +8,7 @@ import { OnboardingModal } from '../components/OnboardingModal'
 import PricingModal from '../components/PricingModal'
 import ChatHeader from '../components/ChatHeader'
 import Sidebar from '../components/Sidebar'
+import WorkflowView from '../components/WorkflowView'
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -1469,6 +1470,7 @@ function ChatPanel() {
     inputRef, kbInputRef, messagesEndRef,
     plusMenuOpen, setPlusMenuOpen,
     voiceStatus, isRecording, ttsEnabled, setTtsEnabled, recordingTimer, startRecording,
+    uiMode,
   } = useDevOS()
 
   useEffect(() => {
@@ -1489,7 +1491,9 @@ function ChatPanel() {
     <section style={{
       display: 'flex', flexDirection: 'column',
       overflow: 'hidden', background: 'var(--bg)', minWidth: 0,
+      position: 'relative',
     }}>
+      {uiMode === 'watch' && <WorkflowView />}
       {/* Messages */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '24px 0', display: 'flex', flexDirection: 'column' }}>
         {messages.length === 0 ? (

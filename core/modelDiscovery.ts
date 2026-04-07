@@ -51,14 +51,39 @@ export interface DiscoveredModels {
 
 // ── Main discovery function ─────────────────────────────────────
 
-export async function discoverLocalModels(): Promise<DiscoveredModels> {
-  try {
-    const r = await fetch('http://localhost:11434/api/tags', {
-      signal: AbortSignal.timeout(3000),
-    })
-    if (!r.ok) return emptyDiscovery()
+export async function discoverLocalModels(
+  retries = 3,
+  delayMs = 2000,
+): Promise<DiscoveredModels> {
+  let rawModels: { name: string; size: number }[] = []
 
-    const { models } = await r.json() as { models: { name: string; size: number }[] }
+  for (let i = 0; i < retries; i++) {
+    try {
+      const r = await fetch('http://localhost:11434/api/tags', {
+        signal: AbortSignal.timeout(3000),
+      })
+      if (r.ok) {
+        const data = await r.json() as { models: { name: string; size: number }[] }
+        const chat = (data.models || []).filter(m =>
+          !['embed', 'nomic', 'mxbai', 'clip'].some(skip => m.name.includes(skip))
+        )
+        if (chat.length > 0) {
+          rawModels = data.models
+          break
+        }
+      }
+    } catch {}
+
+    if (i < retries - 1) {
+      console.log(`[ModelDiscovery] Ollama not ready, retrying in ${delayMs}ms... (${i + 1}/${retries})`)
+      await new Promise(r => setTimeout(r, delayMs))
+    }
+  }
+
+  try {
+    if (rawModels.length === 0) return emptyDiscovery()
+
+    const { models } = { models: rawModels } as { models: { name: string; size: number }[] }
 
     const chatModels = models.filter(m =>
       !SKIP_PATTERNS.some(skip => m.name.toLowerCase().includes(skip))
@@ -101,7 +126,7 @@ export async function discoverLocalModels(): Promise<DiscoveredModels> {
   } catch {
     return emptyDiscovery()
   }
-}
+}  // end discoverLocalModels
 
 // ── Helpers ─────────────────────────────────────────────────────
 

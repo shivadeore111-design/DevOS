@@ -1,32 +1,22 @@
 [
   {
-    "timestamp": "2026-04-06T09:38:51.682Z",
-    "overallScore": 67.4,
-    "part1Score": 64.9,
-    "part2Score": 69.4,
-    "passed": 58,
-    "total": 86,
-    "verdict": "NOT_READY",
-    "runFile": "C:\\Users\\shiva\\DevOS\\tests\\e2e\\results\\run-2026-04-06-09-38-51.json"
+    "date": "2026-04-07",
+    "time": "14:02:01",
+    "score": "35/40",
+    "percent": 88,
+    "part1": "35/40",
+    "part2": "0/0",
+    "part3": "0/0",
+    "version": "v2.0"
   },
   {
-    "timestamp": "2026-04-06T11:50:09.527Z",
-    "overallScore": 62.8,
-    "part1Score": 67.6,
-    "part2Score": 59.2,
-    "passed": 54,
-    "total": 86,
-    "verdict": "NOT_READY",
-    "runFile": "C:\\Users\\shiva\\DevOS\\tests\\e2e\\results\\run-2026-04-06-11-50-09.json"
-  },
-  {
-    "timestamp": "2026-04-06T17:39:50.721Z",
-    "overallScore": 58.1,
-    "part1Score": 64.9,
-    "part2Score": 53.1,
-    "passed": 50,
-    "total": 86,
-    "verdict": "NOT_READY",
-    "runFile": "C:\\Users\\shiva\\DevOS\\tests\\e2e\\results\\run-2026-04-06-17-39-50.json"
+    "date": "2026-04-07",
+    "time": "14:12:54",
+    "score": "63/80",
+    "percent": 79,
+    "part1": "37/40",
+    "part2": "26/40",
+    "part3": "0/0",
+    "version": "v2.0"
   }
 ]

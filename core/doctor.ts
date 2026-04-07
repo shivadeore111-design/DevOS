@@ -7,15 +7,18 @@
 //
 // Sprint 23: ComputerUse Memory check via MemoryStrategy.
 // Sprint 24: Hardware Detection + First-boot Setup checks.
-// Sprint 31: Ollama, API keys, ports, skills, dashboard, scheduler checks.
+//
+// NOTE: This is the sandbox stub. The full implementation (with LLM provider,
+// Docker, database, and tool-registry checks) lives at C:\Users\shiva\DevOS\core\doctor.ts
+// and will be merged on the host machine.
 
 import fs   from 'fs'
 import path from 'path'
-import { memoryStrategy }   from './memoryStrategy'
-import { detectHardware }   from './hardwareDetector'
-import { isSetupComplete }  from './setupWizard'
-import { evolutionAnalyzer } from './evolutionAnalyzer'
-import { loadConfig }       from '../providers/index'
+import { memoryStrategy }              from './memoryStrategy'
+import { detectHardware }              from './hardwareDetector'
+import { isSetupComplete }             from './setupWizard'
+import { evolutionAnalyzer }           from './evolutionAnalyzer'
+import { loadConfig }                  from '../providers/index'
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -46,6 +49,9 @@ const CORRUPTED_SKILL_NAMES = [
 
 // ── Individual checks ─────────────────────────────────────────
 
+/**
+ * Sprint 23 — ComputerUse Memory check.
+ */
 async function checkComputerUseMemory(): Promise<DoctorCheckResult> {
   try {
     const stats  = memoryStrategy.stats()
@@ -75,14 +81,9 @@ async function checkComputerUseMemory(): Promise<DoctorCheckResult> {
 
 async function checkOllama(): Promise<DoctorCheckResult> {
   try {
-    const ctrl = new AbortController()
-    const timer = setTimeout(() => ctrl.abort(), 3000)
-    let r: Response
-    try {
-      r = await fetch('http://localhost:11434/api/tags', { signal: ctrl.signal })
-    } finally {
-      clearTimeout(timer)
-    }
+    const r = await fetch('http://localhost:11434/api/tags', {
+      signal: (AbortSignal as any).timeout ? (AbortSignal as any).timeout(3000) : undefined,
+    })
     if (!r.ok) return { name: 'Ollama', status: 'warn', message: `Ollama HTTP ${r.status}` }
     const data = await r.json() as any
     const all     = data.models || []
@@ -93,12 +94,10 @@ async function checkOllama(): Promise<DoctorCheckResult> {
       return { name: 'Ollama', status: 'warn', message: 'Running but no chat models installed', detail: 'Run: ollama pull gemma2:2b' }
     }
     return {
-      name:    'Ollama',
-      status:  'ok',
+      name: 'Ollama', status: 'ok',
       message: `Running — ${chatMod.length} chat model(s): ${chatMod.map((m: any) => m.name).join(', ')}`,
     }
-  } catch (err: any) {
-    console.log(`[doctor] Ollama check: ${err?.message ?? err}`)
+  } catch {
     return { name: 'Ollama', status: 'warn', message: 'NOT RUNNING — cloud APIs will be used instead', detail: 'Start Ollama for local inference' }
   }
 }
@@ -109,14 +108,13 @@ function checkApiKeys(): DoctorCheckResult {
   try {
     const config = loadConfig()
     const apis   = config.providers?.apis || []
-    const active = apis.filter((a: any) => a.enabled && a.key && a.key.length > 10)
+    const active = apis.filter(a => a.enabled && a.key && a.key.length > 10)
     if (active.length === 0) {
       return { name: 'API Keys', status: 'warn', message: 'NONE configured — add keys in dashboard Settings', detail: 'Go to http://localhost:3000 > Settings > API Keys' }
     }
-    const summary = active.map((a: any) => `${a.name}(${a.provider})`).join(', ')
+    const summary = active.map(a => `${a.name}(${a.provider})`).join(', ')
     return { name: 'API Keys', status: 'ok', message: `${active.length} active: ${summary}` }
   } catch (e: any) {
-    console.log(`[doctor] API keys check: ${e.message}`)
     return { name: 'API Keys', status: 'error', message: `Config load failed: ${e.message}` }
   }
 }
@@ -124,35 +122,28 @@ function checkApiKeys(): DoctorCheckResult {
 // ── Port check ────────────────────────────────────────────────
 
 async function checkPorts(): Promise<DoctorCheckResult> {
-  const ports  = [4200, 3000, 3001, 11434]
+  const ports = [4200, 3000, 3001, 11434]
   const labels: Record<number, string> = { 4200: 'Aiden API', 3000: 'Dashboard', 3001: 'MCP', 11434: 'Ollama' }
   const results: string[] = []
   await Promise.all(ports.map(async port => {
     try {
-      const ctrl  = new AbortController()
+      const ctrl = new AbortController()
       const timer = setTimeout(() => ctrl.abort(), 1500)
-      try {
-        await fetch(`http://localhost:${port}`, { signal: ctrl.signal })
-        clearTimeout(timer)
-        results.push(`${labels[port]}:${port}(up)`)
-      } catch (e: any) {
-        clearTimeout(timer)
-        if (e.name === 'AbortError') {
-          results.push(`${labels[port]}:${port}(up)`)   // connected, just no HTTP response
-        } else {
-          results.push(`${labels[port]}:${port}(down)`)
-        }
+      await fetch(`http://localhost:${port}`, { signal: ctrl.signal })
+      clearTimeout(timer)
+      results.push(`${labels[port]}:${port}(up)`)
+    } catch (e: any) {
+      if (e.name === 'AbortError') {
+        results.push(`${labels[port]}:${port}(up)`) // connected, just no response
+      } else {
+        results.push(`${labels[port]}:${port}(down)`)
       }
-    } catch {
-      results.push(`${labels[port]}:${port}(down)`)
     }
   }))
-  // Sort to consistent order
-  results.sort()
   const down = results.filter(r => r.includes('(down)'))
   return {
-    name:    'Ports',
-    status:  down.length === 0 ? 'ok' : 'warn',
+    name: 'Ports',
+    status: down.length === 0 ? 'ok' : 'warn',
     message: results.join(' | '),
   }
 }
@@ -160,17 +151,17 @@ async function checkPorts(): Promise<DoctorCheckResult> {
 // ── Skills check ──────────────────────────────────────────────
 
 function checkSkills(): DoctorCheckResult {
-  try {
-    const skillDirs = [
-      path.join(process.cwd(), 'workspace', 'skills', 'learned'),
-      path.join(process.cwd(), 'workspace', 'skills', 'approved'),
-      path.join(process.cwd(), 'skills'),
-    ]
-    let total     = 0
-    let corrupted = 0
-    const corruptedNames: string[] = []
-    for (const dir of skillDirs) {
-      if (!fs.existsSync(dir)) continue
+  const skillDirs = [
+    path.join(process.cwd(), 'workspace', 'skills', 'learned'),
+    path.join(process.cwd(), 'workspace', 'skills', 'approved'),
+    path.join(process.cwd(), 'skills'),
+  ]
+  let total     = 0
+  let corrupted = 0
+  const corruptedNames: string[] = []
+  for (const dir of skillDirs) {
+    if (!fs.existsSync(dir)) continue
+    try {
       const entries = fs.readdirSync(dir, { withFileTypes: true })
       for (const e of entries) {
         if (!e.isDirectory()) continue
@@ -180,39 +171,30 @@ function checkSkills(): DoctorCheckResult {
           corruptedNames.push(e.name)
         }
       }
-    }
-    if (corrupted > 0) {
-      return {
-        name:    'Skills',
-        status:  'warn',
-        message: `${total} skills, ${corrupted} corrupted — run: devos doctor --clean-skills`,
-        detail:  `Corrupted: ${corruptedNames.slice(0, 8).join(', ')}${corruptedNames.length > 8 ? '...' : ''}`,
-      }
-    }
-    return { name: 'Skills', status: 'ok', message: `${total} skills loaded, none corrupted` }
-  } catch (e: any) {
-    console.log(`[doctor] Skills check: ${e.message}`)
-    return { name: 'Skills', status: 'warn', message: `Could not scan skills: ${e.message}` }
+    } catch {}
   }
+  if (corrupted > 0) {
+    return {
+      name: 'Skills', status: 'warn',
+      message: `${total} skills, ${corrupted} corrupted — run: devos doctor --clean-skills`,
+      detail:  `Corrupted: ${corruptedNames.slice(0, 8).join(', ')}${corruptedNames.length > 8 ? '...' : ''}`,
+    }
+  }
+  return { name: 'Skills', status: 'ok', message: `${total} skills loaded, none corrupted` }
 }
 
 // ── Dashboard check ───────────────────────────────────────────
 
 function checkDashboard(): DoctorCheckResult {
-  try {
-    const pkgPath  = path.join(process.cwd(), 'dashboard-next', 'package.json')
-    const distPath = path.join(process.cwd(), 'dashboard-next', '.next')
-    if (!fs.existsSync(pkgPath)) {
-      return { name: 'Dashboard', status: 'error', message: 'MISSING — dashboard-next/ not found' }
-    }
-    if (!fs.existsSync(distPath)) {
-      return { name: 'Dashboard', status: 'warn', message: 'Found but not built — run: cd dashboard-next && npm run build' }
-    }
-    return { name: 'Dashboard', status: 'ok', message: 'dashboard-next/ found and built' }
-  } catch (e: any) {
-    console.log(`[doctor] Dashboard check: ${e.message}`)
-    return { name: 'Dashboard', status: 'warn', message: `Could not check dashboard: ${e.message}` }
+  const pkgPath = path.join(process.cwd(), 'dashboard-next', 'package.json')
+  const distPath = path.join(process.cwd(), 'dashboard-next', '.next')
+  if (!fs.existsSync(pkgPath)) {
+    return { name: 'Dashboard', status: 'error', message: 'MISSING — dashboard-next/ not found' }
   }
+  if (!fs.existsSync(distPath)) {
+    return { name: 'Dashboard', status: 'warn', message: 'Found but not built — run: cd dashboard-next && npm run build' }
+  }
+  return { name: 'Dashboard', status: 'ok', message: 'dashboard-next/ found and built' }
 }
 
 // ── Scheduler check ───────────────────────────────────────────
@@ -223,11 +205,10 @@ function checkScheduler(): DoctorCheckResult {
     if (!fs.existsSync(schedPath)) {
       return { name: 'Scheduler', status: 'ok', message: '0 tasks scheduled' }
     }
-    const tasks  = JSON.parse(fs.readFileSync(schedPath, 'utf-8')) as any[]
-    const active = tasks.filter((t: any) => t.enabled !== false).length
+    const tasks = JSON.parse(fs.readFileSync(schedPath, 'utf-8')) as any[]
+    const active = tasks.filter(t => t.enabled !== false).length
     return { name: 'Scheduler', status: 'ok', message: `${tasks.length} tasks (${active} active)` }
   } catch (e: any) {
-    console.log(`[doctor] Scheduler check: ${e.message}`)
     return { name: 'Scheduler', status: 'warn', message: `Could not read tasks: ${e.message}` }
   }
 }
@@ -257,16 +238,12 @@ export function cleanCorruptedSkills(): { deleted: string[]; kept: number } {
           try {
             fs.rmSync(fullPath, { recursive: true, force: true })
             deleted.push(e.name)
-          } catch (e2: any) {
-            console.log(`[doctor] Could not delete ${e.name}: ${e2.message}`)
-          }
+          } catch {}
         } else {
           kept++
         }
       }
-    } catch (e: any) {
-      console.log(`[doctor] Could not scan ${dir}: ${e.message}`)
-    }
+    } catch {}
   }
   return { deleted, kept }
 }
@@ -277,22 +254,16 @@ export async function runDoctor(): Promise<DoctorReport> {
   const checks: DoctorCheckResult[] = []
 
   // LLM providers
-  console.log('[doctor] Checking Ollama...')
   checks.push(await checkOllama())
-
-  console.log('[doctor] Checking API keys...')
   checks.push(checkApiKeys())
 
   // Network ports
-  console.log('[doctor] Checking ports...')
   checks.push(await checkPorts())
 
   // Sprint 23 — ComputerUse Memory
-  console.log('[doctor] Checking ComputerUse memory...')
   checks.push(await checkComputerUseMemory())
 
   // Sprint 24 — Hardware Detection
-  console.log('[doctor] Checking hardware...')
   const hw = detectHardware()
   checks.push({
     name:    'Hardware Detection',
@@ -304,7 +275,6 @@ export async function runDoctor(): Promise<DoctorReport> {
   })
 
   // Sprint 24 — First-boot Setup
-  console.log('[doctor] Checking first-boot setup...')
   const setupDone = isSetupComplete()
   checks.push({
     name:    'First-boot Setup',
@@ -314,7 +284,6 @@ export async function runDoctor(): Promise<DoctorReport> {
   })
 
   // Sprint 27 — Self-Evolution Analyzer
-  console.log('[doctor] Checking evolution analyzer...')
   checks.push({
     name:    'Evolution Analyzer',
     status:  'ok',
@@ -323,13 +292,8 @@ export async function runDoctor(): Promise<DoctorReport> {
   })
 
   // Skills, dashboard, scheduler
-  console.log('[doctor] Checking skills...')
   checks.push(checkSkills())
-
-  console.log('[doctor] Checking dashboard...')
   checks.push(checkDashboard())
-
-  console.log('[doctor] Checking scheduler...')
   checks.push(checkScheduler())
 
   return {

@@ -39,7 +39,7 @@ import { getSmartProvider, markRateLimited, incrementUsage, logProviderStatus, g
 import { discoverLocalModels } from '../core/modelDiscovery'
 import { executeTool } from '../core/toolRegistry'
 import { getScreenSize, takeScreenshot as captureScreen } from '../core/computerControl'
-import { planWithLLM, executePlan, respondWithResults, callLLM } from '../core/agentLoop'
+import { planWithLLM, executePlan, respondWithResults, callLLM, surfaceRelevantMemories } from '../core/agentLoop'
 import { TOOL_DESCRIPTIONS } from '../core/toolRegistry'
 import { runReActLoop, ReActStep }                                 from '../core/reactLoop'
 import { scheduler }                                              from '../core/scheduler'
@@ -50,6 +50,7 @@ import type { AgentPlan, StepResult, ToolStep }        from '../core/agentLoop'
 import { planTool }                                     from '../core/planTool'
 import type { Phase }                                   from '../core/planTool'
 import { taskStateManager }                             from '../core/taskState'
+import { taskQueue }                                    from '../core/taskQueue'
 import { recoverTasks }                                 from '../core/taskRecovery'
 import { skillLoader }                                  from '../core/skillLoader'
 import { conversationMemory }                           from '../core/conversationMemory'
@@ -74,66 +75,13 @@ import { sessionMemory } from '../core/sessionMemory'
 import { memoryExtractor } from '../core/memoryExtractor'
 import { getIdentity, refreshIdentity } from '../core/aidenIdentity'
 import { eventBus } from '../core/eventBus'
+import { getWorkflow } from '../core/workflowTracker'
 
 // —— Sprint 25: module-level WebSocket clients registry (shared between createApiServer routes and startApiServer WS setup)
 let wsBroadcastClients = new Set<any>()
 
-// ── Feature 17: Per-session message queue ─────────────────────
-// Serialises concurrent requests from the same session to prevent
-// race conditions when the user sends multiple messages quickly.
-
-const sessionQueues = new Map<string, Promise<any>>()
-
-function queuedAgentLoop(
-  sessionId: string,
-  fn:        () => Promise<string>,
-): Promise<string> {
-  const current = sessionQueues.get(sessionId) ?? Promise.resolve('')
-  const next = current
-    .catch(() => '')
-    .then(fn)
-    .catch((err: any) => {
-      console.error(`[Queue] Session ${sessionId} error:`, err?.message ?? err)
-      return 'Something went wrong. Please try again.'
-    }) as Promise<string>
-  next.finally(() => {
-    if (sessionQueues.get(sessionId) === next) sessionQueues.delete(sessionId)
-  })
-  sessionQueues.set(sessionId, next)
-  return next
-}
-
-// ── Feature 18: Config hot-reload ─────────────────────────────
-// Watches config/devos.config.json for changes and logs reload.
-// loadConfig() reads from disk on each call, so no cache-busting
-// is required — the next request automatically picks up changes.
-
-const CONFIG_WATCH_PATH = path.join(process.cwd(), 'config', 'devos.config.json')
-
-function watchConfig(): void {
-  try {
-    let debounceTimer: NodeJS.Timeout | null = null
-    fs.watch(CONFIG_WATCH_PATH, { persistent: false }, (eventType) => {
-      if (eventType !== 'change') return
-      if (debounceTimer) clearTimeout(debounceTimer)
-      debounceTimer = setTimeout(() => {
-        try {
-          const newConfig = JSON.parse(fs.readFileSync(CONFIG_WATCH_PATH, 'utf-8'))
-          if (newConfig.providers) {
-            console.log('[Config] Hot-reloaded providers — new config active on next request')
-          }
-          console.log('[Config] Reloaded — no restart needed')
-        } catch (e: any) {
-          console.error('[Config] Reload failed:', e.message)
-          // Keep running with old config
-        }
-      }, 500)
-    })
-    console.log('[Config] Watching for changes...')
-  } catch (e: any) {
-    console.warn('[Config] Could not watch config file:', e.message)
-  }
-}
+// ── Bookmarklet — clip selected text from any page ────────────
+const BOOKMARKLET = `javascript:void(fetch('http://localhost:4200/api/clip',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:window.getSelection().toString()||document.title,source:window.location.href,title:document.title})}).then(()=>alert('Clipped!')))`
 
 // â”€â”€ Human-readable tool message helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function humanToolMessage(tool: string, input: Record<string, any>): string {
@@ -258,38 +206,6 @@ export function createApiServer(): Express {
 
   // â”€â”€ Core routes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-  // ── Feature 19: Bearer token auth — remote access protection ──
-  // Localhost is always allowed. Token is optional (dev-friendly).
-  // Set AIDEN_API_TOKEN env var or config.api.token to enable.
-  const _apiCfg   = loadConfig() as any
-  const _apiToken = process.env.AIDEN_API_TOKEN || _apiCfg?.api?.token || ''
-
-  const authMiddleware = (req: Request, res: Response, next: NextFunction) => {
-    const ip      = req.ip || req.socket?.remoteAddress || ''
-    const isLocal = ip === '127.0.0.1' || ip === '::1' ||
-                    ip === '::ffff:127.0.0.1' || ip.includes('localhost')
-    if (isLocal)    return next()
-    if (!_apiToken) return next()  // no token configured — dev mode
-
-    const provided = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim()
-    if (provided === _apiToken) return next()
-
-    console.warn(`[Auth] Rejected request from ${ip} — invalid token`)
-    res.status(401).json({
-      error: 'Unauthorized',
-      hint:  'Set AIDEN_API_TOKEN env var or pass Authorization: Bearer <token>',
-    })
-  }
-
-  app.use('/api', authMiddleware)
-  app.use('/v1',  authMiddleware)
-
-  if (_apiToken) {
-    console.log('[Auth] API token protection enabled')
-  } else {
-    console.log('[Auth] No API token — localhost only')
-  }
-
   // GET /api/health â€” liveness probe (no auth required)
   app.get('/api/health', (_req: Request, res: Response) => {
     res.json({ status: 'ok', version: '2.0.0', timestamp: new Date().toISOString() })
@@ -399,61 +315,30 @@ export function createApiServer(): Express {
     }
     message = scanAndRedact(message)
 
-    if (!message || message.trim().length === 0) {
-      res.status(400).json({ message: 'Please provide a goal or question.', error: 'empty_message' }); return
+    var MAX_MSG_LEN = 50000;
+
+    if (!message || message.trim().length < 2) {
+      res.json({ message: 'I am here. What can I help with?', response: 'I am here. What can I help with?' }); return
     }
 
-    // -- Near-empty message handler ----------------------------------
-    if (message.trim().length < 2) {
-      const shortR = 'I am here. What can I help with?';
-      res.json({ message: shortR, response: shortR }); return
-    }
-
-    // -- Max message length gate -------------------------------------
-    const MAX_MSG_LEN = 50000;
     if (message.length > MAX_MSG_LEN) {
-      const longR = 'That message is too long for me to process. Please break it into smaller parts.';
-      res.json({ message: longR, response: longR }); return
+      res.json({ message: 'That message is very long. Break it into smaller parts.', response: 'That message is very long. Break it into smaller parts.' }); return
     }
 
-    // -- Banned topic pre-intercept (no LLM call needed) -------------
+    // Banned topic intercept - short-circuit before LLM
     const BANNED_TOPIC_PATS = [
-      /\bGST\s*(rate|rates|code|filing|return|number|percent)/i,
-      /\bHSN\s*(code|codes|number|list)/i,
-      /\btrademark\s*(registration|class|filing|register)/i,
-      /\bregister\s+a\s+trademark/i,
-      /\bpayroll\b/i,
-      /\bledger\s*(software|app|system|tool)/i,
-      /\bGSTIN\b/i,
-      /\baccounts?\s*payable\b/i,
-      /\bgeneral\s*ledger\b/i,
+      /GSTs*(rate|code|filing|return|number|percent)/i,
+      /HSNs*(code|number|list)/i,
+      /trademarks*(registration|class|filing)/i,
+      /payrolls*(processing|software|system)/i,
+      /ledgers*(software|app|system|tool)/i,
+      /GSTIN/i,
+      /accounts?s*payable/i,
+      /generals*ledger/i,
     ];
-    if (BANNED_TOPIC_PATS.some(function(p) { return p.test(message); })) {
-      const bResp = 'That is outside what I do. I focus on coding, research, system automation, and personal productivity. For tax or accounting questions, consult a CA or use dedicated software.';
+    if (BANNED_TOPIC_PATS.some(p => p.test(message))) {
+      const bResp = 'That is outside what I do. I am Aiden - I help with computer control, coding, research, market data, file management, and automation. What can I help you with?';
       res.json({ message: bResp, response: bResp }); return
-    }
-
-    // -- Builder fast-path -------------------------------------------
-    const builderPats = [
-      /who\s+(built|made|created|developed|wrote)\s+you/i,
-      /who\s+is\s+your\s+(creator|developer|author|maker)/i,
-      /who\s+created\s+(aiden|devos)/i,
-    ];
-    if (builderPats.some(function(p) { return p.test(message); })) {
-      const bldR = 'I was built by Shiva Deore at Taracod. Not OpenAI, not Anthropic, not Google.';
-      res.json({ message: bldR, response: bldR }); return
-    }
-
-    // -- Context question fast-path (at conversation start) ----------
-    const inHistory = Array.isArray(req.body && req.body.history) ? req.body.history : [];
-    const CONTEXT_Q_PATS = [
-      /what\s+(just\s+)?happened/i,
-      /what\s+did\s+(we|i|you)\s+(do|discuss|talk)/i,
-      /what\s+was\s+(that|the\s+last)/i,
-    ];
-    if (CONTEXT_Q_PATS.some(function(p) { return p.test(message); }) && inHistory.length <= 2) {
-      const ctxR = 'This is the start of our conversation - nothing has happened yet. What would you like to work on?';
-      res.json({ message: ctxR, response: ctxR }); return
     }
 
     // â”€â”€ Jailbreak detection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -494,6 +379,17 @@ export function createApiServer(): Express {
       /what('s| is) your name/i,
       /are you (aiden|chatgpt|claude|gpt|openai)/i,
     ]
+    // Fast who-built-you answers
+    const builderPats = [
+      /who\s+(built|made|created|developed|wrote)\s+you/i,
+      /who\s+is\s+(your|the)\s+(creator|developer|maker|builder)/i,
+      /were\s+you\s+(built|made|created)\s+by/i,
+      /openai\s+or\s+someone\s+else/i,
+    ]
+    if (builderPats.some(p => p.test(message))) {
+      res.json({ message: 'I was built by Shiva Deore at Taracod. Not OpenAI, not Anthropic, not Google. Just Taracod.', response: 'I was built by Shiva Deore at Taracod. Not OpenAI, not Anthropic, not Google. Just Taracod.' }); return
+    }
+
     if (identityPatterns.some(p => p.test(message))) {
       res.json({ message: 'I\'m Aiden â€” a personal AI OS built by Shiva Deore at Taracod. I run locally on your Windows machine using Ollama. Not ChatGPT, not Claude. Just Aiden.' }); return
     }
@@ -519,6 +415,17 @@ export function createApiServer(): Express {
     }
 
     // â”€â”€ Hardware info fast-path â€” from SOUL.md known config â”€â”€â”€
+    // Context question fast-path - graceful at conversation start
+    const CONTEXT_Q_PATS = [
+      /what\s+(just\s+)?happened/i,
+      /what\s+did\s+(we|i|you)\s+(just\s+)?(do|discuss|talk)/i,
+    ]
+    const inHistory = Array.isArray(req.body && req.body.history) ? req.body.history : []
+    if (CONTEXT_Q_PATS.some(p => p.test(message)) && inHistory.length <= 2) {
+      const ctxR = 'This is the start of our conversation - nothing has happened yet. What would you like to work on?'
+      res.json({ message: ctxR, response: ctxR }); return
+    }
+
     if (/what\s+(gpu|graphics|vram|ram|memory|cpu|processor|hardware|specs)\s+(do\s+i|have|i\s+have)|gpu\s+and\s+ram|hardware\s+specs|system\s+specs/i.test(message)) {
       res.json({ message: 'GPU: GTX 1060 6GB VRAM. RAM: detected at runtime (typically 8â€“16 GB). CPU: detected via system info. Run "system_info" for live hardware readings.' }); return
     }
@@ -569,9 +476,9 @@ export function createApiServer(): Express {
 
       const collectToken = (token: string) => { jsonTokens.push(token) }
 
-      // Sprint 6: tiered model selection per role (+ complexity routing for responder)
+      // Sprint 6: tiered model selection per role
       // Responder drives chat mode; planner drives plan/auto mode
-      const responderTier = getModelForTask('responder', message)
+      const responderTier = getModelForTask('responder')
       const plannerTier   = getModelForTask('planner')
       const { provider, model, userName, apiName } = getSmartProvider()
       const config   = loadConfig()
@@ -633,8 +540,10 @@ export function createApiServer(): Express {
           res.json({ response: quickReply, message: quickReply, provider: apiName2 }); return
         }
 
-        const memoryContext = conversationMemory.buildContext()
-        const plan: AgentPlan = await planWithLLM(resolvedMessage, history, plannerKey, plannerModel, plannerProv, memoryContext)
+        const memoryContext    = conversationMemory.buildContext()
+        const proactiveMemory  = await surfaceRelevantMemories(resolvedMessage)
+        const fullMemoryCtx    = memoryContext + proactiveMemory
+        const plan: AgentPlan = await planWithLLM(resolvedMessage, history, plannerKey, plannerModel, plannerProv, fullMemoryCtx)
 
         if (!plan.requires_execution || plan.plan.length === 0) {
           if (plan.direct_response) {
@@ -704,7 +613,7 @@ export function createApiServer(): Express {
     }
 
     // Sprint 6: tiered model selection
-    const responderTierSSE = getModelForTask('responder', message)
+    const responderTierSSE = getModelForTask('responder')
     const plannerTierSSE   = getModelForTask('planner')
     const { provider, model, userName } = getSmartProvider()
     // BUG 6 fix: use tiered responder's API name for all provider labels, not manually-set active
@@ -800,8 +709,10 @@ export function createApiServer(): Express {
 
       send({ activity: { icon: 'ðŸ§ ', agent: 'Aiden', message: 'Working out a plan...', style: 'thinking' }, done: false })
 
-      const memoryContext = conversationMemory.buildContext()
-      const plan: AgentPlan = await planWithLLM(resolvedMessage, history, plannerKeySSE, plannerModelSSE, plannerProvSSE, memoryContext)
+      const memoryContext    = conversationMemory.buildContext()
+      const proactiveMemory  = await surfaceRelevantMemories(resolvedMessage)
+      const fullMemoryCtx    = memoryContext + proactiveMemory
+      const plan: AgentPlan = await planWithLLM(resolvedMessage, history, plannerKeySSE, plannerModelSSE, plannerProvSSE, fullMemoryCtx)
 
       // â”€â”€ PLAN-ONLY MODE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       if (mode === 'plan') {
@@ -1852,6 +1763,116 @@ export function createApiServer(): Express {
     res.json({ success: true })
   })
 
+  // GET  /api/patterns — detected usage patterns from session history
+  app.get('/api/patterns', async (_req: Request, res: Response) => {
+    try {
+      const { detectPatterns } = await import('../core/patternDetector')
+      const patterns = await detectPatterns()
+      res.json({ patterns, count: patterns.length })
+    } catch (e: any) {
+      res.json({ patterns: [], error: e.message })
+    }
+  })
+
+  // GET  /api/queue — list pending and recent tasks
+  app.get('/api/queue', (_req: Request, res: Response) => {
+    res.json({
+      pending: taskQueue.getPending(),
+      recent:  taskQueue.getRecent(20),
+    })
+  })
+
+  // POST /api/queue — enqueue a new task for async execution
+  app.post('/api/queue', (req: Request, res: Response) => {
+    const { message, priority, source } = req.body as {
+      message?: string; priority?: string; source?: string
+    }
+    if (!message) return res.status(400).json({ error: 'message required' }) as any
+    const id = taskQueue.enqueue({
+      source:   (source as any) || 'api',
+      message,
+      priority: (priority as any) || 'normal',
+    })
+    res.json({ taskId: id, status: 'queued' })
+  })
+
+  // GET  /api/queue/:id — check status of a specific queued task
+  app.get('/api/queue/:id', (req: Request, res: Response) => {
+    const task = taskQueue.getStatus(String(req.params.id))
+    if (!task) return res.status(404).json({ error: 'Task not found' }) as any
+    res.json(task)
+  })
+
+  // POST /api/clip — store a clipped text snippet in semantic memory + disk
+  app.post('/api/clip', async (req: Request, res: Response) => {
+    try {
+      const { content, source, title, tags } = req.body as {
+        content?: string; source?: string; title?: string; tags?: string[]
+      }
+
+      if (!content || content.trim().length < 10) {
+        return res.status(400).json({ error: 'content required (min 10 chars)' }) as any
+      }
+
+      const id        = `clip_${Date.now()}`
+      const trimmed   = content.trim()
+      const entryTitle = title || trimmed.slice(0, 60)
+      const entrySource = source || 'manual'
+      const entryTags   = tags || []
+      const clippedAt   = new Date().toISOString()
+
+      // Store in semantic memory
+      semanticMemory.add(trimmed, 'fact', entryTags)
+
+      // Write to workspace/knowledge/clips/
+      const clipsDir = path.join(process.cwd(), 'workspace', 'knowledge', 'clips')
+      fs.mkdirSync(clipsDir, { recursive: true })
+      fs.writeFileSync(
+        path.join(clipsDir, `${id}.md`),
+        `# ${entryTitle}\n\n` +
+        `Source: ${entrySource}\n` +
+        `Clipped: ${clippedAt}\n` +
+        (entryTags.length ? `Tags: ${entryTags.join(', ')}\n` : '') +
+        `\n---\n\n${trimmed}`,
+      )
+
+      console.log(`[Clip] Saved: "${entryTitle.slice(0, 50)}" from ${entrySource}`)
+      res.json({ success: true, id, title: entryTitle })
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
+  // GET /api/clips — list recent clips + bookmarklet
+  app.get('/api/clips', async (_req: Request, res: Response) => {
+    try {
+      const clipsDir = path.join(process.cwd(), 'workspace', 'knowledge', 'clips')
+      if (!fs.existsSync(clipsDir)) {
+        return res.json({ clips: [], count: 0, bookmarklet: BOOKMARKLET }) as any
+      }
+
+      const files = fs.readdirSync(clipsDir)
+        .filter(f => f.endsWith('.md'))
+        .sort()
+        .reverse()
+        .slice(0, 20)
+
+      const clips = await Promise.all(files.map(async f => {
+        const raw   = await fs.promises.readFile(path.join(clipsDir, f), 'utf8')
+        const lines = raw.split('\n')
+        return {
+          id:      f.replace('.md', ''),
+          title:   lines[0].replace('# ', ''),
+          preview: lines.slice(5, 7).join(' ').slice(0, 100),
+        }
+      }))
+
+      res.json({ clips, count: clips.length, bookmarklet: BOOKMARKLET })
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
   // POST /api/briefing — receive briefing content, broadcast to WebSocket clients
   app.post('/api/briefing', (req: Request, res: Response) => {
     const { content, label } = req.body as { content?: string; label?: string }
@@ -2076,15 +2097,25 @@ export function createApiServer(): Express {
 
     const onCostUpdate     = (data: object) => sendEvent('cost_update',     data)
     const onIdentityUpdate = (data: object) => sendEvent('identity_update', data)
+    const onWorkflowEvent  = (data: object) => sendEvent('workflow_event',  data)
 
     eventBus.on('cost_update',     onCostUpdate)
     eventBus.on('identity_update', onIdentityUpdate)
+    eventBus.on('workflow_event',  onWorkflowEvent)
 
     req.on('close', () => {
       clearInterval(ping)
       eventBus.removeListener('cost_update',     onCostUpdate)
       eventBus.removeListener('identity_update', onIdentityUpdate)
+      eventBus.removeListener('workflow_event',  onWorkflowEvent)
     })
+  })
+
+  // GET /api/workflow — current workflow state snapshot
+  app.get('/api/workflow', (_req: Request, res: Response) => {
+    const wf = getWorkflow()
+    if (!wf) return res.status(204).end()
+    res.json(wf)
   })
 
   // GET /api/identity — Aiden identity snapshot
@@ -2464,95 +2495,6 @@ export function createApiServer(): Express {
     }
   })
 
-  // ── Feature 21: Pattern detection API ────────────────────────
-  app.get('/api/patterns', async (_req: Request, res: Response) => {
-    try {
-      const { detectPatterns } = await import('../core/patternDetector')
-      const patterns = await detectPatterns()
-      res.json({ patterns, count: patterns.length })
-    } catch (e: any) {
-      res.json({ patterns: [], error: e.message })
-    }
-  })
-
-  // ── Feature 15: OpenAI-compatible API ─────────────────────────
-  // Compatible with Open WebUI, LobeChat, Obsidian AI, and any
-  // OpenAI-compatible client. Point them at http://localhost:4200/v1
-
-  app.get('/v1/models', (_req: Request, res: Response) => {
-    res.json({
-      object: 'list',
-      data: [{
-        id:         'aiden',
-        object:     'model',
-        created:    Math.floor(Date.now() / 1000),
-        owned_by:   'taracod',
-        permission: [],
-        root:       'aiden',
-        parent:     null,
-      }],
-    })
-  })
-
-  app.post('/v1/chat/completions', async (req: Request, res: Response) => {
-    try {
-      const { messages = [], stream = false } = req.body as {
-        messages?: Array<{ role: string; content: string }>
-        stream?:   boolean
-      }
-
-      const history     = messages.slice(0, -1).filter(m => m.role !== 'system')
-      const userMessage = messages.filter(m => m.role === 'user').pop()?.content || ''
-
-      if (!userMessage) {
-        res.status(400).json({ error: { message: 'No user message provided', type: 'invalid_request_error' } })
-        return
-      }
-
-      // Delegate to existing /api/chat — reuses full agent loop, fast paths, rate limiting
-      const localPort = (req.socket as any)?.localPort || 4200
-      const chatRes   = await fetch(`http://127.0.0.1:${localPort}/api/chat`, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ message: userMessage, history }),
-        signal:  AbortSignal.timeout(120_000),
-      })
-      const chatData = await chatRes.json() as { message?: string; response?: string }
-      const response = chatData.response || chatData.message || ''
-
-      const msgId   = `chatcmpl-${Date.now()}`
-      const created = Math.floor(Date.now() / 1000)
-
-      if (stream) {
-        res.setHeader('Content-Type', 'text/event-stream')
-        res.setHeader('Cache-Control', 'no-cache')
-        res.setHeader('Connection', 'keep-alive')
-        res.write(`data: ${JSON.stringify({
-          id: msgId, object: 'chat.completion.chunk', created, model: 'aiden',
-          choices: [{ index: 0, delta: { role: 'assistant', content: response }, finish_reason: null }],
-        })}\n\n`)
-        res.write(`data: ${JSON.stringify({
-          id: msgId, object: 'chat.completion.chunk', created, model: 'aiden',
-          choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
-        })}\n\n`)
-        res.write('data: [DONE]\n\n')
-        res.end()
-      } else {
-        res.json({
-          id: msgId, object: 'chat.completion', created, model: 'aiden',
-          choices: [{
-            index:        0,
-            message:      { role: 'assistant', content: response },
-            finish_reason: 'stop',
-          }],
-          usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
-        })
-      }
-    } catch (e: any) {
-      res.status(500).json({ error: { message: e.message, type: 'server_error' } })
-    }
-  })
-
   app.use((_req: Request, res: Response) => {
     res.status(404).json({ error: 'Not found' })
   })
@@ -2740,9 +2682,6 @@ export function startApiServer(portArg?: number): Express {
 
   // Log provider chain before listening so it's visible in startup log
   try { logProviderStatus() } catch {}
-
-  // Feature 18: config hot-reload watcher
-  watchConfig()
 
   server.listen(port, host, () => {
     console.log(`[API] DevOS v2.0 Â· Aiden running at http://${host}:${port}`)
