@@ -1059,6 +1059,65 @@ export function validatePlan(plan: AgentPlan): ValidationResult {
   }
 }
 
+// ── Smart replan on failure ────────────────────────────────────
+
+const MAX_REPLANS = 2
+
+interface ReplanState {
+  failedSteps: Map<string, { error: string; attempts: number }>
+  replanCount: number
+}
+
+async function handleToolFailure(
+  replanState:  ReplanState,
+  failedTool:   string,
+  error:        string,
+  userMessage:  string,
+  completedResults: StepResult[],
+  apiKey:       string,
+  model:        string,
+  provider:     string,
+): Promise<ToolStep[] | null> {
+  const existing = replanState.failedSteps.get(failedTool)
+  if (existing) { existing.attempts++; existing.error = error }
+  else          { replanState.failedSteps.set(failedTool, { error, attempts: 1 }) }
+
+  if (replanState.replanCount >= MAX_REPLANS) {
+    console.log('[Replan] Max replans reached — reporting failure')
+    return null
+  }
+
+  replanState.replanCount++
+  const succeeded = completedResults.filter(r => r.success)
+  const failed    = Array.from(replanState.failedSteps.entries())
+  console.log(`[Replan] Replanning (${replanState.replanCount}/${MAX_REPLANS}) after ${failedTool} failed: ${error.slice(0, 80)}`)
+
+  const replanContext =
+    `Previous approach failed. Use a DIFFERENT strategy.\n\n` +
+    `Original request: ${userMessage}\n\n` +
+    `Already completed:\n` +
+    (succeeded.map(s => `✅ ${s.tool}: ${s.output.substring(0, 100)}`).join('\n') || 'Nothing yet') +
+    `\n\nWhat failed:\n` +
+    failed.map(([tool, f]) => `❌ ${tool}: ${f.error} (tried ${f.attempts}x)`).join('\n') +
+    `\n\nRULES:\n` +
+    `- Do NOT retry ${failedTool} with same approach\n` +
+    `- Use a completely different tool or strategy\n` +
+    `- Build on completed steps — don't redo them\n` +
+    `- If API failed, try different data source\n` +
+    `- If browser failed on a site, try fetch_url instead`
+
+  try {
+    const newPlan = await planWithLLM(replanContext, [], apiKey, model, provider)
+    if (newPlan?.plan?.length > 0) {
+      console.log(`[Replan] New plan: ${newPlan.plan.map(s => s.tool).join(' → ')}`)
+      return newPlan.plan
+    }
+  } catch (e: any) {
+    console.warn(`[Replan] planWithLLM failed: ${e.message}`)
+  }
+  return null
+}
+
 // ── Sprint 28: shouldReplan ────────────────────────────────────
 // After each failed step, ask the LLM: should we replan?
 
@@ -1155,9 +1214,10 @@ export async function executePlan(
   replanProvider?: string,
 ): Promise<StepResult[]> {
 
-  const results:     StepResult[]           = []
-  const stepOutputs: Record<number, string> = {}
-  const planStart    = Date.now()
+  const results:      StepResult[]           = []
+  const stepOutputs:  Record<number, string> = {}
+  const planStart     = Date.now()
+  const replanState:  ReplanState            = { failedSteps: new Map(), replanCount: 0 }
 
   console.log(`[ExecutePlan] Starting: ${plan.plan.length} steps, goal: "${plan.goal.slice(0, 60)}"`)
 
@@ -1363,7 +1423,7 @@ async function executeSingleStep(
       stepOutputs[step.step] = stepResult.output
       results.push(stepResult)
 
-      // ── Sprint 28: mid-execution replan on failure ─────────────────
+      // ── Smart replan on failure ────────────────────────────────────
       if (!stepResult.success) {
         // Resolve credentials: prefer explicit params, then route through getNextAvailableAPI
         let _rpKey      = replanApiKey   || ''
@@ -1382,40 +1442,40 @@ async function executeSingleStep(
           } catch {}
         }
         if (_rpKey || _rpProvider === 'ollama') {
-          const replanDecision = await shouldReplan(
+          const newSteps = await handleToolFailure(
+            replanState,
+            step.tool,
+            stepResult.error || 'unknown error',
             plan.goal,
             results,
-            step,
-            stepResult.error || 'unknown error',
             _rpKey, _rpModel, _rpProvider,
           )
-          if (replanDecision.replan && replanDecision.newApproach) {
-            livePulse.act('Aiden', `Replanning: ${replanDecision.newApproach}`)
+          if (newSteps && newSteps.length > 0) {
+            livePulse.act('Aiden', `Replanning with different strategy (${replanState.replanCount}/${MAX_REPLANS})`)
             auditTrail.record({
               action:     'system',
               tool:       'replan',
               input:      `Failed: ${step.tool}`,
-              output:     replanDecision.newApproach,
+              output:     `New plan: ${newSteps.map(s => s.tool).join(' → ')}`,
               durationMs: 0,
               success:    true,
               goal:       plan.goal,
               traceId:    plan.planId,
             })
-            try {
-              const newPlan = await planWithLLM(
-                `${plan.goal} — previous approach failed at ${step.tool}: ${replanDecision.newApproach}`,
-                [],
-                _rpKey, _rpModel, _rpProvider,
-              )
-              if (newPlan && newPlan.plan && newPlan.plan.length > 0) {
-                const newGroups = buildDependencyGroups(newPlan.plan)
-                // Replace remaining groups with the new plan's groups
-                groups.splice(_gi, groups.length - _gi, ...newGroups)
-                console.log(`[ExecutePlan] Replan spliced ${newGroups.length} new group(s) from step ${_gi}`)
-              }
-            } catch (e: any) {
-              console.warn(`[ExecutePlan] Replan planWithLLM failed: ${e.message}`)
-            }
+            const newGroups = buildDependencyGroups(newSteps)
+            groups.splice(_gi, groups.length - _gi, ...newGroups)
+            console.log(`[Replan] Spliced ${newGroups.length} new group(s) into execution from position ${_gi}`)
+          } else if (replanState.replanCount >= MAX_REPLANS) {
+            const failedList = Array.from(replanState.failedSteps.entries())
+              .map(([tool, f]) => `- ${tool}: ${f.error}`)
+              .join('\n')
+            console.log(`[Replan] All ${MAX_REPLANS} replans exhausted for goal: "${plan.goal.slice(0, 60)}"`)
+            results.push({
+              step: step.step + 1, tool: 'replan_exhausted', input: {},
+              success: false, output: '',
+              error: `Tried ${MAX_REPLANS + 1} different approaches:\n${failedList}\n\nWould you like me to try a different approach?`,
+              duration: 0,
+            })
           }
         }
       }
