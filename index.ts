@@ -352,6 +352,23 @@ async function main(): Promise<void> {
       break
     }
 
+    // ── devos patterns ──────────────────────────────────────
+    case 'patterns': {
+      try {
+        console.log('\n  Analyzing usage patterns...\n')
+        const { detectPatterns, getPatternSummary } = await import('./core/patternDetector')
+        const patterns = await detectPatterns()
+        if (patterns.length === 0) {
+          console.log('  Need 30+ sessions to detect patterns\n')
+        } else {
+          console.log(getPatternSummary(patterns) + '\n')
+        }
+      } catch (err: any) {
+        console.error(`[patterns] Error: ${err?.message ?? err}`)
+      }
+      break
+    }
+
     // ── devos help / default ─────────────────────────────────
     case 'help':
     case '--help':
@@ -376,7 +393,9 @@ Commands:
   models recommend   Show recommended model per task type
   memory stats       Show memory statistics
   automate:stop      Stop running computer automation
+  patterns           Analyze usage patterns from session history
 `)
+
       break
     }
   }

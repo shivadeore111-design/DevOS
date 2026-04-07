@@ -1083,6 +1083,60 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
       return { success: false, output: '', error: `Briefing failed: ${e.message}` }
     }
   },
+
+  // ── manage_goals — track and manage long-running goals ────────
+  manage_goals: async (p) => {
+    const { loadGoals, saveGoals } = await import('./goalTracker')
+    const goals = loadGoals()
+    const today = new Date().toISOString().split('T')[0]
+
+    switch (p.action) {
+      case 'list':
+        return { success: true, output: JSON.stringify(goals.filter(g => g.status !== 'done'), null, 2) }
+
+      case 'add':
+        if (!p.title) return { success: false, output: '', error: 'Title required' }
+        goals.push({
+          id:          Date.now().toString(),
+          title:       p.title,
+          status:      'not_started',
+          target:      p.target,
+          nextAction:  p.nextAction,
+          lastUpdated: today,
+        })
+        saveGoals(goals)
+        return { success: true, output: `Goal added: ${p.title}` }
+
+      case 'update': {
+        const g = goals.find(g => g.title.toLowerCase().includes((p.title || '').toLowerCase()))
+        if (!g) return { success: false, output: '', error: 'Goal not found' }
+        if (p.status)     g.status     = p.status
+        if (p.nextAction) g.nextAction = p.nextAction
+        if (p.target)     g.target     = p.target
+        g.lastUpdated = today
+        saveGoals(goals)
+        return { success: true, output: `Updated: ${g.title}` }
+      }
+
+      case 'complete': {
+        const idx = goals.findIndex(g => g.title.toLowerCase().includes((p.title || '').toLowerCase()))
+        if (idx < 0) return { success: false, output: '', error: 'Goal not found' }
+        goals[idx].status      = 'done'
+        goals[idx].lastUpdated = today
+        saveGoals(goals)
+        return { success: true, output: `Completed: ${goals[idx].title}` }
+      }
+
+      case 'suggest': {
+        const active = goals.filter(g => g.status !== 'done')
+        if (active.length === 0) return { success: true, output: 'No active goals. What are you working on?' }
+        return { success: true, output: `Focus on: ${active[0].title} — Next: ${active[0].nextAction || 'Define next step'}` }
+      }
+
+      default:
+        return { success: false, output: '', error: `Unknown action: ${p.action}. Use: list, add, update, complete, suggest` }
+    }
+  },
 }
 
 // ── Internal dispatcher — no retry, no timeout ────────────────
@@ -1247,6 +1301,7 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   watch_folder_list:       'List all currently watched folder paths',
   get_briefing:            'Run the morning briefing: weather, markets, news, and daily summary',
   respond:                 'Send a direct conversational response to the user. Use for greetings, capability questions, clarifications, simple factual answers, and anything that does NOT require external tools. This is the default tool when no other tool is needed.',
+  manage_goals:            'Track and manage goals and projects. Use when user asks what to work on, mentions a project, deadline, or launch plan. Actions: list, add, update, complete, suggest.',
 }
 
 // ── Tool tier hierarchy ────────────────────────────────────────
@@ -1260,6 +1315,7 @@ export type ToolTier = 1 | 2 | 3 | 4
 const TOOL_TIERS: Record<string, ToolTier> = {
   // Tier 1 — APIs, data, search, notify, respond
   respond:                 1,
+  manage_goals:            1,
   web_search:              1,
   fetch_url:               1,
   fetch_page:              1,

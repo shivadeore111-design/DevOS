@@ -29,7 +29,8 @@ import { mcpClient }             from './mcpClient'
 import { unifiedMemoryRecall, buildMemoryInjection } from './memoryRecall'
 import { costTracker } from './costTracker'
 import { getOllamaTimeout } from './modelDiscovery'
-import { semanticMemory } from './semanticMemory'
+import { semanticMemory }          from './semanticMemory'
+import { getActiveGoalsSummary }  from './goalTracker'
 import * as nodeFs             from 'fs'
 import * as nodePath           from 'path'
 import * as nodeOs             from 'os'
@@ -650,7 +651,7 @@ FAILURE REPLANNING RULES (when message contains "previous approach failed at"):
 - Use ONLY the specific alternative approach mentioned in the message
 - DO NOT add web_search, deep_research, file_write, or notify unless directly needed
 - DO NOT add unrelated analysis or comparison steps
-${skillContext}${memorySection}${learningSection}${knowledgeSection}${memoryRecallSection}
+${skillContext}${memorySection}${learningSection}${knowledgeSection}${memoryRecallSection}${(() => { const s = getActiveGoalsSummary(); return s ? `\n\n## Your Active Goals\n${s}` : '' })()}
 Output ONLY valid JSON, nothing else:`
 
   const cleanHistory = history

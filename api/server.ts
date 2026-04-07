@@ -1759,6 +1759,17 @@ export function createApiServer(): Express {
     res.json({ success: true })
   })
 
+  // GET  /api/patterns — detected usage patterns from session history
+  app.get('/api/patterns', async (_req: Request, res: Response) => {
+    try {
+      const { detectPatterns } = await import('../core/patternDetector')
+      const patterns = await detectPatterns()
+      res.json({ patterns, count: patterns.length })
+    } catch (e: any) {
+      res.json({ patterns: [], error: e.message })
+    }
+  })
+
   // GET  /api/queue — list pending and recent tasks
   app.get('/api/queue', (_req: Request, res: Response) => {
     res.json({
