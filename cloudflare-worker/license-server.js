@@ -97,7 +97,15 @@ async function sendDownloadEmail(env, email, token) {
     </a>
   </div>
   <p style="color:#64748b;font-size:12px;text-align:center;">
-    Link expires in 48 hours · Windows 10/11 · Node.js 18+
+    Link expires in 48 hours · Windows 10/11 required
+  </p>
+  <p style="color:#64748b;font-size:13px;margin-top:8px;text-align:center;">
+    ⚠️ Also need Node.js installed?
+    <a href="https://nodejs.org/dist/v20.11.0/node-v20.11.0-x64.msi"
+      style="color:#f97316;font-weight:600;">
+      Download Node.js v20 for Windows →
+    </a>
+    (Install this first, then run Aiden)
   </p>
   <hr style="border:none;border-top:1px solid #334155;margin:24px 0;">
   <p style="color:#64748b;font-size:12px;">

@@ -24,7 +24,7 @@ import {
 
 import { reliableWebSearch, deepResearch as deepResearchFn } from './webSearch'
 import { conversationMemory } from './conversationMemory'
-import { minimatch } from 'minimatch'
+import minimatch from 'minimatch'
 import { generateBriefing, loadBriefingConfig }              from './morningBriefing'
 import { getMarketData }   from './tools/marketDataTool'
 import { getCompanyInfo }  from './tools/companyFilingsTool'

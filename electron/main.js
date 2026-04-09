@@ -111,6 +111,31 @@ function findNodeBin () {
   return 'node' // last resort — hope it's in PATH
 }
 
+// ── Node.js version check ─────────────────────────────────────
+function checkNodeJs () {
+  try {
+    const nodeBin = findNodeBin()
+    const version = execSync(`"${nodeBin}" --version`, { encoding: 'utf8', stdio: 'pipe', timeout: 5000 }).trim()
+    const major   = parseInt(version.replace('v', '').split('.')[0], 10)
+    if (major < 18) {
+      dialog.showErrorBox(
+        'Node.js Update Required',
+        `Aiden needs Node.js 18 or newer.\n\nYou have: ${version}\n\nPlease download and install Node.js from:\nhttps://nodejs.org\n\nThen restart Aiden.`
+      )
+      app.quit()
+      return false
+    }
+    return true
+  } catch (e) {
+    dialog.showErrorBox(
+      'Node.js Not Found',
+      'Aiden needs Node.js to run.\n\nPlease install Node.js 18+ from:\nhttps://nodejs.org/en/download\n\nChoose the "Windows Installer (.msi)" option.\nThen restart Aiden.'
+    )
+    app.quit()
+    return false
+  }
+}
+
 // ── Ollama check ──────────────────────────────────────────────
 function checkOllama () {
   try { execSync('ollama --version', { stdio: 'pipe', timeout: 3000 }); return true }
@@ -350,6 +375,9 @@ function createTray () {
 
 // ── App lifecycle ─────────────────────────────────────────────
 app.whenReady().then(() => {
+  // 0. Verify Node.js is installed and meets minimum version
+  if (!checkNodeJs()) return
+
   // 1. Bootstrap user data dirs + default config
   bootstrapUserData()
 
