@@ -2,7 +2,7 @@
   "name": "devos-ai",
   "version": "3.1.0",
   "description": "Autonomous AI Operating System — Local, Private, Free. Runs on your machine with Ollama.",
-  "author": "Shiva Deore <devosxprojects@gmail.com>",
+  "author": "Taracod <hello@taracod.com>",
   "license": "Apache-2.0",
   "keywords": [
     "ai",
@@ -65,7 +65,7 @@
   "build": {
     "appId": "com.taracod.aiden",
     "productName": "Aiden",
-    "copyright": "Copyright 2026 Taracod / White Lotus",
+    "copyright": "© 2026 Taracod",
     "directories": {
       "output": "release"
     },

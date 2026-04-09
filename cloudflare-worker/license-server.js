@@ -549,7 +549,7 @@ async function handleDownload(request, env) {
     <ol style="color:#94a3b8;line-height:2.4;margin:0;
       padding-left:20px;font-size:14px;">
       <li>Download <strong style="color:#e2e8f0;">
-        Aiden Setup 3.1.0.exe
+        Aiden-Setup-3.1.0.exe
       </strong></li>
       <li>Run installer → follow wizard</li>
       <li>Launch Aiden from Desktop</li>
@@ -592,7 +592,7 @@ async function handleDownload(request, env) {
     </div>
   </div>
 
-  <a href="https://github.com/taracodlabs/aiden-releases/releases/download/v3.1.0/Aiden.Setup.3.1.0.exe"
+  <a href="https://github.com/taracodlabs/aiden-releases/releases/download/v3.1.0/Aiden-Setup-3.1.0.exe"
     style="background:#f97316;color:#000;padding:16px 48px;
     border-radius:8px;text-decoration:none;font-weight:700;
     font-size:18px;display:inline-block;">
