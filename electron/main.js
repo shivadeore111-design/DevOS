@@ -8,6 +8,7 @@ const { app, BrowserWindow, Tray, Menu, nativeImage, dialog, shell } = require('
 const { spawn, execSync }  = require('child_process')
 const path  = require('path')
 const http  = require('http')
+const net   = require('net')
 const fs    = require('fs')
 const os    = require('os')
 
@@ -15,7 +16,6 @@ const os    = require('os')
 let mainWindow    = null
 let tray          = null
 let dashProcess   = null
-let splashWindow  = null
 let isQuitting    = false
 
 // ── Paths ─────────────────────────────────────────────────────
@@ -23,24 +23,29 @@ const IS_PACKAGED = app.isPackaged
 const USER_DATA   = app.getPath('userData')
 const RESOURCES   = IS_PACKAGED ? process.resourcesPath : path.join(__dirname, '..')
 
-// Inside packaged app:  resources/app.asar/electron/main.js
-// dist/ is inside the asar, require()d fine by Node's asar patching
 const DIST_DIR    = IS_PACKAGED
-  ? path.join(__dirname, '..', 'dist')                   // asar virtual path
+  ? path.join(__dirname, '..', 'dist')
   : path.join(__dirname, '..', 'dist')
 const DASH_DIR    = IS_PACKAGED
-  ? path.join(RESOURCES, 'dashboard', 'standalone')      // extraResource
+  ? path.join(RESOURCES, 'dashboard', 'standalone')
   : path.join(__dirname, '..', 'dashboard-next', '.next', 'standalone')
 const CONFIG_SRC  = IS_PACKAGED
-  ? path.join(RESOURCES, 'config')                       // extraResource default config
+  ? path.join(RESOURCES, 'config')
   : path.join(__dirname, '..', 'config')
 const CONFIG_DIR  = path.join(USER_DATA, 'config')
 const WORKSPACE   = path.join(USER_DATA, 'workspace')
 const LOGS_DIR    = path.join(USER_DATA, 'logs')
+const LOG_FILE    = path.join(USER_DATA, 'aiden.log')
+
+// ── Logging ───────────────────────────────────────────────────
+function log (msg) {
+  const line = `[${new Date().toISOString()}] ${msg}\n`
+  try { fs.appendFileSync(LOG_FILE, line) } catch { /* ignore */ }
+  console.log(msg)
+}
 
 // ── Bootstrap user data dirs ──────────────────────────────────
 function bootstrapUserData () {
-  // Create required directories
   for (const dir of [
     CONFIG_DIR,
     path.join(WORKSPACE, 'sandbox'),
@@ -52,7 +57,6 @@ function bootstrapUserData () {
     fs.mkdirSync(dir, { recursive: true })
   }
 
-  // Copy default config files on first run (don't overwrite existing)
   if (fs.existsSync(CONFIG_SRC)) {
     const defaults = fs.readdirSync(CONFIG_SRC)
     for (const f of defaults) {
@@ -60,15 +64,12 @@ function bootstrapUserData () {
       if (!fs.existsSync(dest) && f !== 'whatsapp-auth') {
         try {
           const src = path.join(CONFIG_SRC, f)
-          if (fs.statSync(src).isFile()) {
-            fs.copyFileSync(src, dest)
-          }
+          if (fs.statSync(src).isFile()) fs.copyFileSync(src, dest)
         } catch { /* skip */ }
       }
     }
   }
 
-  // Write a clean default config if devos.config.json doesn't exist
   const cfgPath = path.join(CONFIG_DIR, 'devos.config.json')
   if (!fs.existsSync(cfgPath)) {
     fs.writeFileSync(cfgPath, JSON.stringify({
@@ -80,20 +81,17 @@ function bootstrapUserData () {
     }, null, 2), 'utf-8')
   }
 
-  // Change cwd so server.ts path.join(process.cwd(), ...) resolves to userData
   try { process.chdir(USER_DATA) } catch { /* non-fatal */ }
 }
 
-// ── Find system Node.js (for spawning dashboard) ──────────────
+// ── Find system Node.js ───────────────────────────────────────
 function findNodeBin () {
-  // Try where.exe on Windows first
   if (process.platform === 'win32') {
     try {
       const result = execSync('where.exe node.exe', { encoding: 'utf8', stdio: 'pipe', timeout: 3000 })
       const found  = result.trim().split('\n')[0].trim()
       if (found && fs.existsSync(found)) return found
     } catch { /* fall through */ }
-    // Common install paths
     for (const p of [
       'C:\\Program Files\\nodejs\\node.exe',
       'C:\\Program Files (x86)\\nodejs\\node.exe',
@@ -102,13 +100,12 @@ function findNodeBin () {
       if (fs.existsSync(p)) return p
     }
   }
-  // macOS / Linux
   try {
     const result = execSync('which node', { encoding: 'utf8', stdio: 'pipe', timeout: 3000 })
     const found  = result.trim()
     if (found) return found
   } catch { /* fall through */ }
-  return 'node' // last resort — hope it's in PATH
+  return 'node'
 }
 
 // ── Node.js version check ─────────────────────────────────────
@@ -117,6 +114,7 @@ function checkNodeJs () {
     const nodeBin = findNodeBin()
     const version = execSync(`"${nodeBin}" --version`, { encoding: 'utf8', stdio: 'pipe', timeout: 5000 }).trim()
     const major   = parseInt(version.replace('v', '').split('.')[0], 10)
+    log(`Node.js found: ${version} at ${nodeBin}`)
     if (major < 18) {
       dialog.showErrorBox(
         'Node.js Update Required',
@@ -142,40 +140,155 @@ function checkOllama () {
   catch { return false }
 }
 
-// ── Start API server in-process (runs inside main process) ────
-// This means dist/ code is NEVER exposed on the filesystem and is
-// fully protected inside app.asar
-function startApiServer () {
-  try {
-    // Override process.cwd() result used by server paths
-    process.env.AIDEN_USER_DATA = USER_DATA
-    process.env.NODE_ENV        = 'production'
+// ── Port availability check ───────────────────────────────────
+function checkPort (port) {
+  return new Promise((resolve) => {
+    const server = net.createServer()
+    server.once('error', () => resolve(false))   // port in use
+    server.once('listening', () => { server.close(); resolve(true) })
+    server.listen(port, '127.0.0.1')
+  })
+}
 
-    // Require API server module directly — works because Electron's Node.js
-    // patched require() transparently reads from .asar archives
-    const serverMod = require(path.join(DIST_DIR, 'api', 'server.js'))
-    if (typeof serverMod.startApiServer === 'function') {
-      serverMod.startApiServer(4200)
-      console.log('[Aiden] API server started on port 4200')
-    } else {
-      throw new Error('startApiServer export not found')
-    }
-  } catch (err) {
-    console.error('[Aiden] Failed to start API server:', err.message)
-    // Non-fatal — dashboard can still load, API calls will fail gracefully
+// ── Kill processes on a port (Windows) ───────────────────────
+async function freePort (port) {
+  log(`Port ${port} in use — attempting to free it`)
+  try {
+    execSync(`for /f "tokens=5" %a in ('netstat -aon ^| findstr :${port}') do taskkill /F /PID %a`,
+      { stdio: 'ignore', shell: true, timeout: 5000 })
+  } catch { /* ignore errors */ }
+  await new Promise(r => setTimeout(r, 1500))
+}
+
+// ── Update loading status text in main window ─────────────────
+function setStatus (msg) {
+  log(msg)
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.executeJavaScript(
+      `document.getElementById('s') && (document.getElementById('s').textContent = ${JSON.stringify(msg)})`
+    ).catch(() => {})
   }
 }
 
-// ── Start Next.js dashboard as child process ──────────────────
+// ── Main window with inline loading screen ────────────────────
+function createMainWindow () {
+  const iconPath = path.join(__dirname, '..', 'assets', 'icon.png')
+
+  mainWindow = new BrowserWindow({
+    width:   1280,
+    height:  800,
+    minWidth:  900,
+    minHeight: 600,
+    show:      false,
+    title:     'Aiden',
+    backgroundColor: '#0e0e0e',
+    icon:    fs.existsSync(iconPath) ? iconPath : undefined,
+    webPreferences: {
+      nodeIntegration:  false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js'),
+    },
+  })
+
+  mainWindow.loadURL(`data:text/html,<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:%230e0e0e;color:%23e8e8e8;font-family:'Segoe UI',monospace;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  height:100vh;gap:16px;user-select:none}
+.logo{width:64px;height:64px;background:%23f97316;border-radius:14px;
+  display:flex;align-items:center;justify-content:center;
+  font-family:monospace;font-size:26px;font-weight:900;color:%23000}
+h1{font-size:24px;font-weight:700;letter-spacing:-0.5px;color:%23e8e8e8}
+#s{font-size:12px;color:%23555;font-family:monospace;max-width:400px;text-align:center}
+.dots{display:flex;gap:6px;margin-top:4px}
+.dot{width:7px;height:7px;background:%23f97316;border-radius:50%;
+  animation:pulse 1.4s ease-in-out infinite}
+.dot:nth-child(2){animation-delay:.2s}.dot:nth-child(3){animation-delay:.4s}
+@keyframes pulse{0%,100%{opacity:.2;transform:scale(.8)}50%{opacity:1;transform:scale(1)}}
+.log-hint{font-size:10px;color:%23333;position:fixed;bottom:16px;font-family:monospace}
+</style></head>
+<body>
+  <div class="logo">A/</div>
+  <h1>Aiden</h1>
+  <div id="s">Starting up...</div>
+  <div class="dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+  <div class="log-hint">Log: ${LOG_FILE.replace(/\\/g, '/')}</div>
+</body></html>`)
+
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show()
+    mainWindow.setMenuBarVisibility(false)
+  })
+
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url)
+    return { action: 'deny' }
+  })
+
+  mainWindow.on('close', (e) => {
+    if (!isQuitting) { e.preventDefault(); mainWindow.hide() }
+  })
+
+  mainWindow.on('closed', () => { mainWindow = null })
+}
+
+// ── Navigate main window to dashboard ────────────────────────
+function loadDashboard () {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  const identityPath   = path.join(WORKSPACE, 'identity.json')
+  const onboardingPath = path.join(WORKSPACE, 'onboarding-complete.json')
+  const isFirstRun     = !fs.existsSync(identityPath) && !fs.existsSync(onboardingPath)
+
+  try {
+    fs.writeFileSync(
+      path.join(USER_DATA, 'system-status.json'),
+      JSON.stringify({ ollamaInstalled: checkOllama(), firstRun: isFirstRun }),
+      'utf-8'
+    )
+  } catch { /* non-fatal */ }
+
+  const startUrl = isFirstRun ? 'http://localhost:3000/onboarding' : 'http://localhost:3000'
+  log(`Loading dashboard: ${startUrl}`)
+  mainWindow.loadURL(startUrl)
+}
+
+// ── Start API server in-process ───────────────────────────────
+function startApiServer () {
+  try {
+    process.env.AIDEN_USER_DATA = USER_DATA
+    process.env.NODE_ENV        = 'production'
+    log(`Loading API server from: ${path.join(DIST_DIR, 'api', 'server.js')}`)
+    const serverMod = require(path.join(DIST_DIR, 'api', 'server.js'))
+    if (typeof serverMod.startApiServer === 'function') {
+      serverMod.startApiServer(4200)
+      log('API server started on port 4200')
+    } else {
+      throw new Error('startApiServer export not found in dist/api/server.js')
+    }
+  } catch (err) {
+    log(`API server FAILED: ${err.message}\n${err.stack}`)
+    // Non-fatal — show error but continue (dashboard may still work)
+    setStatus(`Warning: API server failed to start — ${err.message}`)
+  }
+}
+
+// ── Start Next.js dashboard ───────────────────────────────────
 function startDashboard () {
   const serverJs = path.join(DASH_DIR, 'server.js')
+  log(`Dashboard server.js path: ${serverJs}`)
+  log(`Dashboard server.js exists: ${fs.existsSync(serverJs)}`)
+
   if (!fs.existsSync(serverJs)) {
-    console.error('[Aiden] Dashboard server.js not found at:', serverJs)
+    const msg = `Dashboard not found at:\n${serverJs}\n\nThis is a build issue. Please reinstall Aiden.\n\nLog: ${LOG_FILE}`
+    log('ERROR: ' + msg)
+    dialog.showErrorBox('Aiden — Missing Files', msg)
     return
   }
 
   const nodeBin = findNodeBin()
-  console.log('[Aiden] Starting dashboard with:', nodeBin)
+  log(`Starting dashboard with Node: ${nodeBin}`)
+  setStatus('Starting dashboard...')
 
   dashProcess = spawn(nodeBin, [serverJs], {
     cwd: DASH_DIR,
@@ -188,146 +301,92 @@ function startDashboard () {
     stdio: ['ignore', 'pipe', 'pipe'],
   })
 
-  const logFile = path.join(LOGS_DIR, 'dashboard.log')
-  const logStream = fs.createWriteStream(logFile, { flags: 'a' })
+  const dashLog  = path.join(LOGS_DIR, 'dashboard.log')
+  const logStream = fs.createWriteStream(dashLog, { flags: 'a' })
+  let   crashCount = 0
 
-  dashProcess.stdout.on('data', d => {
+  dashProcess.stdout.on('data', (d) => {
+    const text = d.toString().trim()
     logStream.write(d)
-    console.log('[Dashboard]', d.toString().trim())
+    log('DASH OUT: ' + text)
   })
-  dashProcess.stderr.on('data', d => {
+
+  dashProcess.stderr.on('data', (d) => {
+    const text = d.toString().trim()
     logStream.write(d)
-    console.error('[Dashboard]', d.toString().trim())
+    log('DASH ERR: ' + text)
   })
-  dashProcess.on('exit', (code) => {
-    console.log('[Dashboard] exited with code', code)
+
+  dashProcess.on('error', (err) => {
+    log(`DASH SPAWN ERROR: ${err.message}`)
+    dialog.showMessageBox(mainWindow, {
+      type:    'error',
+      title:   'Aiden — Could not start dashboard',
+      message: 'Failed to launch the dashboard process.',
+      detail:  `Error: ${err.message}\n\nNode.js used: ${nodeBin}\nLog file: ${LOG_FILE}\n\nPlease send this log to hello@taracod.com`,
+      buttons: ['Open Log File', 'OK'],
+    }).then(({ response }) => { if (response === 0) shell.openPath(LOG_FILE) })
+  })
+
+  dashProcess.on('exit', (code, signal) => {
+    log(`DASH EXIT: code=${code} signal=${signal}`)
     if (!isQuitting) {
-      // Restart after 2 s if it crashed
+      crashCount++
+      if (crashCount >= 3) {
+        log('Dashboard crashed 3 times — showing error dialog')
+        dialog.showMessageBox(mainWindow || null, {
+          type:    'error',
+          title:   'Aiden — Dashboard keeps crashing',
+          message: `Server exited with code ${code}`,
+          detail:  `Crashed ${crashCount} times.\n\nLog file: ${LOG_FILE}\n\nPlease send this log to hello@taracod.com`,
+          buttons: ['Open Log File', 'OK'],
+        }).then(({ response }) => { if (response === 0) shell.openPath(LOG_FILE) })
+        return
+      }
+      log(`Restarting dashboard in 2s (crash #${crashCount})`)
       setTimeout(startDashboard, 2000)
     }
   })
 }
 
 // ── Poll until API is ready ───────────────────────────────────
-function waitForApi (cb, retries = 40) {
+function waitForApi (onReady, onFail, retries = 40) {
   const req = http.get('http://127.0.0.1:4200/api/health', (res) => {
     if (res.statusCode === 200) {
-      console.log('[Aiden] API ready')
-      cb()
+      log('API ready')
+      onReady()
     } else if (retries > 0) {
-      setTimeout(() => waitForApi(cb, retries - 1), 1000)
+      setTimeout(() => waitForApi(onReady, onFail, retries - 1), 1000)
+    } else {
+      onFail('API server did not respond after 40 seconds')
     }
     res.resume()
   })
   req.on('error', () => {
-    if (retries > 0) setTimeout(() => waitForApi(cb, retries - 1), 1000)
+    if (retries > 0) setTimeout(() => waitForApi(onReady, onFail, retries - 1), 1000)
+    else onFail('API server did not start (connection refused after 40s)')
   })
   req.setTimeout(900, () => req.destroy())
 }
 
 // ── Poll until dashboard is ready ─────────────────────────────
-function waitForDash (cb, retries = 40) {
+function waitForDash (onReady, onFail, retries = 40) {
   const req = http.get('http://127.0.0.1:3000/', (res) => {
-    if (res.statusCode < 500) { console.log('[Aiden] Dashboard ready'); cb() }
-    else if (retries > 0) setTimeout(() => waitForDash(cb, retries - 1), 1000)
+    if (res.statusCode < 500) {
+      log('Dashboard ready')
+      onReady()
+    } else if (retries > 0) {
+      setTimeout(() => waitForDash(onReady, onFail, retries - 1), 1000)
+    } else {
+      onFail('Dashboard did not respond after 40 seconds')
+    }
     res.resume()
   })
   req.on('error', () => {
-    if (retries > 0) setTimeout(() => waitForDash(cb, retries - 1), 1000)
+    if (retries > 0) setTimeout(() => waitForDash(onReady, onFail, retries - 1), 1000)
+    else onFail('Dashboard did not start (connection refused after 40s)')
   })
   req.setTimeout(900, () => req.destroy())
-}
-
-// ── Splash window while services start ───────────────────────
-function createSplash () {
-  splashWindow = new BrowserWindow({
-    width: 400, height: 280,
-    frame:         false,
-    transparent:   false,
-    alwaysOnTop:   true,
-    resizable:     false,
-    skipTaskbar:   true,
-    backgroundColor: '#0e0e0e',
-    webPreferences: { nodeIntegration: false, contextIsolation: true },
-  })
-
-  // Inline splash HTML — no external file needed
-  splashWindow.loadURL(`data:text/html,
-    <html><head><style>
-      *{margin:0;padding:0;box-sizing:border-box}
-      body{background:#0e0e0e;color:#e8e8e8;font-family:'Segoe UI',sans-serif;
-           display:flex;flex-direction:column;align-items:center;justify-content:center;
-           height:100vh;gap:16px;user-select:none}
-      .logo{width:56px;height:56px;background:#f97316;border-radius:12px;
-            display:flex;align-items:center;justify-content:center;
-            font-family:monospace;font-size:22px;font-weight:800;color:#000}
-      h1{font-size:22px;font-weight:700;letter-spacing:-0.5px}
-      p{color:#666;font-size:13px}
-      .dot{display:inline-block;width:6px;height:6px;background:#f97316;
-           border-radius:50%;margin:0 3px;animation:pulse 1.2s ease-in-out infinite}
-      .dot:nth-child(2){animation-delay:.2s}.dot:nth-child(3){animation-delay:.4s}
-      @keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}
-    </style></head>
-    <body>
-      <div class="logo">A/</div>
-      <h1>Aiden</h1>
-      <p>Starting your personal AI OS<span class="dot"></span><span class="dot"></span><span class="dot"></span></p>
-    </body></html>`)
-}
-
-// ── Main browser window ───────────────────────────────────────
-function createWindow () {
-  if (splashWindow) { splashWindow.close(); splashWindow = null }
-
-  const identityPath   = path.join(WORKSPACE, 'identity.json')
-  const onboardingPath = path.join(WORKSPACE, 'onboarding-complete.json')
-  const isFirstRun     = !fs.existsSync(identityPath) && !fs.existsSync(onboardingPath)
-
-  // Write system status so onboarding page can query it
-  try {
-    fs.writeFileSync(
-      path.join(USER_DATA, 'system-status.json'),
-      JSON.stringify({ ollamaInstalled: checkOllama(), firstRun: isFirstRun }),
-      'utf-8'
-    )
-  } catch { /* non-fatal */ }
-
-  const iconPath = path.join(__dirname, '..', 'assets', 'icon.png')
-  mainWindow = new BrowserWindow({
-    width:   1280,
-    height:  800,
-    minWidth:  900,
-    minHeight: 600,
-    title:     'Aiden',
-    backgroundColor: '#0e0e0e',
-    icon:    fs.existsSync(iconPath) ? iconPath : undefined,
-    webPreferences: {
-      nodeIntegration:  false,
-      contextIsolation: true,
-      preload: path.join(__dirname, 'preload.js'),
-    },
-  })
-
-  const startUrl = isFirstRun
-    ? 'http://localhost:3000/onboarding'
-    : 'http://localhost:3000'
-
-  mainWindow.loadURL(startUrl)
-  mainWindow.setMenuBarVisibility(false)
-
-  mainWindow.webContents.on('new-window', (e, url) => {
-    e.preventDefault()
-    shell.openExternal(url)
-  })
-
-  mainWindow.on('close', (e) => {
-    if (!isQuitting) {
-      e.preventDefault()
-      mainWindow.hide()
-    }
-  })
-
-  mainWindow.on('closed', () => { mainWindow = null })
 }
 
 // ── System tray ───────────────────────────────────────────────
@@ -349,7 +408,7 @@ function createTray () {
     {
       label: mainWindow && mainWindow.isVisible() ? 'Hide Aiden' : 'Show Aiden',
       click () {
-        if (!mainWindow) { createWindow(); return }
+        if (!mainWindow) { createMainWindow(); return }
         if (mainWindow.isVisible()) mainWindow.hide()
         else { mainWindow.show(); mainWindow.focus() }
         tray.setContextMenu(buildMenu())
@@ -357,13 +416,14 @@ function createTray () {
     },
     { type: 'separator' },
     { label: 'Open in Browser', click () { shell.openExternal('http://localhost:3000') } },
+    { label: 'Open Log File',   click () { shell.openPath(LOG_FILE) } },
     { type: 'separator' },
     { label: 'Quit Aiden', click () { isQuitting = true; app.quit() } },
   ])
 
   tray.setContextMenu(buildMenu())
   tray.on('click', () => {
-    if (!mainWindow) { createWindow(); return }
+    if (!mainWindow) { createMainWindow(); return }
     if (mainWindow.isVisible()) mainWindow.focus()
     else { mainWindow.show(); mainWindow.focus() }
   })
@@ -374,41 +434,91 @@ function createTray () {
 }
 
 // ── App lifecycle ─────────────────────────────────────────────
-app.whenReady().then(() => {
-  // 0. Verify Node.js is installed and meets minimum version
+app.whenReady().then(async () => {
+  log('=== Aiden starting ===')
+  log(`userData: ${USER_DATA}`)
+  log(`IS_PACKAGED: ${IS_PACKAGED}`)
+  log(`DIST_DIR: ${DIST_DIR}`)
+  log(`DASH_DIR: ${DASH_DIR}`)
+
+  // 0. Verify Node.js
   if (!checkNodeJs()) return
 
-  // 1. Bootstrap user data dirs + default config
+  // 1. Bootstrap dirs
   bootstrapUserData()
 
-  // 2. Show splash while services start
-  createSplash()
+  // 2. Show main window immediately with loading screen
+  createMainWindow()
 
-  // 3. Start API server in-process (asar-protected)
-  startApiServer()
-
-  // 4. Start Next.js dashboard as child process
-  startDashboard()
-
-  // 5. Create tray icon immediately
+  // 3. Create tray
   createTray()
 
-  // 6. Wait for both services, then open window
-  waitForApi(() => {
-    waitForDash(() => {
-      createWindow()
-    })
-  })
+  // 4. Free port 4200 if occupied
+  setStatus('Checking ports...')
+  const port4200free = await checkPort(4200)
+  if (!port4200free) {
+    log('Port 4200 in use — freeing it')
+    setStatus('Freeing port 4200...')
+    await freePort(4200)
+  }
+
+  // 5. Start API server in-process
+  setStatus('Starting API server...')
+  startApiServer()
+
+  // 6. Start Next.js dashboard
+  setStatus('Starting dashboard...')
+  startDashboard()
+
+  // 7. Wait for API, then dashboard, then navigate
+  setStatus('Waiting for API server (up to 40s)...')
+  waitForApi(
+    () => {
+      setStatus('API ready — waiting for dashboard...')
+      waitForDash(
+        () => {
+          setStatus('All systems ready!')
+          loadDashboard()
+        },
+        (reason) => {
+          log(`Dashboard wait FAILED: ${reason}`)
+          setStatus(`Dashboard failed: ${reason}`)
+          dialog.showMessageBox(mainWindow, {
+            type:    'error',
+            title:   'Aiden — Dashboard timed out',
+            message: 'The dashboard did not start in time.',
+            detail:  `${reason}\n\nLog file: ${LOG_FILE}\n\nPlease send this log to hello@taracod.com`,
+            buttons: ['Open Log File', 'Keep Waiting', 'Quit'],
+          }).then(({ response }) => {
+            if (response === 0) shell.openPath(LOG_FILE)
+            if (response === 2) { isQuitting = true; app.quit() }
+          })
+        }
+      )
+    },
+    (reason) => {
+      log(`API wait FAILED: ${reason}`)
+      setStatus(`API failed: ${reason}`)
+      dialog.showMessageBox(mainWindow, {
+        type:    'error',
+        title:   'Aiden — API server timed out',
+        message: 'The Aiden API server did not start in time.',
+        detail:  `${reason}\n\nLog file: ${LOG_FILE}\n\nPlease send this log to hello@taracod.com`,
+        buttons: ['Open Log File', 'Keep Waiting', 'Quit'],
+      }).then(({ response }) => {
+        if (response === 0) shell.openPath(LOG_FILE)
+        if (response === 2) { isQuitting = true; app.quit() }
+      })
+    }
+  )
 })
 
-// Keep app alive when all windows are closed (lives in tray)
 app.on('window-all-closed', (e) => {
   if (!isQuitting) e.preventDefault()
 })
 
 app.on('activate', () => {
-  // macOS: re-open on dock click
-  if (!mainWindow) createWindow()
+  if (!mainWindow) createMainWindow()
 })
 
 app.on('before-quit', () => {
