@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aiden</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0a;
+    color: #e8e8e8;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    gap: 20px;
+    user-select: none;
+    overflow: hidden;
+  }
+  .logo {
+    width: 68px;
+    height: 68px;
+    background: #f97316;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: monospace;
+    font-size: 28px;
+    font-weight: 900;
+    color: #000;
+    letter-spacing: -1px;
+  }
+  h1 {
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    color: #f0f0f0;
+  }
+  #status {
+    font-size: 13px;
+    color: #666;
+    font-family: monospace;
+    text-align: center;
+    max-width: 380px;
+    min-height: 18px;
+    transition: opacity 0.2s;
+  }
+  .spinner {
+    width: 36px;
+    height: 36px;
+    border: 3px solid #1e1e1e;
+    border-top-color: #f97316;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+  .log-hint {
+    position: fixed;
+    bottom: 16px;
+    font-size: 10px;
+    color: #2a2a2a;
+    font-family: monospace;
+    text-align: center;
+    max-width: 90vw;
+  }
+  .error-box {
+    display: none;
+    background: #1a0a0a;
+    border: 1px solid #5a1a1a;
+    border-radius: 8px;
+    padding: 16px 20px;
+    max-width: 420px;
+    text-align: center;
+    gap: 10px;
+    flex-direction: column;
+  }
+  .error-box.visible { display: flex; }
+  .error-title { color: #f87171; font-weight: 600; font-size: 14px; }
+  .error-msg { color: #999; font-size: 12px; font-family: monospace; line-height: 1.5; }
+</style>
+</head>
+<body>
+  <div class="logo">A/</div>
+  <h1>Aiden</h1>
+  <div class="spinner" id="spinner"></div>
+  <div id="status">Starting up...</div>
+  <div class="error-box" id="errorBox">
+    <div class="error-title">Startup failed</div>
+    <div class="error-msg" id="errorMsg"></div>
+  </div>
+  <div class="log-hint" id="logHint"></div>
+
+  <script>
+    function setStatus(msg) {
+      document.getElementById('status').textContent = msg;
+    }
+    function showError(msg, logPath) {
+      document.getElementById('spinner').style.display = 'none';
+      document.getElementById('errorBox').classList.add('visible');
+      document.getElementById('errorMsg').textContent = msg;
+      if (logPath) document.getElementById('logHint').textContent = 'Log: ' + logPath;
+    }
+  </script>
+</body>
+</html>

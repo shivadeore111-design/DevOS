@@ -16,6 +16,7 @@ const os    = require('os')
 let mainWindow    = null
 let tray          = null
 let dashProcess   = null
+let apiProcess    = null
 let isQuitting    = false
 
 // ── Paths ─────────────────────────────────────────────────────
@@ -24,10 +25,10 @@ const USER_DATA   = app.getPath('userData')
 const RESOURCES   = IS_PACKAGED ? process.resourcesPath : path.join(__dirname, '..')
 
 const DIST_DIR    = IS_PACKAGED
-  ? path.join(__dirname, '..', 'dist')
+  ? path.join(process.resourcesPath, 'dist')
   : path.join(__dirname, '..', 'dist')
 const DASH_DIR    = IS_PACKAGED
-  ? path.join(RESOURCES, 'dashboard', 'standalone')
+  ? path.join(process.resourcesPath, 'dashboard', 'standalone')
   : path.join(__dirname, '..', 'dashboard-next', '.next', 'standalone')
 const CONFIG_SRC  = IS_PACKAGED
   ? path.join(RESOURCES, 'config')
@@ -165,7 +166,16 @@ function setStatus (msg) {
   log(msg)
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.executeJavaScript(
-      `document.getElementById('s') && (document.getElementById('s').textContent = ${JSON.stringify(msg)})`
+      `typeof setStatus === 'function' && setStatus(${JSON.stringify(msg)})`
+    ).catch(() => {})
+  }
+}
+
+function setLoadingError (msg) {
+  log('LOADING ERROR: ' + msg)
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.executeJavaScript(
+      `typeof showError === 'function' && showError(${JSON.stringify(msg)}, ${JSON.stringify(LOG_FILE.replace(/\\/g, '/'))})`
     ).catch(() => {})
   }
 }
@@ -176,9 +186,9 @@ function createMainWindow () {
 
   mainWindow = new BrowserWindow({
     width:   1280,
-    height:  800,
+    height:  900,
     minWidth:  900,
-    minHeight: 600,
+    minHeight: 700,
     show:      false,
     title:     'Aiden',
     backgroundColor: '#0e0e0e',
@@ -190,31 +200,14 @@ function createMainWindow () {
     },
   })
 
-  mainWindow.loadURL(`data:text/html,<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{background:%230e0e0e;color:%23e8e8e8;font-family:'Segoe UI',monospace;
-  display:flex;flex-direction:column;align-items:center;justify-content:center;
-  height:100vh;gap:16px;user-select:none}
-.logo{width:64px;height:64px;background:%23f97316;border-radius:14px;
-  display:flex;align-items:center;justify-content:center;
-  font-family:monospace;font-size:26px;font-weight:900;color:%23000}
-h1{font-size:24px;font-weight:700;letter-spacing:-0.5px;color:%23e8e8e8}
-#s{font-size:12px;color:%23555;font-family:monospace;max-width:400px;text-align:center}
-.dots{display:flex;gap:6px;margin-top:4px}
-.dot{width:7px;height:7px;background:%23f97316;border-radius:50%;
-  animation:pulse 1.4s ease-in-out infinite}
-.dot:nth-child(2){animation-delay:.2s}.dot:nth-child(3){animation-delay:.4s}
-@keyframes pulse{0%,100%{opacity:.2;transform:scale(.8)}50%{opacity:1;transform:scale(1)}}
-.log-hint{font-size:10px;color:%23333;position:fixed;bottom:16px;font-family:monospace}
-</style></head>
-<body>
-  <div class="logo">A/</div>
-  <h1>Aiden</h1>
-  <div id="s">Starting up...</div>
-  <div class="dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
-  <div class="log-hint">Log: ${LOG_FILE.replace(/\\/g, '/')}</div>
-</body></html>`)
+  const loadingHtml = path.join(__dirname, 'loading.html')
+  mainWindow.loadFile(loadingHtml)
+  // Inject log path hint once DOM is ready
+  mainWindow.webContents.once('dom-ready', () => {
+    mainWindow.webContents.executeJavaScript(
+      `document.getElementById('logHint') && (document.getElementById('logHint').textContent = 'Log: ${LOG_FILE.replace(/\\/g, '/')}')`
+    ).catch(() => {})
+  })
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show()
@@ -253,24 +246,118 @@ function loadDashboard () {
   mainWindow.loadURL(startUrl)
 }
 
-// ── Start API server in-process ───────────────────────────────
+// ── Auto update check (35s after launch) ─────────────────────
+function scheduleUpdateCheck () {
+  setTimeout(async () => {
+    try {
+      const https   = require('https')
+      const pkgPath = path.join(__dirname, '..', 'package.json')
+      const version = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')).version || '0.0.0'
+      const reqUrl  = `https://api.taracod.com/update/check?version=${encodeURIComponent(version)}`
+      log(`Checking for updates (current: v${version})`)
+      await new Promise((resolve) => {
+        https.get(reqUrl, (res) => {
+          let body = ''
+          res.on('data', (chunk) => { body += chunk })
+          res.on('end', () => {
+            try {
+              const data = JSON.parse(body)
+              if (data.updateAvailable && data.latestVersion) {
+                log(`Update available: v${data.latestVersion}`)
+                if (mainWindow && !mainWindow.isDestroyed()) {
+                  const detail = JSON.stringify({ version: data.latestVersion, url: data.downloadUrl || '' })
+                  mainWindow.webContents.executeJavaScript(
+                    `window.dispatchEvent(new CustomEvent('aiden:update', { detail: ${detail} }))`
+                  ).catch(() => {})
+                }
+              } else {
+                log('No update available')
+              }
+            } catch { /* ignore parse errors */ }
+            resolve(null)
+          })
+        }).on('error', (err) => { log(`Update check error: ${err.message}`); resolve(null) })
+      })
+    } catch (err) { log(`Update check failed: ${err.message}`) }
+  }, 35000)
+}
+
+// ── Start API server as child process ────────────────────────
 function startApiServer () {
-  try {
-    process.env.AIDEN_USER_DATA = USER_DATA
-    process.env.NODE_ENV        = 'production'
-    log(`Loading API server from: ${path.join(DIST_DIR, 'api', 'server.js')}`)
-    const serverMod = require(path.join(DIST_DIR, 'api', 'server.js'))
-    if (typeof serverMod.startApiServer === 'function') {
-      serverMod.startApiServer(4200)
-      log('API server started on port 4200')
-    } else {
-      throw new Error('startApiServer export not found in dist/api/server.js')
-    }
-  } catch (err) {
-    log(`API server FAILED: ${err.message}\n${err.stack}`)
-    // Non-fatal — show error but continue (dashboard may still work)
-    setStatus(`Warning: API server failed to start — ${err.message}`)
+  const nodeBin = findNodeBin()
+  const indexJs = path.join(DIST_DIR, 'index.js')
+  log(`Checking API entry: ${indexJs} (exists: ${fs.existsSync(indexJs)})`)
+
+  if (!fs.existsSync(indexJs)) {
+    const msg = `API server not found at:\n${indexJs}\n\nThis is a build issue. Please reinstall Aiden.\n\nLog: ${LOG_FILE}`
+    log('ERROR: ' + msg)
+    dialog.showErrorBox('Aiden — Missing Files', msg)
+    return
   }
+
+  log(`Spawning API server: ${nodeBin} ${indexJs} serve`)
+
+  const nodePath = IS_PACKAGED
+    ? path.join(process.resourcesPath, 'node_modules')
+    : path.join(__dirname, '..', 'node_modules')
+
+  apiProcess = spawn(nodeBin, [indexJs, 'serve'], {
+    cwd:   IS_PACKAGED ? path.join(process.resourcesPath, 'dist') : USER_DATA,
+    env:   {
+      ...process.env,
+      AIDEN_USER_DATA: USER_DATA,
+      NODE_ENV:        'production',
+      NODE_PATH:       nodePath,
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+
+  const apiLog    = path.join(LOGS_DIR, 'api.log')
+  const logStream = fs.createWriteStream(apiLog, { flags: 'a' })
+  let   crashCount = 0
+
+  apiProcess.stdout.on('data', (d) => {
+    const text = d.toString().trim()
+    logStream.write(d)
+    log('API OUT: ' + text)
+  })
+
+  apiProcess.stderr.on('data', (d) => {
+    const text = d.toString().trim()
+    logStream.write(d)
+    log('API ERR: ' + text)
+  })
+
+  apiProcess.on('error', (err) => {
+    log(`API SPAWN ERROR: ${err.message}`)
+    dialog.showMessageBox(mainWindow, {
+      type:    'error',
+      title:   'Aiden — Could not start API server',
+      message: 'Failed to launch the API server process.',
+      detail:  `Error: ${err.message}\n\nNode.js used: ${nodeBin}\nLog file: ${LOG_FILE}\n\nPlease send this log to hello@taracod.com`,
+      buttons: ['Open Log File', 'OK'],
+    }).then(({ response }) => { if (response === 0) shell.openPath(LOG_FILE) })
+  })
+
+  apiProcess.on('exit', (code, signal) => {
+    log(`API EXIT: code=${code} signal=${signal}`)
+    if (!isQuitting) {
+      crashCount++
+      if (crashCount >= 3) {
+        log('API server crashed 3 times — showing error dialog')
+        dialog.showMessageBox(mainWindow || null, {
+          type:    'error',
+          title:   'Aiden — API server keeps crashing',
+          message: `API server exited with code ${code}`,
+          detail:  `Crashed ${crashCount} times.\n\nLog file: ${LOG_FILE}\n\nPlease send this log to hello@taracod.com`,
+          buttons: ['Open Log File', 'OK'],
+        }).then(({ response }) => { if (response === 0) shell.openPath(LOG_FILE) })
+        return
+      }
+      log(`Restarting API server in 2s (crash #${crashCount})`)
+      setTimeout(startApiServer, 2000)
+    }
+  })
 }
 
 // ── Start Next.js dashboard ───────────────────────────────────
@@ -294,9 +381,10 @@ function startDashboard () {
     cwd: DASH_DIR,
     env: {
       ...process.env,
-      PORT:     '3000',
-      HOSTNAME: '127.0.0.1',
-      NODE_ENV: 'production',
+      PORT:      '3000',
+      HOSTNAME:  '127.0.0.1',
+      NODE_ENV:  'production',
+      NODE_PATH: path.join(DASH_DIR, 'node_modules'),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
@@ -435,6 +523,9 @@ function createTray () {
 
 // ── App lifecycle ─────────────────────────────────────────────
 app.whenReady().then(async () => {
+  // Ensure log directory exists before first log() call
+  try { fs.mkdirSync(path.dirname(LOG_FILE), { recursive: true }) } catch { /* ignore */ }
+  try { fs.mkdirSync(LOGS_DIR, { recursive: true }) } catch { /* ignore */ }
   log('=== Aiden starting ===')
   log(`userData: ${USER_DATA}`)
   log(`IS_PACKAGED: ${IS_PACKAGED}`)
@@ -479,10 +570,11 @@ app.whenReady().then(async () => {
         () => {
           setStatus('All systems ready!')
           loadDashboard()
+          scheduleUpdateCheck()
         },
         (reason) => {
           log(`Dashboard wait FAILED: ${reason}`)
-          setStatus(`Dashboard failed: ${reason}`)
+          setLoadingError(`Dashboard failed to start.\n${reason}\n\nPlease check the log file.`)
           dialog.showMessageBox(mainWindow, {
             type:    'error',
             title:   'Aiden — Dashboard timed out',
@@ -498,7 +590,7 @@ app.whenReady().then(async () => {
     },
     (reason) => {
       log(`API wait FAILED: ${reason}`)
-      setStatus(`API failed: ${reason}`)
+      setLoadingError(`API server failed to start.\n${reason}\n\nPlease check the log file.`)
       dialog.showMessageBox(mainWindow, {
         type:    'error',
         title:   'Aiden — API server timed out',
@@ -526,6 +618,9 @@ app.on('before-quit', () => {
 })
 
 app.on('will-quit', () => {
+  if (apiProcess) {
+    try { apiProcess.kill('SIGTERM') } catch { /* ignore */ }
+  }
   if (dashProcess) {
     try { dashProcess.kill('SIGTERM') } catch { /* ignore */ }
   }

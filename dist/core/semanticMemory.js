@@ -14,6 +14,53 @@ const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 const bm25_1 = require("./bm25");
 const MEMORY_PATH = path_1.default.join(process.cwd(), 'workspace', 'semantic.json');
+// ── Temporal decay helpers ────────────────────────────────────
+const HALF_LIFE_DAYS = 30;
+const DECAY_LAMBDA = Math.LN2 / HALF_LIFE_DAYS;
+function applyTemporalDecay(results) {
+    const now = Date.now();
+    return results.map(r => {
+        // Facts and entities are evergreen — never decay
+        if (r.item.metadata.type === 'fact' || r.item.metadata.type === 'entity') {
+            return r;
+        }
+        const ageInDays = (now - r.item.metadata.timestamp) / 86400000;
+        const multiplier = Math.exp(-DECAY_LAMBDA * ageInDays);
+        return { ...r, score: r.score * multiplier };
+    }).sort((a, b) => b.score - a.score);
+}
+// ── MMR diversity re-ranking helpers ──────────────────────────
+function tokenize(text) {
+    return new Set(text.toLowerCase().split(/\W+/).filter(t => t.length > 2));
+}
+function jaccardSimilarity(a, b) {
+    const intersection = new Set([...a].filter(x => b.has(x)));
+    const union = new Set([...a, ...b]);
+    return union.size === 0 ? 0 : intersection.size / union.size;
+}
+function applyMMR(results, lambda = 0.7, maxResults = 10) {
+    if (results.length <= 1)
+        return results;
+    const selected = [];
+    const remaining = [...results];
+    // Always pick highest-scoring first
+    selected.push(remaining.shift());
+    while (selected.length < maxResults && remaining.length > 0) {
+        let bestIdx = 0;
+        let bestScore = -Infinity;
+        for (let i = 0; i < remaining.length; i++) {
+            const relevance = remaining[i].score;
+            const maxSim = Math.max(...selected.map(s => jaccardSimilarity(tokenize(remaining[i].item.text), tokenize(s.item.text))));
+            const mmrScore = lambda * relevance - (1 - lambda) * maxSim;
+            if (mmrScore > bestScore) {
+                bestScore = mmrScore;
+                bestIdx = i;
+            }
+        }
+        selected.push(remaining.splice(bestIdx, 1)[0]);
+    }
+    return selected;
+}
 class SemanticMemory {
     constructor() {
         this.data = [];
@@ -148,15 +195,18 @@ class SemanticMemory {
         vectorResults.forEach((r, rank) => vectorScores.set(r.index, 1 / (rank + 1)));
         // Reciprocal rank fusion
         const allIndices = new Set([...bm25Scores.keys(), ...vectorScores.keys()]);
-        return Array.from(allIndices)
+        const fused = Array.from(allIndices)
             .map(idx => ({
             item: this.data[idx],
             score: (bm25Scores.get(idx) || 0) * 0.4 + (vectorScores.get(idx) || 0) * 0.6,
         }))
             .filter(r => r.item && r.score >= minScore)
-            .sort((a, b) => b.score - a.score)
-            .slice(0, topK)
-            .map(r => r.item);
+            .sort((a, b) => b.score - a.score);
+        // Feature 4: temporal decay — recent memories rank higher
+        const decayed = applyTemporalDecay(fused);
+        // Feature 5: MMR diversity — prevent duplicate daily-note results
+        const diverse = applyMMR(decayed, 0.7, topK);
+        return diverse.map(r => r.item);
     }
     searchText(query, topK = 3) {
         return this.search(query, topK).map(item => item.text);

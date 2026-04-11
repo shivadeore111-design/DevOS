@@ -16,7 +16,29 @@ const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 const morningBriefing_1 = require("./morningBriefing");
 const dreamEngine_1 = require("./dreamEngine");
+const goalTracker_1 = require("./goalTracker");
+const patternDetector_1 = require("./patternDetector");
 const TASKS_PATH = path_1.default.join(process.cwd(), 'workspace', 'scheduled-tasks.json');
+const HEARTBEAT_PATH = path_1.default.join(process.cwd(), 'workspace', 'HEARTBEAT.md');
+// ── Feature 8: HEARTBEAT.md config loader ─────────────────────
+function loadHeartbeatConfig() {
+    try {
+        if (!fs_1.default.existsSync(HEARTBEAT_PATH))
+            return;
+        const content = fs_1.default.readFileSync(HEARTBEAT_PATH, 'utf-8');
+        const sections = content.split(/^## /m).slice(1);
+        for (const section of sections) {
+            const title = section.split('\n')[0];
+            const scheduleMatch = title.match(/\((.+)\)/);
+            if (!scheduleMatch)
+                continue;
+            console.log(`[Heartbeat] Loaded: ${title.split('(')[0].trim()}`);
+        }
+    }
+    catch (e) {
+        console.warn(`[Heartbeat] Could not load HEARTBEAT.md: ${e.message}`);
+    }
+}
 // ── Natural-language → cron converter ─────────────────────────
 function naturalToCron(schedule) {
     const s = schedule.toLowerCase().trim();
@@ -116,6 +138,8 @@ class Scheduler {
         this.intervals = new Map();
         this.load();
         this.registerDreamSchedule();
+        this.registerHeartbeatSchedule();
+        loadHeartbeatConfig();
     }
     // ── Public API ─────────────────────────────────────────
     add(description, schedule, goal) {
@@ -168,6 +192,80 @@ class Scheduler {
         }, 6 * 60 * 60 * 1000);
         console.log('[Scheduler] Dream engine scheduled (every 6h, startup+30s)');
     }
+    // ── Feature 16: HEARTBEAT_OK suppression pattern ──────────────
+    // Runs every 30 min during active hours (8 AM–11 PM).
+    // Uses local Ollama (zero API cost). Silent unless alert found.
+    registerHeartbeatSchedule() {
+        async function runHeartbeat() {
+            const hour = new Date().getHours();
+            const ACTIVE_START = 8;
+            const ACTIVE_END = 23;
+            if (hour < ACTIVE_START || hour >= ACTIVE_END)
+                return;
+            if (!fs_1.default.existsSync(HEARTBEAT_PATH))
+                return;
+            const checklist = fs_1.default.readFileSync(HEARTBEAT_PATH, 'utf-8').trim();
+            if (!checklist)
+                return;
+            // Build heartbeat prompt: checklist + active goals + patterns
+            let heartbeatPrompt = checklist;
+            const goalsSummary = (0, goalTracker_1.getActiveGoalsSummary)();
+            if (goalsSummary)
+                heartbeatPrompt += '\n\n' + goalsSummary;
+            try {
+                const patterns = await (0, patternDetector_1.detectPatterns)();
+                const patternSummary = (0, patternDetector_1.getPatternSummary)(patterns);
+                if (patternSummary)
+                    heartbeatPrompt += '\n\n' + patternSummary;
+            }
+            catch { /* pattern detection is non-critical */ }
+            console.log('[Heartbeat] Running checks...');
+            try {
+                const resp = await fetch('http://localhost:11434/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        model: 'llama3.2:latest',
+                        stream: false,
+                        messages: [
+                            {
+                                role: 'system',
+                                content: "You are Aiden running a background heartbeat. Check the items in the list. If NOTHING needs the user's attention, reply ONLY: HEARTBEAT_OK\nIf something IS urgent or interesting, describe it in 1-2 sentences. Do NOT include HEARTBEAT_OK if you have alerts.",
+                            },
+                            { role: 'user', content: heartbeatPrompt },
+                        ],
+                    }),
+                    signal: AbortSignal.timeout(30000),
+                });
+                if (!resp.ok) {
+                    console.log('[Heartbeat] Ollama unavailable — skipping');
+                    return;
+                }
+                const data = await resp.json();
+                const response = (data?.message?.content || '');
+                const cleaned = response.replace(/HEARTBEAT_OK/gi, '').trim();
+                if (!cleaned || cleaned.length < 10) {
+                    console.log('[Heartbeat] All clear');
+                    return;
+                }
+                console.log('[Heartbeat] Alert:', cleaned);
+                // Deliver alert via API server (non-blocking)
+                fetch('http://localhost:4200/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: `notify user with desktop alert: ${cleaned}` }),
+                    signal: AbortSignal.timeout(10000),
+                }).catch(() => { });
+            }
+            catch (e) {
+                console.log('[Heartbeat] Check skipped:', e.message);
+            }
+        }
+        // Run 60s after startup, then every 30 minutes
+        setTimeout(() => runHeartbeat(), 60000);
+        setInterval(() => runHeartbeat(), 30 * 60 * 1000);
+        console.log('[Heartbeat] Scheduled (every 30m, active hours 8 AM–11 PM)');
+    }
     // ── Sprint 25: morning briefing registration ────────────
     registerMorningBriefing() {
         const config = (0, morningBriefing_1.loadBriefingConfig)();
@@ -194,7 +292,6 @@ class Scheduler {
         this.scheduleTask(task);
         console.log(`[Scheduler] Morning briefing registered at ${config.time}`);
     }
-    // ── Internal ───────────────────────────────────────────
     scheduleTask(task) {
         // Poll every minute and fire when cron expression matches current time
         const interval = setInterval(() => {
@@ -203,7 +300,11 @@ class Scheduler {
             if (this.shouldRun(task)) {
                 task.lastRun = Date.now();
                 this.save();
-                this.runTask(task).catch(e => console.error(`[Scheduler] Task "${task.description}" threw: ${e.message}`));
+                const taskWithTimeout = Promise.race([
+                    this.runTask(task),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error(`Task timeout after 5 minutes: ${task.description}`)), Scheduler.TASK_TIMEOUT_MS)),
+                ]);
+                taskWithTimeout.catch(e => console.log(`[Security] Task killed: "${task.description}": ${e.message}`));
             }
         }, 60 * 1000);
         this.intervals.set(task.id, interval);
@@ -273,5 +374,7 @@ class Scheduler {
     }
 }
 exports.Scheduler = Scheduler;
+// ── Internal ───────────────────────────────────────────
+Scheduler.TASK_TIMEOUT_MS = 5 * 60 * 1000; // 5-minute dead-man switch
 // ── Singleton ──────────────────────────────────────────────────
 exports.scheduler = new Scheduler();

@@ -49,7 +49,7 @@
     "postinstall": "node scripts/postinstall.js",
     "start": "node dist/index.js serve",
     "electron": "electron .",
-    "dist": "node scripts/prepare-electron.js && electron-builder --win --publish never",
+    "dist": "node scripts/prepare-electron.js && electron-builder --win --publish never && node -e \"const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.main='./dist/index.js';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\\n');console.log('  main restored → ./dist/index.js')\"",
     "dist:dir": "node scripts/prepare-electron.js && electron-builder --win --dir --publish never",
     "build:win": "npm run dist",
     "test": "vitest run",
@@ -85,13 +85,32 @@
       "deleteAppDataOnUninstall": false
     },
     "files": [
-      "dist/**/*",
       "electron/**/*",
       "assets/**/*",
-      "package.json",
-      "!dist/**/*.map"
+      "package.json"
     ],
     "extraResources": [
+      {
+        "from": "dist-bundle",
+        "to": "dist",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "native-modules",
+        "to": "node_modules",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "dashboard-next/.next/standalone/node_modules",
+        "to": "dashboard/standalone/node_modules",
+        "filter": [
+          "**/*"
+        ]
+      },
       {
         "from": "dashboard-next/.next/standalone",
         "to": "dashboard/standalone",
@@ -112,12 +131,7 @@
     "asar": true,
     "npmRebuild": false,
     "buildDependenciesFromSource": false,
-    "asarUnpack": [
-      "node_modules/screenshot-desktop/**",
-      "node_modules/bcrypt/**",
-      "node_modules/puppeteer/.local-chromium/**",
-      "node_modules/playwright/.local-browsers/**"
-    ]
+    "asarUnpack": []
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
@@ -169,6 +183,7 @@
     "@vitest/ui": "^1.6.0",
     "electron": "^41.1.1",
     "electron-builder": "^26.8.1",
+    "esbuild": "^0.28.0",
     "javascript-obfuscator": "^5.4.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3",

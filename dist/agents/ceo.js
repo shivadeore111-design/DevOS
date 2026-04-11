@@ -8,12 +8,15 @@ exports.ceoAgent = exports.CEOAgent = void 0;
 exports.requiresVerification = requiresVerification;
 exports.parseTaskNotification = parseTaskNotification;
 exports.formatTaskNotification = formatTaskNotification;
+exports.forkAgent = forkAgent;
 // agents/ceo.ts — CEO orchestration agent.
 // Parses structured task notifications, decides delegation,
 // tracks session cost, warns on budget approach.
 const bgLLM_1 = require("../core/bgLLM");
 const auditTrail_1 = require("../core/auditTrail");
 const costTracker_1 = require("../core/costTracker");
+const conversationMemory_1 = require("../core/conversationMemory");
+const toolRegistry_1 = require("../core/toolRegistry");
 // ── requiresVerification ──────────────────────────────────────
 // Returns true if a task needs adversarial verification before
 // the result is trusted.
@@ -65,6 +68,30 @@ function formatTaskNotification(n) {
   </usage>
 </task-notification>`;
 }
+// ── Fork pattern — context-aware agent delegation ─────────────
+const FORK_CAPABLE_AGENTS = ['ceo'];
+async function forkAgent(agentType, taskPrompt, inheritContext = false) {
+    let contextBlock = '';
+    if (inheritContext) {
+        const memCtx = conversationMemory_1.conversationMemory.buildContext();
+        if (memCtx && memCtx.trim()) {
+            contextBlock =
+                '\n## Conversation Context\n' +
+                    'The user has been discussing:\n' +
+                    memCtx.slice(0, 1200) + '\n';
+        }
+    }
+    const fullPrompt = contextBlock
+        ? `${contextBlock}\n## Your Task\n${taskPrompt}`
+        : taskPrompt;
+    const result = await (0, toolRegistry_1.executeTool)('run_agent', {
+        agent: agentType,
+        task: fullPrompt,
+        inheritContext: false, // already injected above — don't double-inject
+        _callerAgent: 'ceo',
+    });
+    return { success: result.success, output: result.output, error: result.error };
+}
 // ── CEO system prompt ─────────────────────────────────────────
 function buildCEOSystem(sessionCostUSD, dailyBudget) {
     const budgetWarn = sessionCostUSD > dailyBudget * 0.8
@@ -77,6 +104,15 @@ DELEGATION RULES:
 2. When delegating: tell the user what you're launching, then STOP — never fabricate results before the task notification arrives
 3. Continue existing agents via taskId to reuse their loaded context
 4. Track cumulative session cost from notifications — warn user when approaching daily budget
+
+## Delegation Quality Rules
+When delegating to specialists:
+- ALWAYS include WHY the user wants this, not just WHAT to do
+- Include what was already tried and what failed
+- Include specific file paths, variable names, and details from context
+- NEVER write "based on your findings, fix it" — give the specialist the exact context they need
+- For complex tasks (long description or dependencies), the specialist receives full conversation context automatically
+- Specialists CANNOT spawn their own sub-agents — only CEO-level agents can delegate
 
 TASK NOTIFICATIONS: When you receive a <task-notification> block, parse it and act accordingly:
 - completed: summarize the result for the user

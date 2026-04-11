@@ -5,6 +5,7 @@
 // ============================================================
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ollamaProvider = void 0;
+const modelDiscovery_1 = require("../core/modelDiscovery");
 exports.ollamaProvider = {
     name: 'ollama',
     async generate(messages, model) {
@@ -12,6 +13,7 @@ exports.ollamaProvider = {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ model, stream: false, messages }),
+            signal: AbortSignal.timeout((0, modelDiscovery_1.getOllamaTimeout)(model || '')),
         });
         const data = await res.json();
         return data?.message?.content || '';
@@ -21,6 +23,7 @@ exports.ollamaProvider = {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ model, stream: true, messages }),
+            signal: AbortSignal.timeout((0, modelDiscovery_1.getOllamaTimeout)(model || '')),
         });
         if (!res.body)
             return;

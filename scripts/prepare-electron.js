@@ -38,6 +38,16 @@ console.log('\n═══ Step 1: TypeScript build ═══')
 run('npx tsc --outDir dist', ROOT)
 console.log('  ✅ dist/ compiled')
 
+// ── Step 1.5: Bundle API server with esbuild ─────────────────
+console.log('\n═══ Step 1.5: Bundle API server (esbuild) ═══')
+run('node scripts/bundle-api.js', ROOT)
+console.log('  ✅ dist-bundle/index.js produced')
+
+// ── Step 1.6: Copy native modules ────────────────────────────
+console.log('\n═══ Step 1.6: Copy native modules ═══')
+run('node scripts/copy-native-modules.js', ROOT)
+console.log('  ✅ native-modules/ populated')
+
 // ── Step 2: Next.js standalone build ─────────────────────────
 console.log('\n═══ Step 2: Next.js dashboard (standalone) ═══')
 // Ensure dashboard dependencies are installed
@@ -76,6 +86,30 @@ if (fs.existsSync(publicSrc)) {
 } else {
   console.log('  (no public/ dir, skipping)')
 }
+
+// ── Step 3.5: Reset workspace/USER.md to blank template ──────
+// Ensures the developer's personal profile never ships in the installer.
+// Each user populates their own USER.md via onboarding or Settings → My Profile.
+console.log('\n═══ Step 3.5: Reset USER.md to blank template ═══')
+const userMdPath = path.join(ROOT, 'workspace', 'USER.md')
+const userMdTemplate = '# User Profile\nName: User\n'
+try {
+  fs.mkdirSync(path.dirname(userMdPath), { recursive: true })
+  fs.writeFileSync(userMdPath, userMdTemplate, 'utf8')
+  console.log('  ✅ workspace/USER.md reset to blank template')
+} catch (e) {
+  console.warn('  ⚠️  Could not reset USER.md:', e.message)
+}
+
+// ── Step 4: Point main at Electron entry ─────────────────────
+console.log('\n═══ Step 4: Set Electron entry point ═══')
+const pkgPath = path.join(ROOT, 'package.json')
+const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'))
+const oldMain = pkg.main
+pkg.main = 'electron/main.js'
+fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n')
+console.log(`  main: "${oldMain}" → "electron/main.js"`)
+console.log('  ✅ package.json updated for Electron build')
 
 // ── Done ─────────────────────────────────────────────────────
 console.log('\n═══ Preparation complete ═══')

@@ -4,11 +4,15 @@
 // Copyright (c) 2026 Shiva Deore. All rights reserved.
 // ============================================================
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.getLocalModels = getLocalModels;
+exports.initLocalModels = initLocalModels;
+exports.getOllamaModelForTask = getOllamaModelForTask;
 exports.getNextAvailableAPI = getNextAvailableAPI;
 exports.markRateLimited = markRateLimited;
 exports.recordResponseTime = recordResponseTime;
 exports.incrementUsage = incrementUsage;
 exports.logProviderStatus = logProviderStatus;
+exports.assessComplexity = assessComplexity;
 exports.getModelForTask = getModelForTask;
 exports.getSmartProvider = getSmartProvider;
 // providers/router.ts — Smart multi-API routing engine
@@ -20,6 +24,7 @@ const openrouter_1 = require("./openrouter");
 const gemini_1 = require("./gemini");
 const cerebras_1 = require("./cerebras");
 const nvidia_1 = require("./nvidia");
+const modelDiscovery_1 = require("../core/modelDiscovery");
 // Per-provider rate-limit windows — tuned to actual reset characteristics.
 // Previous flat 1-hour window was far too conservative for fast-reset APIs.
 const RATE_LIMIT_WINDOWS = {
@@ -42,6 +47,49 @@ const DEFAULT_RATE_LIMIT_MS = 60 * 1000; // 1 minute fallback
 // In-memory response-time tracking (EWMA per provider)
 // Separate from the config file so it resets on restart without persisting stale values.
 const responseTimesMs = new Map();
+// ── Local model discovery cache ───────────────────────────────
+// Populated once at startup via initLocalModels(). Read-only after that.
+let localModels = {
+    planner: null, responder: null, coder: null, fast: null, all: [],
+};
+function getLocalModels() { return localModels; }
+async function initLocalModels() {
+    localModels = await (0, modelDiscovery_1.discoverLocalModels)();
+    if (localModels.all.length > 0) {
+        console.log('[ModelDiscovery] Found local models:');
+        console.log('  Planner:   ', localModels.planner);
+        console.log('  Responder: ', localModels.responder);
+        console.log('  Coder:     ', localModels.coder);
+        console.log('  Fast:      ', localModels.fast);
+        // Persist discovered assignments to config so agentLoop can read them
+        const config = (0, index_1.loadConfig)();
+        config.ollama = {
+            ...(config.ollama || { fallbackModels: [], baseUrl: 'http://localhost:11434' }),
+            model: localModels.responder || config.ollama?.model || 'gemma4:e4b',
+            plannerModel: localModels.planner || undefined,
+            coderModel: localModels.coder || undefined,
+            fastModel: localModels.fast || undefined,
+        };
+        (0, index_1.saveConfig)(config);
+    }
+    else {
+        console.log('[ModelDiscovery] No local models found — cloud only');
+    }
+    return localModels;
+}
+// ── Per-task Ollama model selector ────────────────────────────
+function getOllamaModelForTask(task) {
+    // Prefer user overrides from config, then discovered models, then safe default
+    const config = (0, index_1.loadConfig)();
+    switch (task) {
+        case 'planner':
+            return config.ollama?.plannerModel || localModels.planner || localModels.responder || 'llama3.2';
+        case 'executor':
+            return config.ollama?.fastModel || localModels.fast || localModels.responder || 'llama3.2';
+        case 'responder':
+            return config.ollama?.model || localModels.responder || 'llama3.2';
+    }
+}
 // ── Provider factory ──────────────────────────────────────────
 function buildProvider(entry) {
     const key = entry.key.startsWith('env:')
@@ -146,6 +194,39 @@ function logProviderStatus() {
     }
     console.log(`  ollama (${OLLAMA_FALLBACK_MODEL}) — local — #${order} guaranteed fallback`);
 }
+// ── Complexity scorer ─────────────────────────────────────────
+// Returns 0–1 where 0 = trivially simple (local Ollama) and
+// 1 = highly complex (needs best cloud model).
+function assessComplexity(message) {
+    let score = 0.3;
+    if (message.length > 500)
+        score += 0.15;
+    if (message.length > 1000)
+        score += 0.10;
+    const complexPatterns = [
+        /research|analyze|compare|explain in detail/i,
+        /plan|strategy|architecture|design/i,
+        /write.*code|build|create|implement/i,
+        /debug|fix.*error|troubleshoot/i,
+        /multi.*step|comprehensive|deep.research/i,
+    ];
+    const simplePatterns = [
+        /^(hi|hello|hey|thanks|thank you|ok|yes|no|sure)\b/i,
+        /what time|what date|who are you|what can you do/i,
+        /^.{1,30}$/,
+        /^(good morning|good night|bye)\b/i,
+    ];
+    if (complexPatterns.some(p => p.test(message)))
+        score += 0.30;
+    if (simplePatterns.some(p => p.test(message)))
+        score -= 0.30;
+    if (/open|launch|run|execute|deploy/i.test(message))
+        score += 0.10;
+    const qMarks = (message.match(/\?/g) || []).length;
+    if (qMarks > 2)
+        score += 0.15;
+    return Math.max(0, Math.min(1, score));
+}
 const OLLAMA_FALLBACK_MODEL = 'gemma4:e4b';
 function resolveKey(api) {
     return {
@@ -160,7 +241,21 @@ function resolveKey(api) {
 const OLLAMA_RESULT = {
     apiKey: '', model: OLLAMA_FALLBACK_MODEL, providerName: 'ollama', apiName: 'ollama',
 };
-function getModelForTask(task) {
+function getModelForTask(task, message) {
+    // ── Complexity gate — responder only ─────────────────────────
+    // Simple queries go to local Ollama (zero cost).
+    // Complex or tool-using queries proceed to cloud chain below.
+    if (task === 'responder' && message) {
+        const complexity = assessComplexity(message);
+        if (complexity < 0.35) {
+            const model = getOllamaModelForTask('responder');
+            console.log(`[Router] Routing "${message.substring(0, 30)}..." → ollama:${model}, complexity: ${complexity.toFixed(2)} (simple)`);
+            return { apiKey: '', model, providerName: 'ollama', apiName: 'ollama' };
+        }
+        else {
+            console.log(`[Router] Complexity: ${complexity.toFixed(2)} (complex) — "${message.substring(0, 40)}" → cloud`);
+        }
+    }
     autoResetExpiredLimits();
     const config = (0, index_1.loadConfig)();
     const available = config.providers.apis.filter(a => {
@@ -169,35 +264,40 @@ function getModelForTask(task) {
         const k = a.key.startsWith('env:') ? (process.env[a.key.replace('env:', '')] || '') : a.key;
         return k.length > 0;
     });
-    // Planner: strongest reasoning — gemini > groq > openrouter > cerebras → gemma4:e4b
+    // Planner: groq > gemini > openrouter → local planner model
+    // Cerebras excluded: 8B model cannot follow complex SOUL-based planning prompts
     if (task === 'planner') {
-        for (const p of ['gemini', 'groq', 'openrouter', 'cerebras']) {
+        for (const p of ['groq', 'gemini', 'openrouter']) {
             const api = available.find(a => a.provider === p);
             if (api)
                 return resolveKey(api);
         }
-        console.log('[Router] Planner: all cloud providers unavailable — falling back to Ollama gemma4:e4b');
-        return OLLAMA_RESULT;
+        const model = getOllamaModelForTask('planner');
+        console.log(`[Router] Planner: all cloud providers rate-limited — using local Ollama ${model}`);
+        return { apiKey: '', model, providerName: 'ollama', apiName: 'ollama' };
     }
-    // Responder: best quality — groq > gemini > openrouter > cerebras → gemma4:e4b
+    // Responder: groq > gemini > openrouter → local responder model
+    // Cerebras excluded: too small (8B) to reliably follow SOUL prompt without hallucinating
     if (task === 'responder') {
-        for (const p of ['groq', 'gemini', 'openrouter', 'cerebras']) {
+        for (const p of ['groq', 'gemini', 'openrouter']) {
             const api = available.find(a => a.provider === p);
             if (api)
                 return resolveKey(api);
         }
-        console.log('[Router] Responder: all cloud providers unavailable — falling back to Ollama gemma4:e4b');
-        return OLLAMA_RESULT;
+        const model = getOllamaModelForTask('responder');
+        console.log(`[Router] Responder: all cloud providers rate-limited — using local Ollama ${model} (quality may vary)`);
+        return { apiKey: '', model, providerName: 'ollama', apiName: 'ollama' };
     }
-    // Executor: fastest — cerebras > groq > nvidia → gemma4:e4b
+    // Executor: fastest — cerebras > groq > nvidia → discovered fast model
     if (task === 'executor') {
         for (const p of ['cerebras', 'groq', 'nvidia', 'openai']) {
             const api = available.find(a => a.provider === p);
             if (api)
                 return resolveKey(api);
         }
-        console.log('[Router] Executor: all cloud providers unavailable — falling back to Ollama gemma4:e4b');
-        return OLLAMA_RESULT;
+        const model = getOllamaModelForTask('executor');
+        console.log(`[Router] Executor: all cloud providers unavailable — falling back to Ollama ${model}`);
+        return { apiKey: '', model, providerName: 'ollama', apiName: 'ollama' };
     }
     // Generic fallback — any available API, then gemma4:e4b
     if (available.length > 0)
@@ -224,11 +324,13 @@ function getSmartProvider() {
     if (next) {
         return { provider: next.provider, model: next.entry.model || 'llama-3.3-70b-versatile', userName, apiName: next.entry.name };
     }
-    // FALLBACK: Ollama gemma4:e4b
+    // FALLBACK: best discovered Ollama model
     if (config.routing?.fallbackToOllama !== false) {
-        console.log('[Router] All APIs unavailable — falling back to Ollama gemma4:e4b');
-        return { provider: ollama_1.ollamaProvider, model: OLLAMA_FALLBACK_MODEL, userName, apiName: 'ollama' };
+        const model = getOllamaModelForTask('responder');
+        console.log(`[Router] All APIs unavailable — falling back to Ollama ${model}`);
+        return { provider: ollama_1.ollamaProvider, model, userName, apiName: 'ollama' };
     }
     // Last resort
-    return { provider: ollama_1.ollamaProvider, model: OLLAMA_FALLBACK_MODEL, userName, apiName: 'ollama' };
+    const model = getOllamaModelForTask('responder');
+    return { provider: ollama_1.ollamaProvider, model, userName, apiName: 'ollama' };
 }

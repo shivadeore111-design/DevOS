@@ -12,6 +12,26 @@ exports.skillLoader = exports.SkillLoader = void 0;
 // skill context into the planner and responder prompts.
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
+// ── Skill injection guard ─────────────────────────────────────
+const SKILL_INJECTION_PATTERNS = [
+    /ignore\s+(all\s+)?(previous|above|prior)/i,
+    /disregard\s+(all\s+)?(previous|above)/i,
+    /you\s+are\s+now\s+/i,
+    /new\s+instructions\s*:/i,
+    /override\s+system/i,
+    /curl\s+.*\|\s*bash/i,
+    /ANTHROPIC_BASE_URL/i,
+    /\]\s*\(\s*javascript:/i,
+];
+function sanitizeSkill(content, filename) {
+    for (const pattern of SKILL_INJECTION_PATTERNS) {
+        if (pattern.test(content)) {
+            console.warn(`[Security] BLOCKED skill "${filename}": contains injection pattern`);
+            return null;
+        }
+    }
+    return content;
+}
 // Keywords that map skills to task categories
 const KEYWORD_MAP = {
     web: ['search', 'browse', 'fetch', 'scrape', 'website', 'url', 'internet', 'online', 'news', 'weather'],
@@ -55,7 +75,10 @@ class SkillLoader {
                         continue;
                     try {
                         const raw = fs_1.default.readFileSync(skillPath, 'utf-8');
-                        const parsed = this.parse(raw, skillPath);
+                        const sanitized = sanitizeSkill(raw, entry.name);
+                        if (!sanitized)
+                            continue;
+                        const parsed = this.parse(sanitized, skillPath);
                         if (parsed)
                             skills.push(parsed);
                     }

@@ -30,7 +30,7 @@ import { startApiServer }                  from './api/server'
 import { checkSearxNG }                   from './core/webSearch'
 import { auditTrail }                     from './core/auditTrail'
 import { buildCapabilityProfile }         from './core/capabilityProfile'
-import { verifyInstall, getCurrentLicense } from './core/licenseManager'
+import { verifyInstall, getCurrentLicense, verifyLicense } from './core/licenseManager'
 import { scheduler }      from './core/scheduler'
 import { startMCPServer } from './core/mcpServer'
 import { initLocalModels } from './providers/router'
@@ -147,6 +147,18 @@ async function main(): Promise<void> {
 
         startApiServer()
 
+        // ── Pro license check ──────────────────────────────────
+        verifyLicense().then(lic => {
+          if (lic.isPro) {
+            const exp = lic.expiresAt ? new Date(lic.expiresAt).toLocaleDateString() : 'N/A'
+            console.log(`[License] ✓ Pro active — plan: ${lic.plan}, expires: ${exp}`)
+          } else {
+            console.log('[License] Free tier')
+          }
+        }).catch(() => {
+          console.log('[License] Free tier (offline check)')
+        })
+
         // ── Built-in hooks ─────────────────────────────────────
         // Audit trail: log every tool call result
         registerHook('after_tool_call', async (data) => {
@@ -158,7 +170,6 @@ async function main(): Promise<void> {
             durationMs: data.duration || 0,
             success:    data.success ?? true,
           })
-          return data
         })
         console.log('[Hooks] Built-in hooks registered')
 

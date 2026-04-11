@@ -399,12 +399,14 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
   },
 
   notify: async (p) => {
-    const msg = (p.message || p.command || '').replace(/'/g, '').replace(/"/g, '')
+    const msg = (p.message || p.command || p.title || p.body || '').replace(/'/g, '').replace(/"/g, '').replace(/`/g, '')
     if (!msg.trim()) return { success: false, output: '', error: 'No message provided for notification' }
     try {
+      // Use cmd shell so the outer `powershell -Command` invocation works correctly.
+      // Never pass shell:'powershell.exe' here — that causes double-PowerShell invocation.
       await execAsync(
-        `powershell -WindowStyle Hidden -Command "Add-Type -AssemblyName System.Windows.Forms; $n = New-Object System.Windows.Forms.NotifyIcon; $n.Icon = [System.Drawing.SystemIcons]::Information; $n.Visible = $true; $n.ShowBalloonTip(3000, 'DevOS', '${msg}', [System.Windows.Forms.ToolTipIcon]::Info); Start-Sleep -s 4; $n.Dispose()"`,
-        { shell: 'powershell.exe' }
+        `powershell -WindowStyle Hidden -Command "Add-Type -AssemblyName System.Windows.Forms; $n = New-Object System.Windows.Forms.NotifyIcon; $n.Icon = [System.Drawing.SystemIcons]::Information; $n.Visible = $true; $n.ShowBalloonTip(3000, 'Aiden', '${msg}', [System.Windows.Forms.ToolTipIcon]::Info); Start-Sleep -s 4; $n.Dispose()"`,
+        { shell: 'cmd.exe' }
       )
       return { success: true, output: `Desktop notification sent: "${msg}".` }
     } catch (e: any) {

@@ -21,11 +21,10 @@ exports.extractFile = extractFile;
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 // ── PDF extraction ─────────────────────────────────────────
-// Uses pdf-parse/node (no canvas dependency) — pure JS, CPU only
+// Uses pdf-parse (pure JS, no native canvas dependency)
 async function extractPDF(filePath) {
-    // Dynamic require using the /node export path to avoid @napi-rs/canvas
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const pdfParse = require('pdf-parse/node');
+    const pdfParse = require('pdf-parse');
     const buf = fs_1.default.readFileSync(filePath);
     const fileSizeMB = parseFloat((buf.length / 1024 / 1024).toFixed(2));
     let result;

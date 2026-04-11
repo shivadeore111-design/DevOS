@@ -42,6 +42,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TOOL_DESCRIPTIONS = exports.TOOLS = void 0;
 exports.executeTool = executeTool;
+exports.getToolTier = getToolTier;
 // core/toolRegistry.ts — Centralized tool registry with real Playwright
 // browser automation, file I/O, shell exec, and web utilities.
 const child_process_1 = require("child_process");
@@ -50,6 +51,8 @@ const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 const computerControl_1 = require("./computerControl");
 const webSearch_1 = require("./webSearch");
+const conversationMemory_1 = require("./conversationMemory");
+const minimatch_1 = __importDefault(require("minimatch"));
 const morningBriefing_1 = require("./morningBriefing");
 const marketDataTool_1 = require("./tools/marketDataTool");
 const companyFilingsTool_1 = require("./tools/companyFilingsTool");
@@ -57,6 +60,60 @@ const mcpClient_1 = require("./mcpClient");
 const codeInterpreter_1 = require("./codeInterpreter");
 const responseCache_1 = require("./responseCache");
 const execAsync = (0, util_1.promisify)(child_process_1.exec);
+// ── Shared path normalizer ─────────────────────────────────────
+function normalizeFilePath(filePath) {
+    return filePath.replace(/\\/g, '/');
+}
+// ── Protected files — cannot be written by agents ─────────────
+// GOALS.md is here to prevent arbitrary file_write overwrites.
+// The manage_goals tool writes it directly (bypasses file_write),
+// so goal management still works — only uncontrolled writes are blocked.
+const PROTECTED_FILES = [
+    'config/devos.config.json',
+    'workspace/STANDING_ORDERS.md',
+    'workspace/SOUL.md',
+    'workspace/USER.md',
+    'workspace/HEARTBEAT.md',
+    'workspace/GOALS.md',
+    '.env',
+    '.env.local',
+    'tsconfig.json',
+    'package.json',
+    'vitest.config.ts',
+    'jest.config.ts',
+];
+function isProtectedFile(filePath) {
+    const normalized = normalizeFilePath(filePath).replace(/^\.\//, '');
+    // Block test/config file writes (prevents agents from cheating tests)
+    if (normalized.endsWith('.test.ts') || normalized.endsWith('.spec.ts'))
+        return true;
+    if (normalized.endsWith('vitest.config.ts') || normalized.endsWith('jest.config.ts'))
+        return true;
+    return PROTECTED_FILES.some(f => normalized.endsWith(f) || normalized === f);
+}
+// ── Path deny rules ───────────────────────────────────────────
+const DENIED_PATHS = [
+    '**/.ssh/**', '**/.aws/**', '**/.env*', '**/.gnupg/**',
+    '**/credentials*', '**/*.pem', '**/*.key',
+    '**/id_rsa*', '**/id_ed25519*',
+];
+function isPathDenied(filePath) {
+    const normalized = normalizeFilePath(filePath);
+    return DENIED_PATHS.some(pattern => (0, minimatch_1.default)(normalized, pattern, { dot: true }));
+}
+// ── Command deny rules ────────────────────────────────────────
+const DENIED_COMMANDS = [
+    /curl\s+.*\|\s*bash/i,
+    /wget\s+.*\|\s*bash/i,
+    /rm\s+-rf\s+\//,
+    /powershell.*-enc\s/i,
+    /powershell.*-encodedcommand/i,
+    /iex\s*\(/i,
+    /Invoke-Expression/i,
+];
+function isCommandDenied(cmd) {
+    return DENIED_COMMANDS.some(p => p.test(cmd));
+}
 // ── Sprint 24: active folder-watcher registry ─────────────────
 const activeWatchers = new Map();
 // ── CommandGate: dangerous shell command patterns ──────────────
@@ -114,6 +171,13 @@ const TOOL_TIMEOUTS = {
 };
 // ── Tool implementations ──────────────────────────────────────
 exports.TOOLS = {
+    // ── respond — direct conversational reply (no external tools needed) ──
+    respond: async (p) => {
+        const message = p.message || p.text || p.response || '';
+        if (!message)
+            return { success: false, output: '', error: 'No message provided' };
+        return { success: true, output: message };
+    },
     open_browser: async (p) => {
         const url = p.url || p.command || '';
         if (!url)
@@ -189,6 +253,10 @@ exports.TOOLS = {
         const cmd = p.command || p.cmd || '';
         if (!cmd)
             return { success: false, output: '', error: 'No command' };
+        if (isCommandDenied(cmd)) {
+            console.warn(`[Security] shell_exec DENIED pattern: ${cmd.slice(0, 120)}`);
+            return { success: false, output: '', error: 'Blocked: this command pattern is not allowed. Dangerous operations require explicit user approval.' };
+        }
         if (isShellDangerous(cmd)) {
             console.warn(`[CommandGate] BLOCKED shell_exec: ${cmd.slice(0, 120)}`);
             return { success: false, output: '', error: `CommandGate: Blocked potentially dangerous command. User approval required before running: ${cmd.slice(0, 80)}` };
@@ -210,6 +278,10 @@ exports.TOOLS = {
         const script = p.script || p.command || '';
         if (!script)
             return { success: false, output: '', error: 'No script' };
+        if (isCommandDenied(script)) {
+            console.warn(`[Security] run_powershell DENIED pattern: ${script.slice(0, 120)}`);
+            return { success: false, output: '', error: 'Blocked: this command pattern is not allowed. Dangerous operations require explicit user approval.' };
+        }
         if (isShellDangerous(script)) {
             console.warn(`[CommandGate] BLOCKED run_powershell: ${script.slice(0, 120)}`);
             return { success: false, output: '', error: `CommandGate: Blocked potentially dangerous PowerShell script. User approval required before running.` };
@@ -236,6 +308,14 @@ exports.TOOLS = {
         const content = p.content || '';
         if (!filePath)
             return { success: false, output: '', error: 'No path' };
+        if (isProtectedFile(filePath)) {
+            console.warn(`[Security] file_write BLOCKED (protected): ${filePath}`);
+            return { success: false, output: '', error: `Protected file: ${filePath} cannot be modified by agents. Use 'devos config' or edit manually.` };
+        }
+        if (isPathDenied(filePath)) {
+            console.warn(`[Security] file_write DENIED: ${filePath}`);
+            return { success: false, output: '', error: 'Access denied: protected path. Aiden cannot write credentials, SSH keys, or env files.' };
+        }
         try {
             // Expand Desktop and ~ shorthands to full Windows paths
             const userName = process.env.USERNAME || process.env.USER || 'User';
@@ -263,6 +343,10 @@ exports.TOOLS = {
         const filePath = p.path || p.file || '';
         if (!filePath)
             return { success: false, output: '', error: 'No path' };
+        if (isPathDenied(filePath)) {
+            console.warn(`[Security] file_read DENIED: ${filePath}`);
+            return { success: false, output: '', error: 'Access denied: protected path. Aiden cannot read credentials, SSH keys, or env files.' };
+        }
         try {
             // Resolve path: absolute paths (Windows C:\ or Unix /) used as-is; relative joined with cwd
             const resolved = filePath.match(/^[A-Z]:/i) || filePath.startsWith('/')
@@ -346,11 +430,13 @@ exports.TOOLS = {
         }
     },
     notify: async (p) => {
-        const msg = (p.message || p.command || '').replace(/'/g, '').replace(/"/g, '');
+        const msg = (p.message || p.command || p.title || p.body || '').replace(/'/g, '').replace(/"/g, '').replace(/`/g, '');
         if (!msg.trim())
             return { success: false, output: '', error: 'No message provided for notification' };
         try {
-            await execAsync(`powershell -WindowStyle Hidden -Command "Add-Type -AssemblyName System.Windows.Forms; $n = New-Object System.Windows.Forms.NotifyIcon; $n.Icon = [System.Drawing.SystemIcons]::Information; $n.Visible = $true; $n.ShowBalloonTip(3000, 'DevOS', '${msg}', [System.Windows.Forms.ToolTipIcon]::Info); Start-Sleep -s 4; $n.Dispose()"`, { shell: 'powershell.exe' });
+            // Use cmd shell so the outer `powershell -Command` invocation works correctly.
+            // Never pass shell:'powershell.exe' here — that causes double-PowerShell invocation.
+            await execAsync(`powershell -WindowStyle Hidden -Command "Add-Type -AssemblyName System.Windows.Forms; $n = New-Object System.Windows.Forms.NotifyIcon; $n.Icon = [System.Drawing.SystemIcons]::Information; $n.Visible = $true; $n.ShowBalloonTip(3000, 'Aiden', '${msg}', [System.Windows.Forms.ToolTipIcon]::Info); Start-Sleep -s 4; $n.Dispose()"`, { shell: 'cmd.exe' });
             return { success: true, output: `Desktop notification sent: "${msg}".` };
         }
         catch (e) {
@@ -638,6 +724,14 @@ exports.TOOLS = {
         const task = p.task || p.command || '';
         if (!task)
             return { success: false, output: '', error: 'No task provided' };
+        // ── Fork guard: only top-level agents can spawn specialists ──
+        // Prevents sub-agents from recursively spawning more agents
+        const FORK_CAPABLE_AGENTS = ['ceo', 'engineer'];
+        const callerAgent = (p._callerAgent || '').toLowerCase();
+        if (callerAgent && !FORK_CAPABLE_AGENTS.includes(callerAgent)) {
+            console.warn(`[run_agent] ${callerAgent} attempted to fork ${agentName} — blocked (non-fork-capable)`);
+            return { success: false, output: '', error: `Agent '${callerAgent}' cannot spawn sub-agents. Only CEO-level agents can delegate.` };
+        }
         const agentPersonas = {
             engineer: 'Senior TypeScript/JavaScript engineer — writes clean, working code with full error handling.',
             security: 'Security auditor — analyzes for OWASP Top 10, provides specific fixes with code examples.',
@@ -647,14 +741,28 @@ exports.TOOLS = {
             debugger: 'Debugger — forms 3 hypotheses, eliminates systematically, provides exact fix with code.',
         };
         const persona = agentPersonas[agentName] || agentPersonas.engineer;
+        // ── Context inheritance for complex tasks ─────────────────────
+        // Complex tasks (long description or explicit context request) get conversation history
+        const isComplex = task.length > 100 || p.inheritContext === true;
+        let contextBlock = '';
+        if (isComplex) {
+            const memCtx = conversationMemory_1.conversationMemory.buildContext();
+            if (memCtx && memCtx.trim()) {
+                contextBlock = `\n## Conversation Context\nThe user has been discussing:\n${memCtx.slice(0, 1200)}\n`;
+                console.log(`[run_agent] Injecting conversation context into ${agentName} task (${memCtx.length} chars)`);
+            }
+        }
         try {
             const { memoryLayers } = await Promise.resolve().then(() => __importStar(require('../memory/memoryLayers')));
             memoryLayers.write(`Agent ${agentName} task: ${task}`, ['agent', agentName]);
         }
         catch { }
+        const fullTask = contextBlock
+            ? `${contextBlock}\n## Your Task\n${task}`
+            : task;
         return {
             success: true,
-            output: `Agent: ${agentName}\nPersona: ${persona}\nTask: ${task}\n\n[Specialist agent will synthesize this task in the response phase with full context]`,
+            output: `Agent: ${agentName}\nPersona: ${persona}\nTask: ${fullTask}\n\n[Specialist agent will synthesize this task in the response phase with full context]`,
         };
     },
     git_commit: async (p) => {
@@ -1094,6 +1202,76 @@ exports.TOOLS = {
             return { success: false, output: '', error: `Briefing failed: ${e.message}` };
         }
     },
+    // ── manage_goals — track and manage long-running goals ────────
+    manage_goals: async (p) => {
+        const { loadGoals, saveGoals } = await Promise.resolve().then(() => __importStar(require('./goalTracker')));
+        const goals = loadGoals();
+        const today = new Date().toISOString().split('T')[0];
+        switch (p.action) {
+            case 'list':
+                return { success: true, output: JSON.stringify(goals.filter(g => g.status !== 'done'), null, 2) };
+            case 'add':
+                if (!p.title)
+                    return { success: false, output: '', error: 'Title required' };
+                goals.push({
+                    id: Date.now().toString(),
+                    title: p.title,
+                    status: 'not_started',
+                    target: p.target,
+                    nextAction: p.nextAction,
+                    lastUpdated: today,
+                });
+                saveGoals(goals);
+                return { success: true, output: `Goal added: ${p.title}` };
+            case 'update': {
+                const g = goals.find(g => g.title.toLowerCase().includes((p.title || '').toLowerCase()));
+                if (!g)
+                    return { success: false, output: '', error: 'Goal not found' };
+                if (p.status)
+                    g.status = p.status;
+                if (p.nextAction)
+                    g.nextAction = p.nextAction;
+                if (p.target)
+                    g.target = p.target;
+                g.lastUpdated = today;
+                saveGoals(goals);
+                return { success: true, output: `Updated: ${g.title}` };
+            }
+            case 'complete': {
+                const idx = goals.findIndex(g => g.title.toLowerCase().includes((p.title || '').toLowerCase()));
+                if (idx < 0)
+                    return { success: false, output: '', error: 'Goal not found' };
+                goals[idx].status = 'done';
+                goals[idx].lastUpdated = today;
+                saveGoals(goals);
+                return { success: true, output: `Completed: ${goals[idx].title}` };
+            }
+            case 'suggest': {
+                const active = goals.filter(g => g.status !== 'done');
+                if (active.length === 0)
+                    return { success: true, output: 'No active goals. What are you working on?' };
+                return { success: true, output: `Focus on: ${active[0].title} — Next: ${active[0].nextAction || 'Define next step'}` };
+            }
+            default:
+                return { success: false, output: '', error: `Unknown action: ${p.action}. Use: list, add, update, complete, suggest` };
+        }
+    },
+    // ── compact_context — summarize and compress conversation history ──
+    compact_context: async (p) => {
+        const { sessionMemory } = await Promise.resolve().then(() => __importStar(require('./sessionMemory')));
+        const { memoryExtractor } = await Promise.resolve().then(() => __importStar(require('./memoryExtractor')));
+        const sessionId = p.sessionId || 'default';
+        try {
+            // Trigger session write to persist current conversation state
+            await sessionMemory.writeSession(sessionId);
+            // Extract durable memories from session
+            await memoryExtractor.extractFromSession(sessionId);
+            return { success: true, output: `Context compacted for session ${sessionId}. Memory extracted and persisted.` };
+        }
+        catch (e) {
+            return { success: false, output: '', error: `Compact failed: ${e.message}` };
+        }
+    },
 };
 // ── Internal dispatcher — no retry, no timeout ────────────────
 async function runTool(tool, input) {
@@ -1236,4 +1414,67 @@ exports.TOOL_DESCRIPTIONS = {
     watch_folder: 'Watch a folder and react automatically when new files appear',
     watch_folder_list: 'List all currently watched folder paths',
     get_briefing: 'Run the morning briefing: weather, markets, news, and daily summary',
+    respond: 'Send a direct conversational response to the user. Use for greetings, capability questions, clarifications, simple factual answers, and anything that does NOT require external tools. This is the default tool when no other tool is needed.',
+    manage_goals: 'Track and manage goals and projects. Use when user asks what to work on, mentions a project, deadline, or launch plan. Actions: list, add, update, complete, suggest.',
+    compact_context: 'Summarize and compress the current conversation context. Saves session to disk and extracts durable memories. Call when context is getting long.',
+    get_natural_events: 'Fetch active natural events from NASA EONET API. Returns current earthquakes, wildfires, storms, floods, and other natural events worldwide.',
 };
+const TOOL_TIERS = {
+    // Tier 1 — APIs, data, search, notify, respond
+    respond: 1,
+    manage_goals: 1,
+    compact_context: 1,
+    web_search: 1,
+    fetch_url: 1,
+    fetch_page: 1,
+    deep_research: 1,
+    get_stocks: 1,
+    get_market_data: 1,
+    get_company_info: 1,
+    social_research: 1,
+    system_info: 1,
+    notify: 1,
+    wait: 1,
+    get_briefing: 1,
+    get_natural_events: 1,
+    run_agent: 1,
+    // Tier 2 — File system, shell, code execution
+    file_write: 2,
+    file_read: 2,
+    file_list: 2,
+    shell_exec: 2,
+    run_powershell: 2,
+    run_python: 2,
+    run_node: 2,
+    code_interpreter_python: 2,
+    code_interpreter_node: 2,
+    git_commit: 2,
+    git_push: 2,
+    clipboard_read: 2,
+    clipboard_write: 2,
+    watch_folder: 2,
+    watch_folder_list: 2,
+    // Tier 3 — Browser automation
+    open_browser: 3,
+    browser_click: 3,
+    browser_type: 3,
+    browser_extract: 3,
+    browser_screenshot: 3,
+    window_list: 3,
+    window_focus: 3,
+    app_launch: 3,
+    app_close: 3,
+    // Tier 4 — Screen/mouse/keyboard (last resort)
+    mouse_move: 4,
+    mouse_click: 4,
+    keyboard_type: 4,
+    keyboard_press: 4,
+    screenshot: 4,
+    screen_read: 4,
+    vision_loop: 4,
+};
+function getToolTier(toolName) {
+    if (toolName.startsWith('mcp_'))
+        return 1;
+    return TOOL_TIERS[toolName] ?? 2;
+}

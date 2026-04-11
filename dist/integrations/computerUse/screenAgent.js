@@ -3,6 +3,39 @@
 // DevOS — Autonomous AI Execution System
 // Copyright (c) 2026 Shiva Deore. All rights reserved.
 // ============================================================
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -13,10 +46,27 @@ exports.screenAgent = void 0;
 // Every action is gated by CommandGate (confidence < 0.65)
 // and verified by TruthChecker after execution.
 const screenshot_desktop_1 = __importDefault(require("screenshot-desktop"));
-const nut_js_1 = require("@nut-tree-fork/nut-js");
 const commandGate_1 = require("../../coordination/commandGate");
 const truthCheck_1 = require("../../core/truthCheck");
 const faultEngine_1 = require("../../core/faultEngine");
+// ── Lazy nut-js loader ────────────────────────────────────────
+// @nut-tree-fork/nut-js requires native build tools. We load it
+// lazily so the API server can start even when the native module
+// is not installed / built.
+let _nutjs = null;
+async function getNut() {
+    if (!_nutjs) {
+        try {
+            _nutjs = await Promise.resolve().then(() => __importStar(require('@nut-tree-fork/nut-js')));
+        }
+        catch (err) {
+            throw new Error(`@nut-tree-fork/nut-js is not installed or failed to build. ` +
+                `Run: npm install @nut-tree-fork/nut-js --build-from-source\n` +
+                `Original error: ${err?.message ?? err}`);
+        }
+    }
+    return _nutjs;
+}
 // ── ScreenAgent ───────────────────────────────────────────────
 class ScreenAgent {
     constructor() {
@@ -57,35 +107,36 @@ class ScreenAgent {
                 return { success: false, error: 'Rejected by CommandGate' };
         }
         try {
+            const { mouse, keyboard, Button, Key } = await getNut();
             switch (action.type) {
                 case 'click': {
                     const a = action;
-                    await nut_js_1.mouse.move([{ x: a.x, y: a.y }]);
-                    await nut_js_1.mouse.click(a.button === 'right' ? nut_js_1.Button.RIGHT : nut_js_1.Button.LEFT);
+                    await mouse.move([{ x: a.x, y: a.y }]);
+                    await mouse.click(a.button === 'right' ? Button.RIGHT : Button.LEFT);
                     break;
                 }
                 case 'type': {
                     const a = action;
-                    await nut_js_1.keyboard.type(a.text);
+                    await keyboard.type(a.text);
                     break;
                 }
                 case 'scroll': {
                     const a = action;
                     if (a.deltaY && a.deltaY > 0)
-                        await nut_js_1.mouse.scrollDown(Math.abs(a.deltaY));
+                        await mouse.scrollDown(Math.abs(a.deltaY));
                     if (a.deltaY && a.deltaY < 0)
-                        await nut_js_1.mouse.scrollUp(Math.abs(a.deltaY));
+                        await mouse.scrollUp(Math.abs(a.deltaY));
                     break;
                 }
                 case 'keypress': {
                     const a = action;
                     const mapped = a.keys
-                        .map(k => nut_js_1.Key[k])
+                        .map((k) => Key[k])
                         .filter((v) => v !== undefined);
                     if (mapped.length === 1)
-                        await nut_js_1.keyboard.pressKey(mapped[0]);
+                        await keyboard.pressKey(mapped[0]);
                     else if (mapped.length > 1)
-                        await nut_js_1.keyboard.pressKey(...mapped);
+                        await keyboard.pressKey(...mapped);
                     break;
                 }
                 case 'screenshot':

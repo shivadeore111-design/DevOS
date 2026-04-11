@@ -169,8 +169,8 @@ export default function OnboardingPage() {
       display:        'flex',
       flexDirection:  'column',
       alignItems:     'center',
-      justifyContent: 'center',
-      padding:        '40px 24px',
+      justifyContent: 'flex-start',
+      padding:        '60px 24px 60px',
     }}>
 
       {/* Logo */}

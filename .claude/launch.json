@@ -2,6 +2,13 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "BacktestPro Frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "../../BacktestPro/BacktestPro/frontend",
+      "port": 3002
+    },
+    {
       "name": "DevOS API",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],

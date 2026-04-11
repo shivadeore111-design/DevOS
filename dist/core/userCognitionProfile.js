@@ -16,6 +16,7 @@ exports.userCognitionProfile = exports.UserCognitionProfile = void 0;
 // injects a short hint into the system prompt.
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
+const userProfile_1 = require("./userProfile");
 // ── Paths ──────────────────────────────────────────────────────
 const COGNITION_DIR = path_1.default.join(process.cwd(), 'workspace', 'cognition');
 const PROFILE_PATH = path_1.default.join(COGNITION_DIR, 'user-profile.json');
@@ -226,6 +227,8 @@ class UserCognitionProfile {
     saveProfile() {
         try {
             fs_1.default.writeFileSync(PROFILE_PATH, JSON.stringify(this.profile, null, 2), 'utf-8');
+            // Keep USER.md in sync with learned preferences
+            (0, userProfile_1.syncCognitionToProfile)(this.profile.verbosity, this.profile.technicalLevel);
         }
         catch { }
     }

@@ -25,7 +25,13 @@ const CONFIG_DIR = path_1.default.join(process.cwd(), 'config');
 const MODEL_CONFIG = path_1.default.join(CONFIG_DIR, 'model-selection.json');
 const SETUP_FLAG = path_1.default.join(CONFIG_DIR, 'setup-complete.json');
 const TASK_TYPES = ['chat', 'code', 'vision', 'reasoning', 'embedding'];
-function ask(q) {
+function ask(q, nonTtyDefault = 'skip') {
+    // When running as an Electron child process or in any non-interactive context
+    // (no TTY attached to stdin), auto-answer with the default to avoid hanging.
+    if (!process.stdin.isTTY) {
+        console.log(`${q}[non-interactive: auto-answering "${nonTtyDefault}"]`);
+        return Promise.resolve(nonTtyDefault);
+    }
     const rl = readline_1.default.createInterface({ input: process.stdin, output: process.stdout });
     return new Promise(res => rl.question(q, ans => { rl.close(); res(ans.trim().toLowerCase()); }));
 }
@@ -89,7 +95,7 @@ async function runSetupWizard() {
             selection[task] = m.name;
         }
         console.log('');
-        const answer = await ask('  Use these models? (yes / no)  ');
+        const answer = await ask('  Use these models? (yes / no)  ', 'yes');
         console.log('');
         if (answer === 'yes' || answer === 'y') {
             saveSelection(selection);

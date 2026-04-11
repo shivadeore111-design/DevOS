@@ -175,7 +175,16 @@ interface DevOSCtxType {
   // License / Pro
   pricingOpen:    boolean
   setPricingOpen: (v: boolean) => void
-  licenseStatus:  { active: boolean; tier: string; email: string; expiry: number }
+  licenseStatus:  {
+    active:    boolean
+    isPro:     boolean
+    plan:      string
+    expiresAt: string
+    features:  Record<string, boolean | number>
+    tier:      string
+    email:     string
+    expiry:    number
+  }
   licenseKey:     string
   setLicenseKey:  (v: string) => void
   activatingKey:  boolean
@@ -429,6 +438,199 @@ function MarkdownContent({ content }: { content: string }) {
 
 // ── ChatMessage ───────────────────────────────────────────────
 
+// ── Tool summary text generation ──────────────────────────────
+type StepLike = { tool: string; status: string; duration?: number }
+
+function getToolSummary(steps: StepLike[]): string {
+  if (steps.length === 0) return 'Running…'
+  if (steps.length === 1) {
+    switch (steps[0].tool) {
+      case 'web_search':      return 'Searched the web'
+      case 'deep_research':   return 'Researched in depth'
+      case 'run_python':      return 'Executed Python code'
+      case 'run_node':        return 'Executed Node.js code'
+      case 'shell_exec':      return 'Ran a command'
+      case 'file_read':       return 'Read a file'
+      case 'file_write':      return 'Created a file'
+      case 'file_edit':       return 'Edited a file'
+      case 'file_list':       return 'Listed files'
+      case 'system_info':     return 'Checked system info'
+      case 'screenshot':      return 'Took a screenshot'
+      case 'screen_read':     return 'Read the screen'
+      case 'open_browser':    return 'Opened browser'
+      case 'get_market_data': return 'Fetched market data'
+      case 'notify':          return 'Sent notification'
+      case 'manage_goals':    return 'Updated goals'
+      case 'memory_recall':   return 'Recalled memory'
+      case 'memory_store':    return 'Stored to memory'
+      case 'git_commit':      return 'Committed to git'
+      case 'git_push':        return 'Pushed to git'
+      case 'mouse_click':     return 'Clicked on screen'
+      case 'keyboard_type':   return 'Typed on keyboard'
+      case 'respond':         return 'Composed response'
+      default:                return `Ran ${steps[0].tool}`
+    }
+  }
+  // Multiple steps — group by action type
+  const searched = steps.filter(s => ['web_search', 'deep_research'].includes(s.tool))
+  const read     = steps.filter(s => s.tool === 'file_read')
+  const wrote    = steps.filter(s => ['file_write', 'file_edit'].includes(s.tool))
+  const ran      = steps.filter(s => ['run_python', 'run_node', 'shell_exec'].includes(s.tool))
+  const screen   = steps.filter(s => ['screenshot', 'screen_read', 'mouse_click', 'keyboard_type'].includes(s.tool))
+  const other    = steps.filter(s =>
+    !['web_search','deep_research','file_read','file_write','file_edit',
+      'run_python','run_node','shell_exec','screenshot','screen_read',
+      'mouse_click','keyboard_type'].includes(s.tool)
+  )
+  const parts: string[] = []
+  if (searched.length) parts.push(searched.length === 1 ? 'searched the web' : `ran ${searched.length} searches`)
+  if (read.length)     parts.push(read.length === 1     ? 'read a file'      : `read ${read.length} files`)
+  if (wrote.length)    parts.push(wrote.length === 1    ? 'wrote a file'     : `wrote ${wrote.length} files`)
+  if (ran.length)      parts.push(ran.length === 1      ? 'ran a command'    : `ran ${ran.length} commands`)
+  if (screen.length)   parts.push(screen.length === 1   ? 'controlled screen': `ran ${screen.length} screen actions`)
+  if (other.length)    parts.push(other.length === 1    ? other[0].tool      : `${other.length} more actions`)
+  return parts.length ? parts.join(', ') : `ran ${steps.length} steps`
+}
+
+// ── ToolExecutionCard — collapsible Claude Code-style card ────
+function ToolExecutionCard({ phases }: { phases: Phase[] }) {
+  const [open, setOpen] = useState(false)
+
+  // Flatten all steps from all phases into one list
+  const allSteps = phases.flatMap(p => p.steps)
+  const totalSteps = allSteps.length
+  if (totalSteps === 0) return null
+
+  const anyRunning = allSteps.some(s => s.status === 'running' || s.status === 'pending')
+  const anyFailed  = allSteps.some(s => s.status === 'failed')
+  const allDone    = !anyRunning
+
+  // Total time = sum of all step durations, or phase count hint
+  const totalMs = allSteps.reduce((acc, s) => acc + (s.duration ?? 0), 0)
+  const timeStr = totalMs > 0
+    ? totalMs >= 1000 ? `${(totalMs / 1000).toFixed(1)}s` : `${totalMs}ms`
+    : anyRunning ? '…' : ''
+
+  const summary = getToolSummary(allSteps)
+  const multiPhase = phases.length > 1
+
+  return (
+    <div style={{
+      width: '100%', marginBottom: 8,
+      background: '#161616',
+      border: '1px solid #2a2a2a',
+      borderRadius: 8, overflow: 'hidden',
+      fontFamily: 'var(--mono)',
+    }}>
+      {/* Header row — always visible, click to toggle */}
+      <div
+        onClick={() => setOpen(o => !o)}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          padding: '7px 12px', cursor: 'pointer',
+          userSelect: 'none',
+        }}
+      >
+        {/* Chevron */}
+        <span style={{
+          fontSize: 9, color: '#555',
+          transition: 'transform 0.15s',
+          display: 'inline-block',
+          transform: open ? 'rotate(90deg)' : 'rotate(0deg)',
+        }}>▶</span>
+
+        {/* Summary */}
+        <span style={{ flex: 1, fontSize: 11, color: '#888' }}>
+          {multiPhase
+            ? <><span style={{ color: '#666' }}>Plan · </span>{summary}</>
+            : summary
+          }
+        </span>
+
+        {/* Time */}
+        {timeStr && (
+          <span style={{ fontSize: 10, color: '#555' }}>{timeStr}</span>
+        )}
+
+        {/* Status dot */}
+        <span style={{
+          fontSize: 11,
+          color: anyRunning ? '#f97316' : anyFailed ? '#ef4444' : '#4ade80',
+        }}>
+          {anyRunning ? (
+            <span style={{ animation: 'pulse-dot 1s infinite' }}>●</span>
+          ) : anyFailed ? '✗' : '✓'}
+        </span>
+      </div>
+
+      {/* Expanded detail */}
+      {open && (
+        <div style={{
+          borderTop: '1px solid #222',
+          padding: '6px 0',
+        }}>
+          {phases.map((phase, pi) => (
+            <div key={pi}>
+              {/* Phase header — only when multiple phases */}
+              {multiPhase && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  padding: '4px 12px 2px',
+                }}>
+                  <span style={{ fontSize: 10, color: '#f97316' }}>📋</span>
+                  <span style={{ fontSize: 10, color: '#666' }}>
+                    Phase {phase.index}/{phase.total}: {phase.name}
+                  </span>
+                  <span style={{
+                    fontSize: 9,
+                    color: phase.status === 'done' ? '#4ade80' : phase.status === 'pending' ? '#555' : '#f97316',
+                  }}>
+                    {phase.status === 'done' ? '✓' : phase.status === 'pending' ? '○' : '●'}
+                  </span>
+                </div>
+              )}
+
+              {/* Steps */}
+              {phase.steps.map((step, si) => {
+                const statusColor =
+                  step.status === 'done'    ? '#4ade80' :
+                  step.status === 'failed'  ? '#ef4444' :
+                  step.status === 'running' ? '#f97316' : '#444'
+                const statusIcon =
+                  step.status === 'done'    ? '✓' :
+                  step.status === 'failed'  ? '✗' :
+                  step.status === 'running' ? '●' : '○'
+                const durStr = step.duration
+                  ? step.duration >= 1000
+                    ? ` ${(step.duration / 1000).toFixed(1)}s`
+                    : ` ${step.duration}ms`
+                  : ''
+
+                return (
+                  <div key={si} style={{
+                    display: 'flex', alignItems: 'baseline', gap: 8,
+                    padding: '3px 12px 3px 28px',
+                  }}>
+                    <span style={{ fontSize: 10, color: statusColor, flexShrink: 0 }}>{statusIcon}</span>
+                    <span style={{ fontSize: 11, color: '#FF8C00', flexShrink: 0, fontWeight: 600 }}>
+                      {step.tool}
+                    </span>
+                    {durStr && (
+                      <span style={{ fontSize: 10, color: '#444', flexShrink: 0 }}>{durStr}</span>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── ChatMessage ───────────────────────────────────────────────
+
 function ChatMessage({ message }: { message: Message }) {
   const [copied, setCopied] = useState(false)
   const isUser     = message.role === 'user'
@@ -474,33 +676,9 @@ function ChatMessage({ message }: { message: Message }) {
         </div>
       )}
 
-      {/* Phase steps */}
+      {/* Tool execution card — Claude Code style */}
       {!isUser && message.phases && message.phases.length > 0 && (
-        <div style={{
-          background: 'var(--bg2)', border: '1px solid var(--border)',
-          borderRadius: 8, padding: '10px 14px', marginBottom: 8,
-          fontFamily: 'var(--mono)', fontSize: 11, lineHeight: 1.8,
-          maxWidth: '100%', width: '100%',
-        }}>
-          {message.phases.map((phase, i) => (
-            <div key={i}>
-              <div style={{ color: phase.status === 'done' ? 'var(--green)' : 'var(--orange)' }}>
-                {phase.status === 'done' ? '✓' : '▶'} Phase {phase.index}/{phase.total}: {phase.name}
-              </div>
-              {phase.steps.map((step, j) => (
-                <div key={j} style={{
-                  paddingLeft: 16,
-                  color: step.status === 'done'    ? 'var(--green)'  :
-                         step.status === 'failed'  ? 'var(--red)'    :
-                         step.status === 'running' ? 'var(--orange)' : 'var(--muted)',
-                }}>
-                  {step.status === 'done' ? '✓' : step.status === 'failed' ? '✗' : '·'} {step.tool}
-                  {step.duration ? <span style={{ color: 'var(--muted)', marginLeft: 8 }}>({step.duration}s)</span> : ''}
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
+        <ToolExecutionCard phases={message.phases} />
       )}
 
       {/* Bubble */}
@@ -1075,9 +1253,7 @@ function KnowledgeBaseTab() {
 
 function NavBar() {
   const {
-    isExecuting, uiMode, setUIMode,
-    historyOpen, setHistoryOpen,
-    liveViewOpen, setLiveViewOpen,
+    isExecuting, uiMode,
     setSettingsOpen, setSettingsTab,
     licenseStatus, setPricingOpen,
     activeModel,
@@ -1126,29 +1302,25 @@ function NavBar() {
 
       {/* Controls */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-        <NavBtn active={historyOpen || uiMode === 'power'} onClick={() => setHistoryOpen(h => !h)} title="History">☰</NavBtn>
-        <NavBtn active={liveViewOpen || uiMode === 'execution' || uiMode === 'power'} onClick={() => setLiveViewOpen(l => !l)} title="Live View">⌄</NavBtn>
-        <NavBtn active={uiMode === 'power'} onClick={() => setUIMode(m => m === 'power' ? 'focus' : 'power')} title="Power Mode (Ctrl+P)">⊞</NavBtn>
-        <NavBtn active={uiMode === 'watch'} onClick={() => setUIMode(m => m === 'watch' ? 'focus' : 'watch')} title="Watch Mode">⤢</NavBtn>
         <ChatHeader />
         <div style={{ width: 1, height: 20, background: 'var(--border2)', margin: '0 4px' }} />
         <NavBtn onClick={() => setSettingsOpen(true)} title="Settings">⚙</NavBtn>
         <div
           style={{
-            padding: '2px 8px', borderRadius: 4, fontSize: 10,
-            background: licenseStatus.active ? 'rgba(139,92,246,0.15)' : 'var(--odim)',
-            border: `1px solid ${licenseStatus.active ? 'rgba(139,92,246,0.4)' : 'rgba(249,115,22,0.25)'}`,
-            color: licenseStatus.active ? '#a78bfa' : 'var(--orange)',
-            fontFamily: 'var(--mono)', cursor: 'pointer',
-            display: 'flex', alignItems: 'center', gap: 4,
+            padding: '2px 9px', borderRadius: 4, fontSize: 10,
+            background: licenseStatus.isPro ? 'var(--orange)' : 'transparent',
+            border: `1px solid ${licenseStatus.isPro ? 'var(--orange)' : 'rgba(249,115,22,0.5)'}`,
+            color: licenseStatus.isPro ? '#fff' : 'var(--orange)',
+            fontFamily: 'var(--mono)', fontWeight: 700, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', gap: 3,
+            letterSpacing: '0.05em',
           }}
-          onClick={() => licenseStatus.active
-            ? (() => { setSettingsOpen(true); setSettingsTab('pro') })()
-            : setPricingOpen(true)
-          }
-          title={licenseStatus.active ? `Pro · ${licenseStatus.email}` : 'Upgrade to Pro'}
+          onClick={() => { setSettingsOpen(true); setSettingsTab('pro') }}
+          title={licenseStatus.isPro
+            ? `Pro · ${licenseStatus.plan?.replace('pro_', '').replace('_', ' ').toUpperCase() ?? ''}`
+            : 'Activate Pro'}
         >
-          {licenseStatus.active ? '★ PRO' : 'PRO'}
+          {licenseStatus.isPro ? '★ PRO' : 'FREE'}
         </div>
       </div>
     </nav>
@@ -1229,7 +1401,7 @@ function HistorySidebar() {
         fontFamily: 'var(--mono)',
       }}>
         <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--green)', display: 'inline-block' }} />
-        Aiden v2 · local
+        Aiden v3.1.0 · local
       </div>
     </aside>
   )
@@ -1499,7 +1671,7 @@ function ChatPanel() {
         {messages.length === 0 ? (
           <EmptyState />
         ) : (
-          <div style={{ maxWidth: 720, width: '100%', margin: '0 auto', padding: '0 24px' }}>
+          <div style={{ maxWidth: 800, width: '100%', margin: '0 auto', padding: '0 24px' }}>
             {messages.map(msg => <ChatMessage key={msg.id} message={msg} />)}
             <div ref={messagesEndRef} />
           </div>
@@ -1512,7 +1684,7 @@ function ChatPanel() {
         padding: '12px 24px',
         background: 'var(--bg1)', flexShrink: 0,
       }}>
-        <div style={{ maxWidth: 720, margin: '0 auto', display: 'flex', gap: 8, alignItems: 'flex-end', position: 'relative' }}>
+        <div style={{ maxWidth: 800, margin: '0 auto', display: 'flex', gap: 8, alignItems: 'flex-end', position: 'relative' }}>
           {/* Plus menu trigger */}
           <div style={{ position: 'relative', flexShrink: 0 }}>
             <PlusMenu />
@@ -1757,14 +1929,19 @@ function NasaLiveEventsCard() {
 
   const load = useCallback(async () => {
     try {
-      const res  = await fetch('http://localhost:4200/api/natural-events')
-      if (!res.ok) return
+      const res  = await fetch('http://localhost:4200/api/natural-events', {
+        signal: AbortSignal.timeout(8000),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json() as { events: NasaEvent[]; summary: string; fetchedAt: number }
       setEvents(data.events ?? [])
       setSummary(data.summary ?? '')
       setFetchedAt(data.fetchedAt ?? Date.now())
-    } catch {}
-    setLoading(false)
+    } catch {
+      setEvents([])
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
   useEffect(() => {
@@ -1860,11 +2037,9 @@ interface PulseEntry {
   tool?: string
 }
 
+// LiveViewPanel is now a headless data connector — no UI, just WebSocket for briefings + pulse events
 function LiveViewPanel() {
-  const { isExecuting, uiMode, setUIMode, systemStats, setActivityLogs, activityLogs, setMessages } = useDevOS()
-  const [pulseLog, setPulseLog]     = useState<PulseEntry[]>([])
-  const [collapsed, setCollapsed]   = useState(false)
-  const bottomRef                   = useRef<HTMLDivElement>(null)
+  const { setActivityLogs, setMessages } = useDevOS()
 
   // WebSocket connection to LivePulse bridge
   useEffect(() => {
@@ -1893,256 +2068,49 @@ function LiveViewPanel() {
             message: tool ? `${tool}: ${message}` : message,
             style: (type === 'done' ? 'ok' : type === 'error' ? 'err' : type === 'tool' || type === 'act' ? 'active' : 'default') as ActivityLog['style'],
           }])
-          setPulseLog(prev => [...prev.slice(-199), data.event as PulseEntry])
         }
       } catch {}
     }
     ws.onerror = () => {}
     return () => { try { ws.close() } catch {} }
-  }, [setActivityLogs])
+  }, [setActivityLogs, setMessages])
 
-  // Auto-scroll to bottom on new events
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [pulseLog])
-
-  return (
-    <aside style={{
-      overflow: 'hidden', borderLeft: '1px solid var(--border)',
-      background: 'var(--bg1)', display: 'flex', flexDirection: 'column',
-      width: collapsed ? 40 : undefined,
-      minWidth: collapsed ? 40 : 420,
-      transition: 'min-width 0.2s ease-out, width 0.2s ease-out',
-    }}>
-      {/* Header */}
-      <div style={{
-        height: 40, display: 'flex', alignItems: 'center',
-        justifyContent: collapsed ? 'center' : 'space-between',
-        padding: collapsed ? '0' : '0 14px',
-        borderBottom: '1px solid var(--border)', flexShrink: 0,
-      }}>
-        {collapsed ? (
-          <button
-            onClick={() => setCollapsed(false)}
-            title="Expand Live Activity"
-            style={{
-              width: 40, height: 40, display: 'flex', alignItems: 'center',
-              justifyContent: 'center', background: 'transparent', border: 'none',
-              color: 'var(--muted)', cursor: 'pointer',
-            }}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-          </button>
-        ) : (
-          <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--muted2)', fontFamily: 'var(--mono)' }}>
-              <span style={{
-                width: 5, height: 5, borderRadius: '50%',
-                background: isExecuting ? 'var(--orange)' : 'var(--green)',
-                animation: isExecuting ? 'pulse-dot 1s infinite' : 'none',
-              }} />
-              Live Activity
-            </div>
-            <div style={{ display: 'flex', gap: 4 }}>
-              {pulseLog.length > 0 && (
-                <button
-                  onClick={() => setPulseLog([])}
-                  title="Clear feed"
-                  style={{
-                    height: 28, padding: '0 8px', borderRadius: 5,
-                    background: 'transparent', border: '1px solid transparent',
-                    color: 'var(--muted)', cursor: 'pointer', fontSize: 10,
-                    fontFamily: 'var(--mono)', transition: 'all 0.15s',
-                  }}
-                >clear</button>
-              )}
-              <button
-                onClick={() => setCollapsed(true)}
-                title="Collapse panel"
-                style={{
-                  width: 28, height: 28, borderRadius: 5, display: 'flex',
-                  alignItems: 'center', justifyContent: 'center',
-                  background: 'transparent', border: 'none',
-                  color: 'var(--muted)', cursor: 'pointer', transition: 'all 0.15s',
-                }}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-              </button>
-              <NavBtn onClick={() => setUIMode((m: UIMode) => m === 'watch' ? 'focus' : 'watch')} title="Watch Mode">
-                {uiMode === 'watch' ? '✕' : '⤢'}
-              </NavBtn>
-            </div>
-          </>
-        )}
-      </div>
-
-      {!collapsed && <>
-      {/* Activity Feed */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 2 }}>
-        {pulseLog.length === 0 ? (
-          <div style={{
-            display: 'flex', flexDirection: 'column', alignItems: 'center',
-            justifyContent: 'center', flex: 1, gap: 10,
-            color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 11,
-          }}>
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.3 }}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-            <div>Waiting for activity...</div>
-            <div style={{ fontSize: 10, color: 'var(--muted)', opacity: 0.7 }}>Events will appear here as Aiden works</div>
-          </div>
-        ) : (
-          pulseLog.map((entry, i) => {
-            const typeColor =
-              entry.type === 'error'   ? 'var(--red)' :
-              entry.type === 'done'    ? 'var(--green)' :
-              entry.type === 'warn'    ? 'var(--orange)' :
-              entry.type === 'tool'    ? '#60a5fa' :
-              entry.type === 'thinking'? '#a78bfa' :
-              'var(--muted2)'
-            const typeIcon =
-              entry.type === 'error'   ? '✗' :
-              entry.type === 'done'    ? '✓' :
-              entry.type === 'warn'    ? '⚠' :
-              entry.type === 'tool'    ? '⬡' :
-              entry.type === 'thinking'? '💭' :
-              entry.type === 'act'     ? '▸' :
-              '·'
-            const isNew = i === pulseLog.length - 1
-            return (
-              <div key={i} style={{
-                display: 'flex', gap: 8, alignItems: 'flex-start',
-                fontSize: 11, fontFamily: 'var(--mono)',
-                padding: '4px 8px', borderRadius: 5,
-                background: isNew ? 'rgba(249,115,22,0.06)' : 'transparent',
-                transition: 'background 0.4s',
-              }}>
-                <span style={{ color: typeColor, flexShrink: 0, fontSize: 12, lineHeight: '16px' }}>{typeIcon}</span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ color: 'var(--muted2)', wordBreak: 'break-word', lineHeight: 1.5 }}>
-                    {entry.tool && (
-                      <span style={{ color: '#60a5fa', marginRight: 4 }}>[{entry.tool}]</span>
-                    )}
-                    {entry.message}
-                  </div>
-                  <div style={{ fontSize: 9, color: 'var(--muted)', marginTop: 1 }}>
-                    {entry.agent} · {new Date(entry.timestamp).toLocaleTimeString('en', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                  </div>
-                </div>
-              </div>
-            )
-          })
-        )}
-        <div ref={bottomRef} />
-      </div>
-
-      {/* Sprint 27: Growth Card */}
-      <GrowthCard />
-
-      {/* NASA EONET natural events */}
-      <NasaLiveEventsCard />
-
-      {/* Footer stats */}
-      <div style={{
-        borderTop: '1px solid var(--border)', padding: '8px 14px',
-        display: 'flex', gap: 16, flexShrink: 0,
-      }}>
-        {[
-          { label: 'status', value: 'online',  color: 'var(--green)' },
-          { label: 'mode',   value: 'local',   color: 'var(--muted2)' },
-          { label: 'events', value: `${activityLogs.length}`, color: 'var(--muted2)' },
-          { label: 'memory', value: `${systemStats?.recentHistory?.length ?? 0}`, color: 'var(--muted2)' },
-        ].map(stat => (
-          <div key={stat.label} style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-            <div style={{ fontSize: 8, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: 'var(--mono)' }}>
-              {stat.label}
-            </div>
-            <div style={{ fontSize: 11, color: stat.color, fontFamily: 'var(--mono)', fontWeight: 500 }}>
-              {stat.value}
-            </div>
-          </div>
-        ))}
-      </div>
-    </>
-    }
-    </aside>
-  )
+  return null // headless — no UI rendered
 }
 
-// ── ActivityBar ───────────────────────────────────────────────
+// ── StatusBar (replaces ActivityBar + DisclaimerBar) ─────────
 
-function ActivityBar() {
-  const { activityOpen, setActivityOpen, activityLogs, logsEndRef } = useDevOS()
-  const [expandedLog, setExpandedLog] = useState<number | null>(null)
-
-  useEffect(() => {
-    if (activityOpen) logsEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [activityLogs, activityOpen, logsEndRef])
+function StatusBar() {
+  const { activityLogs, systemStats, activeModel } = useDevOS()
+  const providerLabel = activeModel
+    ? activeModel.split('/').pop()?.replace(':latest', '') ?? activeModel
+    : 'local'
+  const memCount = systemStats?.recentHistory?.length ?? 0
 
   return (
     <div style={{
-      height: activityOpen ? 140 : 32, flexShrink: 0,
-      borderTop: '1px solid var(--border)',
-      background: 'rgba(0,0,0,0.4)',
-      transition: 'height 0.2s ease-out',
-      display: 'flex', flexDirection: 'column',
+      height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center',
+      gap: 10, flexShrink: 0,
+      background: 'var(--bg1)', borderTop: '1px solid var(--border)',
+      fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--muted)',
+      userSelect: 'none',
     }}>
-      <div
-        onClick={() => setActivityOpen(a => !a)}
-        style={{ height: 32, display: 'flex', alignItems: 'center', padding: '0 14px', cursor: 'pointer', flexShrink: 0, gap: 8 }}
-      >
-        <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--mono)' }}>
-          {activityOpen ? '⌃' : '⌄'} Activity
-        </span>
-        {activityLogs.length > 0 && (
-          <span style={{ fontSize: 9, color: 'var(--muted)', background: 'var(--bg3)', borderRadius: 10, padding: '1px 6px', fontFamily: 'var(--mono)' }}>
-            {activityLogs.length}
-          </span>
-        )}
-        {!activityOpen && activityLogs.length > 0 && (
-          <span style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'var(--mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-            {activityLogs[activityLogs.length - 1].message.slice(0, 80)}
-          </span>
-        )}
-      </div>
-
-      {activityOpen && (
-        <div style={{ flex: 1, overflowY: 'auto', padding: '0 14px 8px' }}>
-          {activityLogs.length === 0 ? (
-            <div style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 10, padding: '6px 0', fontStyle: 'italic' }}>
-              No activity yet — send a message to get started
-            </div>
-          ) : activityLogs.slice(-100).map((log, i) => (
-            <div key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', padding: '4px 0' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontFamily: 'var(--mono)', fontSize: 11, flex: 1, minWidth: 0 }}>
-                  <span style={{ color: 'var(--muted)', flexShrink: 0, fontSize: 9, paddingTop: 1 }}>{log.time}</span>
-                  <span style={{ flexShrink: 0 }}>{log.icon}</span>
-                  <span style={{ color: 'var(--muted2)', flexShrink: 0 }}>[{log.agent}]</span>
-                  <span style={{
-                    color: log.style === 'ok'     ? 'var(--green)'  :
-                           log.style === 'err'    ? 'var(--red)'    :
-                           log.style === 'active' ? 'var(--orange)' : 'var(--muted2)',
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  }}>{log.message}</span>
-                </div>
-                {log.rawTool && (
-                  <button
-                    onClick={() => setExpandedLog(expandedLog === i ? null : i)}
-                    style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 9, fontFamily: 'var(--mono)', flexShrink: 0, padding: '0 2px' }}
-                  >
-                    {expandedLog === i ? '▲' : '▼'}
-                  </button>
-                )}
-              </div>
-              {expandedLog === i && log.rawTool && (
-                <pre style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--muted)', background: 'var(--bg3)', padding: '6px 8px', borderRadius: 4, margin: '4px 0 0', overflow: 'auto', maxHeight: 100 }}>
-                  {JSON.stringify({ tool: log.rawTool, input: log.rawInput }, null, 2)}
-                </pre>
-              )}
-            </div>
-          ))}
-          <div ref={logsEndRef} />
-        </div>
-      )}
+      <span style={{ color: 'var(--muted3)' }}>Aiden v3.1.0</span>
+      <span style={{ color: 'var(--border2)' }}>·</span>
+      <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--green)', display: 'inline-block' }} />
+        online
+      </span>
+      <span style={{ color: 'var(--border2)' }}>·</span>
+      <span>{providerLabel}</span>
+      <span style={{ color: 'var(--border2)' }}>·</span>
+      <span>{memCount} {memCount === 1 ? 'memory' : 'memories'}</span>
+      <span style={{ color: 'var(--border2)' }}>·</span>
+      <span>{activityLogs.length} events</span>
+      <span style={{ color: 'var(--border2)' }}>·</span>
+      <a href="https://taracod.com" target="_blank" rel="noopener" style={{ color: 'var(--muted)', textDecoration: 'none' }}>
+        taracod.com
+      </a>
     </div>
   )
 }
@@ -2577,15 +2545,146 @@ function UserProfileTab() {
   )
 }
 
+// ── UpdatesTab ────────────────────────────────────────────────
+
+function UpdatesTab() {
+  const [state, setState] = useState<'idle' | 'checking' | 'upToDate' | 'available'>('idle')
+  const [updateInfo, setUpdateInfo] = useState<{
+    latestVersion?: string; downloadUrl?: string; releaseNotes?: string; publishedAt?: string
+  }>({})
+  const [dismissed, setDismissed] = useState(false)
+
+  const check = async () => {
+    setState('checking')
+    try {
+      const res  = await fetch('http://localhost:4200/api/update/check')
+      const data = await res.json() as any
+      if (data.available) {
+        setUpdateInfo({
+          latestVersion: data.latestVersion,
+          downloadUrl:   data.downloadUrl,
+          releaseNotes:  data.releaseNotes,
+          publishedAt:   data.publishedAt,
+        })
+        setState('available')
+      } else {
+        setState('upToDate')
+      }
+    } catch {
+      setState('idle')
+    }
+  }
+
+  const download = async () => {
+    if (!updateInfo.downloadUrl) return
+    await fetch('http://localhost:4200/api/update/download', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ downloadUrl: updateInfo.downloadUrl }),
+    })
+  }
+
+  return (
+    <div>
+      <SettingsSection title="Software Updates">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+          {/* Current version */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10,
+            padding: '10px 14px', background: 'var(--bg2)', borderRadius: 8, border: '1px solid var(--border)' }}>
+            <div style={{ fontSize: 18 }}>🤖</div>
+            <div>
+              <div style={{ fontSize: 12, color: 'var(--text)', fontFamily: 'var(--mono)', fontWeight: 600 }}>
+                Aiden v3.1.0
+              </div>
+              <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'var(--mono)', marginTop: 2 }}>
+                Installed · Local AI OS
+              </div>
+            </div>
+          </div>
+
+          {/* Check button */}
+          {(state === 'idle' || state === 'upToDate') && (
+            <button onClick={check} style={{
+              padding: '8px 18px', borderRadius: 6, cursor: 'pointer',
+              background: 'var(--orange)', border: 'none', color: '#000',
+              fontFamily: 'var(--mono)', fontSize: 12, fontWeight: 600,
+              alignSelf: 'flex-start',
+            }}>
+              Check for Updates
+            </button>
+          )}
+
+          {/* Checking spinner */}
+          {state === 'checking' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8,
+              color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 12 }}>
+              <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>⟳</span>
+              Checking...
+            </div>
+          )}
+
+          {/* Up to date */}
+          {state === 'upToDate' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8,
+              color: 'var(--green)', fontFamily: 'var(--mono)', fontSize: 12 }}>
+              ✓ You're on the latest version
+            </div>
+          )}
+
+          {/* Update available */}
+          {state === 'available' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10,
+                padding: '10px 14px', background: 'rgba(251,146,60,0.08)',
+                borderRadius: 8, border: '1px solid rgba(251,146,60,0.3)' }}>
+                <div style={{ fontSize: 18 }}>🚀</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 12, color: 'var(--orange)', fontFamily: 'var(--mono)', fontWeight: 600 }}>
+                    Aiden v{updateInfo.latestVersion} is available!
+                  </div>
+                  {updateInfo.publishedAt && (
+                    <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'var(--mono)', marginTop: 2 }}>
+                      Released {new Date(updateInfo.publishedAt).toLocaleDateString()}
+                    </div>
+                  )}
+                </div>
+                <button onClick={download} style={{
+                  padding: '6px 16px', borderRadius: 6, cursor: 'pointer',
+                  background: 'var(--orange)', border: 'none', color: '#000',
+                  fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700,
+                }}>
+                  Download Update
+                </button>
+              </div>
+              {updateInfo.releaseNotes && (
+                <div style={{
+                  padding: '10px 14px', background: 'var(--bg2)',
+                  borderRadius: 8, border: '1px solid var(--border)',
+                  fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted2)',
+                  whiteSpace: 'pre-wrap', lineHeight: 1.6, maxHeight: 200, overflowY: 'auto',
+                }}>
+                  {updateInfo.releaseNotes}
+                </div>
+              )}
+            </div>
+          )}
+
+        </div>
+      </SettingsSection>
+    </div>
+  )
+}
+
 // ── SettingsDrawer ────────────────────────────────────────────
 
 const SETTINGS_TABS = [
+  { id: 'pro',      label: '⭐ License'      },
+  { id: 'updates',  label: '🔄 Updates'     },
   { id: 'profile',  label: '👤 My Profile'  },
   { id: 'api',      label: '🔑 API Keys'    },
   { id: 'model',    label: '🧠 Model'        },
   { id: 'knowledge',label: '📚 Knowledge'   },
   { id: 'channels', label: '💬 Channels'    },
-  { id: 'pro',      label: '🔐 Pro License' },
   { id: 'guide',    label: '📖 User Guide'  },
   { id: 'setup',    label: '🔧 Setup'        },
   { id: 'privacy',  label: '📜 Privacy'     },
@@ -2596,7 +2695,7 @@ const SETTINGS_TABS = [
 
 function SettingsDrawer() {
   const {
-    settingsTab, setSettingsTab, setSettingsOpen, setConversations,
+    settingsTab, setSettingsTab, setSettingsOpen, setConversations, setMessages,
     licenseStatus, licenseKey, setLicenseKey, activatingKey, licenseMsg, setLicenseMsg,
     validateKey, clearProLicense, setPricingOpen,
   } = useDevOS()
@@ -2648,6 +2747,7 @@ function SettingsDrawer() {
           {settingsTab === 'profile'   && <UserProfileTab />}
           {settingsTab === 'api'       && <ApiKeysTab />}
           {settingsTab === 'knowledge' && <KnowledgeBaseTab />}
+          {settingsTab === 'updates'   && <UpdatesTab />}
 
           {settingsTab === 'model' && (
             <SettingsSection title="Active Model">
@@ -2666,101 +2766,180 @@ function SettingsDrawer() {
           )}
 
           {settingsTab === 'pro' && (
-            <SettingsSection title="Pro License">
-              {/* Status */}
+            <SettingsSection title="License">
+
+              {/* ── Status card ──────────────────────────────── */}
               <div style={{
-                background: licenseStatus.active ? 'rgba(139,92,246,0.08)' : 'var(--bg2)',
-                border: `1px solid ${licenseStatus.active ? 'rgba(139,92,246,0.3)' : 'var(--border)'}`,
-                borderRadius: 8, padding: 14, marginBottom: 14,
+                background: licenseStatus.isPro ? 'rgba(249,115,22,0.06)' : 'var(--bg2)',
+                border: `1px solid ${licenseStatus.isPro ? 'rgba(249,115,22,0.3)' : 'var(--border)'}`,
+                borderRadius: 8, padding: '14px 16px', marginBottom: 16,
+                display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10,
               }}>
-                <div style={{ fontSize: 12, color: 'var(--muted2)', fontFamily: 'var(--mono)', marginBottom: 6 }}>
-                  Status:{' '}
-                  <span style={{ color: licenseStatus.active ? '#a78bfa' : 'var(--muted)' }}>
-                    {licenseStatus.active ? '★ Pro active' : 'Free'}
-                  </span>
-                </div>
-                {licenseStatus.active && (
-                  <>
-                    <div style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--mono)', marginBottom: 2 }}>
-                      Licensed to: {licenseStatus.email}
-                    </div>
-                    {licenseStatus.expiry > 0 && (
-                      <div style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--mono)' }}>
-                        Expires: {new Date(licenseStatus.expiry).toLocaleDateString()}
-                      </div>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--muted2)', fontFamily: 'var(--mono)', marginBottom: 6 }}>
+                    Current plan
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {licenseStatus.isPro ? (
+                      <>
+                        <span style={{
+                          background: 'var(--orange)', color: '#fff', fontSize: 10, fontWeight: 700,
+                          fontFamily: 'var(--mono)', padding: '2px 7px', borderRadius: 4, letterSpacing: '0.05em',
+                        }}>
+                          {(() => {
+                            const p = licenseStatus.plan || ''
+                            if (p.includes('annual')) return 'PRO ANNUAL'
+                            if (p.includes('launch')) return 'PRO LAUNCH'
+                            if (p.includes('legacy')) return 'PRO'
+                            return 'PRO MONTHLY'
+                          })()}
+                        </span>
+                        {licenseStatus.expiresAt && (
+                          <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--mono)' }}>
+                            Expires {new Date(licenseStatus.expiresAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          </span>
+                        )}
+                        {!licenseStatus.expiresAt && licenseStatus.expiry > 0 && (
+                          <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--mono)' }}>
+                            Expires {new Date(licenseStatus.expiry).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <span style={{
+                        border: '1px solid rgba(249,115,22,0.4)', color: 'var(--orange)', fontSize: 10,
+                        fontWeight: 700, fontFamily: 'var(--mono)', padding: '2px 7px', borderRadius: 4,
+                        letterSpacing: '0.05em',
+                      }}>FREE</span>
                     )}
-                  </>
-                )}
+                  </div>
+                  {licenseStatus.isPro && (
+                    <div style={{ marginTop: 8, fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--mono)', lineHeight: 1.7 }}>
+                      {licenseStatus.email && <div>Licensed to: {licenseStatus.email}</div>}
+                      <div>Machines: up to {(licenseStatus.features?.maxMachines as number) || 2} allowed</div>
+                    </div>
+                  )}
+                </div>
               </div>
 
-              {/* Activate input */}
-              {!licenseStatus.active && (
+              {/* ── FREE: activation form ────────────────────── */}
+              {!licenseStatus.isPro && (
                 <>
-                  <div style={{ marginBottom: 8 }}>
+                  <div style={{ marginBottom: 12 }}>
                     <input
                       value={licenseKey}
-                      onChange={e => setLicenseKey(e.target.value.toUpperCase())}
-                      placeholder="XXXXX-XXXXX-XXXXX-XXXXX"
+                      onChange={e => setLicenseKey(e.target.value)}
+                      placeholder="AIDEN-PRO-XXXXXX-XXXXXX-XXXXXX"
                       style={{
                         width: '100%', background: 'var(--bg3)', border: '1px solid var(--border2)',
                         borderRadius: 6, padding: '8px 12px', fontFamily: 'var(--mono)', fontSize: 12,
-                        color: 'var(--text)', outline: 'none', marginBottom: 6, letterSpacing: 1,
+                        color: 'var(--text)', outline: 'none', marginBottom: 8, letterSpacing: '0.5px',
                         boxSizing: 'border-box',
                       }}
                       onKeyDown={async e => {
-                        if (e.key === 'Enter' && licenseKey.trim()) await validateKey(licenseKey)
+                        if (e.key === 'Enter' && licenseKey.trim()) await validateKey(licenseKey.trim())
                       }}
                     />
                     <button
-                      onClick={async () => { if (licenseKey.trim()) await validateKey(licenseKey) }}
+                      onClick={async () => { if (licenseKey.trim()) await validateKey(licenseKey.trim()) }}
                       disabled={activatingKey || !licenseKey.trim()}
                       style={{
-                        width: '100%', padding: '8px', borderRadius: 6,
-                        background: activatingKey ? 'var(--bg3)' : '#7c3aed',
+                        width: '100%', padding: '9px', borderRadius: 6,
+                        background: activatingKey || !licenseKey.trim() ? 'var(--bg3)' : 'var(--orange)',
                         border: 'none', color: '#fff',
-                        fontFamily: 'var(--mono)', fontSize: 12, fontWeight: 600,
-                        cursor: activatingKey ? 'wait' : 'pointer',
+                        fontFamily: 'var(--mono)', fontSize: 12, fontWeight: 700,
+                        cursor: activatingKey ? 'wait' : (!licenseKey.trim() ? 'default' : 'pointer'),
                         opacity: !licenseKey.trim() ? 0.5 : 1,
+                        transition: 'background 0.15s',
                       }}
-                    >{activatingKey ? 'Activating…' : 'Activate Key'}</button>
+                    >
+                      {activatingKey
+                        ? <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                            <span style={{
+                              width: 10, height: 10, border: '2px solid rgba(255,255,255,0.3)',
+                              borderTopColor: '#fff', borderRadius: '50%',
+                              animation: 'spin 0.7s linear infinite', display: 'inline-block',
+                            }} />
+                            Activating…
+                          </span>
+                        : 'Activate'}
+                    </button>
                   </div>
+
+                  {/* Message */}
                   {licenseMsg && (
                     <div style={{
-                      padding: '8px 10px', borderRadius: 6, fontSize: 11, fontFamily: 'var(--mono)',
+                      padding: '8px 12px', borderRadius: 6, fontSize: 11, fontFamily: 'var(--mono)',
                       background: licenseMsg.type === 'success' ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)',
                       border: `1px solid ${licenseMsg.type === 'success' ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'}`,
                       color: licenseMsg.type === 'success' ? '#86efac' : '#fca5a5',
-                      marginBottom: 10,
+                      marginBottom: 12, lineHeight: 1.5,
                     }}>{licenseMsg.text}</div>
                   )}
-                  <button
-                    onClick={() => setPricingOpen(true)}
+
+                  {/* Get Pro link */}
+                  <a
+                    href="https://aiden.taracod.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
                     style={{
-                      width: '100%', padding: '9px', borderRadius: 6,
-                      background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.25)',
-                      color: '#a78bfa', fontFamily: 'var(--mono)', fontSize: 12,
-                      cursor: 'pointer', marginBottom: 12,
+                      display: 'block', textAlign: 'center', padding: '8px',
+                      borderRadius: 6, border: '1px solid rgba(249,115,22,0.3)',
+                      color: 'var(--orange)', fontFamily: 'var(--mono)', fontSize: 12,
+                      textDecoration: 'none', marginBottom: 14,
+                      transition: 'border-color 0.15s',
                     }}
-                  >View pricing & buy →</button>
+                  >
+                    Get Pro → aiden.taracod.com
+                  </a>
+
+                  {/* Free tier note */}
+                  <div style={{
+                    fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--mono)', lineHeight: 1.7,
+                    padding: '10px 12px', background: 'var(--bg2)', borderRadius: 6,
+                  }}>
+                    Free includes all 44 features with limits on goals (5), memories (50), and routines (10)
+                  </div>
                 </>
               )}
 
-              {/* Clear license */}
-              {licenseStatus.active && (
-                <button
-                  onClick={clearProLicense}
-                  style={{
-                    width: '100%', padding: '8px', borderRadius: 6,
-                    background: 'transparent', border: '1px solid var(--border)',
-                    color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 11,
-                    cursor: 'pointer', marginBottom: 12,
-                  }}
-                >Deactivate license</button>
+              {/* ── PRO: active state ────────────────────────── */}
+              {licenseStatus.isPro && (
+                <>
+                  {/* Success/info message */}
+                  {licenseMsg && (
+                    <div style={{
+                      padding: '8px 12px', borderRadius: 6, fontSize: 11, fontFamily: 'var(--mono)',
+                      background: licenseMsg.type === 'success' ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)',
+                      border: `1px solid ${licenseMsg.type === 'success' ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'}`,
+                      color: licenseMsg.type === 'success' ? '#86efac' : '#fca5a5',
+                      marginBottom: 14, lineHeight: 1.5,
+                    }}>{licenseMsg.text}</div>
+                  )}
+
+                  {/* Pro features note */}
+                  <div style={{
+                    fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--mono)', lineHeight: 1.8,
+                    padding: '10px 12px', background: 'var(--bg2)', borderRadius: 6, marginBottom: 16,
+                  }}>
+                    All limits removed. Night Mode, Watchdog, Persistent Rules, and Persona Engine are active.
+                  </div>
+
+                  {/* Deactivate button */}
+                  <button
+                    onClick={clearProLicense}
+                    style={{
+                      padding: '6px 12px', borderRadius: 5,
+                      background: 'transparent', border: '1px solid rgba(239,68,68,0.35)',
+                      color: '#f87171', fontFamily: 'var(--mono)', fontSize: 11,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Deactivate This Machine
+                  </button>
+                </>
               )}
 
-              <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'var(--mono)', lineHeight: 1.6 }}>
-                Pro includes: PDF/EPUB knowledge base · Voice input/output · Priority support
-              </div>
             </SettingsSection>
           )}
 
@@ -2892,7 +3071,7 @@ function SettingsDrawer() {
                   fontFamily: 'var(--sans)',
                 }}>D/</div>
                 <div style={{ fontFamily: 'var(--sans)', fontSize: 16, fontWeight: 700, color: 'var(--text)' }}>DevOS · Aiden</div>
-                <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>v2 · Local AI OS</div>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>v3.1.0 · Local AI OS</div>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {[
@@ -2921,22 +3100,43 @@ function SettingsDrawer() {
               {[
                 {
                   label: 'Clear conversation history',
-                  action: () => { setConversations([]); localStorage.removeItem('devos_conversations') },
+                  desc:  'Removes all saved conversations from disk and memory',
+                  action: async () => {
+                    await fetch('http://localhost:4200/api/conversations/clear', { method: 'POST' }).catch(() => {})
+                    setConversations([])
+                    localStorage.removeItem('devos_conversations')
+                    setMessages([])
+                  },
                 },
                 {
                   label: 'Clear all memory',
-                  action: () => fetch('http://localhost:4200/api/memory', { method: 'DELETE' }).catch(() => {}),
+                  desc:  'Wipes conversation memory and semantic memory index',
+                  action: async () => {
+                    await fetch('http://localhost:4200/api/memory/clear', { method: 'POST' }).catch(() => {})
+                  },
                 },
-                { label: 'Clear knowledge base', action: () => {} },
+                {
+                  label: 'Clear knowledge base',
+                  desc:  'Removes all clipped knowledge files',
+                  action: async () => {
+                    await fetch('http://localhost:4200/api/knowledge/clear', { method: 'POST' }).catch(() => {})
+                  },
+                },
               ].map(item => (
-                <button key={item.label} onClick={() => {
-                  if (window.confirm(`Are you sure? This cannot be undone.\n\n${item.label}`)) item.action()
-                }} style={{
-                  width: '100%', marginBottom: 8, padding: '10px 14px',
-                  background: 'transparent', border: '1px solid rgba(239,68,68,0.3)',
-                  borderRadius: 6, color: 'var(--red)', fontFamily: 'var(--mono)',
-                  fontSize: 12, cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s',
-                }}>{item.label}</button>
+                <div key={item.label} style={{ marginBottom: 8 }}>
+                  <button onClick={async () => {
+                    if (window.confirm(`Are you sure? This cannot be undone.\n\n${item.label}`)) {
+                      await item.action()
+                      alert(`✓ ${item.label} — done.`)
+                    }
+                  }} style={{
+                    width: '100%', padding: '10px 14px',
+                    background: 'transparent', border: '1px solid rgba(239,68,68,0.3)',
+                    borderRadius: 6, color: 'var(--red)', fontFamily: 'var(--mono)',
+                    fontSize: 12, cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s',
+                  }}>{item.label}</button>
+                  <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'var(--mono)', marginTop: 3, paddingLeft: 2 }}>{item.desc}</div>
+                </div>
               ))}
             </div>
           )}
@@ -2974,6 +3174,29 @@ export default function Home() {
       .catch(() => {})
   }, [])
 
+  // ── Auto-check for updates 30s after launch ──────────────────
+  useEffect(() => {
+    const t = setTimeout(async () => {
+      try {
+        const res  = await fetch('http://localhost:4200/api/update/check')
+        const data = await res.json() as any
+        if (data.available && data.latestVersion) {
+          setUpdateBanner({ version: data.latestVersion, url: data.downloadUrl || '' })
+        }
+      } catch { /* silently ignore */ }
+    }, 30000)
+    // Also handle update events dispatched by Electron main process
+    const handleElectronUpdate = (e: Event) => {
+      const detail = (e as CustomEvent<{ version: string; url: string }>).detail
+      if (detail?.version) setUpdateBanner({ version: detail.version, url: detail.url || '' })
+    }
+    window.addEventListener('aiden:update', handleElectronUpdate)
+    return () => {
+      clearTimeout(t)
+      window.removeEventListener('aiden:update', handleElectronUpdate)
+    }
+  }, [])
+
   // ── UI Mode ─────────────────────────────────────────────────
   const [uiMode,         setUIMode]         = useState<UIMode>('focus')
   const [execMode,       setExecMode]       = useState<ExecMode>('auto')
@@ -3003,6 +3226,9 @@ export default function Home() {
   const [channelModal,      setChannelModal]      = useState<string | null>(null)
   const [miniPrompt,        setMiniPrompt]        = useState<MiniPromptConfig | null>(null)
   const [miniPromptValue,   setMiniPromptValue]   = useState('')
+
+  // ── Update banner ────────────────────────────────────────────
+  const [updateBanner, setUpdateBanner] = useState<{ version: string; url: string } | null>(null)
 
   // ── Voice state ─────────────────────────────────────────────
   const [voiceStatus,    setVoiceStatus]    = useState<{ stt: boolean; tts: boolean }>({ stt: false, tts: false })
@@ -3040,7 +3266,10 @@ export default function Home() {
 
   // ── License / Pro state ──────────────────────────────────────
   const [pricingOpen,    setPricingOpen]    = useState(false)
-  const [licenseStatus,  setLicenseStatus]  = useState<{ active: boolean; tier: string; email: string; expiry: number }>({ active: false, tier: 'free', email: '', expiry: 0 })
+  const [licenseStatus,  setLicenseStatus]  = useState<{
+    active: boolean; isPro: boolean; plan: string; expiresAt: string;
+    features: Record<string, boolean | number>; tier: string; email: string; expiry: number
+  }>({ active: false, isPro: false, plan: 'free', expiresAt: '', features: {}, tier: 'free', email: '', expiry: 0 })
   const [activatingKey,  setActivatingKey]  = useState(false)   // eslint-disable-line @typescript-eslint/no-unused-vars
   const [licenseKey,     setLicenseKey]     = useState('')
   const [licenseMsg,     setLicenseMsg]     = useState<{ type: 'success' | 'error'; text: string } | null>(null)
@@ -3119,10 +3348,24 @@ export default function Home() {
 
   // ── Load license status on mount ────────────────────────────
   useEffect(() => {
-    fetch('http://localhost:4200/api/license/status')
-      .then(r => r.json())
-      .then(data => setLicenseStatus(data))
-      .catch(() => {})
+    const refreshLicense = () => {
+      Promise.all([
+        fetch('http://localhost:4200/api/license/status').then(r => r.json()).catch(() => ({})),
+        fetch('http://localhost:4200/api/license/pro-status').then(r => r.json()).catch(() => ({})),
+      ]).then(([old, pro]) => {
+        setLicenseStatus({
+          active:    !!(pro.isPro || old.active),
+          isPro:     !!pro.isPro,
+          plan:      pro.plan      || (old.active ? 'pro_legacy' : 'free'),
+          expiresAt: pro.expiresAt || '',
+          features:  pro.features  || {},
+          tier:      old.tier      || (pro.isPro ? 'pro' : 'free'),
+          email:     old.email     || '',
+          expiry:    old.expiry    || 0,
+        })
+      })
+    }
+    refreshLicense()
   }, [])
 
   // ── Load conversations from localStorage ────────────────────
@@ -3189,28 +3432,43 @@ export default function Home() {
 
   // ── Grid columns ────────────────────────────────────────────
   const gridColumns = useMemo(() => {
-    if (uiMode === 'watch')     return '0px 1fr 0px'
-    if (uiMode === 'power')     return '260px 1fr 420px'
-    if (uiMode === 'execution') return '0px 1fr 420px'
-    const left  = historyOpen  ? '260px' : '0px'
-    const right = liveViewOpen ? '380px' : '0px'
-    return `${left} 1fr ${right}`
-  }, [uiMode, historyOpen, liveViewOpen])
+    const left = historyOpen ? '260px' : '0px'
+    return `${left} 1fr`
+  }, [historyOpen])
 
   // ── License helpers ─────────────────────────────────────────
+  const refreshLicenseStatus = useCallback(() => {
+    Promise.all([
+      fetch('http://localhost:4200/api/license/status').then(r => r.json()).catch(() => ({})),
+      fetch('http://localhost:4200/api/license/pro-status').then(r => r.json()).catch(() => ({})),
+    ]).then(([old, pro]) => {
+      setLicenseStatus({
+        active:    !!(pro.isPro || old.active),
+        isPro:     !!pro.isPro,
+        plan:      pro.plan      || (old.active ? 'pro_legacy' : 'free'),
+        expiresAt: pro.expiresAt || '',
+        features:  pro.features  || {},
+        tier:      old.tier      || (pro.isPro ? 'pro' : 'free'),
+        email:     old.email     || '',
+        expiry:    old.expiry    || 0,
+      })
+    })
+  }, [])
+
   const validateKey = useCallback(async (key: string): Promise<{ success: boolean; error?: string }> => {
     setActivatingKey(true)
     setLicenseMsg(null)
     try {
-      const res  = await fetch('http://localhost:4200/api/license/validate', {
+      const res  = await fetch('http://localhost:4200/api/license/activate', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key }),
       })
       const data = await res.json()
       setActivatingKey(false)
-      if (data.valid) {
-        setLicenseStatus({ active: true, tier: data.tier, email: data.email, expiry: data.expiry })
-        setLicenseMsg({ type: 'success', text: 'Pro activated!' })
+      if (data.success) {
+        refreshLicenseStatus()
+        setLicenseMsg({ type: 'success', text: '✓ Pro activated! All limits removed.' })
+        setLicenseKey('')
         return { success: true }
       } else {
         setLicenseMsg({ type: 'error', text: data.error || 'Invalid key' })
@@ -3221,12 +3479,12 @@ export default function Home() {
       setLicenseMsg({ type: 'error', text: `Server error: ${e.message}` })
       return { success: false, error: e.message }
     }
-  }, [])
+  }, [refreshLicenseStatus])
 
   const clearProLicense = useCallback(async () => {
-    await fetch('http://localhost:4200/api/license/clear', { method: 'POST' }).catch(() => {})
-    setLicenseStatus({ active: false, tier: 'free', email: '', expiry: 0 })
-    setLicenseMsg({ type: 'success', text: 'License cleared.' })
+    await fetch('http://localhost:4200/api/license/deactivate', { method: 'POST' }).catch(() => {})
+    setLicenseStatus(s => ({ ...s, active: false, isPro: false, plan: 'free', expiresAt: '', features: {} }))
+    setLicenseMsg({ type: 'success', text: 'Machine deactivated. License slot freed.' })
   }, [])
 
   // ── Conversation helpers ────────────────────────────────────
@@ -3270,6 +3528,26 @@ export default function Home() {
 
     let fullReply = ''
     let provider  = ''
+
+    // ── Tool execution tracking for ToolExecutionCard ────────
+    type LiveStep = { tool: string; status: 'running' | 'done' | 'failed'; duration?: number; startTs: number }
+    const liveSteps: LiveStep[] = []
+    let   currentStepIdx = -1
+
+    const buildPhases = (finalStatus: 'running' | 'done'): Phase[] => {
+      if (liveSteps.length === 0) return []
+      return [{
+        name:   'Executing',
+        index:  1,
+        total:  1,
+        status: finalStatus === 'done' ? 'done' : 'running',
+        steps:  liveSteps.map(s => ({
+          tool:     s.tool,
+          status:   finalStatus === 'done' && s.status === 'running' ? 'done' : s.status,
+          duration: s.duration,
+        })),
+      }]
+    }
 
     try {
       const resp = await fetch('http://localhost:4200/api/chat', {
@@ -3318,6 +3596,30 @@ export default function Home() {
                 rawInput: data.activity.rawInput || undefined,
               }
               setActivityLogs(prev => [...prev.slice(-99), log])
+
+              // ── Tool card tracking ──────────────────────────────
+              if (data.activity.rawTool) {
+                // New tool starting
+                liveSteps.push({ tool: data.activity.rawTool, status: 'running', startTs: Date.now() })
+                currentStepIdx = liveSteps.length - 1
+                // Live update — show running step in card
+                const phases = buildPhases('running')
+                setMessages(m => m.map(msg =>
+                  msg.id === thinkingId ? { ...msg, phases } : msg
+                ))
+              } else if (
+                (data.activity.style === 'done' || data.activity.style === 'error') &&
+                currentStepIdx >= 0 && liveSteps[currentStepIdx]?.status === 'running'
+              ) {
+                // Previous tool completed
+                const step = liveSteps[currentStepIdx]
+                step.status   = data.activity.style === 'error' ? 'failed' : 'done'
+                step.duration = Date.now() - step.startTs
+                const phases = buildPhases('running')
+                setMessages(m => m.map(msg =>
+                  msg.id === thinkingId ? { ...msg, phases } : msg
+                ))
+              }
             }
 
             // Token
@@ -3335,21 +3637,20 @@ export default function Home() {
             if (data.done) {
               setIsExecuting(false)
               setIsStreaming(false)
+              const finalPhases = buildPhases('done')
               const finalMsg: Message = {
                 id: thinkingId, role: 'assistant',
                 content: fullReply, provider,
                 timestamp: Date.now(), isStreaming: false,
+                phases: finalPhases.length > 0 ? finalPhases : undefined,
               }
               setMessages(prev => {
                 const updated = prev.map(m => m.id === thinkingId ? finalMsg : m)
                 saveToConversation(updated)
                 return updated
               })
-              // Refresh active model label — provider may have auto-rotated
-              fetch('http://localhost:4200/api/config')
-                .then(r => r.json())
-                .then((d: any) => { if (d.activeModel) setActiveModel(d.activeModel) })
-                .catch(() => {})
+              // Update header model badge to show the provider that actually responded
+              if (provider) setActiveModel(provider)
             }
           } catch {}
         }
@@ -3664,6 +3965,30 @@ export default function Home() {
         color: 'var(--text)', fontFamily: 'var(--mono)', overflow: 'hidden',
       }}>
         <NavBar />
+        {updateBanner && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '6px 16px', background: 'rgba(251,146,60,0.12)',
+            borderBottom: '1px solid rgba(251,146,60,0.3)',
+            fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--orange)',
+          }}>
+            <span>🚀</span>
+            <span style={{ flex: 1 }}>
+              Update available: <strong>v{updateBanner.version}</strong> —{' '}
+              <span
+                onClick={() => { setSettingsOpen(true); setSettingsTab('updates') }}
+                style={{ cursor: 'pointer', textDecoration: 'underline' }}>
+                View in Settings
+              </span>
+            </span>
+            <button onClick={() => setUpdateBanner(null)} style={{
+              background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer',
+              fontSize: 14, padding: '0 4px', lineHeight: 1,
+            }}>✕</button>
+          </div>
+        )}
+        {/* Headless connector — keeps WebSocket alive for briefings */}
+        <LiveViewPanel />
         <div style={{
           flex: 1, display: 'grid', overflow: 'hidden',
           gridTemplateColumns: gridColumns,
@@ -3671,10 +3996,8 @@ export default function Home() {
         }}>
           <HistorySidebar />
           <ChatPanel />
-          <LiveViewPanel />
         </div>
-        <ActivityBar />
-        <DisclaimerBar />
+        <StatusBar />
         {settingsOpen && <SettingsDrawer />}
         {channelModal && <ChannelModal />}
         {pricingOpen && (

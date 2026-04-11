@@ -1768,23 +1768,30 @@ CRITICAL RULES FOR YOUR RESPONSE:
       await streamGeminiResponse(r, onToken)
 
     } else if (providerName === 'ollama') {
+      const ollamaMs = Math.min(getOllamaTimeout(model || ''), 15000) // cap at 15s for chat
+      const _t0 = Date.now()
+      console.log(`[Router] respondWithResults → ollama, model: ${model}, timeout: ${ollamaMs}ms`)
       const r = await fetch('http://localhost:11434/api/chat', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model, stream: true, messages }),
+        signal:  AbortSignal.timeout(ollamaMs),
       })
-      if (!r.body) return
+      if (!r.body) throw new Error('Ollama: no response body')
       const reader  = (r.body as any).getReader()
       const decoder = new TextDecoder()
+      let   ollamaTokens = 0
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
         const line = decoder.decode(value)
         try {
           const parsed = JSON.parse(line) as any
-          if (parsed?.message?.content) onToken(parsed.message.content)
+          if (parsed?.message?.content) { onToken(parsed.message.content); ollamaTokens++ }
         } catch {}
       }
+      console.log(`[Router] Ollama responded in ${Date.now() - _t0}ms (${ollamaTokens} tokens)`)
+      if (ollamaTokens === 0) throw new Error('Ollama: empty response — no tokens emitted')
 
     } else {
       // OpenAI-compatible
@@ -1810,6 +1817,27 @@ CRITICAL RULES FOR YOUR RESPONSE:
       e.message?.includes('aborted')
     ) {
       try { markRateLimited(providerName) } catch {}
+    }
+
+    // If Ollama was primary and failed/timed out, fall back to best cloud provider
+    if (providerName === 'ollama') {
+      const cloudFallback = getModelForTask('responder')
+      if (cloudFallback.providerName !== 'ollama' && cloudFallback.apiKey) {
+        console.log(`[Router] Ollama timeout/error — falling back to ${cloudFallback.providerName} (${cloudFallback.model})`)
+        try {
+          const url     = OPENAI_COMPAT_ENDPOINTS[cloudFallback.providerName] || OPENAI_COMPAT_ENDPOINTS.groq
+          const headers = buildHeaders(cloudFallback.providerName, cloudFallback.apiKey)
+          const r = await fetch(url, {
+            method:  'POST',
+            headers,
+            body:    JSON.stringify({ model: cloudFallback.model, messages, stream: true }),
+            signal:  AbortSignal.timeout(15000),
+          })
+          if (r.ok) { await streamOpenAIResponse(r, onToken); return }
+        } catch (fbErr: any) {
+          console.error(`[Router] Cloud fallback also failed: ${fbErr.message}`)
+        }
+      }
     }
 
     // If the cloud provider failed and we haven't tried Ollama yet, try it

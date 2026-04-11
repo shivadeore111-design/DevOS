@@ -37,6 +37,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.surfaceRelevantMemories = surfaceRelevantMemories;
 exports.resolveTemplates = resolveTemplates;
 exports.streamOpenAIResponse = streamOpenAIResponse;
 exports.streamGeminiResponse = streamGeminiResponse;
@@ -69,9 +70,64 @@ const auditTrail_1 = require("./auditTrail");
 const mcpClient_1 = require("./mcpClient");
 const memoryRecall_1 = require("./memoryRecall");
 const costTracker_1 = require("./costTracker");
+const modelDiscovery_1 = require("./modelDiscovery");
+const semanticMemory_1 = require("./semanticMemory");
+const goalTracker_1 = require("./goalTracker");
+const hooks_1 = require("./hooks");
+const instinctSystem_1 = require("./instinctSystem");
+const workflowTracker_1 = require("./workflowTracker");
 const nodeFs = __importStar(require("fs"));
 const nodePath = __importStar(require("path"));
 const nodeOs = __importStar(require("os"));
+// ── Pre-compact threshold ──────────────────────────────────────
+// Fire pre_compact hook when history has this many messages
+const COMPACT_THRESHOLD = 40;
+// ── Proactive memory surfacing ─────────────────────────────────
+const SKIP_MEMORY_PATTERNS = [
+    /^(hi|hello|hey|thanks|ok|yes|no|sure|bye)\b/i,
+    /^.{1,15}$/,
+];
+async function surfaceRelevantMemories(userMessage) {
+    if (SKIP_MEMORY_PATTERNS.some(p => p.test(userMessage.trim())))
+        return '';
+    const memories = [];
+    // 1. Semantic memory search
+    try {
+        const results = semanticMemory_1.semanticMemory.search(userMessage, 5);
+        for (const r of results) {
+            memories.push(`[Memory] ${r.text}`);
+        }
+    }
+    catch { }
+    // 2. Memory directory files — keyword match
+    try {
+        const memDir = nodePath.join(process.cwd(), 'workspace', 'memory');
+        if (nodeFs.existsSync(memDir)) {
+            const files = nodeFs.readdirSync(memDir).filter((f) => f.endsWith('.md'));
+            const keywords = userMessage.toLowerCase().split(/\s+/).filter((k) => k.length > 3);
+            for (const file of files) {
+                try {
+                    const content = nodeFs.readFileSync(nodePath.join(memDir, file), 'utf8');
+                    const contentLower = content.toLowerCase();
+                    const matches = keywords.filter((k) => contentLower.includes(k));
+                    if (matches.length >= 2) {
+                        const body = content.split('---').slice(2).join('---').trim();
+                        if (body.length > 0 && body.length < 500) {
+                            memories.push(`[Memory] ${body}`);
+                        }
+                    }
+                }
+                catch { }
+            }
+        }
+    }
+    catch { }
+    if (memories.length === 0)
+        return '';
+    const unique = [...new Set(memories)].slice(0, 8);
+    console.log(`[Memory] Surfaced ${unique.length} memories for: "${userMessage.substring(0, 40)}"`);
+    return '\n## Relevant Context from Memory\n' + unique.join('\n') + '\n';
+}
 // ── Template resolver ──────────────────────────────────────────
 // Replaces {{step_N_output}} tokens with actual step outputs
 function resolveTemplates(input, stepOutputs) {
@@ -378,6 +434,11 @@ async function racePlannerAPIs(promptText, topN = 2) {
 }
 // ── STEP 1: planWithLLM ────────────────────────────────────────
 async function planWithLLM(message, history, apiKey, model, provider, memoryContext) {
+    // ── Pre-compact hook — fire at multiples of COMPACT_THRESHOLD ─
+    // Fires at 40, 80, 120 … to avoid triggering on every message after crossing 40.
+    if (history.length >= COMPACT_THRESHOLD && history.length % COMPACT_THRESHOLD === 0) {
+        (0, hooks_1.fireHook)('pre_compact', { historyLength: history.length, message }).catch(() => { });
+    }
     // ── Vague goal detection — ask for clarification before planning ──
     const VAGUE_PATTERNS = [/\bthe thing\b/i, /\bthe stuff\b/i, /\bthe place\b/i, /\bdo it\b$/i, /\bfix it\b$/i];
     if (VAGUE_PATTERNS.some(p => p.test(message))) {
@@ -403,6 +464,7 @@ async function planWithLLM(message, history, apiKey, model, provider, memoryCont
         'app_launch', 'app_close',
         'watch_folder', 'watch_folder_list',
         'get_briefing',
+        'respond',
     ];
     // Sprint 13: append discovered MCP tools
     const mcpToolNames = mcpClient_1.mcpClient.getAllCachedTools().map(t => t.name);
@@ -412,9 +474,12 @@ async function planWithLLM(message, history, apiKey, model, provider, memoryCont
     // Load any relevant skills to guide planning
     const relevantSkills = skillLoader_1.skillLoader.findRelevant(message);
     const skillContext = skillLoader_1.skillLoader.formatForPrompt(relevantSkills);
+    // Append instinct context to memory (micro-patterns learned from past tool calls)
+    const instinctCtx = instinctSystem_1.instinctSystem?.getRelevantInstincts(message) || '';
+    const fullMemCtx = (memoryContext || '') + (instinctCtx ? '\n\n' + instinctCtx : '');
     // Build memory section — inject when available
-    const memorySection = memoryContext && memoryContext.trim()
-        ? `\n\nCONVERSATION MEMORY (use to resolve references like "that file", "the report", "it"):\n${memoryContext}\n\nWhen the user says "that file", "the report", "the script" etc., use the paths/queries above to resolve them into concrete values in your plan inputs.\n`
+    const memorySection = fullMemCtx.trim()
+        ? `\n\nCONVERSATION MEMORY (use to resolve references like "that file", "the report", "it"):\n${fullMemCtx}\n\nWhen the user says "that file", "the report", "the script" etc., use the paths/queries above to resolve them into concrete values in your plan inputs.\n`
         : '';
     // Build learning context — past experiences with similar tasks
     const learningCtx = learningMemory_1.learningMemory.buildLearningContext(message);
@@ -503,26 +568,82 @@ OUTPUT FORMAT (strict JSON only):
 If requires_execution is false:
 { "goal": "...", "requires_execution": false, "reasoning": "...", "plan": [], "direct_response": "your answer here" }
 
+THE 'respond' TOOL — use this for ALL conversational messages:
+- 'respond' is ALWAYS a valid plan. When no external tool is needed, plan a single respond step.
+- respond: { "message": "your answer text here" }
+- Use respond for: greetings, capability questions, simple facts from training data, clarifying questions, short answers.
+- Example: user says "hi" → { "goal": "hi", "requires_execution": true, "plan": [{ "step": 1, "tool": "respond", "input": { "message": "Hi! What can I help you with today?" } }] }
+
 ACTION GATE RULES — apply BEFORE creating any plan:
-1. CAPABILITY GATE: If message is "Can you do X?" / "Can you X?" / "Are you able to X?" → requires_execution: false, direct_response: "Yes/No — [brief explanation]"
+1. CAPABILITY GATE: If message is "Can you do X?" / "Can you X?" / "Are you able to X?" → plan respond with answer
 2. EXPLICIT-ASK GATE: ONLY use file_write if user said "write", "save", "create file". ONLY use deep_research if user said "research", "find out", "look up"
-3. VAGUENESS GATE: If request is unclear → requires_execution: false, direct_response: one clarifying question
+3. VAGUENESS GATE: If request is AMBIGUOUS, plan a respond step that asks ONE clarifying question:
+   - "do marketing" → respond: "What specifically? Copywriting, competitor research, Product Hunt listing, or content calendar?"
+   - "check my system" → respond: "What aspect? Hardware specs, running processes, disk space, or network?"
+   - "build something" → respond: "What would you like me to build?"
+   - Clear requests execute directly: "check NIFTY price" → get_market_data, "write a Python script to X" → run_python
 4. NEVER create comparison tables, reports, or verdicts unless user explicitly asked for them
 5. NEVER mention Pega, BlueWinston, Gaude Digital, or any third-party product by name
+
+## Tool Priority Rules (STRICT)
+
+TIER 1 (USE FIRST): respond, web_search, fetch_page, fetch_url, deep_research, get_market_data, get_stocks, get_company_info, social_research, system_info, notify, get_briefing, run_agent
+  → ALWAYS try these before anything else
+  → If a task CAN be done via API/data tool, use that
+
+TIER 2 (USE SECOND): file_write, file_read, file_list, shell_exec, run_powershell, run_python, run_node, code_interpreter_python, code_interpreter_node, git_commit, git_push, clipboard_read, clipboard_write
+  → Use when you need to read/write files or run scripts
+
+TIER 3 (USE THIRD): open_browser, browser_click, browser_type, browser_extract, browser_screenshot, window_list, window_focus, app_launch, app_close
+  → ONLY when task requires interacting with a website UI
+  → NEVER use browser when an API tool can do the same job
+
+TIER 4 (LAST RESORT): mouse_move, mouse_click, keyboard_type, keyboard_press, screenshot, screen_read, vision_loop
+  → ONLY when browser fails or for desktop apps with no API
+  → ALWAYS explain WHY lower tiers won't work
+
+VIOLATIONS (these are WRONG — do not do these):
+- Using open_browser to check stock price when get_market_data exists
+- Using screenshot to search when web_search exists
+- Using browser to get weather when web_search exists
+- Using vision_loop for any task where a simpler tool works
 
 FAILURE REPLANNING RULES (when message contains "previous approach failed at"):
 - Keep new plan to max 2 steps
 - Use ONLY the specific alternative approach mentioned in the message
 - DO NOT add web_search, deep_research, file_write, or notify unless directly needed
 - DO NOT add unrelated analysis or comparison steps
-${skillContext}${memorySection}${learningSection}${knowledgeSection}${memoryRecallSection}
+${skillContext}${memorySection}${learningSection}${knowledgeSection}${memoryRecallSection}${(() => { const s = (0, goalTracker_1.getActiveGoalsSummary)(); return s ? `\n\n## Your Active Goals\n${s}` : ''; })()}
 Output ONLY valid JSON, nothing else:`;
     const cleanHistory = history
         .filter((h) => h.content && String(h.content).trim().length > 0);
     console.log(`[Planner] History: ${cleanHistory.length} messages (${history.length} raw)`);
+    // ── Sliding context window — keep last 10, summarize older messages ──
+    const RECENT_WINDOW = 10;
+    let contextHistory = cleanHistory;
+    if (cleanHistory.length > RECENT_WINDOW) {
+        const recent = cleanHistory.slice(-RECENT_WINDOW);
+        const older = cleanHistory.slice(Math.max(0, cleanHistory.length - RECENT_WINDOW * 2), cleanHistory.length - RECENT_WINDOW);
+        if (older.length > 0) {
+            try {
+                const summaryInput = older.map((m) => `${m.role}: ${String(m.content).slice(0, 200)}`).join('\n');
+                const summary = await callLLM(`Summarize these messages in 2-3 sentences, keeping key facts and decisions:\n\n${summaryInput}`, '', (0, router_1.getOllamaModelForTask)('executor'), 'ollama').catch(() => null);
+                if (summary) {
+                    contextHistory = [{ role: 'system', content: `Earlier conversation summary: ${summary}` }, ...recent];
+                    console.log(`[Planner] Context window: summarized ${older.length} older messages`);
+                }
+                else {
+                    contextHistory = recent;
+                }
+            }
+            catch {
+                contextHistory = recent;
+            }
+        }
+    }
     const messages = [
         { role: 'system', content: plannerPrompt },
-        ...cleanHistory.slice(-3).map((h) => ({
+        ...contextHistory.slice(-3).map((h) => ({
             role: h.role === 'assistant' ? 'assistant' : 'user',
             content: String(h.content).slice(0, 300),
         })),
@@ -628,7 +749,7 @@ Output ONLY valid JSON, nothing else:`;
         // Discover which model is actually installed via api/tags
         try {
             const cfg = (0, index_1.loadConfig)();
-            let ollamaModel = process.env.OLLAMA_MODEL || cfg.model?.activeModel || 'mistral-nemo:12b';
+            let ollamaModel = process.env.OLLAMA_MODEL || cfg.ollama?.model || 'gemma4:e4b';
             try {
                 const tagsRes = await fetch('http://localhost:11434/api/tags', { signal: AbortSignal.timeout(3000) });
                 if (tagsRes.ok) {
@@ -664,13 +785,12 @@ Output ONLY valid JSON, nothing else:`;
         }
     }
     if (!parsed) {
-        console.warn('[Planner] All attempts including Ollama failed — direct answer fallback');
+        console.warn('[Planner] All LLM attempts failed — respond fallback');
         return {
             goal: message,
-            requires_execution: false,
-            plan: [],
+            requires_execution: true,
+            plan: [{ step: 1, tool: 'respond', input: { message: "I'm not sure how to help with that right now. Could you rephrase your request?" }, description: 'Fallback response' }],
             phases: [],
-            direct_response: "I couldn't create a plan for that. Could you rephrase your request?",
         };
     }
     // Guard against null/empty plan object
@@ -864,6 +984,49 @@ function validatePlan(plan) {
         warnings,
     };
 }
+// ── Smart replan on failure ────────────────────────────────────
+const MAX_REPLANS = 2;
+async function handleToolFailure(replanState, failedTool, error, userMessage, completedResults, apiKey, model, provider) {
+    const existing = replanState.failedSteps.get(failedTool);
+    if (existing) {
+        existing.attempts++;
+        existing.error = error;
+    }
+    else {
+        replanState.failedSteps.set(failedTool, { error, attempts: 1 });
+    }
+    if (replanState.replanCount >= MAX_REPLANS) {
+        console.log('[Replan] Max replans reached — reporting failure');
+        return null;
+    }
+    replanState.replanCount++;
+    const succeeded = completedResults.filter(r => r.success);
+    const failed = Array.from(replanState.failedSteps.entries());
+    console.log(`[Replan] Replanning (${replanState.replanCount}/${MAX_REPLANS}) after ${failedTool} failed: ${error.slice(0, 80)}`);
+    const replanContext = `Previous approach failed. Use a DIFFERENT strategy.\n\n` +
+        `Original request: ${userMessage}\n\n` +
+        `Already completed:\n` +
+        (succeeded.map(s => `✅ ${s.tool}: ${s.output.substring(0, 100)}`).join('\n') || 'Nothing yet') +
+        `\n\nWhat failed:\n` +
+        failed.map(([tool, f]) => `❌ ${tool}: ${f.error} (tried ${f.attempts}x)`).join('\n') +
+        `\n\nRULES:\n` +
+        `- Do NOT retry ${failedTool} with same approach\n` +
+        `- Use a completely different tool or strategy\n` +
+        `- Build on completed steps — don't redo them\n` +
+        `- If API failed, try different data source\n` +
+        `- If browser failed on a site, try fetch_url instead`;
+    try {
+        const newPlan = await planWithLLM(replanContext, [], apiKey, model, provider);
+        if (newPlan?.plan?.length > 0) {
+            console.log(`[Replan] New plan: ${newPlan.plan.map(s => s.tool).join(' → ')}`);
+            return newPlan.plan;
+        }
+    }
+    catch (e) {
+        console.warn(`[Replan] planWithLLM failed: ${e.message}`);
+    }
+    return null;
+}
 // ── Sprint 28: shouldReplan ────────────────────────────────────
 // After each failed step, ask the LLM: should we replan?
 async function shouldReplan(originalGoal, completedSteps, failedStep, failureReason, apiKey, model, provider) {
@@ -938,7 +1101,11 @@ async function executePlan(plan, onStep, onPhaseChange, existingState, replanApi
     const results = [];
     const stepOutputs = {};
     const planStart = Date.now();
+    const replanState = { failedSteps: new Map(), replanCount: 0 };
     console.log(`[ExecutePlan] Starting: ${plan.plan.length} steps, goal: "${plan.goal.slice(0, 60)}"`);
+    // Workflow tracking — feed the Watch Mode node graph
+    (0, workflowTracker_1.startWorkflow)(plan.goal);
+    (0, workflowTracker_1.addNode)({ id: 'main', agent: 'aiden', label: plan.goal.slice(0, 50), status: 'active', toolCalls: 0, startedAt: Date.now() });
     // Workspace memory for persisting intermediate artifacts
     const workspace = plan.planId ? new workspaceMemory_1.WorkspaceMemory(plan.planId) : null;
     // Initialize or reuse persistent task state (enables crash recovery)
@@ -998,7 +1165,7 @@ async function executePlan(plan, onStep, onPhaseChange, existingState, replanApi
             return stepResult;
         }
         // Tools that legitimately take zero input
-        const NO_INPUT_TOOLS = ['system_info', 'screenshot', 'get_hardware', 'screen_read', 'vision_loop', 'health_check'];
+        const NO_INPUT_TOOLS = ['system_info', 'screenshot', 'get_hardware', 'screen_read', 'vision_loop', 'health_check', 'respond'];
         if (!NO_INPUT_TOOLS.includes(step.tool)) {
             if (!step.input || Object.keys(step.input).length === 0) {
                 console.log(`[ExecutePlan] Skipping step ${step.step} (${step.tool}) — empty input`);
@@ -1046,7 +1213,9 @@ async function executePlan(plan, onStep, onPhaseChange, existingState, replanApi
             }
         }
         console.log(`[ExecutePlan] Step ${step.step} result: ${stepResult.success ? '✓' : '✗'} ${stepResult.error || stepResult.output?.slice(0, 80) || ''}`);
+        console.log(`[Tool] ${step.tool} (Tier ${(0, toolRegistry_1.getToolTier)(step.tool)}) — ${stepResult.duration}ms`);
         stepOutputs[step.step] = stepResult.output;
+        (0, workflowTracker_1.updateNode)('main', { currentTool: step.tool, toolCalls: Object.keys(stepOutputs).length, tier: (0, toolRegistry_1.getToolTier)(step.tool), status: 'active' });
         onStep(step, stepResult);
         // Audit trail
         auditTrail_1.auditTrail.record({
@@ -1060,6 +1229,12 @@ async function executePlan(plan, onStep, onPhaseChange, existingState, replanApi
             goal: plan.goal,
             traceId: plan.planId,
         });
+        // Fire after_tool_call hook (non-blocking) — feeds instinct system
+        (0, hooks_1.fireHook)('after_tool_call', {
+            toolName: step.tool,
+            input: resolvedInput,
+            success: stepResult.success,
+        }).catch(() => { });
         // Persist step result to task state
         if (stepResult.success) {
             taskState_1.taskStateManager.completeStep(state, step.step, stepResult.output, stepResult.duration);
@@ -1108,7 +1283,7 @@ async function executePlan(plan, onStep, onPhaseChange, existingState, replanApi
             const stepResult = await executeSingleStep(step, stepOutputs, state, plan, workspace, onStep);
             stepOutputs[step.step] = stepResult.output;
             results.push(stepResult);
-            // ── Sprint 28: mid-execution replan on failure ─────────────────
+            // ── Smart replan on failure ────────────────────────────────────
             if (!stepResult.success) {
                 // Resolve credentials: prefer explicit params, then route through getNextAvailableAPI
                 let _rpKey = replanApiKey || '';
@@ -1128,31 +1303,34 @@ async function executePlan(plan, onStep, onPhaseChange, existingState, replanApi
                     catch { }
                 }
                 if (_rpKey || _rpProvider === 'ollama') {
-                    const replanDecision = await shouldReplan(plan.goal, results, step, stepResult.error || 'unknown error', _rpKey, _rpModel, _rpProvider);
-                    if (replanDecision.replan && replanDecision.newApproach) {
-                        livePulse_1.livePulse.act('Aiden', `Replanning: ${replanDecision.newApproach}`);
+                    const newSteps = await handleToolFailure(replanState, step.tool, stepResult.error || 'unknown error', plan.goal, results, _rpKey, _rpModel, _rpProvider);
+                    if (newSteps && newSteps.length > 0) {
+                        livePulse_1.livePulse.act('Aiden', `Replanning with different strategy (${replanState.replanCount}/${MAX_REPLANS})`);
                         auditTrail_1.auditTrail.record({
                             action: 'system',
                             tool: 'replan',
                             input: `Failed: ${step.tool}`,
-                            output: replanDecision.newApproach,
+                            output: `New plan: ${newSteps.map(s => s.tool).join(' → ')}`,
                             durationMs: 0,
                             success: true,
                             goal: plan.goal,
                             traceId: plan.planId,
                         });
-                        try {
-                            const newPlan = await planWithLLM(`${plan.goal} — previous approach failed at ${step.tool}: ${replanDecision.newApproach}`, [], _rpKey, _rpModel, _rpProvider);
-                            if (newPlan && newPlan.plan && newPlan.plan.length > 0) {
-                                const newGroups = buildDependencyGroups(newPlan.plan);
-                                // Replace remaining groups with the new plan's groups
-                                groups.splice(_gi, groups.length - _gi, ...newGroups);
-                                console.log(`[ExecutePlan] Replan spliced ${newGroups.length} new group(s) from step ${_gi}`);
-                            }
-                        }
-                        catch (e) {
-                            console.warn(`[ExecutePlan] Replan planWithLLM failed: ${e.message}`);
-                        }
+                        const newGroups = buildDependencyGroups(newSteps);
+                        groups.splice(_gi, groups.length - _gi, ...newGroups);
+                        console.log(`[Replan] Spliced ${newGroups.length} new group(s) into execution from position ${_gi}`);
+                    }
+                    else if (replanState.replanCount >= MAX_REPLANS) {
+                        const failedList = Array.from(replanState.failedSteps.entries())
+                            .map(([tool, f]) => `- ${tool}: ${f.error}`)
+                            .join('\n');
+                        console.log(`[Replan] All ${MAX_REPLANS} replans exhausted for goal: "${plan.goal.slice(0, 60)}"`);
+                        results.push({
+                            step: step.step + 1, tool: 'replan_exhausted', input: {},
+                            success: false, output: '',
+                            error: `Tried ${MAX_REPLANS + 1} different approaches:\n${failedList}\n\nWould you like me to try a different approach?`,
+                            duration: 0,
+                        });
                     }
                 }
             }
@@ -1193,6 +1371,9 @@ async function executePlan(plan, onStep, onPhaseChange, existingState, replanApi
         const failed = results.filter(r => !r.success).map(r => r.tool).join(', ');
         taskState_1.taskStateManager.fail(state, failed ? `Steps failed: ${failed}` : 'Incomplete execution');
     }
+    // Workflow tracking — close the node graph
+    (0, workflowTracker_1.updateNode)('main', { status: allSucceeded ? 'completed' : 'failed', completedAt: Date.now() });
+    (0, workflowTracker_1.completeWorkflow)(allSucceeded ? 'completed' : 'failed');
     // Record experience for self-learning
     const filesCreatedInPlan = results
         .filter(r => r.tool === 'file_write' && r.success && r.input?.path)
@@ -1362,15 +1543,20 @@ CRITICAL RULES FOR YOUR RESPONSE:
             await streamGeminiResponse(r, onToken);
         }
         else if (providerName === 'ollama') {
+            const ollamaMs = Math.min((0, modelDiscovery_1.getOllamaTimeout)(model || ''), 15000); // cap at 15s for chat
+            const _t0 = Date.now();
+            console.log(`[Router] respondWithResults → ollama, model: ${model}, timeout: ${ollamaMs}ms`);
             const r = await fetch('http://localhost:11434/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ model, stream: true, messages }),
+                signal: AbortSignal.timeout(ollamaMs),
             });
             if (!r.body)
-                return;
+                throw new Error('Ollama: no response body');
             const reader = r.body.getReader();
             const decoder = new TextDecoder();
+            let ollamaTokens = 0;
             while (true) {
                 const { done, value } = await reader.read();
                 if (done)
@@ -1378,11 +1564,16 @@ CRITICAL RULES FOR YOUR RESPONSE:
                 const line = decoder.decode(value);
                 try {
                     const parsed = JSON.parse(line);
-                    if (parsed?.message?.content)
+                    if (parsed?.message?.content) {
                         onToken(parsed.message.content);
+                        ollamaTokens++;
+                    }
                 }
                 catch { }
             }
+            console.log(`[Router] Ollama responded in ${Date.now() - _t0}ms (${ollamaTokens} tokens)`);
+            if (ollamaTokens === 0)
+                throw new Error('Ollama: empty response — no tokens emitted');
         }
         else {
             // OpenAI-compatible
@@ -1416,13 +1607,37 @@ CRITICAL RULES FOR YOUR RESPONSE:
             }
             catch { }
         }
+        // If Ollama was primary and failed/timed out, fall back to best cloud provider
+        if (providerName === 'ollama') {
+            const cloudFallback = (0, router_1.getModelForTask)('responder');
+            if (cloudFallback.providerName !== 'ollama' && cloudFallback.apiKey) {
+                console.log(`[Router] Ollama timeout/error — falling back to ${cloudFallback.providerName} (${cloudFallback.model})`);
+                try {
+                    const url = OPENAI_COMPAT_ENDPOINTS[cloudFallback.providerName] || OPENAI_COMPAT_ENDPOINTS.groq;
+                    const headers = buildHeaders(cloudFallback.providerName, cloudFallback.apiKey);
+                    const r = await fetch(url, {
+                        method: 'POST',
+                        headers,
+                        body: JSON.stringify({ model: cloudFallback.model, messages, stream: true }),
+                        signal: AbortSignal.timeout(15000),
+                    });
+                    if (r.ok) {
+                        await streamOpenAIResponse(r, onToken);
+                        return;
+                    }
+                }
+                catch (fbErr) {
+                    console.error(`[Router] Cloud fallback also failed: ${fbErr.message}`);
+                }
+            }
+        }
         // If the cloud provider failed and we haven't tried Ollama yet, try it
         let ollamaResponded = false;
         if (providerName !== 'ollama') {
             try {
                 // Discover installed model via api/tags
                 const cfg = (0, index_1.loadConfig)();
-                let ollamaModel = process.env.OLLAMA_MODEL || cfg.model?.activeModel || 'mistral-nemo:12b';
+                let ollamaModel = process.env.OLLAMA_MODEL || cfg.ollama?.model || 'gemma4:e4b';
                 try {
                     const tagsRes = await fetch('http://localhost:11434/api/tags', { signal: AbortSignal.timeout(2000) });
                     if (tagsRes.ok) {
@@ -1438,7 +1653,7 @@ CRITICAL RULES FOR YOUR RESPONSE:
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ model: ollamaModel, stream: true, messages }),
-                    signal: AbortSignal.timeout(8000),
+                    signal: AbortSignal.timeout((0, modelDiscovery_1.getOllamaTimeout)(ollamaModel)),
                 });
                 if (r.ok && r.body) {
                     const reader = r.body.getReader();
@@ -1522,7 +1737,7 @@ async function callLLM(prompt, apiKey, model, providerName, opts) {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ model: model || 'mistral:7b', stream: false, messages }),
-                signal: AbortSignal.timeout(12000),
+                signal: AbortSignal.timeout((0, modelDiscovery_1.getOllamaTimeout)(model || '')),
             });
             if (r.status === 429) {
                 try {

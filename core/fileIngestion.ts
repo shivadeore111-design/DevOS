@@ -25,12 +25,11 @@ export interface ExtractionResult {
 }
 
 // ── PDF extraction ─────────────────────────────────────────
-// Uses pdf-parse/node (no canvas dependency) — pure JS, CPU only
+// Uses pdf-parse (pure JS, no native canvas dependency)
 
 export async function extractPDF(filePath: string): Promise<ExtractionResult> {
-  // Dynamic require using the /node export path to avoid @napi-rs/canvas
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const pdfParse = require('pdf-parse/node') as (buf: Buffer, opts?: object) => Promise<{ text: string; numpages: number }>
+  const pdfParse = require('pdf-parse') as (buf: Buffer, opts?: object) => Promise<{ text: string; numpages: number }>
 
   const buf        = fs.readFileSync(filePath)
   const fileSizeMB = parseFloat((buf.length / 1024 / 1024).toFixed(2))

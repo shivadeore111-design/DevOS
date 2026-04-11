@@ -54,7 +54,7 @@ html, body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--sans);
-  overflow: hidden;
+  overflow-y: auto;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -119,6 +119,10 @@ input { font-family: inherit; }
 @keyframes shimmer {
   from { background-position: -200% center; }
   to   { background-position:  200% center; }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 /* ── Copy button hover ──────────────────────────────────────── */

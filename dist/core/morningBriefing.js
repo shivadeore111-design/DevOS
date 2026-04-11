@@ -48,6 +48,7 @@ exports.deliverBriefing = deliverBriefing;
 // unfinished tasks, and a proactive automation suggestion.
 const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
+const eonetTool_1 = require("../tools/eonetTool");
 const BRIEFING_CONFIG_PATH = path_1.default.join(process.cwd(), 'workspace', 'morning-briefing.json');
 const DEFAULT_CONFIG = {
     enabled: false, // user must opt in
@@ -152,11 +153,23 @@ async function generateBriefing(config) {
         }
         catch { }
     }
+    // ── Section 6: NASA EONET natural events ──────────────────
+    try {
+        const eonetEvents = await (0, eonetTool_1.getActiveNaturalEvents)(1, 10);
+        const eonetSection = (0, eonetTool_1.formatEonetEvents)(eonetEvents);
+        if (eonetSection)
+            parts.push(eonetSection);
+    }
+    catch { }
     return parts.join('\n');
 }
 // ── Briefing delivery ─────────────────────────────────────────
 async function deliverBriefing(config) {
-    const briefing = await generateBriefing(config);
+    const [briefing, eonetEvents] = await Promise.all([
+        generateBriefing(config),
+        (0, eonetTool_1.getActiveNaturalEvents)(1, 10).catch(() => []),
+    ]);
+    const eonetSummary = (0, eonetTool_1.getEonetSummary)(eonetEvents);
     const date = new Date().toLocaleDateString('en-IN', { month: 'long', day: 'numeric' });
     // Deliver to dashboard — POST as a special briefing event
     try {
@@ -180,9 +193,10 @@ async function deliverBriefing(config) {
             .slice(0, 2)
             .join(' \u00b7 ')
             .slice(0, 100);
+        const notifyMsg = [firstLine, eonetSummary].filter(Boolean).join(' \u00b7 ').slice(0, 140);
         await executeTool('notify', {
             title: `Good morning — Aiden briefing`,
-            message: firstLine,
+            message: notifyMsg,
         });
     }
     catch { }

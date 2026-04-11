@@ -23,7 +23,13 @@ const SETUP_FLAG   = path.join(CONFIG_DIR, 'setup-complete.json')
 
 const TASK_TYPES: TaskType[] = ['chat', 'code', 'vision', 'reasoning', 'embedding']
 
-function ask(q: string): Promise<string> {
+function ask(q: string, nonTtyDefault = 'skip'): Promise<string> {
+  // When running as an Electron child process or in any non-interactive context
+  // (no TTY attached to stdin), auto-answer with the default to avoid hanging.
+  if (!process.stdin.isTTY) {
+    console.log(`${q}[non-interactive: auto-answering "${nonTtyDefault}"]`)
+    return Promise.resolve(nonTtyDefault)
+  }
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
   return new Promise(res => rl.question(q, ans => { rl.close(); res(ans.trim().toLowerCase()) }))
 }
@@ -90,7 +96,7 @@ export async function runSetupWizard(): Promise<void> {
     }
     console.log('')
 
-    const answer = await ask('  Use these models? (yes / no)  ')
+    const answer = await ask('  Use these models? (yes / no)  ', 'yes')
     console.log('')
 
     if (answer === 'yes' || answer === 'y') {

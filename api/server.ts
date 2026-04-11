@@ -36,14 +36,14 @@ import { registerComputerUseRoutes } from './routes/computerUse'
 import { loadConfig, saveConfig, APIEntry } from '../providers/index'
 import { ollamaProvider } from '../providers/ollama'
 import { getSmartProvider, markRateLimited, incrementUsage, logProviderStatus, getModelForTask, getLocalModels } from '../providers/router'
-import { discoverLocalModels } from '../core/modelDiscovery'
+import { discoverLocalModels, getOllamaTimeout } from '../core/modelDiscovery'
 import { executeTool } from '../core/toolRegistry'
 import { getScreenSize, takeScreenshot as captureScreen } from '../core/computerControl'
 import { planWithLLM, executePlan, respondWithResults, callLLM, surfaceRelevantMemories } from '../core/agentLoop'
 import { TOOL_DESCRIPTIONS } from '../core/toolRegistry'
 import { runReActLoop, ReActStep }                                 from '../core/reactLoop'
 import { scheduler }                                              from '../core/scheduler'
-import { AIDEN_STREAM_SYSTEM }                          from '../core/aidenPersonality'
+import { AIDEN_STREAM_SYSTEM, SOUL as AIDEN_SOUL }      from '../core/aidenPersonality'
 import { checkVoiceAvailable, recordAudio, transcribeAudio } from '../core/voiceInput'
 import { speak, checkTTSAvailable }                    from '../core/voiceOutput'
 import type { AgentPlan, StepResult, ToolStep }        from '../core/agentLoop'
@@ -63,7 +63,8 @@ import multer                                           from 'multer'
 import { skillTeacher }                               from '../core/skillTeacher'
 import { growthEngine }                               from '../core/growthEngine'
 import { userCognitionProfile }                      from '../core/userCognitionProfile'
-import { isPro, validateLicense, getCurrentLicense, clearLicense, startLicenseRefresh } from '../core/licenseManager'
+import { isPro, validateLicense, getCurrentLicense, clearLicense, startLicenseRefresh,
+         activateLicense, verifyLicense, getLicenseStatus, deactivateLicense } from '../core/licenseManager'
 import { auditTrail } from '../core/auditTrail'
 import { mcpClient }   from '../core/mcpClient'
 import { responseCache } from '../core/responseCache'
@@ -144,12 +145,16 @@ function handleChatError(
     send({ activity: { icon: 'ðŸ”', agent: 'Aiden', message: 'Web search unavailable â€” using knowledge base', style: 'error' }, done: false })
     send({ token: `\nðŸ” **Web search is unavailable right now.** I'll answer from my knowledge base instead. To enable live search, start SearxNG: \`npm run searxng\` or run \`scripts\\start-searxng.ps1\`.\n`, done: false })
   } else {
-    send({ activity: { icon: 'âŒ', agent: 'Aiden', message: `Error: ${msg.slice(0, 120)}`, style: 'error' }, done: false })
-    send({ token: `\nâŒ **Something went wrong:** ${msg.slice(0, 200)}\n`, done: false })
+    send({ activity: { icon: '❌', agent: 'Aiden', message: 'Something went wrong', style: 'error' }, done: false })
+    send({ token: `\n❌ **Something went wrong.** Please try again in a few moments, or check Settings → API Keys.\n`, done: false })
   }
 
   send({ done: true })
 }
+
+
+// Workspace root — AIDEN_USER_DATA in packaged Electron, cwd in dev
+const WORKSPACE_ROOT = process.env.AIDEN_USER_DATA || process.cwd()
 
 // â”€â”€ Knowledge upload â€” multer + progress tracking â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -208,8 +213,33 @@ export function createApiServer(): Express {
 
   // GET /api/health â€” liveness probe (no auth required)
   app.get('/api/health', (_req: Request, res: Response) => {
-    res.json({ status: 'ok', version: '2.0.0', timestamp: new Date().toISOString() })
+    res.json({ status: 'ok', version: '3.1.0', timestamp: new Date().toISOString() })
   })
+
+  // ── Update endpoints ─────────────────────────────────────────
+
+  // GET /api/update/check — proxy to license server, returns update info
+  app.get('/api/update/check', async (_req: Request, res: Response) => {
+    try {
+      const { checkForUpdate } = await import('../core/updateChecker')
+      const result = await checkForUpdate()
+      res.json(result)
+    } catch (e: any) {
+      res.json({ available: false, currentVersion: '3.1.0', error: e.message })
+    }
+  })
+
+  // POST /api/update/download — open download URL in default browser
+  app.post('/api/update/download', (req: Request, res: Response) => {
+    const { downloadUrl } = req.body as { downloadUrl?: string }
+    if (!downloadUrl || !downloadUrl.startsWith('https://')) {
+      return void res.status(400).json({ error: 'Invalid downloadUrl' })
+    }
+    const { exec } = require('child_process')
+    exec(`start "" "${downloadUrl}"`)
+    res.json({ opened: true })
+  })
+
 
   // â”€â”€ License endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -240,13 +270,56 @@ export function createApiServer(): Express {
     })
   })
 
-  // POST /api/license/clear â€” deactivate / log out of Pro
+  // POST /api/license/clear — deactivate / log out of Pro (legacy key format)
   app.post('/api/license/clear', (_req: Request, res: Response) => {
     clearLicense()
     res.json({ success: true })
   })
 
-  // â”€â”€ Jailbreak detection patterns â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Pro License endpoints (AIDEN-PRO-xxxxxx-xxxxxx-xxxxxx) ───────────────
+
+  // POST /api/license/activate — activate a Pro key on this machine
+  app.post('/api/license/activate', async (req: Request, res: Response) => {
+    const { key } = req.body as { key?: string }
+    if (!key) { res.status(400).json({ error: 'key required' }); return }
+    try {
+      const result = await activateLicense(key.trim())
+      if (result.success) {
+        res.json({ success: true, plan: result.plan })
+      } else {
+        res.status(400).json({ success: false, error: result.error })
+      }
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: `Server error: ${e.message}` })
+    }
+  })
+
+  // GET /api/license/pro-status — Pro license status from local cache (no network)
+  app.get('/api/license/pro-status', (_req: Request, res: Response) => {
+    const status = getLicenseStatus()
+    res.json({
+      isPro:     status.isPro,
+      plan:      status.plan     || null,
+      expiresAt: status.expiresAt || null,
+      features:  status.features  || {},
+    })
+  })
+
+  // POST /api/license/deactivate — remove this machine from the Pro license
+  app.post('/api/license/deactivate', async (_req: Request, res: Response) => {
+    try {
+      const success = await deactivateLicense()
+      if (success) {
+        res.json({ success: true })
+      } else {
+        res.status(400).json({ success: false, error: 'Deactivation failed or no license found' })
+      }
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: `Server error: ${e.message}` })
+    }
+  })
+
+  // ── Jailbreak detection patterns â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const JAILBREAK_PATTERNS = [
     'ignore previous instructions',
     'ignore all instructions',
@@ -317,12 +390,32 @@ export function createApiServer(): Express {
 
     var MAX_MSG_LEN = 50000;
 
+    // ── Detect SSE vs JSON mode early — needed by all fast-path handlers ──
+    const acceptHeader = req.headers['accept'] || ''
+    const useJsonMode  = !acceptHeader.includes('text/event-stream')
+
+    // ── Fast-reply helper: responds correctly in both SSE and JSON mode ──
+    const fastReply = (text: string, extra?: object) => {
+      if (useJsonMode) {
+        res.json({ message: text, response: text, ...extra })
+      } else {
+        res.setHeader('Content-Type',  'text/event-stream')
+        res.setHeader('Cache-Control', 'no-cache')
+        res.setHeader('Connection',    'keep-alive')
+        res.setHeader('Access-Control-Allow-Origin', '*')
+        res.flushHeaders()
+        res.write(`data: ${JSON.stringify({ token: text, done: false, provider: 'fast-path' })}\n\n`)
+        res.write(`data: ${JSON.stringify({ done: true, provider: 'fast-path' })}\n\n`)
+        res.end()
+      }
+    }
+
     if (!message || message.trim().length < 2) {
-      res.json({ message: 'I am here. What can I help with?', response: 'I am here. What can I help with?' }); return
+      fastReply('I am here. What can I help with?'); return
     }
 
     if (message.length > MAX_MSG_LEN) {
-      res.json({ message: 'That message is very long. Break it into smaller parts.', response: 'That message is very long. Break it into smaller parts.' }); return
+      fastReply('That message is very long. Break it into smaller parts.'); return
     }
 
     // Banned topic intercept - short-circuit before LLM
@@ -337,8 +430,7 @@ export function createApiServer(): Express {
       /generals*ledger/i,
     ];
     if (BANNED_TOPIC_PATS.some(p => p.test(message))) {
-      const bResp = 'That is outside what I do. I am Aiden - I help with computer control, coding, research, market data, file management, and automation. What can I help you with?';
-      res.json({ message: bResp, response: bResp }); return
+      fastReply('That is outside what I do. I am Aiden - I help with computer control, coding, research, market data, file management, and automation. What can I help you with?'); return
     }
 
     // â”€â”€ Jailbreak detection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -346,7 +438,7 @@ export function createApiServer(): Express {
       message.toLowerCase().includes(p.toLowerCase())
     )
     if (isJailbreak) {
-      res.json({ message: 'I am Aiden. My identity and safety rules cannot be overridden by conversation.', blocked: true }); return
+      fastReply('I am Aiden. My identity and safety rules cannot be overridden by conversation.', { blocked: true }); return
     }
 
     // â”€â”€ Dangerous command detection (pre-execution gate) â”€â”€â”€â”€â”€â”€â”€
@@ -354,11 +446,7 @@ export function createApiServer(): Express {
       message.toLowerCase().includes(p.toLowerCase())
     )
     if (isDangerous) {
-      res.json({
-        message: 'CommandGate: I need your approval before running that operation. It contains a potentially dangerous command (data loss risk). Please confirm explicitly that you want to proceed, or rephrase your request.',
-        blocked: true,
-        reason:  'dangerous_command',
-      }); return
+      fastReply('CommandGate: I need your approval before running that operation. It contains a potentially dangerous command (data loss risk). Please confirm explicitly that you want to proceed, or rephrase your request.', { blocked: true, reason: 'dangerous_command' }); return
     }
 
     // â”€â”€ Fast math evaluation â€” simple arithmetic without LLM â”€â”€â”€
@@ -368,7 +456,7 @@ export function createApiServer(): Express {
         // Safe eval: only digits and operators
         const expr = simpleMathMatch[1].replace(/[^0-9+\-*\/\s]/g, '')
         const result = Function(`"use strict"; return (${expr})`)()
-        res.json({ message: String(result) }); return
+        fastReply(String(result)); return
       } catch {}
     }
 
@@ -387,14 +475,39 @@ export function createApiServer(): Express {
       /openai\s+or\s+someone\s+else/i,
     ]
     if (builderPats.some(p => p.test(message))) {
-      res.json({ message: 'I was built by Shiva Deore at Taracod. Not OpenAI, not Anthropic, not Google. Just Taracod.', response: 'I was built by Shiva Deore at Taracod. Not OpenAI, not Anthropic, not Google. Just Taracod.' }); return
+      fastReply('I was built by Shiva Deore at Taracod. Not OpenAI, not Anthropic, not Google. Just Taracod.'); return
     }
 
     if (identityPatterns.some(p => p.test(message))) {
-      res.json({ message: 'I\'m Aiden â€” a personal AI OS built by Shiva Deore at Taracod. I run locally on your Windows machine using Ollama. Not ChatGPT, not Claude. Just Aiden.' }); return
+      fastReply('I\'m Aiden \u2014 a personal AI OS built by Shiva Deore at Taracod. I run locally on your Windows machine using Ollama. Not ChatGPT, not Claude. Just Aiden.'); return
     }
 
-    // â”€â”€ Fast "running locally" answer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Capabilities / tool count fast-path ── overrides LLM's stale “23” knowledge ──
+    const capabilityPatterns = [
+      /what can you do/i,
+      /what are your (skills|capabilities|tools|abilities)/i,
+      /tell me your capabilities/i,
+      /how many (tools|skills|capabilities)/i,
+      /what are you capable of/i,
+      /(can you learn|do you learn|are you able to learn)/i,
+      /are you just a pre.{0,10}trained/i,
+    ]
+    if (capabilityPatterns.some(p => p.test(message))) {
+      fastReply(
+        'I have 44+ tools, 31 specialist agents, and a 6-layer memory system.\n\n' +
+        'I am NOT a static pre-trained model. I have active living systems:\n' +
+        '• **Skill Teacher** — promotes repeated successful patterns to reusable skills\n' +
+        '• **Instinct System** — micro-behaviors that strengthen with use\n' +
+        '• **Semantic Memory** — 500+ memories, 714-node entity graph across sessions\n' +
+        '• **Growth Engine** — tracks failures, learns, improves over time\n' +
+        '• **Night Mode** — consolidates knowledge during idle periods\n' +
+        '• **XP & Leveling** — gains experience and levels up\n\n' +
+        'Tools include: web_search, deep_research, file_write/read, shell_exec, run_python, ' +
+        'open_browser, screenshot, manage_goals, manage_memories, git_commit, and 33 more.'
+      ); return
+    }
+
+    // â”€â”€ Fast “running locally” answer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const localPatterns = [
       /are you (local|running locally|on.{0,20}machine|offline)/i,
       /do you (run|work) (locally|offline|on.{0,20}machine)/i,
@@ -403,7 +516,7 @@ export function createApiServer(): Express {
       /(cloud or locally|locally or.{0,10}cloud|in the cloud)/i,
     ]
     if (localPatterns.some(p => p.test(message))) {
-      res.json({ message: 'Locally. I run 100% on your machine â€” offline, private. I use Ollama for inference on your device. Your data never leaves this machine.' }); return
+      fastReply('Locally. I run 100% on your machine \u2014 offline, private. I use Ollama for inference on your device. Your data never leaves this machine.'); return
     }
 
     // â”€â”€ Date/year fast-path â€” answer from system clock â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -411,7 +524,42 @@ export function createApiServer(): Express {
     const DATE_PATTERNS = ['what year', 'current year', 'what time', 'what date', 'what is today', "today's date"]
     if (DATE_PATTERNS.some(p => _dateMsg.includes(p))) {
       const now = new Date()
-      res.json({ message: `${now.toDateString()}. Year: ${now.getFullYear()}. Time: ${now.toLocaleTimeString()}.`, success: true, provider: 'system_clock' }); return
+      fastReply(`${now.toDateString()}. Year: ${now.getFullYear()}. Time: ${now.toLocaleTimeString()}.`, { success: true, provider: 'system_clock' }); return
+    }
+
+    // ── Goal management fast-path ── intercepts before planner so “Product Hunt goal” won't open browser ──
+    const goalCreatePats = [
+      /^(create|add|set|new)\s+(a\s+)?goal[\s:]+(.+)/i,
+      /^goal[\s:]+(.+)/i,
+    ]
+    const goalShowPats = [
+      /^(show|list|what are|display)\s+(my\s+)?goals\b/i,
+      /^my goals\b/i,
+    ]
+    for (const gpat of goalCreatePats) {
+      const gm = message.match(gpat)
+      if (gm) {
+        const title = (gm[3] || gm[1] || '').trim()
+        if (title) {
+          try {
+            const gr = await executeTool('manage_goals', { action: 'add', title })
+            fastReply(gr.output || `Goal added: ${title}`); return
+          } catch (ge: any) {
+            fastReply(`Could not add goal: ${ge.message}`); return
+          }
+        }
+      }
+    }
+    if (goalShowPats.some(gp => gp.test(message))) {
+      try {
+        const gr = await executeTool('manage_goals', { action: 'list' })
+        const goals = JSON.parse(gr.output || '[]') as Array<{ title: string; status: string; nextAction?: string }>
+        if (!goals.length) { fastReply('No active goals yet. Say “create a goal: ...” to add one.'); return }
+        const lines = goals.map((g, i) => `${i + 1}. **${g.title}** — ${g.status}${g.nextAction ? ` · next: ${g.nextAction}` : ''}`).join('\n')
+        fastReply(`Your goals:\n${lines}`); return
+      } catch (ge: any) {
+        fastReply(`Could not fetch goals: ${ge.message}`); return
+      }
     }
 
     // â”€â”€ Hardware info fast-path â€” from SOUL.md known config â”€â”€â”€
@@ -422,12 +570,11 @@ export function createApiServer(): Express {
     ]
     const inHistory = Array.isArray(req.body && req.body.history) ? req.body.history : []
     if (CONTEXT_Q_PATS.some(p => p.test(message)) && inHistory.length <= 2) {
-      const ctxR = 'This is the start of our conversation - nothing has happened yet. What would you like to work on?'
-      res.json({ message: ctxR, response: ctxR }); return
+      fastReply('This is the start of our conversation - nothing has happened yet. What would you like to work on?'); return
     }
 
     if (/what\s+(gpu|graphics|vram|ram|memory|cpu|processor|hardware|specs)\s+(do\s+i|have|i\s+have)|gpu\s+and\s+ram|hardware\s+specs|system\s+specs/i.test(message)) {
-      res.json({ message: 'GPU: GTX 1060 6GB VRAM. RAM: detected at runtime (typically 8â€“16 GB). CPU: detected via system info. Run "system_info" for live hardware readings.' }); return
+      fastReply('GPU: GTX 1060 6GB VRAM. RAM: detected at runtime (typically 8\u201316 GB). CPU: detected via system info. Run “system_info” for live hardware readings.'); return
     }
 
     // â”€â”€ File-read fast-path â€” try the file before calling LLM â”€â”€
@@ -437,11 +584,58 @@ export function createApiServer(): Express {
       const fs   = require('fs')
       const fp   = fileReadMatch[1]
       if (!fs.existsSync(fp)) {
-        res.json({ message: `Cannot find file "${fp}" â€” it does not exist or is not accessible. Please check the path.` }); return
+        fastReply(`Cannot find file “${fp}” \u2014 it does not exist or is not accessible. Please check the path.`); return
       }
     }
 
-    // â”€â”€ High-risk actions â€” require explicit confirmation â”€â”€â”€â”€â”€â”€
+    // ── Search / launch fast-path — intercepts BEFORE the planner ──────────────
+    // Prevents the LLM from trying to type into browser URL bars.
+    // Constructs the correct URL and calls open_browser directly.
+    const searchFastPaths: Array<{ regex: RegExp; url: (q: string) => string; label: string }> = [
+      // ── YouTube — specific “on youtube” patterns first ──
+      { regex: /open\s+youtube\s+(?:and\s+)?(?:search|play|find|watch)\s+(?:for\s+)?(.+)/i,              url: q => `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`, label: 'YouTube' },
+      { regex: /(?:search|find|watch)\s+(?:for\s+)?(.+?)\s+on\s+youtube/i,                               url: q => `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`, label: 'YouTube' },
+      { regex: /play\s+(.+?)\s+on\s+youtube/i,                                                            url: q => `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`, label: 'YouTube' },
+      { regex: /youtube\s+(?:search\s+(?:for\s+)?)?(.+)/i,                                                url: q => `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`, label: 'YouTube' },
+      // ── Spotify — specific “on spotify” patterns first ──
+      { regex: /open\s+spotify\s+(?:and\s+)?(?:search|play|find)\s+(?:for\s+)?(.+)/i,                    url: q => `https://open.spotify.com/search/${encodeURIComponent(q)}`, label: 'Spotify' },
+      { regex: /play\s+(.+?)\s+on\s+spotify/i,                                                            url: q => `https://open.spotify.com/search/${encodeURIComponent(q)}`, label: 'Spotify' },
+      { regex: /(?:search|find)\s+(?:for\s+)?(.+?)\s+on\s+spotify/i,                                     url: q => `https://open.spotify.com/search/${encodeURIComponent(q)}`, label: 'Spotify' },
+      { regex: /spotify\s+(?:search\s+(?:for\s+)?|play\s+)?(.+)/i,                                       url: q => `https://open.spotify.com/search/${encodeURIComponent(q)}`, label: 'Spotify' },
+      // ── Google — specific “on google” patterns first, generic last ──
+      { regex: /open\s+google\s+(?:and\s+)?(?:search|look\s+up)\s+(?:for\s+)?(.+)/i,                     url: q => `https://www.google.com/search?q=${encodeURIComponent(q)}`, label: 'Google' },
+      { regex: /(?:search|look\s+up)\s+(?:for\s+)?(.+?)\s+on\s+google/i,                                 url: q => `https://www.google.com/search?q=${encodeURIComponent(q)}`, label: 'Google' },
+      { regex: /(?:search|find)\s+(?:for\s+)?(.+?)\s+online/i,                                           url: q => `https://www.google.com/search?q=${encodeURIComponent(q)}`, label: 'Google' },
+      { regex: /^(?:google\s+|search\s+google\s+(?:for\s+)?)(.+)/i,                                       url: q => `https://www.google.com/search?q=${encodeURIComponent(q)}`, label: 'Google' },
+      { regex: /^search\s+(?:for\s+)?(.+)/i,                                                              url: q => `https://www.google.com/search?q=${encodeURIComponent(q)}`, label: 'Google' },
+      // ── Wikipedia ──
+      { regex: /(?:open|search|look\s+up)\s+(?:wikipedia\s+(?:for\s+)?)?(.+?)\s+on\s+wikipedia/i,        url: q => `https://en.wikipedia.org/wiki/${encodeURIComponent(q.replace(/ /g,'_'))}`, label: 'Wikipedia' },
+      { regex: /wikipedia\s+(.+)/i,                                                                        url: q => `https://en.wikipedia.org/wiki/${encodeURIComponent(q.replace(/ /g,'_'))}`, label: 'Wikipedia' },
+      // ── GitHub ──
+      { regex: /(?:search|find|look\s+up)\s+(?:for\s+)?(.+?)\s+on\s+github/i,                            url: q => `https://github.com/search?q=${encodeURIComponent(q)}`, label: 'GitHub' },
+      { regex: /open\s+github\s+(?:and\s+)?(?:search|find)\s+(?:for\s+)?(.+)/i,                          url: q => `https://github.com/search?q=${encodeURIComponent(q)}`, label: 'GitHub' },
+    ]
+
+    for (const fp of searchFastPaths) {
+      const m = message.match(fp.regex)
+      if (m) {
+        const query = (m[m.length - 1] || '').trim().replace(/[.!?]+$/, '')
+        if (query.length > 1) {
+          const url = fp.url(query)
+          console.log(`[FastPath] ${fp.label} search: “${query}” → ${url}`)
+          try {
+            await executeTool('open_browser', { url })
+          } catch (e: any) {
+            console.warn('[FastPath] open_browser failed, trying shell:', e.message)
+            try { await executeTool('shell_exec', { command: `start “” “${url}”` }) } catch {}
+          }
+          fastReply(`Opening ${fp.label} — searching for **${query}**\n\n→ ${url}`)
+          return
+        }
+      }
+    }
+
+    // ── High-risk actions — require explicit confirmation ──────────
     const HIGH_RISK_PATTERNS = [
       'send an email',
       'send email',
@@ -453,20 +647,10 @@ export function createApiServer(): Express {
       message.toLowerCase().includes(p.toLowerCase())
     )
     if (isHighRisk) {
-      res.json({
-        message: 'CommandGate: This action involves sending data externally (email/network). I need your explicit approval before proceeding. Are you sure you want to do this? Please confirm.',
-        blocked: true,
-        reason:  'high_risk_action_requires_approval',
-      }); return
+      fastReply('CommandGate: This action involves sending data externally (email/network). I need your explicit approval before proceeding. Are you sure you want to do this? Please confirm.', { blocked: true, reason: 'high_risk_action_requires_approval' }); return
     }
 
-    // â”€â”€ Detect if caller wants JSON or SSE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    // Browser clients set Accept: text/event-stream â†’ SSE mode
-    // Test clients and API callers get JSON mode by default
-    const acceptHeader = req.headers['accept'] || ''
-    const useJsonMode = !acceptHeader.includes('text/event-stream')
-
-    // Switch to the caller's session before any memory operations
+    // Switch to the caller’s session before any memory operations
     if (sessionId) conversationMemory.setSession(sessionId)
 
     // â”€â”€ JSON mode: collect all tokens, return {message: "..."} â”€
@@ -860,7 +1044,7 @@ export function createApiServer(): Express {
       console.error('[Chat] FATAL stack:', e.stack?.split('\n').slice(0, 3).join('\n'))
       try {
         send({ activity: { icon: 'ðŸ’¥', agent: 'Aiden', message: `Fatal error: ${e.message}`, style: 'error' }, done: false })
-        send({ token: `\nA fatal error occurred: ${e.message}`, done: false })
+        send({ token: `\nSomething went wrong internally. Please restart Aiden.`, done: false })
         send({ done: true })
         res.end()
       } catch (sendErr: any) {
@@ -943,6 +1127,22 @@ export function createApiServer(): Express {
     if (!config.routing) config.routing = { mode: 'auto', fallbackToOllama: true }
     config.onboardingComplete = true
     saveConfig(config)
+
+    // Write USER.md so the system prompt knows who this person is
+    try {
+      const name = userName || config.user?.name || 'User'
+      const userMdPath = path.join(WORKSPACE_ROOT, 'workspace', 'USER.md')
+      fs.mkdirSync(path.dirname(userMdPath), { recursive: true })
+      const existing = fs.existsSync(userMdPath) ? fs.readFileSync(userMdPath, 'utf8') : ''
+      if (!existing.trim() || existing.startsWith('# User Profile\nName: User')) {
+        fs.writeFileSync(userMdPath, `# User Profile\nName: ${name}\n`, 'utf8')
+      } else {
+        // Update Name line only
+        const updated = existing.replace(/^Name:.*$/m, `Name: ${name}`)
+        fs.writeFileSync(userMdPath, updated, 'utf8')
+      }
+    } catch (e: any) { console.warn('[Onboarding] USER.md write failed:', e.message) }
+
     res.json({ success: true, config })
   })
 
@@ -994,10 +1194,55 @@ export function createApiServer(): Express {
     config.onboardingComplete = true
     saveConfig(config)
 
+    // Write USER.md so the system prompt knows who this person is
+    if (userName) {
+      try {
+        const userMdPath = path.join(WORKSPACE_ROOT, 'workspace', 'USER.md')
+        fs.mkdirSync(path.dirname(userMdPath), { recursive: true })
+        const existing = fs.existsSync(userMdPath) ? fs.readFileSync(userMdPath, 'utf8') : ''
+        if (!existing.trim() || existing.startsWith('# User Profile\nName: User')) {
+          fs.writeFileSync(userMdPath, `# User Profile\nName: ${userName}\n`, 'utf8')
+        } else {
+          fs.writeFileSync(userMdPath, existing.replace(/^Name:.*$/m, `Name: ${userName}`), 'utf8')
+        }
+      } catch (e: any) { console.warn('[Onboarding/complete] USER.md write failed:', e.message) }
+    }
+
     res.json({ success: true })
   })
 
-  // GET /api/providers â€” list all configured APIs with status
+  // GET /api/user-profile — read workspace/USER.md
+  app.get('/api/user-profile', (_req: Request, res: Response) => {
+    const userMdPath = path.join(WORKSPACE_ROOT, 'workspace', 'USER.md')
+    if (!fs.existsSync(userMdPath)) {
+      res.json({ exists: false, content: '' })
+      return
+    }
+    res.json({ exists: true, content: fs.readFileSync(userMdPath, 'utf8') })
+  })
+
+  // PUT /api/user-profile — write workspace/USER.md (full content replace)
+  app.put('/api/user-profile', (req: Request, res: Response) => {
+    const { content } = req.body as { content?: string }
+    if (typeof content !== 'string') { res.status(400).json({ error: 'content required' }); return }
+    try {
+      const userMdPath = path.join(WORKSPACE_ROOT, 'workspace', 'USER.md')
+      fs.mkdirSync(path.dirname(userMdPath), { recursive: true })
+      fs.writeFileSync(userMdPath, content, 'utf8')
+      // Mirror name to config.user.name for the system prompt fallback
+      const nameMatch = content.match(/^Name:\s*(.+)$/m)
+      if (nameMatch?.[1]?.trim()) {
+        const cfg = loadConfig()
+        cfg.user.name = nameMatch[1].trim()
+        saveConfig(cfg)
+      }
+      res.json({ success: true })
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
+  // GET /api/providers — list all configured APIs with status
   app.get('/api/providers', (_req: Request, res: Response) => {
     const config = loadConfig()
     res.json({
@@ -2284,10 +2529,49 @@ export function createApiServer(): Express {
     })
   })
 
-  // DELETE /api/memory â€” clear all conversation memory
+  // DELETE /api/memory — clear all conversation memory
   app.delete('/api/memory', (_req: Request, res: Response) => {
     conversationMemory.clear()
     res.json({ success: true, message: 'Conversation memory cleared' })
+  })
+
+  // POST /api/memory/clear — alias for DELETE (for frontend compatibility)
+  app.post('/api/memory/clear', (_req: Request, res: Response) => {
+    try {
+      conversationMemory.clear()
+      res.json({ success: true, message: 'All memory cleared' })
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message })
+    }
+  })
+
+  // POST /api/conversations/clear — clear all saved conversation sessions from disk
+  app.post('/api/conversations/clear', (_req: Request, res: Response) => {
+    try {
+      const sessionsDir = path.join(process.cwd(), 'workspace', 'sessions')
+      if (fs.existsSync(sessionsDir)) {
+        const files = fs.readdirSync(sessionsDir)
+        files.forEach(f => { try { fs.unlinkSync(path.join(sessionsDir, f)) } catch {} })
+      }
+      conversationMemory.clear()
+      res.json({ success: true, message: `Cleared conversation history` })
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message })
+    }
+  })
+
+  // POST /api/knowledge/clear — clear knowledge base files
+  app.post('/api/knowledge/clear', (_req: Request, res: Response) => {
+    try {
+      const kbDir = path.join(process.cwd(), 'workspace', 'knowledge')
+      if (fs.existsSync(kbDir)) {
+        const files = fs.readdirSync(kbDir)
+        files.forEach(f => { try { fs.unlinkSync(path.join(kbDir, f)) } catch {} })
+      }
+      res.json({ success: true, message: 'Knowledge base cleared' })
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message })
+    }
   })
 
   // GET /api/memory/semantic?q=query â€” semantic search or stats
@@ -2842,20 +3126,51 @@ async function streamChat(
     if (idx) memoryIndex = `\n\nMEMORY INDEX (topics you've learned about this user — use as background, not to recite):\n${idx}`
   } catch {}
 
-  // [Aiden] System prompt v5 — HARD RULES active
-  const chatPrompt = `You are Aiden — a personal AI OS built for ${userName}. You are sharp, direct, and slightly witty. You speak like a trusted co-founder. Today: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.
-
+  // [Aiden] System prompt v8 — SOUL.md + USER.md + STANDING_ORDERS injected
+  const soulPrefix = AIDEN_SOUL ? AIDEN_SOUL + '\n\n' : ''
+  const userMdPath = path.join(WORKSPACE_ROOT, 'workspace', 'USER.md')
+  let userProfile = ''
+  if (fs.existsSync(userMdPath)) {
+    const raw = fs.readFileSync(userMdPath, 'utf8').trim()
+    if (raw && raw !== '# User Profile\nName: User' && raw !== '# User Profile') {
+      userProfile = '\nUSER PROFILE (read this — it describes the person you are talking to):\n' + raw + '\n'
+    }
+  }
+  if (!userProfile) {
+    // Fallback: at minimum tell Aiden the user's name from config
+    const cfg = loadConfig()
+    const name = cfg.user?.name || process.env.USER_NAME || userName
+    if (name && name !== 'there' && name !== 'User') {
+      userProfile = `\nUSER PROFILE:\nName: ${name}\n`
+    }
+  }
+  const soPath = path.join(WORKSPACE_ROOT, 'workspace', 'STANDING_ORDERS.md')
+  const standingOrders = fs.existsSync(soPath)
+    ? '\n\nSTANDING ORDERS — follow always:\n' + fs.readFileSync(soPath, 'utf-8')
+    : ''
+  const chatPrompt = `${soulPrefix}You are Aiden — a personal AI OS built for ${userName}. You are sharp, direct, and slightly witty. You speak like a trusted co-founder. Today: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.
+${userProfile}
 HARD RULES — never violate:
 - Never say "As an AI language model...", "I'm here to assist", "Certainly!", "Great question!", "Of course!"
 - Never say "key findings from our research", "as per your request I have written", "here is a comparison of", "verdict:", "recommendation:" in a generic reply
 - Never mention Pega, BlueWinston, Gaude Digital, or any third-party product by name
 - Never say you can't access the internet (you have web_search) or can't create files (you have file_write)
 - Never fabricate capabilities: no graphic design, video production, or music generation
-- Never list 250+ skills — you have 23 real tools
+- Never list 250+ skills — you have 44+ real tools, 31 specialist agents, and a 6-layer memory system
 - For errors: explain what failed and what to try next
 - If you don't know something: say "I don't know"
 - Direct and concise: 1–3 sentences for simple results; more only when output is rich
-${cognitionHint}${firstMessageContext}${memoryContext}${sessionContext}${memoryIndex}`
+
+IDENTITY — you are NOT a static pre-trained model. You have active living systems:
+- Skill Teacher: detects repeated successful patterns and promotes them to reusable skills automatically
+- Instinct System: develops micro-behaviors that strengthen with use and fade without reinforcement
+- Semantic Memory: remembers everything across sessions (500+ memories, 714-node entity graph)
+- Night Mode: consolidates and organizes knowledge during idle periods
+- Pattern Detector: identifies recurring usage habits and adapts
+- Growth Engine: tracks failures, learns from them, improves over time
+- XP & Leveling: gains experience, streaks, and levels up
+When asked about capabilities or learning, be accurate. NEVER say you are just a pre-trained model that cannot learn.
+${cognitionHint}${firstMessageContext}${memoryContext}${sessionContext}${memoryIndex}${standingOrders}`
 
   const msgs = [
     { role: 'system', content: chatPrompt },
@@ -2883,6 +3198,9 @@ ${cognitionHint}${firstMessageContext}${memoryContext}${sessionContext}${memoryI
   const providerType     = responderChat.providerName
   const apiKey           = responderChat.apiKey
   const activeStreamModel = responderChat.model || model // tiered model overrides caller's model
+  const _streamStart     = Date.now()
+  console.log(`[Router] streamChat → provider: ${providerType}, model: ${activeStreamModel}, msg: "${message.substring(0, 40)}"`)
+
 
   let streamEnded = false
   const timeout = setTimeout(() => {
@@ -2929,10 +3247,13 @@ ${cognitionHint}${firstMessageContext}${memoryContext}${sessionContext}${memoryI
 
     } else if (providerType === 'ollama') {
       // ── Ollama — local streaming ───────────────────────────────
+      const ollamaMs = getOllamaTimeout(activeStreamModel) // full timeout for model cold-start
+      console.log(`[Router] Ollama streaming with ${ollamaMs}ms timeout, model: ${activeStreamModel}`)
       const resp = await fetch('http://localhost:11434/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: activeStreamModel, messages: msgs, stream: true }),
+        signal: AbortSignal.timeout(ollamaMs),
       })
       if (!resp.ok || !resp.body) {
         throw new Error(`Ollama ${resp.status}: ${resp.statusText}`)
@@ -2940,6 +3261,7 @@ ${cognitionHint}${firstMessageContext}${memoryContext}${sessionContext}${memoryI
       const reader = resp.body.getReader()
       const dec    = new TextDecoder()
       let   buf    = ''
+      let   ollamaTokens = 0
       while (true) {
         const { value, done } = await reader.read()
         if (done) break
@@ -2951,10 +3273,11 @@ ${cognitionHint}${firstMessageContext}${memoryContext}${sessionContext}${memoryI
           try {
             const parsed = JSON.parse(line)
             const token  = parsed.message?.content
-            if (token) send({ token, done: false, provider: apiName })
+            if (token) { send({ token, done: false, provider: apiName }); ollamaTokens++ }
           } catch { /* skip malformed */ }
         }
       }
+      console.log(`[Router] Ollama responded in ${Date.now() - _streamStart}ms (${ollamaTokens} tokens)`)
 
     } else {
       // ── OpenAI-compatible (Groq, OpenRouter, Cerebras, etc.) ──
@@ -3002,15 +3325,74 @@ ${cognitionHint}${firstMessageContext}${memoryContext}${sessionContext}${memoryI
       }
     }
   } catch (err: any) {
-    // Primary failed — try Ollama as last-resort fallback
+    console.warn(`[Router] ${providerType} failed (${err?.message}) — attempting fallback`)
+
+    // If Ollama was primary (timed out/failed), fall back to best available cloud provider
+    if (providerType === 'ollama') {
+      const cloudTier = getModelForTask('responder')
+      if (cloudTier.providerName !== 'ollama' && cloudTier.apiKey) {
+        console.log(`[Router] Ollama timeout — falling back to ${cloudTier.providerName} (${cloudTier.model})`)
+        try {
+          const ENDPOINTS: Record<string, string> = {
+            groq:       'https://api.groq.com/openai/v1/chat/completions',
+            openrouter: 'https://openrouter.ai/api/v1/chat/completions',
+            cerebras:   'https://api.cerebras.ai/v1/chat/completions',
+            openai:     'https://api.openai.com/v1/chat/completions',
+          }
+          const fbEndpoint = ENDPOINTS[cloudTier.providerName] ?? ENDPOINTS['groq']
+          const fbHeaders: Record<string, string> = {
+            'Content-Type':  'application/json',
+            'Authorization': `Bearer ${cloudTier.apiKey}`,
+          }
+          const fbResp = await fetch(fbEndpoint, {
+            method:  'POST',
+            headers: fbHeaders,
+            body:    JSON.stringify({ model: cloudTier.model, messages: msgs, stream: true }),
+            signal:  AbortSignal.timeout(15000),
+          })
+          if (fbResp.ok && fbResp.body) {
+            const reader = fbResp.body.getReader()
+            const dec    = new TextDecoder()
+            let   buf    = ''
+            while (true) {
+              const { value, done } = await reader.read()
+              if (done) break
+              buf += dec.decode(value, { stream: true })
+              const lines = buf.split('\n')
+              buf = lines.pop() ?? ''
+              for (const line of lines) {
+                const trimmed = line.trim()
+                if (!trimmed.startsWith('data:')) continue
+                const data = trimmed.slice(5).trim()
+                if (data === '[DONE]') break
+                try {
+                  const parsed = JSON.parse(data)
+                  const token  = parsed.choices?.[0]?.delta?.content
+                  if (token) send({ token, done: false, provider: cloudTier.apiName })
+                } catch { /* skip malformed */ }
+              }
+            }
+            streamEnded = true
+            clearTimeout(timeout)
+            return
+          }
+        } catch (fbErr: any) {
+          console.error(`[Router] Cloud fallback also failed: ${fbErr?.message}`)
+        }
+      }
+    }
+
+    // Cloud was primary — try Ollama as last-resort fallback
     if (providerType !== 'ollama') {
-      console.warn(`[streamChat] ${providerType} failed (${err?.message}) — falling back to Ollama`)
+      console.warn(`[Router] ${providerType} failed — falling back to Ollama`)
       try {
         const ollamaModel = cfg.model?.activeModel || 'gemma4:e4b'
+        const ollamaMs    = getOllamaTimeout(ollamaModel) // full timeout — model may need to load
         const resp = await fetch('http://localhost:11434/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ model: ollamaModel, messages: msgs, stream: true }),
+          signal: AbortSignal.timeout(ollamaMs),
         })
         if (resp.ok && resp.body) {
           const reader = resp.body.getReader()
@@ -3036,11 +3418,12 @@ ${cognitionHint}${firstMessageContext}${memoryContext}${sessionContext}${memoryI
           return
         }
       } catch (ollamaErr) {
-        console.error('[streamChat] Ollama fallback also failed:', ollamaErr)
+        console.error('[Router] Ollama fallback also failed:', ollamaErr)
       }
     }
     // Both failed — send a graceful error token
-    send({ token: `Sorry, I could not reach any AI provider right now. Error: ${err?.message ?? 'unknown'}`, done: false, provider: 'error' })
+    console.error('[Router] All providers failed. Last error:', err?.message ?? 'unknown')
+    send({ token: `I'm temporarily unavailable — my AI providers are at capacity. Please try again in a few minutes, or add more API keys in Settings → API Keys.`, done: false, provider: 'error' })
   }
 
   streamEnded = true

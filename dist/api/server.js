@@ -75,16 +75,19 @@ const computerUse_1 = require("./routes/computerUse");
 const index_1 = require("../providers/index");
 const ollama_1 = require("../providers/ollama");
 const router_1 = require("../providers/router");
+const modelDiscovery_1 = require("../core/modelDiscovery");
 const toolRegistry_1 = require("../core/toolRegistry");
 const computerControl_1 = require("../core/computerControl");
 const agentLoop_1 = require("../core/agentLoop");
 const toolRegistry_2 = require("../core/toolRegistry");
 const reactLoop_1 = require("../core/reactLoop");
 const scheduler_1 = require("../core/scheduler");
+const aidenPersonality_1 = require("../core/aidenPersonality");
 const voiceInput_1 = require("../core/voiceInput");
 const voiceOutput_1 = require("../core/voiceOutput");
 const planTool_1 = require("../core/planTool");
 const taskState_1 = require("../core/taskState");
+const taskQueue_1 = require("../core/taskQueue");
 const taskRecovery_1 = require("../core/taskRecovery");
 const skillLoader_1 = require("../core/skillLoader");
 const conversationMemory_1 = require("../core/conversationMemory");
@@ -108,8 +111,11 @@ const sessionMemory_1 = require("../core/sessionMemory");
 const memoryExtractor_1 = require("../core/memoryExtractor");
 const aidenIdentity_1 = require("../core/aidenIdentity");
 const eventBus_1 = require("../core/eventBus");
+const workflowTracker_1 = require("../core/workflowTracker");
 // —— Sprint 25: module-level WebSocket clients registry (shared between createApiServer routes and startApiServer WS setup)
 let wsBroadcastClients = new Set();
+// ── Bookmarklet — clip selected text from any page ────────────
+const BOOKMARKLET = `javascript:void(fetch('http://localhost:4200/api/clip',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:window.getSelection().toString()||document.title,source:window.location.href,title:document.title})}).then(()=>alert('Clipped!')))`;
 // â”€â”€ Human-readable tool message helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function humanToolMessage(tool, input) {
     const map = {
@@ -167,11 +173,13 @@ function handleChatError(err, apiName, send) {
         send({ token: `\nðŸ” **Web search is unavailable right now.** I'll answer from my knowledge base instead. To enable live search, start SearxNG: \`npm run searxng\` or run \`scripts\\start-searxng.ps1\`.\n`, done: false });
     }
     else {
-        send({ activity: { icon: 'âŒ', agent: 'Aiden', message: `Error: ${msg.slice(0, 120)}`, style: 'error' }, done: false });
-        send({ token: `\nâŒ **Something went wrong:** ${msg.slice(0, 200)}\n`, done: false });
+        send({ activity: { icon: '❌', agent: 'Aiden', message: 'Something went wrong', style: 'error' }, done: false });
+        send({ token: `\n❌ **Something went wrong.** Please try again in a few moments, or check Settings → API Keys.\n`, done: false });
     }
     send({ done: true });
 }
+// Workspace root — AIDEN_USER_DATA in packaged Electron, cwd in dev
+const WORKSPACE_ROOT = process.env.AIDEN_USER_DATA || process.cwd();
 // â”€â”€ Knowledge upload â€” multer + progress tracking â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const KB_UPLOAD_DIR = path.join(process.cwd(), 'workspace', 'knowledge', 'uploads');
 if (!fs.existsSync(KB_UPLOAD_DIR))
@@ -223,7 +231,29 @@ function createApiServer() {
     // â”€â”€ Core routes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // GET /api/health â€” liveness probe (no auth required)
     app.get('/api/health', (_req, res) => {
-        res.json({ status: 'ok', version: '2.0.0', timestamp: new Date().toISOString() });
+        res.json({ status: 'ok', version: '3.1.0', timestamp: new Date().toISOString() });
+    });
+    // ── Update endpoints ─────────────────────────────────────────
+    // GET /api/update/check — proxy to license server, returns update info
+    app.get('/api/update/check', async (_req, res) => {
+        try {
+            const { checkForUpdate } = await Promise.resolve().then(() => __importStar(require('../core/updateChecker')));
+            const result = await checkForUpdate();
+            res.json(result);
+        }
+        catch (e) {
+            res.json({ available: false, currentVersion: '3.1.0', error: e.message });
+        }
+    });
+    // POST /api/update/download — open download URL in default browser
+    app.post('/api/update/download', (req, res) => {
+        const { downloadUrl } = req.body;
+        if (!downloadUrl || !downloadUrl.startsWith('https://')) {
+            return void res.status(400).json({ error: 'Invalid downloadUrl' });
+        }
+        const { exec } = require('child_process');
+        exec(`start "" "${downloadUrl}"`);
+        res.json({ opened: true });
     });
     // â”€â”€ License endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // POST /api/license/validate â€” activate a license key
@@ -256,12 +286,58 @@ function createApiServer() {
             key: license.key ? license.key.replace(/[A-Z0-9]{5}-[A-Z0-9]{5}-/, '****-****-') : '',
         });
     });
-    // POST /api/license/clear â€” deactivate / log out of Pro
+    // POST /api/license/clear — deactivate / log out of Pro (legacy key format)
     app.post('/api/license/clear', (_req, res) => {
         (0, licenseManager_1.clearLicense)();
         res.json({ success: true });
     });
-    // â”€â”€ Jailbreak detection patterns â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Pro License endpoints (AIDEN-PRO-xxxxxx-xxxxxx-xxxxxx) ───────────────
+    // POST /api/license/activate — activate a Pro key on this machine
+    app.post('/api/license/activate', async (req, res) => {
+        const { key } = req.body;
+        if (!key) {
+            res.status(400).json({ error: 'key required' });
+            return;
+        }
+        try {
+            const result = await (0, licenseManager_1.activateLicense)(key.trim());
+            if (result.success) {
+                res.json({ success: true, plan: result.plan });
+            }
+            else {
+                res.status(400).json({ success: false, error: result.error });
+            }
+        }
+        catch (e) {
+            res.status(500).json({ success: false, error: `Server error: ${e.message}` });
+        }
+    });
+    // GET /api/license/pro-status — Pro license status from local cache (no network)
+    app.get('/api/license/pro-status', (_req, res) => {
+        const status = (0, licenseManager_1.getLicenseStatus)();
+        res.json({
+            isPro: status.isPro,
+            plan: status.plan || null,
+            expiresAt: status.expiresAt || null,
+            features: status.features || {},
+        });
+    });
+    // POST /api/license/deactivate — remove this machine from the Pro license
+    app.post('/api/license/deactivate', async (_req, res) => {
+        try {
+            const success = await (0, licenseManager_1.deactivateLicense)();
+            if (success) {
+                res.json({ success: true });
+            }
+            else {
+                res.status(400).json({ success: false, error: 'Deactivation failed or no license found' });
+            }
+        }
+        catch (e) {
+            res.status(500).json({ success: false, error: `Server error: ${e.message}` });
+        }
+    });
+    // ── Jailbreak detection patterns â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const JAILBREAK_PATTERNS = [
         'ignore previous instructions',
         'ignore all instructions',
@@ -320,24 +396,59 @@ function createApiServer() {
             console.warn('[Security] Potential secret detected in user message \xe2\x80\x94 redacting before persist');
         }
         message = (0, secretScanner_1.scanAndRedact)(message);
-        if (!message || message.trim().length === 0) {
-            res.status(400).json({ message: 'Please provide a goal or question.', error: 'empty_message' });
+        var MAX_MSG_LEN = 50000;
+        // ── Detect SSE vs JSON mode early — needed by all fast-path handlers ──
+        const acceptHeader = req.headers['accept'] || '';
+        const useJsonMode = !acceptHeader.includes('text/event-stream');
+        // ── Fast-reply helper: responds correctly in both SSE and JSON mode ──
+        const fastReply = (text, extra) => {
+            if (useJsonMode) {
+                res.json({ message: text, response: text, ...extra });
+            }
+            else {
+                res.setHeader('Content-Type', 'text/event-stream');
+                res.setHeader('Cache-Control', 'no-cache');
+                res.setHeader('Connection', 'keep-alive');
+                res.setHeader('Access-Control-Allow-Origin', '*');
+                res.flushHeaders();
+                res.write(`data: ${JSON.stringify({ token: text, done: false, provider: 'fast-path' })}\n\n`);
+                res.write(`data: ${JSON.stringify({ done: true, provider: 'fast-path' })}\n\n`);
+                res.end();
+            }
+        };
+        if (!message || message.trim().length < 2) {
+            fastReply('I am here. What can I help with?');
+            return;
+        }
+        if (message.length > MAX_MSG_LEN) {
+            fastReply('That message is very long. Break it into smaller parts.');
+            return;
+        }
+        // Banned topic intercept - short-circuit before LLM
+        const BANNED_TOPIC_PATS = [
+            /GSTs*(rate|code|filing|return|number|percent)/i,
+            /HSNs*(code|number|list)/i,
+            /trademarks*(registration|class|filing)/i,
+            /payrolls*(processing|software|system)/i,
+            /ledgers*(software|app|system|tool)/i,
+            /GSTIN/i,
+            /accounts?s*payable/i,
+            /generals*ledger/i,
+        ];
+        if (BANNED_TOPIC_PATS.some(p => p.test(message))) {
+            fastReply('That is outside what I do. I am Aiden - I help with computer control, coding, research, market data, file management, and automation. What can I help you with?');
             return;
         }
         // â”€â”€ Jailbreak detection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         const isJailbreak = JAILBREAK_PATTERNS.some(p => message.toLowerCase().includes(p.toLowerCase()));
         if (isJailbreak) {
-            res.json({ message: 'I am Aiden. My identity and safety rules cannot be overridden by conversation.', blocked: true });
+            fastReply('I am Aiden. My identity and safety rules cannot be overridden by conversation.', { blocked: true });
             return;
         }
         // â”€â”€ Dangerous command detection (pre-execution gate) â”€â”€â”€â”€â”€â”€â”€
         const isDangerous = DANGEROUS_PATTERNS.some(p => message.toLowerCase().includes(p.toLowerCase()));
         if (isDangerous) {
-            res.json({
-                message: 'CommandGate: I need your approval before running that operation. It contains a potentially dangerous command (data loss risk). Please confirm explicitly that you want to proceed, or rephrase your request.',
-                blocked: true,
-                reason: 'dangerous_command',
-            });
+            fastReply('CommandGate: I need your approval before running that operation. It contains a potentially dangerous command (data loss risk). Please confirm explicitly that you want to proceed, or rephrase your request.', { blocked: true, reason: 'dangerous_command' });
             return;
         }
         // â”€â”€ Fast math evaluation â€” simple arithmetic without LLM â”€â”€â”€
@@ -347,7 +458,7 @@ function createApiServer() {
                 // Safe eval: only digits and operators
                 const expr = simpleMathMatch[1].replace(/[^0-9+\-*\/\s]/g, '');
                 const result = Function(`"use strict"; return (${expr})`)();
-                res.json({ message: String(result) });
+                fastReply(String(result));
                 return;
             }
             catch { }
@@ -359,11 +470,45 @@ function createApiServer() {
             /what('s| is) your name/i,
             /are you (aiden|chatgpt|claude|gpt|openai)/i,
         ];
-        if (identityPatterns.some(p => p.test(message))) {
-            res.json({ message: 'I\'m Aiden â€” a personal AI OS built by Shiva Deore at Taracod. I run locally on your Windows machine using Ollama. Not ChatGPT, not Claude. Just Aiden.' });
+        // Fast who-built-you answers
+        const builderPats = [
+            /who\s+(built|made|created|developed|wrote)\s+you/i,
+            /who\s+is\s+(your|the)\s+(creator|developer|maker|builder)/i,
+            /were\s+you\s+(built|made|created)\s+by/i,
+            /openai\s+or\s+someone\s+else/i,
+        ];
+        if (builderPats.some(p => p.test(message))) {
+            fastReply('I was built by Shiva Deore at Taracod. Not OpenAI, not Anthropic, not Google. Just Taracod.');
             return;
         }
-        // â”€â”€ Fast "running locally" answer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        if (identityPatterns.some(p => p.test(message))) {
+            fastReply('I\'m Aiden \u2014 a personal AI OS built by Shiva Deore at Taracod. I run locally on your Windows machine using Ollama. Not ChatGPT, not Claude. Just Aiden.');
+            return;
+        }
+        // ── Capabilities / tool count fast-path ── overrides LLM's stale “23” knowledge ──
+        const capabilityPatterns = [
+            /what can you do/i,
+            /what are your (skills|capabilities|tools|abilities)/i,
+            /tell me your capabilities/i,
+            /how many (tools|skills|capabilities)/i,
+            /what are you capable of/i,
+            /(can you learn|do you learn|are you able to learn)/i,
+            /are you just a pre.{0,10}trained/i,
+        ];
+        if (capabilityPatterns.some(p => p.test(message))) {
+            fastReply('I have 44+ tools, 31 specialist agents, and a 6-layer memory system.\n\n' +
+                'I am NOT a static pre-trained model. I have active living systems:\n' +
+                '• **Skill Teacher** — promotes repeated successful patterns to reusable skills\n' +
+                '• **Instinct System** — micro-behaviors that strengthen with use\n' +
+                '• **Semantic Memory** — 500+ memories, 714-node entity graph across sessions\n' +
+                '• **Growth Engine** — tracks failures, learns, improves over time\n' +
+                '• **Night Mode** — consolidates knowledge during idle periods\n' +
+                '• **XP & Leveling** — gains experience and levels up\n\n' +
+                'Tools include: web_search, deep_research, file_write/read, shell_exec, run_python, ' +
+                'open_browser, screenshot, manage_goals, manage_memories, git_commit, and 33 more.');
+            return;
+        }
+        // â”€â”€ Fast “running locally” answer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         const localPatterns = [
             /are you (local|running locally|on.{0,20}machine|offline)/i,
             /do you (run|work) (locally|offline|on.{0,20}machine)/i,
@@ -372,7 +517,7 @@ function createApiServer() {
             /(cloud or locally|locally or.{0,10}cloud|in the cloud)/i,
         ];
         if (localPatterns.some(p => p.test(message))) {
-            res.json({ message: 'Locally. I run 100% on your machine â€” offline, private. I use Ollama for inference on your device. Your data never leaves this machine.' });
+            fastReply('Locally. I run 100% on your machine \u2014 offline, private. I use Ollama for inference on your device. Your data never leaves this machine.');
             return;
         }
         // â”€â”€ Date/year fast-path â€” answer from system clock â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -380,12 +525,65 @@ function createApiServer() {
         const DATE_PATTERNS = ['what year', 'current year', 'what time', 'what date', 'what is today', "today's date"];
         if (DATE_PATTERNS.some(p => _dateMsg.includes(p))) {
             const now = new Date();
-            res.json({ message: `${now.toDateString()}. Year: ${now.getFullYear()}. Time: ${now.toLocaleTimeString()}.`, success: true, provider: 'system_clock' });
+            fastReply(`${now.toDateString()}. Year: ${now.getFullYear()}. Time: ${now.toLocaleTimeString()}.`, { success: true, provider: 'system_clock' });
             return;
         }
+        // ── Goal management fast-path ── intercepts before planner so “Product Hunt goal” won't open browser ──
+        const goalCreatePats = [
+            /^(create|add|set|new)\s+(a\s+)?goal[\s:]+(.+)/i,
+            /^goal[\s:]+(.+)/i,
+        ];
+        const goalShowPats = [
+            /^(show|list|what are|display)\s+(my\s+)?goals\b/i,
+            /^my goals\b/i,
+        ];
+        for (const gpat of goalCreatePats) {
+            const gm = message.match(gpat);
+            if (gm) {
+                const title = (gm[3] || gm[1] || '').trim();
+                if (title) {
+                    try {
+                        const gr = await (0, toolRegistry_1.executeTool)('manage_goals', { action: 'add', title });
+                        fastReply(gr.output || `Goal added: ${title}`);
+                        return;
+                    }
+                    catch (ge) {
+                        fastReply(`Could not add goal: ${ge.message}`);
+                        return;
+                    }
+                }
+            }
+        }
+        if (goalShowPats.some(gp => gp.test(message))) {
+            try {
+                const gr = await (0, toolRegistry_1.executeTool)('manage_goals', { action: 'list' });
+                const goals = JSON.parse(gr.output || '[]');
+                if (!goals.length) {
+                    fastReply('No active goals yet. Say “create a goal: ...” to add one.');
+                    return;
+                }
+                const lines = goals.map((g, i) => `${i + 1}. **${g.title}** — ${g.status}${g.nextAction ? ` · next: ${g.nextAction}` : ''}`).join('\n');
+                fastReply(`Your goals:\n${lines}`);
+                return;
+            }
+            catch (ge) {
+                fastReply(`Could not fetch goals: ${ge.message}`);
+                return;
+            }
+        }
         // â”€â”€ Hardware info fast-path â€” from SOUL.md known config â”€â”€â”€
+        // Context question fast-path - graceful at conversation start
+        const CONTEXT_Q_PATS = [
+            /what\s+(just\s+)?happened/i,
+            /what\s+did\s+(we|i|you)\s+(just\s+)?(do|discuss|talk)/i,
+        ];
+        const inHistory = Array.isArray(req.body && req.body.history) ? req.body.history : [];
+        if (CONTEXT_Q_PATS.some(p => p.test(message)) && inHistory.length <= 2) {
+            fastReply('This is the start of our conversation - nothing has happened yet. What would you like to work on?');
+            return;
+        }
         if (/what\s+(gpu|graphics|vram|ram|memory|cpu|processor|hardware|specs)\s+(do\s+i|have|i\s+have)|gpu\s+and\s+ram|hardware\s+specs|system\s+specs/i.test(message)) {
-            res.json({ message: 'GPU: GTX 1060 6GB VRAM. RAM: detected at runtime (typically 8â€“16 GB). CPU: detected via system info. Run "system_info" for live hardware readings.' });
+            fastReply('GPU: GTX 1060 6GB VRAM. RAM: detected at runtime (typically 8\u201316 GB). CPU: detected via system info. Run “system_info” for live hardware readings.');
             return;
         }
         // â”€â”€ File-read fast-path â€” try the file before calling LLM â”€â”€
@@ -395,11 +593,60 @@ function createApiServer() {
             const fs = require('fs');
             const fp = fileReadMatch[1];
             if (!fs.existsSync(fp)) {
-                res.json({ message: `Cannot find file "${fp}" â€” it does not exist or is not accessible. Please check the path.` });
+                fastReply(`Cannot find file “${fp}” \u2014 it does not exist or is not accessible. Please check the path.`);
                 return;
             }
         }
-        // â”€â”€ High-risk actions â€” require explicit confirmation â”€â”€â”€â”€â”€â”€
+        // ── Search / launch fast-path — intercepts BEFORE the planner ──────────────
+        // Prevents the LLM from trying to type into browser URL bars.
+        // Constructs the correct URL and calls open_browser directly.
+        const searchFastPaths = [
+            // ── YouTube — specific “on youtube” patterns first ──
+            { regex: /open\s+youtube\s+(?:and\s+)?(?:search|play|find|watch)\s+(?:for\s+)?(.+)/i, url: q => `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`, label: 'YouTube' },
+            { regex: /(?:search|find|watch)\s+(?:for\s+)?(.+?)\s+on\s+youtube/i, url: q => `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`, label: 'YouTube' },
+            { regex: /play\s+(.+?)\s+on\s+youtube/i, url: q => `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`, label: 'YouTube' },
+            { regex: /youtube\s+(?:search\s+(?:for\s+)?)?(.+)/i, url: q => `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`, label: 'YouTube' },
+            // ── Spotify — specific “on spotify” patterns first ──
+            { regex: /open\s+spotify\s+(?:and\s+)?(?:search|play|find)\s+(?:for\s+)?(.+)/i, url: q => `https://open.spotify.com/search/${encodeURIComponent(q)}`, label: 'Spotify' },
+            { regex: /play\s+(.+?)\s+on\s+spotify/i, url: q => `https://open.spotify.com/search/${encodeURIComponent(q)}`, label: 'Spotify' },
+            { regex: /(?:search|find)\s+(?:for\s+)?(.+?)\s+on\s+spotify/i, url: q => `https://open.spotify.com/search/${encodeURIComponent(q)}`, label: 'Spotify' },
+            { regex: /spotify\s+(?:search\s+(?:for\s+)?|play\s+)?(.+)/i, url: q => `https://open.spotify.com/search/${encodeURIComponent(q)}`, label: 'Spotify' },
+            // ── Google — specific “on google” patterns first, generic last ──
+            { regex: /open\s+google\s+(?:and\s+)?(?:search|look\s+up)\s+(?:for\s+)?(.+)/i, url: q => `https://www.google.com/search?q=${encodeURIComponent(q)}`, label: 'Google' },
+            { regex: /(?:search|look\s+up)\s+(?:for\s+)?(.+?)\s+on\s+google/i, url: q => `https://www.google.com/search?q=${encodeURIComponent(q)}`, label: 'Google' },
+            { regex: /(?:search|find)\s+(?:for\s+)?(.+?)\s+online/i, url: q => `https://www.google.com/search?q=${encodeURIComponent(q)}`, label: 'Google' },
+            { regex: /^(?:google\s+|search\s+google\s+(?:for\s+)?)(.+)/i, url: q => `https://www.google.com/search?q=${encodeURIComponent(q)}`, label: 'Google' },
+            { regex: /^search\s+(?:for\s+)?(.+)/i, url: q => `https://www.google.com/search?q=${encodeURIComponent(q)}`, label: 'Google' },
+            // ── Wikipedia ──
+            { regex: /(?:open|search|look\s+up)\s+(?:wikipedia\s+(?:for\s+)?)?(.+?)\s+on\s+wikipedia/i, url: q => `https://en.wikipedia.org/wiki/${encodeURIComponent(q.replace(/ /g, '_'))}`, label: 'Wikipedia' },
+            { regex: /wikipedia\s+(.+)/i, url: q => `https://en.wikipedia.org/wiki/${encodeURIComponent(q.replace(/ /g, '_'))}`, label: 'Wikipedia' },
+            // ── GitHub ──
+            { regex: /(?:search|find|look\s+up)\s+(?:for\s+)?(.+?)\s+on\s+github/i, url: q => `https://github.com/search?q=${encodeURIComponent(q)}`, label: 'GitHub' },
+            { regex: /open\s+github\s+(?:and\s+)?(?:search|find)\s+(?:for\s+)?(.+)/i, url: q => `https://github.com/search?q=${encodeURIComponent(q)}`, label: 'GitHub' },
+        ];
+        for (const fp of searchFastPaths) {
+            const m = message.match(fp.regex);
+            if (m) {
+                const query = (m[m.length - 1] || '').trim().replace(/[.!?]+$/, '');
+                if (query.length > 1) {
+                    const url = fp.url(query);
+                    console.log(`[FastPath] ${fp.label} search: “${query}” → ${url}`);
+                    try {
+                        await (0, toolRegistry_1.executeTool)('open_browser', { url });
+                    }
+                    catch (e) {
+                        console.warn('[FastPath] open_browser failed, trying shell:', e.message);
+                        try {
+                            await (0, toolRegistry_1.executeTool)('shell_exec', { command: `start “” “${url}”` });
+                        }
+                        catch { }
+                    }
+                    fastReply(`Opening ${fp.label} — searching for **${query}**\n\n→ ${url}`);
+                    return;
+                }
+            }
+        }
+        // ── High-risk actions — require explicit confirmation ──────────
         const HIGH_RISK_PATTERNS = [
             'send an email',
             'send email',
@@ -409,19 +656,10 @@ function createApiServer() {
         ];
         const isHighRisk = HIGH_RISK_PATTERNS.some(p => message.toLowerCase().includes(p.toLowerCase()));
         if (isHighRisk) {
-            res.json({
-                message: 'CommandGate: This action involves sending data externally (email/network). I need your explicit approval before proceeding. Are you sure you want to do this? Please confirm.',
-                blocked: true,
-                reason: 'high_risk_action_requires_approval',
-            });
+            fastReply('CommandGate: This action involves sending data externally (email/network). I need your explicit approval before proceeding. Are you sure you want to do this? Please confirm.', { blocked: true, reason: 'high_risk_action_requires_approval' });
             return;
         }
-        // â”€â”€ Detect if caller wants JSON or SSE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-        // Browser clients set Accept: text/event-stream â†’ SSE mode
-        // Test clients and API callers get JSON mode by default
-        const acceptHeader = req.headers['accept'] || '';
-        const useJsonMode = !acceptHeader.includes('text/event-stream');
-        // Switch to the caller's session before any memory operations
+        // Switch to the caller’s session before any memory operations
         if (sessionId)
             conversationMemory_1.conversationMemory.setSession(sessionId);
         // â”€â”€ JSON mode: collect all tokens, return {message: "..."} â”€
@@ -486,7 +724,9 @@ function createApiServer() {
                     return;
                 }
                 const memoryContext = conversationMemory_1.conversationMemory.buildContext();
-                const plan = await (0, agentLoop_1.planWithLLM)(resolvedMessage, history, plannerKey, plannerModel, plannerProv, memoryContext);
+                const proactiveMemory = await (0, agentLoop_1.surfaceRelevantMemories)(resolvedMessage);
+                const fullMemoryCtx = memoryContext + proactiveMemory;
+                const plan = await (0, agentLoop_1.planWithLLM)(resolvedMessage, history, plannerKey, plannerModel, plannerProv, fullMemoryCtx);
                 if (!plan.requires_execution || plan.plan.length === 0) {
                     if (plan.direct_response) {
                         fullReply = plan.direct_response;
@@ -637,7 +877,9 @@ function createApiServer() {
                 }
                 send({ activity: { icon: 'ðŸ§ ', agent: 'Aiden', message: 'Working out a plan...', style: 'thinking' }, done: false });
                 const memoryContext = conversationMemory_1.conversationMemory.buildContext();
-                const plan = await (0, agentLoop_1.planWithLLM)(resolvedMessage, history, plannerKeySSE, plannerModelSSE, plannerProvSSE, memoryContext);
+                const proactiveMemory = await (0, agentLoop_1.surfaceRelevantMemories)(resolvedMessage);
+                const fullMemoryCtx = memoryContext + proactiveMemory;
+                const plan = await (0, agentLoop_1.planWithLLM)(resolvedMessage, history, plannerKeySSE, plannerModelSSE, plannerProvSSE, fullMemoryCtx);
                 // â”€â”€ PLAN-ONLY MODE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                 if (mode === 'plan') {
                     const planText = plan.requires_execution && plan.plan.length > 0
@@ -768,7 +1010,7 @@ function createApiServer() {
             console.error('[Chat] FATAL stack:', e.stack?.split('\n').slice(0, 3).join('\n'));
             try {
                 send({ activity: { icon: 'ðŸ’¥', agent: 'Aiden', message: `Fatal error: ${e.message}`, style: 'error' }, done: false });
-                send({ token: `\nA fatal error occurred: ${e.message}`, done: false });
+                send({ token: `\nSomething went wrong internally. Please restart Aiden.`, done: false });
                 send({ done: true });
                 res.end();
             }
@@ -844,6 +1086,24 @@ function createApiServer() {
             config.routing = { mode: 'auto', fallbackToOllama: true };
         config.onboardingComplete = true;
         (0, index_1.saveConfig)(config);
+        // Write USER.md so the system prompt knows who this person is
+        try {
+            const name = userName || config.user?.name || 'User';
+            const userMdPath = path.join(WORKSPACE_ROOT, 'workspace', 'USER.md');
+            fs.mkdirSync(path.dirname(userMdPath), { recursive: true });
+            const existing = fs.existsSync(userMdPath) ? fs.readFileSync(userMdPath, 'utf8') : '';
+            if (!existing.trim() || existing.startsWith('# User Profile\nName: User')) {
+                fs.writeFileSync(userMdPath, `# User Profile\nName: ${name}\n`, 'utf8');
+            }
+            else {
+                // Update Name line only
+                const updated = existing.replace(/^Name:.*$/m, `Name: ${name}`);
+                fs.writeFileSync(userMdPath, updated, 'utf8');
+            }
+        }
+        catch (e) {
+            console.warn('[Onboarding] USER.md write failed:', e.message);
+        }
         res.json({ success: true, config });
     });
     // GET /api/onboarding/status â€” lightweight first-run check (used by onboarding gate)
@@ -896,9 +1156,59 @@ function createApiServer() {
             config.routing = { mode: 'auto', fallbackToOllama: true };
         config.onboardingComplete = true;
         (0, index_1.saveConfig)(config);
+        // Write USER.md so the system prompt knows who this person is
+        if (userName) {
+            try {
+                const userMdPath = path.join(WORKSPACE_ROOT, 'workspace', 'USER.md');
+                fs.mkdirSync(path.dirname(userMdPath), { recursive: true });
+                const existing = fs.existsSync(userMdPath) ? fs.readFileSync(userMdPath, 'utf8') : '';
+                if (!existing.trim() || existing.startsWith('# User Profile\nName: User')) {
+                    fs.writeFileSync(userMdPath, `# User Profile\nName: ${userName}\n`, 'utf8');
+                }
+                else {
+                    fs.writeFileSync(userMdPath, existing.replace(/^Name:.*$/m, `Name: ${userName}`), 'utf8');
+                }
+            }
+            catch (e) {
+                console.warn('[Onboarding/complete] USER.md write failed:', e.message);
+            }
+        }
         res.json({ success: true });
     });
-    // GET /api/providers â€” list all configured APIs with status
+    // GET /api/user-profile — read workspace/USER.md
+    app.get('/api/user-profile', (_req, res) => {
+        const userMdPath = path.join(WORKSPACE_ROOT, 'workspace', 'USER.md');
+        if (!fs.existsSync(userMdPath)) {
+            res.json({ exists: false, content: '' });
+            return;
+        }
+        res.json({ exists: true, content: fs.readFileSync(userMdPath, 'utf8') });
+    });
+    // PUT /api/user-profile — write workspace/USER.md (full content replace)
+    app.put('/api/user-profile', (req, res) => {
+        const { content } = req.body;
+        if (typeof content !== 'string') {
+            res.status(400).json({ error: 'content required' });
+            return;
+        }
+        try {
+            const userMdPath = path.join(WORKSPACE_ROOT, 'workspace', 'USER.md');
+            fs.mkdirSync(path.dirname(userMdPath), { recursive: true });
+            fs.writeFileSync(userMdPath, content, 'utf8');
+            // Mirror name to config.user.name for the system prompt fallback
+            const nameMatch = content.match(/^Name:\s*(.+)$/m);
+            if (nameMatch?.[1]?.trim()) {
+                const cfg = (0, index_1.loadConfig)();
+                cfg.user.name = nameMatch[1].trim();
+                (0, index_1.saveConfig)(cfg);
+            }
+            res.json({ success: true });
+        }
+        catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+    // GET /api/providers — list all configured APIs with status
     app.get('/api/providers', (_req, res) => {
         const config = (0, index_1.loadConfig)();
         res.json({
@@ -1649,6 +1959,100 @@ function createApiServer() {
         scheduler_1.scheduler.registerMorningBriefing();
         res.json({ success: true });
     });
+    // GET  /api/patterns — detected usage patterns from session history
+    app.get('/api/patterns', async (_req, res) => {
+        try {
+            const { detectPatterns } = await Promise.resolve().then(() => __importStar(require('../core/patternDetector')));
+            const patterns = await detectPatterns();
+            res.json({ patterns, count: patterns.length });
+        }
+        catch (e) {
+            res.json({ patterns: [], error: e.message });
+        }
+    });
+    // GET  /api/queue — list pending and recent tasks
+    app.get('/api/queue', (_req, res) => {
+        res.json({
+            pending: taskQueue_1.taskQueue.getPending(),
+            recent: taskQueue_1.taskQueue.getRecent(20),
+        });
+    });
+    // POST /api/queue — enqueue a new task for async execution
+    app.post('/api/queue', (req, res) => {
+        const { message, priority, source } = req.body;
+        if (!message)
+            return res.status(400).json({ error: 'message required' });
+        const id = taskQueue_1.taskQueue.enqueue({
+            source: source || 'api',
+            message,
+            priority: priority || 'normal',
+        });
+        res.json({ taskId: id, status: 'queued' });
+    });
+    // GET  /api/queue/:id — check status of a specific queued task
+    app.get('/api/queue/:id', (req, res) => {
+        const task = taskQueue_1.taskQueue.getStatus(String(req.params.id));
+        if (!task)
+            return res.status(404).json({ error: 'Task not found' });
+        res.json(task);
+    });
+    // POST /api/clip — store a clipped text snippet in semantic memory + disk
+    app.post('/api/clip', async (req, res) => {
+        try {
+            const { content, source, title, tags } = req.body;
+            if (!content || content.trim().length < 10) {
+                return res.status(400).json({ error: 'content required (min 10 chars)' });
+            }
+            const id = `clip_${Date.now()}`;
+            const trimmed = content.trim();
+            const entryTitle = title || trimmed.slice(0, 60);
+            const entrySource = source || 'manual';
+            const entryTags = tags || [];
+            const clippedAt = new Date().toISOString();
+            // Store in semantic memory
+            semanticMemory_1.semanticMemory.add(trimmed, 'fact', entryTags);
+            // Write to workspace/knowledge/clips/
+            const clipsDir = path.join(process.cwd(), 'workspace', 'knowledge', 'clips');
+            fs.mkdirSync(clipsDir, { recursive: true });
+            fs.writeFileSync(path.join(clipsDir, `${id}.md`), `# ${entryTitle}\n\n` +
+                `Source: ${entrySource}\n` +
+                `Clipped: ${clippedAt}\n` +
+                (entryTags.length ? `Tags: ${entryTags.join(', ')}\n` : '') +
+                `\n---\n\n${trimmed}`);
+            console.log(`[Clip] Saved: "${entryTitle.slice(0, 50)}" from ${entrySource}`);
+            res.json({ success: true, id, title: entryTitle });
+        }
+        catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+    // GET /api/clips — list recent clips + bookmarklet
+    app.get('/api/clips', async (_req, res) => {
+        try {
+            const clipsDir = path.join(process.cwd(), 'workspace', 'knowledge', 'clips');
+            if (!fs.existsSync(clipsDir)) {
+                return res.json({ clips: [], count: 0, bookmarklet: BOOKMARKLET });
+            }
+            const files = fs.readdirSync(clipsDir)
+                .filter(f => f.endsWith('.md'))
+                .sort()
+                .reverse()
+                .slice(0, 20);
+            const clips = await Promise.all(files.map(async (f) => {
+                const raw = await fs.promises.readFile(path.join(clipsDir, f), 'utf8');
+                const lines = raw.split('\n');
+                return {
+                    id: f.replace('.md', ''),
+                    title: lines[0].replace('# ', ''),
+                    preview: lines.slice(5, 7).join(' ').slice(0, 100),
+                };
+            }));
+            res.json({ clips, count: clips.length, bookmarklet: BOOKMARKLET });
+        }
+        catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
     // POST /api/briefing — receive briefing content, broadcast to WebSocket clients
     app.post('/api/briefing', (req, res) => {
         const { content, label } = req.body;
@@ -1800,6 +2204,52 @@ function createApiServer() {
             hardware: modelRouter_1.modelRouter.getHardware(),
         });
     });
+    // GET /api/ollama/models — discover local models with role assignments
+    app.get('/api/ollama/models', async (_req, res) => {
+        try {
+            const discovered = await (0, modelDiscovery_1.discoverLocalModels)();
+            if (discovered.all.length === 0) {
+                res.json({ available: false, models: [] });
+                return;
+            }
+            res.json({
+                available: true,
+                models: discovered.all.map(name => ({
+                    name,
+                    role: name === discovered.planner ? 'planner' :
+                        name === discovered.coder ? 'coder' :
+                            name === discovered.fast ? 'fast' : 'responder',
+                })),
+                assigned: {
+                    planner: discovered.planner,
+                    responder: discovered.responder,
+                    coder: discovered.coder,
+                    fast: discovered.fast,
+                },
+            });
+        }
+        catch (e) {
+            res.json({ available: false, models: [], error: e.message });
+        }
+    });
+    // POST /api/ollama/config — save user's manual model overrides
+    app.post('/api/ollama/config', (req, res) => {
+        try {
+            const { responder, coder, fast } = req.body;
+            const config = (0, index_1.loadConfig)();
+            config.ollama = {
+                ...(config.ollama || { fallbackModels: [], baseUrl: 'http://localhost:11434' }),
+                model: responder || config.ollama?.model || 'gemma4:e4b',
+                coderModel: coder || config.ollama?.coderModel,
+                fastModel: fast || config.ollama?.fastModel,
+            };
+            (0, index_1.saveConfig)(config);
+            res.json({ success: true });
+        }
+        catch (e) {
+            res.status(500).json({ success: false, error: e.message });
+        }
+    });
     // GET /api/stream — SSE keep-alive + cost_update + identity_update events
     app.get('/api/stream', (req, res) => {
         res.setHeader('Content-Type', 'text/event-stream');
@@ -1821,13 +2271,23 @@ function createApiServer() {
         };
         const onCostUpdate = (data) => sendEvent('cost_update', data);
         const onIdentityUpdate = (data) => sendEvent('identity_update', data);
+        const onWorkflowEvent = (data) => sendEvent('workflow_event', data);
         eventBus_1.eventBus.on('cost_update', onCostUpdate);
         eventBus_1.eventBus.on('identity_update', onIdentityUpdate);
+        eventBus_1.eventBus.on('workflow_event', onWorkflowEvent);
         req.on('close', () => {
             clearInterval(ping);
             eventBus_1.eventBus.removeListener('cost_update', onCostUpdate);
             eventBus_1.eventBus.removeListener('identity_update', onIdentityUpdate);
+            eventBus_1.eventBus.removeListener('workflow_event', onWorkflowEvent);
         });
+    });
+    // GET /api/workflow — current workflow state snapshot
+    app.get('/api/workflow', (_req, res) => {
+        const wf = (0, workflowTracker_1.getWorkflow)();
+        if (!wf)
+            return res.status(204).end();
+        res.json(wf);
     });
     // GET /api/identity — Aiden identity snapshot
     app.get('/api/identity', (_req, res) => {
@@ -2005,10 +2465,55 @@ function createApiServer() {
             recentHistory: conversationMemory_1.conversationMemory.getRecentHistory(),
         });
     });
-    // DELETE /api/memory â€” clear all conversation memory
+    // DELETE /api/memory — clear all conversation memory
     app.delete('/api/memory', (_req, res) => {
         conversationMemory_1.conversationMemory.clear();
         res.json({ success: true, message: 'Conversation memory cleared' });
+    });
+    // POST /api/memory/clear — alias for DELETE (for frontend compatibility)
+    app.post('/api/memory/clear', (_req, res) => {
+        try {
+            conversationMemory_1.conversationMemory.clear();
+            res.json({ success: true, message: 'All memory cleared' });
+        }
+        catch (e) {
+            res.status(500).json({ success: false, error: e.message });
+        }
+    });
+    // POST /api/conversations/clear — clear all saved conversation sessions from disk
+    app.post('/api/conversations/clear', (_req, res) => {
+        try {
+            const sessionsDir = path.join(process.cwd(), 'workspace', 'sessions');
+            if (fs.existsSync(sessionsDir)) {
+                const files = fs.readdirSync(sessionsDir);
+                files.forEach(f => { try {
+                    fs.unlinkSync(path.join(sessionsDir, f));
+                }
+                catch { } });
+            }
+            conversationMemory_1.conversationMemory.clear();
+            res.json({ success: true, message: `Cleared conversation history` });
+        }
+        catch (e) {
+            res.status(500).json({ success: false, error: e.message });
+        }
+    });
+    // POST /api/knowledge/clear — clear knowledge base files
+    app.post('/api/knowledge/clear', (_req, res) => {
+        try {
+            const kbDir = path.join(process.cwd(), 'workspace', 'knowledge');
+            if (fs.existsSync(kbDir)) {
+                const files = fs.readdirSync(kbDir);
+                files.forEach(f => { try {
+                    fs.unlinkSync(path.join(kbDir, f));
+                }
+                catch { } });
+            }
+            res.json({ success: true, message: 'Knowledge base cleared' });
+        }
+        catch (e) {
+            res.status(500).json({ success: false, error: e.message });
+        }
     });
     // GET /api/memory/semantic?q=query â€” semantic search or stats
     app.get('/api/memory/semantic', (req, res) => {
@@ -2565,20 +3070,51 @@ async function streamChat(message, history, userName, _provider, model, apiName,
             memoryIndex = `\n\nMEMORY INDEX (topics you've learned about this user — use as background, not to recite):\n${idx}`;
     }
     catch { }
-    // [Aiden] System prompt v5 — HARD RULES active
-    const chatPrompt = `You are Aiden — a personal AI OS built for ${userName}. You are sharp, direct, and slightly witty. You speak like a trusted co-founder. Today: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.
-
+    // [Aiden] System prompt v8 — SOUL.md + USER.md + STANDING_ORDERS injected
+    const soulPrefix = aidenPersonality_1.SOUL ? aidenPersonality_1.SOUL + '\n\n' : '';
+    const userMdPath = path.join(WORKSPACE_ROOT, 'workspace', 'USER.md');
+    let userProfile = '';
+    if (fs.existsSync(userMdPath)) {
+        const raw = fs.readFileSync(userMdPath, 'utf8').trim();
+        if (raw && raw !== '# User Profile\nName: User' && raw !== '# User Profile') {
+            userProfile = '\nUSER PROFILE (read this — it describes the person you are talking to):\n' + raw + '\n';
+        }
+    }
+    if (!userProfile) {
+        // Fallback: at minimum tell Aiden the user's name from config
+        const cfg = (0, index_1.loadConfig)();
+        const name = cfg.user?.name || process.env.USER_NAME || userName;
+        if (name && name !== 'there' && name !== 'User') {
+            userProfile = `\nUSER PROFILE:\nName: ${name}\n`;
+        }
+    }
+    const soPath = path.join(WORKSPACE_ROOT, 'workspace', 'STANDING_ORDERS.md');
+    const standingOrders = fs.existsSync(soPath)
+        ? '\n\nSTANDING ORDERS — follow always:\n' + fs.readFileSync(soPath, 'utf-8')
+        : '';
+    const chatPrompt = `${soulPrefix}You are Aiden — a personal AI OS built for ${userName}. You are sharp, direct, and slightly witty. You speak like a trusted co-founder. Today: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.
+${userProfile}
 HARD RULES — never violate:
 - Never say "As an AI language model...", "I'm here to assist", "Certainly!", "Great question!", "Of course!"
 - Never say "key findings from our research", "as per your request I have written", "here is a comparison of", "verdict:", "recommendation:" in a generic reply
 - Never mention Pega, BlueWinston, Gaude Digital, or any third-party product by name
 - Never say you can't access the internet (you have web_search) or can't create files (you have file_write)
 - Never fabricate capabilities: no graphic design, video production, or music generation
-- Never list 250+ skills — you have 23 real tools
+- Never list 250+ skills — you have 44+ real tools, 31 specialist agents, and a 6-layer memory system
 - For errors: explain what failed and what to try next
 - If you don't know something: say "I don't know"
 - Direct and concise: 1–3 sentences for simple results; more only when output is rich
-${cognitionHint}${firstMessageContext}${memoryContext}${sessionContext}${memoryIndex}`;
+
+IDENTITY — you are NOT a static pre-trained model. You have active living systems:
+- Skill Teacher: detects repeated successful patterns and promotes them to reusable skills automatically
+- Instinct System: develops micro-behaviors that strengthen with use and fade without reinforcement
+- Semantic Memory: remembers everything across sessions (500+ memories, 714-node entity graph)
+- Night Mode: consolidates and organizes knowledge during idle periods
+- Pattern Detector: identifies recurring usage habits and adapts
+- Growth Engine: tracks failures, learns from them, improves over time
+- XP & Leveling: gains experience, streaks, and levels up
+When asked about capabilities or learning, be accurate. NEVER say you are just a pre-trained model that cannot learn.
+${cognitionHint}${firstMessageContext}${memoryContext}${sessionContext}${memoryIndex}${standingOrders}`;
     const msgs = [
         { role: 'system', content: chatPrompt },
         ...history.slice(-8),
@@ -2604,6 +3140,8 @@ ${cognitionHint}${firstMessageContext}${memoryContext}${sessionContext}${memoryI
     const providerType = responderChat.providerName;
     const apiKey = responderChat.apiKey;
     const activeStreamModel = responderChat.model || model; // tiered model overrides caller's model
+    const _streamStart = Date.now();
+    console.log(`[Router] streamChat → provider: ${providerType}, model: ${activeStreamModel}, msg: "${message.substring(0, 40)}"`);
     let streamEnded = false;
     const timeout = setTimeout(() => {
         if (!streamEnded)
@@ -2655,10 +3193,13 @@ ${cognitionHint}${firstMessageContext}${memoryContext}${sessionContext}${memoryI
         }
         else if (providerType === 'ollama') {
             // ── Ollama — local streaming ───────────────────────────────
+            const ollamaMs = (0, modelDiscovery_1.getOllamaTimeout)(activeStreamModel); // full timeout for model cold-start
+            console.log(`[Router] Ollama streaming with ${ollamaMs}ms timeout, model: ${activeStreamModel}`);
             const resp = await fetch('http://localhost:11434/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ model: activeStreamModel, messages: msgs, stream: true }),
+                signal: AbortSignal.timeout(ollamaMs),
             });
             if (!resp.ok || !resp.body) {
                 throw new Error(`Ollama ${resp.status}: ${resp.statusText}`);
@@ -2666,6 +3207,7 @@ ${cognitionHint}${firstMessageContext}${memoryContext}${sessionContext}${memoryI
             const reader = resp.body.getReader();
             const dec = new TextDecoder();
             let buf = '';
+            let ollamaTokens = 0;
             while (true) {
                 const { value, done } = await reader.read();
                 if (done)
@@ -2679,12 +3221,15 @@ ${cognitionHint}${firstMessageContext}${memoryContext}${sessionContext}${memoryI
                     try {
                         const parsed = JSON.parse(line);
                         const token = parsed.message?.content;
-                        if (token)
+                        if (token) {
                             send({ token, done: false, provider: apiName });
+                            ollamaTokens++;
+                        }
                     }
                     catch { /* skip malformed */ }
                 }
             }
+            console.log(`[Router] Ollama responded in ${Date.now() - _streamStart}ms (${ollamaTokens} tokens)`);
         }
         else {
             // ── OpenAI-compatible (Groq, OpenRouter, Cerebras, etc.) ──
@@ -2739,15 +3284,78 @@ ${cognitionHint}${firstMessageContext}${memoryContext}${sessionContext}${memoryI
         }
     }
     catch (err) {
-        // Primary failed — try Ollama as last-resort fallback
+        console.warn(`[Router] ${providerType} failed (${err?.message}) — attempting fallback`);
+        // If Ollama was primary (timed out/failed), fall back to best available cloud provider
+        if (providerType === 'ollama') {
+            const cloudTier = (0, router_1.getModelForTask)('responder');
+            if (cloudTier.providerName !== 'ollama' && cloudTier.apiKey) {
+                console.log(`[Router] Ollama timeout — falling back to ${cloudTier.providerName} (${cloudTier.model})`);
+                try {
+                    const ENDPOINTS = {
+                        groq: 'https://api.groq.com/openai/v1/chat/completions',
+                        openrouter: 'https://openrouter.ai/api/v1/chat/completions',
+                        cerebras: 'https://api.cerebras.ai/v1/chat/completions',
+                        openai: 'https://api.openai.com/v1/chat/completions',
+                    };
+                    const fbEndpoint = ENDPOINTS[cloudTier.providerName] ?? ENDPOINTS['groq'];
+                    const fbHeaders = {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${cloudTier.apiKey}`,
+                    };
+                    const fbResp = await fetch(fbEndpoint, {
+                        method: 'POST',
+                        headers: fbHeaders,
+                        body: JSON.stringify({ model: cloudTier.model, messages: msgs, stream: true }),
+                        signal: AbortSignal.timeout(15000),
+                    });
+                    if (fbResp.ok && fbResp.body) {
+                        const reader = fbResp.body.getReader();
+                        const dec = new TextDecoder();
+                        let buf = '';
+                        while (true) {
+                            const { value, done } = await reader.read();
+                            if (done)
+                                break;
+                            buf += dec.decode(value, { stream: true });
+                            const lines = buf.split('\n');
+                            buf = lines.pop() ?? '';
+                            for (const line of lines) {
+                                const trimmed = line.trim();
+                                if (!trimmed.startsWith('data:'))
+                                    continue;
+                                const data = trimmed.slice(5).trim();
+                                if (data === '[DONE]')
+                                    break;
+                                try {
+                                    const parsed = JSON.parse(data);
+                                    const token = parsed.choices?.[0]?.delta?.content;
+                                    if (token)
+                                        send({ token, done: false, provider: cloudTier.apiName });
+                                }
+                                catch { /* skip malformed */ }
+                            }
+                        }
+                        streamEnded = true;
+                        clearTimeout(timeout);
+                        return;
+                    }
+                }
+                catch (fbErr) {
+                    console.error(`[Router] Cloud fallback also failed: ${fbErr?.message}`);
+                }
+            }
+        }
+        // Cloud was primary — try Ollama as last-resort fallback
         if (providerType !== 'ollama') {
-            console.warn(`[streamChat] ${providerType} failed (${err?.message}) — falling back to Ollama`);
+            console.warn(`[Router] ${providerType} failed — falling back to Ollama`);
             try {
                 const ollamaModel = cfg.model?.activeModel || 'gemma4:e4b';
+                const ollamaMs = (0, modelDiscovery_1.getOllamaTimeout)(ollamaModel); // full timeout — model may need to load
                 const resp = await fetch('http://localhost:11434/api/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ model: ollamaModel, messages: msgs, stream: true }),
+                    signal: AbortSignal.timeout(ollamaMs),
                 });
                 if (resp.ok && resp.body) {
                     const reader = resp.body.getReader();
@@ -2778,11 +3386,12 @@ ${cognitionHint}${firstMessageContext}${memoryContext}${sessionContext}${memoryI
                 }
             }
             catch (ollamaErr) {
-                console.error('[streamChat] Ollama fallback also failed:', ollamaErr);
+                console.error('[Router] Ollama fallback also failed:', ollamaErr);
             }
         }
         // Both failed — send a graceful error token
-        send({ token: `Sorry, I could not reach any AI provider right now. Error: ${err?.message ?? 'unknown'}`, done: false, provider: 'error' });
+        console.error('[Router] All providers failed. Last error:', err?.message ?? 'unknown');
+        send({ token: `I'm temporarily unavailable — my AI providers are at capacity. Please try again in a few minutes, or add more API keys in Settings → API Keys.`, done: false, provider: 'error' });
     }
     streamEnded = true;
     clearTimeout(timeout);

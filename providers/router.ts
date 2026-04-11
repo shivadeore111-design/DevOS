@@ -255,9 +255,16 @@ export function assessComplexity(message: string): number {
 // Planner needs strong reasoning; executor needs speed; responder needs quality.
 //
 // Full fallback chains:
-//   Planner:   gemini → groq → openrouter → cerebras → gemma4:e4b (Ollama)
-//   Responder: groq → gemini → openrouter → cerebras → gemma4:e4b (Ollama)
+//   Planner:   groq → gemini → openrouter → gemma4:e4b (Ollama)
+//   Responder: groq → gemini → openrouter → gemma4:e4b (Ollama)
 //   Executor:  cerebras → groq → nvidia → gemma4:e4b (Ollama)
+//
+// IMPORTANT: Cerebras (llama3.1-8b, 8B params) is too small to follow the SOUL
+// prompt and hallucinate capabilities. It is ONLY used for Executor (background
+// tasks: heartbeat, dream engine, pattern detection). Never for user-facing chat.
+//
+// Groq is PRIMARY over Gemini: Groq free tier is far more generous (rate limits
+// are rare), while Gemini free tier hits 15 RPM limits aggressively.
 //
 // Aiden ALWAYS works — even with zero internet.
 // When message is provided for 'responder', complexity is assessed and simple
@@ -294,12 +301,12 @@ export function getModelForTask(
   // Complex or tool-using queries proceed to cloud chain below.
   if (task === 'responder' && message) {
     const complexity = assessComplexity(message)
-    console.log(`[Router] Complexity: ${complexity.toFixed(2)} — "${message.substring(0, 40)}"`)
-
     if (complexity < 0.35) {
-      console.log('[Router] Simple → local Ollama (zero cost)')
       const model = getOllamaModelForTask('responder')
+      console.log(`[Router] Routing "${message.substring(0, 30)}..." → ollama:${model}, complexity: ${complexity.toFixed(2)} (simple)`)
       return { apiKey: '', model, providerName: 'ollama', apiName: 'ollama' }
+    } else {
+      console.log(`[Router] Complexity: ${complexity.toFixed(2)} (complex) — "${message.substring(0, 40)}" → cloud`)
     }
   }
 
@@ -311,25 +318,27 @@ export function getModelForTask(
     return k.length > 0
   })
 
-  // Planner: strongest reasoning — gemini > groq > openrouter > cerebras → discovered planner model
+  // Planner: groq > gemini > openrouter → local planner model
+  // Cerebras excluded: 8B model cannot follow complex SOUL-based planning prompts
   if (task === 'planner') {
-    for (const p of ['gemini', 'groq', 'openrouter', 'cerebras']) {
+    for (const p of ['groq', 'gemini', 'openrouter']) {
       const api = available.find(a => a.provider === p)
       if (api) return resolveKey(api)
     }
     const model = getOllamaModelForTask('planner')
-    console.log(`[Router] Planner: all cloud providers unavailable — falling back to Ollama ${model}`)
+    console.log(`[Router] Planner: all cloud providers rate-limited — using local Ollama ${model}`)
     return { apiKey: '', model, providerName: 'ollama', apiName: 'ollama' }
   }
 
-  // Responder: best quality — groq > gemini > openrouter > cerebras → discovered responder model
+  // Responder: groq > gemini > openrouter → local responder model
+  // Cerebras excluded: too small (8B) to reliably follow SOUL prompt without hallucinating
   if (task === 'responder') {
-    for (const p of ['groq', 'gemini', 'openrouter', 'cerebras']) {
+    for (const p of ['groq', 'gemini', 'openrouter']) {
       const api = available.find(a => a.provider === p)
       if (api) return resolveKey(api)
     }
     const model = getOllamaModelForTask('responder')
-    console.log(`[Router] Responder: all cloud providers unavailable — falling back to Ollama ${model}`)
+    console.log(`[Router] Responder: all cloud providers rate-limited — using local Ollama ${model} (quality may vary)`)
     return { apiKey: '', model, providerName: 'ollama', apiName: 'ollama' }
   }
 

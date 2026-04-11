@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node-version: [16.x, 18.x, 20.x]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install xrandr
+        run: sudo apt-get update && sudo apt-get install -y x11-xserver-utils imagemagick
+        if: runner.os == 'Linux'
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node-version }}
+      - run: npm ci
+      - name: Run headless test
+        uses: coactions/setup-xvfb@v1
+        with:
+          working-directory: ./ #optional
+          run: npm test
