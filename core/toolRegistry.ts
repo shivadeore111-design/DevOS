@@ -165,6 +165,45 @@ function isCommandAllowed(cmd: string): { allowed: boolean; needsApproval: boole
   return { allowed: false, needsApproval: true }
 }
 
+// ── Browser profile isolation ────────────────────────────────
+// Each Aiden session uses a sandboxed Chromium profile — completely
+// separate from the user's real Chrome cookies and login state.
+
+const BROWSER_DATA_DIR = path.join(
+  process.env.APPDATA || '',
+  'devos-ai',
+  'browser-profiles',
+)
+
+function getBrowserProfileDir(sessionId?: string): string {
+  const id         = sessionId || `session_${Date.now()}`
+  const profileDir = path.join(BROWSER_DATA_DIR, id)
+  if (!fs.existsSync(profileDir)) {
+    fs.mkdirSync(profileDir, { recursive: true })
+  }
+  return profileDir
+}
+
+function cleanOldBrowserProfiles(): void {
+  if (!fs.existsSync(BROWSER_DATA_DIR)) return
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000  // 24 h
+  try {
+    for (const entry of fs.readdirSync(BROWSER_DATA_DIR)) {
+      const fullPath = path.join(BROWSER_DATA_DIR, entry)
+      try {
+        const stat = fs.statSync(fullPath)
+        if (stat.mtimeMs < cutoff) {
+          fs.rmSync(fullPath, { recursive: true, force: true })
+          console.log(`[Browser] Cleaned old profile: ${entry}`)
+        }
+      } catch {}
+    }
+  } catch {}
+}
+
+// Clean stale profiles at module load (non-blocking, errors silently ignored)
+try { cleanOldBrowserProfiles() } catch {}
+
 // ── Types ─────────────────────────────────────────────────────
 
 // Internal type returned by each TOOLS function
@@ -186,31 +225,37 @@ export interface ToolResult {
   retries:  number
 }
 
-// ── Singleton Playwright browser ─────────────────────────────
+// ── Singleton Playwright browser context (isolated profile) ──
 
-let browserInstance:    any = null
-let activeBrowserPage:  any = null   // persists across tool calls within a session
-let browserIdleTimer:   any = null   // auto-close after 5 min of inactivity
+let browserContext:    any = null   // BrowserContext from launchPersistentContext
+let activeBrowserPage: any = null   // persists across tool calls within a session
+let browserIdleTimer:  any = null   // auto-close after 5 min of inactivity
 
 function resetBrowserIdleTimer(): void {
   if (browserIdleTimer) clearTimeout(browserIdleTimer)
   browserIdleTimer = setTimeout(async () => {
-    if (browserInstance) {
+    if (browserContext) {
       console.log('[Browser] Closing idle browser after 5 min inactivity')
-      try { await browserInstance.close() } catch {}
-      browserInstance   = null
+      try { await browserContext.close() } catch {}
+      browserContext    = null
       activeBrowserPage = null
     }
   }, 5 * 60 * 1000)
 }
 
-async function getBrowser(): Promise<any> {
-  if (!browserInstance) {
+async function getBrowserContext(): Promise<any> {
+  if (!browserContext) {
     const { chromium } = await import('playwright')
-    browserInstance = await chromium.launch({ headless: false })
+    const profileDir   = getBrowserProfileDir()
+    console.log(`[Browser] Using isolated profile: ${profileDir}`)
+    console.log(`[Browser] User cookies NOT accessible`)
+    browserContext = await chromium.launchPersistentContext(profileDir, {
+      headless: false,
+      viewport: { width: 1280, height: 720 },
+    })
   }
   resetBrowserIdleTimer()
-  return browserInstance
+  return browserContext
 }
 
 // ── Per-tool timeouts (ms) ────────────────────────────────────
@@ -281,8 +326,7 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
     const url = p.url || p.command || ''
     if (!url) return { success: false, output: '', error: 'No URL provided' }
     try {
-      const browser = await getBrowser()
-      const context = browser.contexts()[0] || await browser.newContext()
+      const context = await getBrowserContext()
       activeBrowserPage = await context.newPage()
       await activeBrowserPage.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 })
       return { success: true, output: `Opened browser: ${url}` }
@@ -300,9 +344,9 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
     try {
       let page = activeBrowserPage
       if (!page) {
-        const browser = await getBrowser()
-        const pages   = browser.contexts().flatMap((c: any) => c.pages()) as any[]
-        page = pages[pages.length - 1] || (await (await browser.newContext()).newPage())
+        const context = await getBrowserContext()
+        const pages   = context.pages() as any[]
+        page = pages[pages.length - 1] || (await context.newPage())
       }
       const outPath  = path.join(process.cwd(), 'workspace', `screenshot_${Date.now()}.png`)
       fs.mkdirSync(path.dirname(outPath), { recursive: true })
@@ -316,8 +360,8 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
     try {
       let page = activeBrowserPage
       if (!page) {
-        const browser = await getBrowser()
-        const pages   = browser.contexts().flatMap((c: any) => c.pages()) as any[]
+        const context = await getBrowserContext()
+        const pages   = context.pages() as any[]
         page = pages[pages.length - 1]
       }
       if (!page) return { success: false, output: '', error: 'No browser page open. Use open_browser first.' }
@@ -332,8 +376,8 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
     try {
       let page = activeBrowserPage
       if (!page) {
-        const browser = await getBrowser()
-        const pages   = browser.contexts().flatMap((c: any) => c.pages()) as any[]
+        const context = await getBrowserContext()
+        const pages   = context.pages() as any[]
         page = pages[pages.length - 1]
       }
       if (!page) return { success: false, output: '', error: 'No browser page open. Use open_browser first.' }
@@ -346,8 +390,8 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
     try {
       let page = activeBrowserPage
       if (!page) {
-        const browser = await getBrowser()
-        const pages   = browser.contexts().flatMap((c: any) => c.pages()) as any[]
+        const context = await getBrowserContext()
+        const pages   = context.pages() as any[]
         page = pages[pages.length - 1]
       }
       if (!page) return { success: false, output: '', error: 'No browser page open. Use open_browser first.' }
