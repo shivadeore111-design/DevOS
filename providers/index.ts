@@ -15,6 +15,13 @@ import { createGeminiProvider } from './gemini'
 
 // ── Config schema ─────────────────────────────────────────────
 
+export interface TelegramConfig {
+  enabled:         boolean
+  botToken:        string
+  allowedChatIds:  string[]
+  pollingInterval: number
+}
+
 export interface APIEntry {
   name:           string        // e.g. "groq-1", "groq-2"
   provider:       string        // "groq" | "openrouter" | "gemini" | "cerebras" | "nvidia"
@@ -46,6 +53,7 @@ export interface DevOSConfig {
     fallbackToOllama: boolean            // if all APIs rate limited, use Ollama
   }
   onboardingComplete: boolean
+  telegram?:          TelegramConfig
 }
 
 const CONFIG_PATH = path.join(process.cwd(), 'config', 'devos.config.json')

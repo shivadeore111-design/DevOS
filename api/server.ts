@@ -79,9 +79,12 @@ import { getIdentity, refreshIdentity } from '../core/aidenIdentity'
 import { eventBus } from '../core/eventBus'
 import { getWorkflow } from '../core/workflowTracker'
 import { getHookCount } from '../core/hooks'
+import { TelegramBot } from '../core/telegramBot'
+import type { TelegramConfig } from '../core/telegramBot'
 
 // —— Sprint 25: module-level WebSocket clients registry (shared between createApiServer routes and startApiServer WS setup)
-let wsBroadcastClients = new Set<any>()
+let wsBroadcastClients   = new Set<any>()
+let activeTelegramBot: TelegramBot | null = null
 
 // ── Bookmarklet — clip selected text from any page ────────────
 const BOOKMARKLET = `javascript:void(fetch('http://localhost:4200/api/clip',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:window.getSelection().toString()||document.title,source:window.location.href,title:document.title})}).then(()=>alert('Clipped!')))`
@@ -1802,6 +1805,44 @@ export function createApiServer(): Express {
     } catch (err: any) { res.status(500).json({ error: err.message }) }
   })
 
+  // GET /api/telegram/config — load Telegram bot config
+  app.get('/api/telegram/config', (_req: Request, res: Response) => {
+    try {
+      const cfg = loadConfig() as any
+      const tg  = cfg.telegram || { enabled: false, botToken: '', allowedChatIds: [], pollingInterval: 1000 }
+      // Never expose the full token — return masked version to the UI
+      res.json({ ...tg, botToken: tg.botToken ? tg.botToken.replace(/.(?=.{4})/g, '*') : '' })
+    } catch (e: any) { res.status(500).json({ error: e.message }) }
+  })
+
+  // POST /api/telegram/config — save Telegram bot config
+  app.post('/api/telegram/config', (req: Request, res: Response) => {
+    try {
+      const cfg = loadConfig() as any
+      const prev: TelegramConfig = cfg.telegram || { enabled: false, botToken: '', allowedChatIds: [], pollingInterval: 1000 }
+      // If the incoming token is all-masked (UI hasn't changed it), keep the stored one
+      const incomingToken = String(req.body.botToken || '')
+      const isMasked      = incomingToken.length > 0 && /^\*+.{0,4}$/.test(incomingToken)
+      const newTg: TelegramConfig = {
+        enabled:         !!req.body.enabled,
+        botToken:        isMasked ? prev.botToken : incomingToken,
+        allowedChatIds:  Array.isArray(req.body.allowedChatIds)
+          ? (req.body.allowedChatIds as string[]).map(String).filter(Boolean)
+          : String(req.body.allowedChatIds || '').split(',').map((s: string) => s.trim()).filter(Boolean),
+        pollingInterval: Number(req.body.pollingInterval) || 1000,
+      }
+      cfg.telegram = newTg
+      saveConfig(cfg)
+
+      // Restart bot if running, or start if newly enabled
+      if (activeTelegramBot) { activeTelegramBot.stop(); activeTelegramBot = null }
+      // Note: full restart handled on next server restart — live reload intentionally omitted
+      // to avoid async complexity inside a sync express handler
+
+      res.json({ ok: true })
+    } catch (e: any) { res.status(500).json({ error: e.message }) }
+  })
+
   // DELETE /api/knowledge/:fileId â€” delete a file
   app.delete('/api/knowledge/:fileId', (req: Request, res: Response) => {
     const deleted = knowledgeBase.deleteFile(String(req.params.fileId))
@@ -3306,6 +3347,54 @@ export function startApiServer(portArg?: number): Express {
     console.log(`[API] Health: http://${host}:${port}/api/health`)
     console.log(`[API] LivePulse WS: ws://${host}:${port}`)
   })
+
+  // ── Telegram Bot ─────────────────────────────────────────────
+  try {
+    const tgCfg = (loadConfig() as any).telegram as TelegramConfig | undefined
+    if (tgCfg?.enabled && tgCfg?.botToken) {
+      const startupTime = Date.now()
+      activeTelegramBot = new TelegramBot(tgCfg)
+
+      activeTelegramBot.startPolling(async (chatId: string, text: string): Promise<string> => {
+        // ── Bot commands ─────────────────────────────────────
+        if (text === '/start') {
+          return `👋 Hey! I'm Aiden, your personal AI.\n\nYour chat ID is: \`${chatId}\`\nAdd this to Aiden Settings → Channels → Telegram → Allowed Chat IDs.\n\nThen just message me anything — I can research, code, manage files, check stocks, and more.`
+        }
+
+        if (text === '/help') {
+          return `🤖 Aiden Commands:\n\nJust type naturally — I understand:\n• "Check NIFTY price"\n• "Research top AI tools"\n• "Write a Python script for..."\n• "What's the weather in Mumbai?"\n• "Schedule a reminder for 5pm"\n\n/status — Check Aiden health\n/stop — Cancel current task`
+        }
+
+        if (text === '/status') {
+          const uptimeSec = Math.floor((Date.now() - startupTime) / 1000)
+          const uptimeStr = uptimeSec > 3600
+            ? `${Math.floor(uptimeSec / 3600)}h ${Math.floor((uptimeSec % 3600) / 60)}m`
+            : `${Math.floor(uptimeSec / 60)}m ${uptimeSec % 60}s`
+          const activeCfg  = loadConfig()
+          const provider   = activeCfg.model?.active || 'unknown'
+          const semStats   = semanticMemory.getStats()
+          return `✅ Aiden is online\nMode: auto\nProvider: ${provider}\nMemory: ${semStats.total} entries\nUptime: ${uptimeStr}`
+        }
+
+        // ── Normal message — route through chat endpoint (JSON mode) ──
+        const chatResp = await fetch(`http://localhost:${port}/api/chat`, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body:    JSON.stringify({ message: text, sessionId: `telegram_${chatId}` }),
+          signal:  AbortSignal.timeout(120_000),
+        })
+        if (!chatResp.ok) throw new Error(`Chat HTTP ${chatResp.status}`)
+        const data = await chatResp.json() as any
+        return data.response || data.message || '(no response)'
+      }).catch((e: Error) => console.error('[Telegram] Polling error:', e.message))
+
+      console.log('[Telegram] Bot connected and polling')
+    } else {
+      console.log('[Telegram] Bot disabled or no token configured — skipping')
+    }
+  } catch (e: any) {
+    console.error('[Telegram] Failed to start bot:', e.message)
+  }
 
   return app
 }

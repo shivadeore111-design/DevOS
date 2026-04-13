@@ -2826,6 +2826,147 @@ function UpdatesTab() {
   )
 }
 
+// ── TelegramSettingsTab ───────────────────────────────────────
+
+function TelegramSettingsTab() {
+  const [enabled,        setEnabled]        = React.useState(false)
+  const [botToken,       setBotToken]       = React.useState('')
+  const [allowedChatIds, setAllowedChatIds] = React.useState('')
+  const [saving,         setSaving]         = React.useState(false)
+  const [saved,          setSaved]          = React.useState(false)
+  const [loaded,         setLoaded]         = React.useState(false)
+
+  React.useEffect(() => {
+    fetch('http://localhost:4200/api/telegram/config')
+      .then(r => r.ok ? r.json() : null)
+      .then((data: any) => {
+        if (!data) return
+        setEnabled(!!data.enabled)
+        setBotToken(data.botToken || '')
+        setAllowedChatIds(Array.isArray(data.allowedChatIds) ? data.allowedChatIds.join(', ') : '')
+        setLoaded(true)
+      })
+      .catch(() => setLoaded(true))
+  }, [])
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      await fetch('http://localhost:4200/api/telegram/config', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          enabled,
+          botToken,
+          allowedChatIds: allowedChatIds.split(',').map((s: string) => s.trim()).filter(Boolean),
+          pollingInterval: 1000,
+        }),
+      })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } catch {}
+    setSaving(false)
+  }
+
+  if (!loaded) return <p style={settingsTextStyle}>Loading...</p>
+
+  return (
+    <div>
+      <SettingsSection title="Telegram Bot">
+        <p style={{ ...settingsTextStyle, marginBottom: 14 }}>
+          Connect Aiden to Telegram so you can chat from your phone.
+          Create a bot via <b>@BotFather</b>, copy the token, and paste it below.
+        </p>
+
+        {/* Enable toggle */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+          <button
+            onClick={() => setEnabled(v => !v)}
+            style={{
+              width: 40, height: 22, borderRadius: 11,
+              background: enabled ? 'var(--orange)' : 'var(--bg3)',
+              border: 'none', cursor: 'pointer', position: 'relative',
+              transition: 'background 0.2s', flexShrink: 0,
+            }}
+          >
+            <span style={{
+              position: 'absolute', top: 3,
+              left: enabled ? 21 : 3,
+              width: 16, height: 16, borderRadius: '50%',
+              background: '#fff', transition: 'left 0.2s',
+            }} />
+          </button>
+          <span style={{ fontSize: 13, color: 'var(--text)', fontFamily: 'var(--mono)' }}>
+            {enabled ? 'Enabled' : 'Disabled'}
+          </span>
+        </div>
+
+        {/* Bot token */}
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ display: 'block', fontSize: 11, color: 'var(--muted2)', fontFamily: 'var(--mono)', marginBottom: 4 }}>
+            Bot Token (from @BotFather)
+          </label>
+          <input
+            type="password"
+            value={botToken}
+            onChange={e => setBotToken(e.target.value)}
+            placeholder="123456:ABC-DEF..."
+            style={{
+              width: '100%', padding: '7px 10px', borderRadius: 5,
+              background: 'var(--bg2)', border: '1px solid var(--border)',
+              color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12,
+              boxSizing: 'border-box',
+            }}
+          />
+        </div>
+
+        {/* Allowed Chat IDs */}
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: 'block', fontSize: 11, color: 'var(--muted2)', fontFamily: 'var(--mono)', marginBottom: 4 }}>
+            Allowed Chat IDs <span style={{ opacity: 0.6 }}>(comma-separated, leave empty to allow all)</span>
+          </label>
+          <input
+            type="text"
+            value={allowedChatIds}
+            onChange={e => setAllowedChatIds(e.target.value)}
+            placeholder="123456789, 987654321"
+            style={{
+              width: '100%', padding: '7px 10px', borderRadius: 5,
+              background: 'var(--bg2)', border: '1px solid var(--border)',
+              color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12,
+              boxSizing: 'border-box',
+            }}
+          />
+          <p style={{ ...settingsTextStyle, marginTop: 6, fontSize: 11 }}>
+            Send <code style={{ background: 'var(--bg3)', padding: '1px 4px', borderRadius: 3 }}>/start</code> to your bot to get your chat ID.
+          </p>
+        </div>
+
+        <button
+          onClick={save}
+          disabled={saving}
+          style={{
+            padding: '7px 18px', borderRadius: 5, border: 'none',
+            background: saved ? '#22c55e' : 'var(--orange)',
+            color: '#fff', fontFamily: 'var(--mono)', fontSize: 12,
+            cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1,
+          }}
+        >
+          {saved ? '✓ Saved' : saving ? 'Saving...' : 'Save Telegram Settings'}
+        </button>
+      </SettingsSection>
+
+      <SettingsSection title="Other Channels">
+        {['WhatsApp', 'Discord', 'Slack', 'Email'].map(ch => (
+          <p key={ch} style={{ ...settingsTextStyle, marginBottom: 8 }}>
+            <b>{ch}</b> — configure in your .env or DevOS config.
+          </p>
+        ))}
+      </SettingsSection>
+    </div>
+  )
+}
+
 // ── SettingsDrawer ────────────────────────────────────────────
 
 const SETTINGS_TABS = [
@@ -2906,15 +3047,7 @@ function SettingsDrawer() {
             </SettingsSection>
           )}
 
-          {settingsTab === 'channels' && (
-            <div>
-              {['Telegram', 'WhatsApp', 'Discord', 'Slack', 'Email'].map(ch => (
-                <SettingsSection key={ch} title={ch}>
-                  <p style={settingsTextStyle}>{ch} integration — configure in your .env or DevOS config. See Setup Guide for details.</p>
-                </SettingsSection>
-              ))}
-            </div>
-          )}
+          {settingsTab === 'channels' && <TelegramSettingsTab />}
 
           {settingsTab === 'pro' && (
             <SettingsSection title="License">
