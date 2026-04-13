@@ -6,7 +6,7 @@
 // core/toolRegistry.ts — Centralized tool registry with real Playwright
 // browser automation, file I/O, shell exec, and web utilities.
 
-import { exec }    from 'child_process'
+import { exec, spawn } from 'child_process'
 import { promisify } from 'util'
 import fs   from 'fs'
 import path from 'path'
@@ -91,6 +91,15 @@ const DENIED_COMMANDS: RegExp[] = [
   /powershell.*-encodedcommand/i,
   /iex\s*\(/i,
   /Invoke-Expression/i,
+  // ── Sprint 25: extended deny patterns ─────────────────────────
+  /Invoke-WebRequest.*\|/i,
+  /Start-Process\s/i,
+  /\breg\s+(add|delete)/i,
+  /\bschtasks\s/i,
+  /\bwmic\s+process\s+call/i,
+  /\bnet\s+user\b/i,
+  /Set-ExecutionPolicy/i,
+  /\bNew-Service\b/i,
 ]
 
 function isCommandDenied(cmd: string): boolean {
@@ -113,6 +122,47 @@ const SHELL_DANGEROUS_PATTERNS = [
 function isShellDangerous(cmd: string): boolean {
   const lower = cmd.toLowerCase()
   return SHELL_DANGEROUS_PATTERNS.some(p => lower.includes(p.toLowerCase()))
+}
+
+// ── Sprint 25: Shell command allowlist ────────────────────────
+// Unknown commands (not in this list) are blocked and require explicit user approval.
+
+const SHELL_ALLOWLIST: RegExp[] = [
+  // 1. File system reads
+  /^(ls|dir|cat|type|head|tail|more|less|pwd|tree)\b/i,
+  // 2. File/dir create, copy, move, shell navigation
+  /^(mkdir|md|cp|copy|mv|move|xcopy|robocopy|echo|touch|cd|cls|clear|set|export)\b/i,
+  // 3. Git
+  /^git\b/i,
+  // 4. Node / npm / npx / yarn / pnpm / bun
+  /^(node|npm|npx|yarn|pnpm|bun)\b/i,
+  // 5. Python / pip
+  /^(python|python3|pip|pip3)\b/i,
+  // 6. TypeScript compiler, linting, test runners
+  /^(tsc|eslint|prettier|ts-node|vitest|jest|mocha)\b/i,
+  // 7. Build tools: Cargo, Go, dotnet
+  /^(cargo|go|dotnet)\b/i,
+  // 8. Text search & manipulation
+  /^(grep|rg|find|sed|awk|sort|uniq|wc|cut|tr|jq)\b/i,
+  // 9. Network info (read-only; curl/wget pipe-to-bash blocked by denylist above)
+  /^(ping|nslookup|tracert|traceroute|curl|wget)\b/i,
+  // 10. System info (read-only)
+  /^(systeminfo|tasklist|whoami|ipconfig|hostname|ver|uname|df|du|free|ps|top)\b/i,
+  // 11. Archive tools
+  /^(tar|zip|unzip|7z|gzip|gunzip)\b/i,
+  // 12. PowerShell safe cmdlets (read, navigate, item management, output)
+  /^(Get-|Select-|Where-|Sort-|Format-|Out-|Write-Output|Write-Host|ConvertTo-|ConvertFrom-|Measure-|Test-Path|Resolve-Path|Split-Path|Join-Path|Compare-Object|New-Item|Copy-Item|Move-Item|Rename-Item|Remove-Item|Set-Content|Add-Content|Clear-Content|Set-Location|Push-Location|Pop-Location)/i,
+]
+
+function isCommandAllowed(cmd: string): { allowed: boolean; needsApproval: boolean } {
+  // Hard-block: denylist and dangerous patterns take priority
+  if (isCommandDenied(cmd))   return { allowed: false, needsApproval: false }
+  if (isShellDangerous(cmd))  return { allowed: false, needsApproval: false }
+  // Allowlist: explicitly permitted command patterns
+  const trimmed = cmd.trim()
+  if (SHELL_ALLOWLIST.some(p => p.test(trimmed))) return { allowed: true, needsApproval: false }
+  // Unknown command pattern — require explicit user approval
+  return { allowed: false, needsApproval: true }
 }
 
 // ── Types ─────────────────────────────────────────────────────
@@ -138,13 +188,28 @@ export interface ToolResult {
 
 // ── Singleton Playwright browser ─────────────────────────────
 
-let browserInstance: any = null
+let browserInstance:    any = null
+let activeBrowserPage:  any = null   // persists across tool calls within a session
+let browserIdleTimer:   any = null   // auto-close after 5 min of inactivity
+
+function resetBrowserIdleTimer(): void {
+  if (browserIdleTimer) clearTimeout(browserIdleTimer)
+  browserIdleTimer = setTimeout(async () => {
+    if (browserInstance) {
+      console.log('[Browser] Closing idle browser after 5 min inactivity')
+      try { await browserInstance.close() } catch {}
+      browserInstance   = null
+      activeBrowserPage = null
+    }
+  }, 5 * 60 * 1000)
+}
 
 async function getBrowser(): Promise<any> {
   if (!browserInstance) {
     const { chromium } = await import('playwright')
     browserInstance = await chromium.launch({ headless: false })
   }
+  resetBrowserIdleTimer()
   return browserInstance
 }
 
@@ -164,6 +229,7 @@ const TOOL_TIMEOUTS: Record<string, number> = {
   open_browser:   15000,
   git_push:       60000,
   git_commit:     30000,
+  git_status:     15000,
   wait:            6000,
   get_stocks:     20000,
   get_market_data:              15000,
@@ -181,6 +247,25 @@ const TOOL_TIMEOUTS: Record<string, number> = {
   watch_folder_list:             5000,
 }
 
+// ── NSE symbol normalizer ─────────────────────────────────────
+// Yahoo Finance needs '^NSEI' for NIFTY and '.NS' suffix for NSE stocks.
+
+function normalizeNSESymbol(symbol: string): string {
+  const nseMap: Record<string, string> = {
+    'NIFTY':      '^NSEI',
+    'NIFTY 50':   '^NSEI',
+    'NIFTY50':    '^NSEI',
+    'BANKNIFTY':  '^NSEBANK',
+    'BANK NIFTY': '^NSEBANK',
+    'SENSEX':     '^BSESN',
+  }
+  const upper = symbol.toUpperCase().trim()
+  if (nseMap[upper]) return nseMap[upper]
+  // Bare Indian ticker (all caps, no dot/caret suffix) → add .NS
+  if (/^[A-Z]{2,20}$/.test(upper)) return upper + '.NS'
+  return symbol
+}
+
 // ── Tool implementations ──────────────────────────────────────
 
 export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
@@ -196,16 +281,29 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
     const url = p.url || p.command || ''
     if (!url) return { success: false, output: '', error: 'No URL provided' }
     try {
-      const result = await openBrowser(url)
-      return { success: true, output: result }
-    } catch (e: any) { return { success: false, output: '', error: e.message } }
+      const browser = await getBrowser()
+      const context = browser.contexts()[0] || await browser.newContext()
+      activeBrowserPage = await context.newPage()
+      await activeBrowserPage.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 })
+      return { success: true, output: `Opened browser: ${url}` }
+    } catch (e: any) {
+      // Playwright failed — fall back to system browser, clear page ref
+      activeBrowserPage = null
+      try {
+        const result = await openBrowser(url)
+        return { success: true, output: result }
+      } catch (e2: any) { return { success: false, output: '', error: e2.message } }
+    }
   },
 
   browser_screenshot: async () => {
     try {
-      const browser  = await getBrowser()
-      const pages    = browser.contexts().flatMap((c: any) => c.pages()) as any[]
-      const page     = pages[pages.length - 1] || (await (await browser.newContext()).newPage())
+      let page = activeBrowserPage
+      if (!page) {
+        const browser = await getBrowser()
+        const pages   = browser.contexts().flatMap((c: any) => c.pages()) as any[]
+        page = pages[pages.length - 1] || (await (await browser.newContext()).newPage())
+      }
       const outPath  = path.join(process.cwd(), 'workspace', `screenshot_${Date.now()}.png`)
       fs.mkdirSync(path.dirname(outPath), { recursive: true })
       await page.screenshot({ path: outPath, fullPage: false })
@@ -216,10 +314,13 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
   browser_click: async (p) => {
     const selector = p.selector || p.text || p.command || ''
     try {
-      const browser = await getBrowser()
-      const pages   = browser.contexts().flatMap((c: any) => c.pages()) as any[]
-      const page    = pages[pages.length - 1]
-      if (!page) return { success: false, output: '', error: 'No browser page open' }
+      let page = activeBrowserPage
+      if (!page) {
+        const browser = await getBrowser()
+        const pages   = browser.contexts().flatMap((c: any) => c.pages()) as any[]
+        page = pages[pages.length - 1]
+      }
+      if (!page) return { success: false, output: '', error: 'No browser page open. Use open_browser first.' }
       await page.click(selector).catch(() => page.click(`text=${selector}`))
       return { success: true, output: `Clicked: ${selector}` }
     } catch (e: any) { return { success: false, output: '', error: e.message } }
@@ -229,10 +330,13 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
     const selector = p.selector || 'input'
     const text     = p.text || p.command || ''
     try {
-      const browser = await getBrowser()
-      const pages   = browser.contexts().flatMap((c: any) => c.pages()) as any[]
-      const page    = pages[pages.length - 1]
-      if (!page) return { success: false, output: '', error: 'No browser page open' }
+      let page = activeBrowserPage
+      if (!page) {
+        const browser = await getBrowser()
+        const pages   = browser.contexts().flatMap((c: any) => c.pages()) as any[]
+        page = pages[pages.length - 1]
+      }
+      if (!page) return { success: false, output: '', error: 'No browser page open. Use open_browser first.' }
       await page.fill(selector, text)
       return { success: true, output: `Typed "${text}" into ${selector}` }
     } catch (e: any) { return { success: false, output: '', error: e.message } }
@@ -240,10 +344,13 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
 
   browser_extract: async () => {
     try {
-      const browser  = await getBrowser()
-      const pages    = browser.contexts().flatMap((c: any) => c.pages()) as any[]
-      const page     = pages[pages.length - 1]
-      if (!page) return { success: false, output: '', error: 'No browser page open' }
+      let page = activeBrowserPage
+      if (!page) {
+        const browser = await getBrowser()
+        const pages   = browser.contexts().flatMap((c: any) => c.pages()) as any[]
+        page = pages[pages.length - 1]
+      }
+      if (!page) return { success: false, output: '', error: 'No browser page open. Use open_browser first.' }
       const content  = await page.evaluate('document.body.innerText')
       return { success: true, output: (content as string).slice(0, 3000) }
     } catch (e: any) { return { success: false, output: '', error: e.message } }
@@ -252,13 +359,14 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
   shell_exec: async (p) => {
     const cmd = p.command || p.cmd || ''
     if (!cmd) return { success: false, output: '', error: 'No command' }
-    if (isCommandDenied(cmd)) {
-      console.warn(`[Security] shell_exec DENIED pattern: ${cmd.slice(0, 120)}`)
+    const shellGate = isCommandAllowed(cmd)
+    if (!shellGate.allowed) {
+      if (shellGate.needsApproval) {
+        console.warn(`[AllowList] shell_exec UNKNOWN — approval required: ${cmd.slice(0, 120)}`)
+        return { success: false, output: '', error: `CommandGate: This command requires explicit user approval before running: ${cmd.slice(0, 80)}` }
+      }
+      console.warn(`[Security] shell_exec DENIED: ${cmd.slice(0, 120)}`)
       return { success: false, output: '', error: 'Blocked: this command pattern is not allowed. Dangerous operations require explicit user approval.' }
-    }
-    if (isShellDangerous(cmd)) {
-      console.warn(`[CommandGate] BLOCKED shell_exec: ${cmd.slice(0, 120)}`)
-      return { success: false, output: '', error: `CommandGate: Blocked potentially dangerous command. User approval required before running: ${cmd.slice(0, 80)}` }
     }
     try {
       const { stdout, stderr } = await execAsync(cmd, {
@@ -274,13 +382,14 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
   run_powershell: async (p) => {
     const script  = p.script || p.command || ''
     if (!script) return { success: false, output: '', error: 'No script' }
-    if (isCommandDenied(script)) {
-      console.warn(`[Security] run_powershell DENIED pattern: ${script.slice(0, 120)}`)
+    const psGate = isCommandAllowed(script)
+    if (!psGate.allowed) {
+      if (psGate.needsApproval) {
+        console.warn(`[AllowList] run_powershell UNKNOWN — approval required: ${script.slice(0, 120)}`)
+        return { success: false, output: '', error: `CommandGate: This PowerShell command requires explicit user approval before running.` }
+      }
+      console.warn(`[Security] run_powershell DENIED: ${script.slice(0, 120)}`)
       return { success: false, output: '', error: 'Blocked: this command pattern is not allowed. Dangerous operations require explicit user approval.' }
-    }
-    if (isShellDangerous(script)) {
-      console.warn(`[CommandGate] BLOCKED run_powershell: ${script.slice(0, 120)}`)
-      return { success: false, output: '', error: `CommandGate: Blocked potentially dangerous PowerShell script. User approval required before running.` }
     }
     const tmpFile = path.join(process.cwd(), 'workspace', `tmp_${Date.now()}.ps1`)
     fs.mkdirSync(path.dirname(tmpFile), { recursive: true })
@@ -308,11 +417,14 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
       return { success: false, output: '', error: 'Access denied: protected path. Aiden cannot write credentials, SSH keys, or env files.' }
     }
     try {
-      // Expand Desktop and ~ shorthands to full Windows paths
-      const userName = process.env.USERNAME || process.env.USER || 'User'
+      // Expand Desktop and ~ shorthands, and fix any "Aiden" username to actual system user
+      const _user = process.env.USERNAME || process.env.USER || require('os').userInfo().username || 'User'
+      const _home = require('os').homedir()
       filePath = filePath
-        .replace(/^~[\/\\]/i, `C:\\Users\\${userName}\\`)
-        .replace(/^Desktop[\/\\]/i, `C:\\Users\\${userName}\\Desktop\\`)
+        .replace(/^~[\/\\]/i, _home + path.sep)
+        .replace(/^Desktop[\/\\]/i, path.join(_home, 'Desktop') + path.sep)
+        .replace(/^C:\\Users\\Aiden\\/i, `C:\\Users\\${_user}\\`)
+        .replace(/^C:\/Users\/Aiden\//i, `C:/Users/${_user}/`)
 
       const resolved = filePath.match(/^[A-Z]:/i) || filePath.startsWith('/')
         ? filePath
@@ -330,13 +442,21 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
   },
 
   file_read: async (p) => {
-    const filePath = p.path || p.file || ''
+    let filePath = p.path || p.file || ''
     if (!filePath) return { success: false, output: '', error: 'No path' }
     if (isPathDenied(filePath)) {
       console.warn(`[Security] file_read DENIED: ${filePath}`)
       return { success: false, output: '', error: 'Access denied: protected path. Aiden cannot read credentials, SSH keys, or env files.' }
     }
     try {
+      // Expand ~ and Desktop shorthands, and fix any "Aiden" username to actual system user
+      const _user = process.env.USERNAME || process.env.USER || require('os').userInfo().username || 'User'
+      const _home = require('os').homedir()
+      filePath = filePath
+        .replace(/^~[\/\\]/i, _home + path.sep)
+        .replace(/^Desktop[\/\\]/i, path.join(_home, 'Desktop') + path.sep)
+        .replace(/^C:\\Users\\Aiden\\/i, `C:\\Users\\${_user}\\`)
+        .replace(/^C:\/Users\/Aiden\//i, `C:/Users/${_user}/`)
       // Resolve path: absolute paths (Windows C:\ or Unix /) used as-is; relative joined with cwd
       const resolved = filePath.match(/^[A-Z]:/i) || filePath.startsWith('/')
         ? filePath
@@ -347,8 +467,17 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
   },
 
   file_list: async (p) => {
-    const dirPath = p.path || p.dir || process.cwd()
+    let dirPath = p.path || p.dir || process.cwd()
     try {
+      // Expand ~ and Desktop shorthands, and fix any "Aiden" username to actual system user
+      const _user = process.env.USERNAME || process.env.USER || require('os').userInfo().username || 'User'
+      const _home = require('os').homedir()
+      dirPath = dirPath
+        .replace(/^~[\/\\]/i, _home + path.sep)
+        .replace(/^Desktop[\/\\]?$/i, path.join(_home, 'Desktop'))
+        .replace(/^Desktop[\/\\]/i, path.join(_home, 'Desktop') + path.sep)
+        .replace(/^C:\\Users\\Aiden\\/i, `C:\\Users\\${_user}\\`)
+        .replace(/^C:\/Users\/Aiden\//i, `C:/Users/${_user}/`)
       const resolved = dirPath.match(/^[A-Z]:/i)
         ? dirPath
         : path.join(process.cwd(), dirPath)
@@ -399,15 +528,33 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
   },
 
   notify: async (p) => {
-    const msg = (p.message || p.command || p.title || p.body || '').replace(/'/g, '').replace(/"/g, '').replace(/`/g, '')
-    if (!msg.trim()) return { success: false, output: '', error: 'No message provided for notification' }
+    const msg = (p.message || p.command || p.title || p.body || '')
+      .replace(/'/g, '').replace(/"/g, '').replace(/`/g, '').replace(/\$/g, '').trim()
+    if (!msg) return { success: false, output: '', error: 'No message provided for notification' }
     try {
-      // Use cmd shell so the outer `powershell -Command` invocation works correctly.
-      // Never pass shell:'powershell.exe' here — that causes double-PowerShell invocation.
-      await execAsync(
-        `powershell -WindowStyle Hidden -Command "Add-Type -AssemblyName System.Windows.Forms; $n = New-Object System.Windows.Forms.NotifyIcon; $n.Icon = [System.Drawing.SystemIcons]::Information; $n.Visible = $true; $n.ShowBalloonTip(3000, 'Aiden', '${msg}', [System.Windows.Forms.ToolTipIcon]::Info); Start-Sleep -s 4; $n.Dispose()"`,
-        { shell: 'cmd.exe' }
-      )
+      // Windows 10/11 Toast notification via WinRT — fires instantly, no Start-Sleep needed.
+      // Run fully detached so the child process never inherits the parent terminal stdio.
+      const psCmd = [
+        '[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null',
+        '$t = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02)',
+        '$n = $t.GetElementsByTagName("text")',
+        `$n.Item(0).AppendChild($t.CreateTextNode("Aiden")) | Out-Null`,
+        `$n.Item(1).AppendChild($t.CreateTextNode("${msg}")) | Out-Null`,
+        '$toast = [Windows.UI.Notifications.ToastNotification]::new($t)',
+        '[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("Aiden").Show($toast)',
+      ].join('; ')
+
+      const child = spawn('powershell', [
+        '-WindowStyle', 'Hidden',
+        '-NonInteractive',
+        '-Command', psCmd,
+      ], {
+        detached:    true,
+        stdio:       'ignore',
+        windowsHide: true,
+      })
+      child.unref()  // don't keep Node alive waiting for it
+
       return { success: true, output: `Desktop notification sent: "${msg}".` }
     } catch (e: any) {
       return { success: false, output: '', error: `Notification failed: ${e.message}` }
@@ -749,6 +896,17 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
     }
   },
 
+  git_status: async (p) => {
+    const cwd = p.path || p.directory || p.cwd || process.cwd()
+    try {
+      const { stdout, stderr } = await execAsync(
+        'git status && git log --oneline -5',
+        { shell: 'powershell.exe', timeout: 15000, cwd }
+      )
+      return { success: true, output: stdout || stderr }
+    } catch (e: any) { return { success: false, output: '', error: e.message } }
+  },
+
   git_commit: async (p) => {
     const msg = (p.message || p.command || 'DevOS auto-commit').replace(/"/g, "'")
     try {
@@ -896,8 +1054,9 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
   // ── Financial tools ─────────────────────────────────────
 
   get_market_data: async (p: any) => {
-    const symbol = (p.symbol || p.ticker || '').trim()
-    if (!symbol) return { success: false, output: '', error: 'No symbol provided. Pass { symbol: "RELIANCE" } or { symbol: "AAPL" }.' }
+    const raw = (p.symbol || p.ticker || '').trim()
+    if (!raw) return { success: false, output: '', error: 'No symbol provided. Pass { symbol: "RELIANCE" } or { symbol: "AAPL" }.' }
+    const symbol = normalizeNSESymbol(raw)
     try {
       const data = await getMarketData(symbol)
       return { success: true, output: JSON.stringify(data, null, 2) }
@@ -1180,8 +1339,17 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
       case 'list':
         return { success: true, output: JSON.stringify(goals.filter(g => g.status !== 'done'), null, 2) }
 
-      case 'add':
+      case 'add': {
         if (!p.title) return { success: false, output: '', error: 'Title required' }
+        const { getLimit } = await import('./featureGates')
+        const maxGoals = getLimit('maxGoals')
+        const activeGoals = goals.filter(g => g.status !== 'done')
+        if (activeGoals.length >= maxGoals) {
+          return {
+            success: false, output: '',
+            error: `Goal limit reached (${maxGoals} active goals on Free plan). Complete existing goals or upgrade to Pro for unlimited goals.`,
+          }
+        }
         goals.push({
           id:          Date.now().toString(),
           title:       p.title,
@@ -1192,6 +1360,7 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
         })
         saveGoals(goals)
         return { success: true, output: `Goal added: ${p.title}` }
+      }
 
       case 'update': {
         const g = goals.find(g => g.title.toLowerCase().includes((p.title || '').toLowerCase()))
@@ -1219,8 +1388,17 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
         return { success: true, output: `Focus on: ${active[0].title} — Next: ${active[0].nextAction || 'Define next step'}` }
       }
 
+      case 'remove':
+      case 'delete': {
+        const before = goals.length
+        const remaining = goals.filter(g => !g.title.toLowerCase().includes((p.title || '').toLowerCase()))
+        if (remaining.length === before) return { success: false, output: '', error: 'Goal not found' }
+        saveGoals(remaining)
+        return { success: true, output: `Removed goal matching: ${p.title}` }
+      }
+
       default:
-        return { success: false, output: '', error: `Unknown action: ${p.action}. Use: list, add, update, complete, suggest` }
+        return { success: false, output: '', error: `Unknown action: ${p.action}. Use: list, add, update, complete, remove, suggest` }
     }
   },
 
@@ -1392,6 +1570,7 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   code_interpreter_python: 'Run Python code in a sandboxed interpreter with data science libraries',
   code_interpreter_node:   'Run Node.js code in a sandboxed interpreter',
   run_agent:               'Spawn a sub-agent to complete a sub-goal autonomously',
+  git_status:              'Show git status and recent commits for a repository. Provide path parameter for a specific directory.',
   git_commit:              'Stage and commit files to a local git repository',
   git_push:                'Push committed changes to a remote git repository',
   clipboard_read:          'Read the current contents of the system clipboard',
@@ -1404,7 +1583,7 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   watch_folder_list:       'List all currently watched folder paths',
   get_briefing:            'Run the morning briefing: weather, markets, news, and daily summary',
   respond:                 'Send a direct conversational response to the user. Use for greetings, capability questions, clarifications, simple factual answers, and anything that does NOT require external tools. This is the default tool when no other tool is needed.',
-  manage_goals:            'Track and manage goals and projects. Use when user asks what to work on, mentions a project, deadline, or launch plan. Actions: list, add, update, complete, suggest.',
+  manage_goals:            'Track and manage goals and projects. Use when user asks what to work on, mentions a project, deadline, or launch plan. Actions: list, add, update, complete, remove, suggest.',
   compact_context:         'Summarize and compress the current conversation context. Saves session to disk and extracts durable memories. Call when context is getting long.',
   get_natural_events:      'Fetch active natural events from NASA EONET API. Returns current earthquakes, wildfires, storms, floods, and other natural events worldwide.',
 }
@@ -1447,6 +1626,7 @@ const TOOL_TIERS: Record<string, ToolTier> = {
   run_node:                2,
   code_interpreter_python: 2,
   code_interpreter_node:   2,
+  git_status:              2,
   git_commit:              2,
   git_push:                2,
   clipboard_read:          2,
@@ -1478,4 +1658,111 @@ const TOOL_TIERS: Record<string, ToolTier> = {
 export function getToolTier(toolName: string): ToolTier {
   if (toolName.startsWith('mcp_')) return 1
   return TOOL_TIERS[toolName] ?? 2
+}
+
+// ── Dynamic tool loading — category-based filtering ───────────
+// Reduces planner prompt from ~15K tokens to ~3-5K by only showing
+// tools relevant to the current task category.
+
+export type ToolCategory =
+  | 'core'    // respond, manage_goals, compact_context, run_agent
+  | 'web'     // web_search, deep_research, fetch_url/page, social_research
+  | 'files'   // file_read, file_write, file_list, watch_folder
+  | 'code'    // run_python, run_node, shell_exec, run_powershell, interpreters
+  | 'browser' // open_browser, browser_click/type/extract/screenshot, window ops
+  | 'screen'  // screenshot, mouse, keyboard, screen_read, vision_loop
+  | 'data'    // market data, stocks, company info, briefing, natural events
+  | 'system'  // notify, system_info, clipboard, app_launch/close, wait
+  | 'git'     // git_status, git_commit, git_push
+  | 'memory'  // (reserved for future memory/knowledge tools)
+  | 'media'   // (reserved for future voice/audio tools)
+
+const TOOL_CATEGORIES: Record<string, ToolCategory[]> = {
+  respond:                 ['core'],
+  manage_goals:            ['core'],
+  compact_context:         ['core'],
+  run_agent:               ['core'],
+  web_search:              ['web', 'data'],
+  deep_research:           ['web'],
+  fetch_url:               ['web'],
+  fetch_page:              ['web'],
+  social_research:         ['web', 'data'],
+  file_read:               ['files'],
+  file_write:              ['files'],
+  file_list:               ['files'],
+  watch_folder:            ['files', 'system'],
+  watch_folder_list:       ['files', 'system'],
+  run_python:              ['code'],
+  run_node:                ['code'],
+  shell_exec:              ['code', 'system'],
+  run_powershell:          ['code', 'system'],
+  code_interpreter_python: ['code'],
+  code_interpreter_node:   ['code'],
+  open_browser:            ['browser'],
+  browser_click:           ['browser'],
+  browser_type:            ['browser'],
+  browser_extract:         ['browser'],
+  browser_screenshot:      ['browser'],
+  window_list:             ['browser', 'system'],
+  window_focus:            ['browser', 'system'],
+  app_launch:              ['browser', 'system'],
+  app_close:               ['browser', 'system'],
+  screenshot:              ['screen'],
+  mouse_move:              ['screen'],
+  mouse_click:             ['screen'],
+  keyboard_type:           ['screen'],
+  keyboard_press:          ['screen'],
+  screen_read:             ['screen'],
+  vision_loop:             ['screen'],
+  get_market_data:         ['data'],
+  get_company_info:        ['data'],
+  get_stocks:              ['data'],
+  get_briefing:            ['data'],
+  get_natural_events:      ['data'],
+  notify:                  ['system'],
+  system_info:             ['system'],
+  wait:                    ['system', 'browser', 'screen'],
+  clipboard_read:          ['system', 'code'],
+  clipboard_write:         ['system', 'code'],
+  git_status:              ['git'],
+  git_commit:              ['git'],
+  git_push:                ['git'],
+}
+
+export function detectToolCategories(message: string): ToolCategory[] {
+  const categories = new Set<ToolCategory>(['core'])
+  const msg = message.toLowerCase()
+
+  if (/search|research|find|look up|what is|who is|latest|news|article|google/i.test(msg))
+    categories.add('web')
+  if (/file|read|write|save|create|folder|directory|pdf|document|\.txt|\.csv|\.json|\.md/i.test(msg))
+    categories.add('files')
+  if (/code|script|python|node|run|execute|build|deploy|npm|pip|function|class|powershell/i.test(msg))
+    categories.add('code')
+  if (/open|browse|website|url|http|chrome|click|navigate|youtube|browser|tab/i.test(msg))
+    categories.add('browser')
+  if (/screen|screenshot|mouse|click on|type in|desktop|window|app\b|vision|control/i.test(msg))
+    categories.add('screen')
+  if (/stock|nifty|market|price|nse|bse|sensex|reliance|trading|shares|equity|briefing|weather|natural|earthquake/i.test(msg))
+    categories.add('data')
+  if (/notify|notification|remind|alert|system info|cpu|ram|disk|hardware|clipboard|launch|close app/i.test(msg))
+    categories.add('system')
+  if (/voice|speak|say aloud|listen|record audio/i.test(msg))
+    categories.add('media')
+  if (/\bgit\b|commit|push|pull|branch|merge|git status|diff|repo|repository/i.test(msg))
+    categories.add('git')
+  if (/remember|memory|forget|knowledge|learn|recall/i.test(msg))
+    categories.add('memory')
+
+  return Array.from(categories)
+}
+
+export function getToolsForCategories(categories: ToolCategory[]): string[] {
+  const tools = new Set<string>()
+  for (const [toolName, toolCats] of Object.entries(TOOL_CATEGORIES)) {
+    if (toolCats.some(c => (categories as string[]).includes(c))) {
+      tools.add(toolName)
+    }
+  }
+  return Array.from(tools)
 }
