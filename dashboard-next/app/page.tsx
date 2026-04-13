@@ -2394,7 +2394,7 @@ const CHANNEL_CONFIG: Record<string, any> = {
     help: 'Use a Gmail App Password (2FA required). DevOS sends and receives email on your behalf.',
   },
   memory: { title: '🧠 Memory', renderContent: () => <MemoryView />, fields: [], help: '' },
-  skills: { title: '📚 Skills', renderContent: () => <SkillsView />, fields: [], help: '' },
+  skills: { title: '📚 Skills', renderContent: () => <SkillsManager />, fields: [], help: '' },
   mcp:    { title: '🔌 MCP Plugins', renderContent: () => <MCPView />, fields: [], help: '' },
 }
 
