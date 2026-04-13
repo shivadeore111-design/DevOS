@@ -8,7 +8,7 @@
 //   STEP 2: EXECUTE — Code runs each tool, gets real results
 //   STEP 3: RESPOND — LLM sees real results, streams natural language
 
-import { executeTool, TOOLS, getToolTier } from './toolRegistry'
+import { executeTool, TOOLS, getToolTier, detectToolCategories, getToolsForCategories } from './toolRegistry'
 import { livePulse }          from '../coordination/livePulse'
 import { planTool }                        from './planTool'
 import type { Phase }                      from './planTool'
@@ -521,6 +521,17 @@ export async function planWithLLM(
     ? [...ALLOWED_TOOLS, ...mcpToolNames]
     : ALLOWED_TOOLS
 
+  // Dynamic tool loading — filter to relevant tools per task category
+  // Reduces planner prompt from ~15K to ~3-5K tokens without losing capability.
+  // Validation (line ~898) still uses full allTools — filtering is prompt-only.
+  const categories    = detectToolCategories(message)
+  const categoryTools = getToolsForCategories(categories)
+  // MCP tools always included; ALLOWED_TOOLS filtered by detected category
+  const plannerTools  = allTools.filter(t => t.startsWith('mcp_') || categoryTools.includes(t))
+  console.log(
+    `[Tools] ${plannerTools.length}/${allTools.length} tools loaded for categories: ${categories.join(', ')}`
+  )
+
   // Load any relevant skills to guide planning
   const relevantSkills = skillLoader.findRelevant(message)
   const skillContext   = skillLoader.formatForPrompt(relevantSkills)
@@ -544,6 +555,12 @@ export async function planWithLLM(
     ? `\n\n${knowledgeCtxPlanner}\n`
     : ''
 
+  // LESSONS.md — permanent failure rules, injected every session
+  const lessonsContent = loadLessons()
+  const lessonsSection = lessonsContent
+    ? `\n\nPERMANENT FAILURE RULES (learned from past task failures — follow strictly):\n${lessonsContent.split('\n').filter(l => /^\d+\./.test(l.trim())).map(l => `  ${l.trim()}`).join('\n')}\n`
+    : ''
+
   // Sprint 21: unified memory recall — inject relevant memories into planner
   let memoryRecallSection = ''
   try {
@@ -554,12 +571,24 @@ export async function planWithLLM(
     }
   } catch {}
 
+  // Resolve the actual Windows username and home directory at runtime
+  const _sysUsername = process.env.USERNAME || process.env.USER || nodeOs.userInfo().username || 'User'
+  const _sysHomedir  = nodeOs.homedir()
+
   const plannerPrompt = `You are DevOS Planner. Analyze the user request and output a JSON plan.
+
+SYSTEM CONTEXT — use these exact values for all file paths:
+- Windows username: ${_sysUsername}
+- Home directory: ${_sysHomedir}
+- Desktop: ${nodePath.join(_sysHomedir, 'Desktop')}
+- Documents: ${nodePath.join(_sysHomedir, 'Documents')}
+- Downloads: ${nodePath.join(_sysHomedir, 'Downloads')}
+IMPORTANT: NEVER use "C:\\Users\\Aiden" — "Aiden" is the AI assistant's name, NOT the Windows username. Always use "${_sysUsername}" as the username in any path.
 
 CRITICAL RULES:
 1. If the answer is in your training data (capitals, definitions, facts, opinions, advice) → requires_execution: false
 2. ONLY use tools when you need: live data, file operations, running code, or computer control
-3. You MUST ONLY use tools from this exact list: ${allTools.join(', ')}
+3. You MUST ONLY use tools from this exact list: ${plannerTools.join(', ')}
 4. DO NOT invent tools like "identify_top_3", "generate_report", "analyze" — these don't exist
 5. Processing/analysis happens in your response — NOT as a tool step
 6. NEVER use placeholders like "{{result}}" or "{output}" — steps must have real concrete inputs
@@ -574,6 +603,7 @@ WHEN TO USE TOOLS vs NOT:
 - Running code → run_python, run_node
 - System info → system_info
 - Research with real sources → deep_research
+- Git repo state (status, branch, commits, changes) → git_status — ALWAYS run the tool, never answer from training data
 
 ❌ Do NOT use tools for:
 - "What is the capital of X" → just answer
@@ -591,6 +621,9 @@ TOOL INPUT RULES:
 - get_stocks: { "market": "NSE", "type": "gainers" }  — type: gainers | losers | active
 - get_market_data: { "symbol": "RELIANCE" }  — real-time price, change%, volume for any stock (NSE/BSE/US)
 - get_company_info: { "symbol": "RELIANCE" }  — company profile, sector, P/E, EPS, revenue
+- git_status: { "path": "C:\\\\Users\\\\shiva\\\\DevOS" }  — show git branch, modified files, recent commits. Use for "git status", "show commits", "what changed in repo"
+- git_commit: { "message": "commit message" }  — stage all and commit
+- git_push: { "remote": "origin", "branch": "main" }  — push to remote
 - wait: { "ms": 2000 }  — Pause execution. Use after open_browser, after clicks, after any UI action that needs time to complete. Max 5000ms.
 
 COMPUTER CONTROL RULES — follow strictly when controlling mouse/keyboard/browser:
@@ -646,8 +679,8 @@ TIER 1 (USE FIRST): respond, web_search, fetch_page, fetch_url, deep_research, g
   → ALWAYS try these before anything else
   → If a task CAN be done via API/data tool, use that
 
-TIER 2 (USE SECOND): file_write, file_read, file_list, shell_exec, run_powershell, run_python, run_node, code_interpreter_python, code_interpreter_node, git_commit, git_push, clipboard_read, clipboard_write
-  → Use when you need to read/write files or run scripts
+TIER 2 (USE SECOND): file_write, file_read, file_list, shell_exec, run_powershell, run_python, run_node, code_interpreter_python, code_interpreter_node, git_status, git_commit, git_push, clipboard_read, clipboard_write
+  → Use when you need to read/write files, run scripts, or run git commands
 
 TIER 3 (USE THIRD): open_browser, browser_click, browser_type, browser_extract, browser_screenshot, window_list, window_focus, app_launch, app_close
   → ONLY when task requires interacting with a website UI
@@ -668,7 +701,7 @@ FAILURE REPLANNING RULES (when message contains "previous approach failed at"):
 - Use ONLY the specific alternative approach mentioned in the message
 - DO NOT add web_search, deep_research, file_write, or notify unless directly needed
 - DO NOT add unrelated analysis or comparison steps
-${skillContext}${memorySection}${learningSection}${knowledgeSection}${memoryRecallSection}${(() => { const s = getActiveGoalsSummary(); return s ? `\n\n## Your Active Goals\n${s}` : '' })()}
+${skillContext}${memorySection}${learningSection}${knowledgeSection}${memoryRecallSection}${lessonsSection}${(() => { const s = getActiveGoalsSummary(); return s ? `\n\n## Your Active Goals\n${s}` : '' })()}
 Output ONLY valid JSON, nothing else:`
 
   const cleanHistory = history
@@ -733,6 +766,13 @@ Output ONLY valid JSON, nothing else:`
   let curApiKey   = apiKey
   let curModel    = model
   let curProvider = provider
+  let curApiName  = provider  // tracks the api entry name (e.g. 'groq-1') for markRateLimited
+  {
+    const tiered = getModelForTask('planner')
+    if (tiered.apiKey || tiered.providerName === 'ollama') {
+      curApiName = tiered.apiName
+    }
+  }
   let raw         = ''
   let parsed: any = null
 
@@ -756,9 +796,9 @@ Output ONLY valid JSON, nothing else:`
       }
 
       if (!raw || raw.trim().length === 0) {
-        console.warn(`[Planner] Empty response attempt ${attempt + 1} (${curProvider}) — marking and rotating`)
+        console.warn(`[Planner] Empty response attempt ${attempt + 1} (${curApiName}) — marking and rotating`)
         try {
-          markRateLimited(curProvider)
+          markRateLimited(curApiName)
         } catch {}
       } else {
         const jsonMatch = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').match(/\{[\s\S]*\}/)
@@ -766,12 +806,12 @@ Output ONLY valid JSON, nothing else:`
           console.warn(`[Planner] No JSON attempt ${attempt + 1}: ${raw.slice(0, 100)}`)
         } else {
           parsed = JSON.parse(jsonMatch[0])
-          try { incrementUsage(curProvider) } catch {}
+          try { incrementUsage(curApiName) } catch {}
           break // success — exit retry loop
         }
       }
     } catch (e: any) {
-      console.warn(`[Planner] Attempt ${attempt + 1} error (${curProvider}): ${e.message}`)
+      console.warn(`[Planner] Attempt ${attempt + 1} error (${curApiName}): ${e.message}`)
       if (
         e.message?.includes('timeout') ||
         e.message?.includes('429') ||
@@ -779,8 +819,8 @@ Output ONLY valid JSON, nothing else:`
         e.message?.includes('aborted')
       ) {
         try {
-          markRateLimited(curProvider)
-          console.log(`[Planner] Marked ${curProvider} as rate limited — will rotate away`)
+          markRateLimited(curApiName)
+          console.log(`[Planner] Marked ${curApiName} as rate limited — will rotate away`)
         } catch {}
       }
     }
@@ -795,12 +835,14 @@ Output ONLY valid JSON, nothing else:`
         curApiKey   = tiered.apiKey
         curModel    = tiered.model
         curProvider = tiered.providerName
+        curApiName  = tiered.apiName
         console.log(`[Planner] Rotating (tiered) to ${tiered.apiName} (${curProvider}/${curModel})`)
       } else {
         const cfg = loadConfig()
         curApiKey   = ''
         curModel    = cfg.model?.activeModel || 'mistral:7b'
         curProvider = 'ollama'
+        curApiName  = 'ollama'
         console.log(`[Planner] No cloud APIs — falling back to Ollama (${curModel})`)
       }
     } catch {}
@@ -1179,6 +1221,183 @@ Respond in JSON only:
 
 // ── STEP 2: executePlan ────────────────────────────────────────
 
+// ── validateResultQuality — lightweight output sanity check ──
+function validateResultQuality(
+  tool: string,
+  input: any,
+  output: any
+): { valid: boolean; reason?: string } {
+
+  if (tool === 'web_search') {
+    if (!output || output === '[]' || output === 'No results') {
+      return { valid: false, reason: 'Empty search results' }
+    }
+    try {
+      const results = typeof output === 'string' ? JSON.parse(output) : output
+      if (Array.isArray(results) && results.length === 0) {
+        return { valid: false, reason: 'Zero search results' }
+      }
+    } catch {}
+  }
+
+  if (tool === 'fetch_url' || tool === 'fetch_page') {
+    const text = String(output).toLowerCase()
+    if (text.includes('404') && text.includes('not found')) {
+      return { valid: false, reason: '404 page returned' }
+    }
+    if (text.includes('403') && text.includes('forbidden')) {
+      return { valid: false, reason: '403 forbidden' }
+    }
+    if (text.length < 50) {
+      return { valid: false, reason: 'Suspiciously short page content' }
+    }
+  }
+
+  if (tool === 'get_market_data') {
+    const text = String(output)
+    if (text.includes('error') || text.includes('failed') || text.includes('null')) {
+      return { valid: false, reason: 'Market data returned error' }
+    }
+  }
+
+  if (tool === 'file_read') {
+    if (!output || String(output).trim().length === 0) {
+      return { valid: false, reason: 'Empty file content' }
+    }
+  }
+
+  if (tool === 'run_python' || tool === 'run_node' || tool === 'shell_exec') {
+    const text = String(output).toLowerCase()
+    if (text.includes('traceback') || text.includes('error:') ||
+        text.includes('exception') || text.includes('syntaxerror')) {
+      return { valid: false, reason: 'Code execution error in output' }
+    }
+  }
+
+  if (tool === 'open_browser') {
+    const text = String(output).toLowerCase()
+    if (text.includes('err_') || text.includes('timed out') ||
+        text.includes('cannot navigate')) {
+      return { valid: false, reason: 'Browser navigation failed' }
+    }
+  }
+
+  return { valid: true }
+}
+
+// ── LESSONS.md — permanent failure rules ──────────────────────
+// Auto-appended on task failure. Injected into every planning session.
+
+const LESSONS_PATH = nodePath.join(process.cwd(), 'workspace', 'LESSONS.md')
+const LESSONS_CAP  = 50
+const LESSONS_SUMMARIZE_AT = 25  // when cap exceeded, summarize oldest N lessons
+
+function loadLessons(): string {
+  try {
+    if (!nodeFs.existsSync(LESSONS_PATH)) return ''
+    return nodeFs.readFileSync(LESSONS_PATH, 'utf-8')
+  } catch {
+    return ''
+  }
+}
+
+function appendLesson(lesson: string): void {
+  try {
+    nodeFs.mkdirSync(nodePath.dirname(LESSONS_PATH), { recursive: true })
+
+    const today     = new Date().toISOString().split('T')[0]
+    const newLine   = `\n${lesson.startsWith('[') ? lesson : `[${today}] ${lesson}`}`
+
+    let content = nodeFs.existsSync(LESSONS_PATH)
+      ? nodeFs.readFileSync(LESSONS_PATH, 'utf-8')
+      : '# LESSONS.md — Permanent Failure Rules\n\n## Rules\n'
+
+    // Count existing lesson lines (numbered lines in ## Rules section)
+    const lessonLines = content
+      .split('\n')
+      .filter(l => /^\d+\./.test(l.trim()))
+
+    if (lessonLines.length >= LESSONS_CAP) {
+      // Summarize oldest LESSONS_SUMMARIZE_AT lessons into 5 consolidated rules
+      console.log(`[Lessons] Cap reached (${lessonLines.length}). Summarizing oldest ${LESSONS_SUMMARIZE_AT} lessons.`)
+      const oldest    = lessonLines.slice(0, LESSONS_SUMMARIZE_AT)
+      const remaining = lessonLines.slice(LESSONS_SUMMARIZE_AT)
+
+      const summarized = [
+        `[consolidated] Avoid retrying tools that fail with permission or auth errors — report immediately.`,
+        `[consolidated] When web_search returns empty, rephrase with different keywords before retrying.`,
+        `[consolidated] Do not use error-string outputs as valid data — fall back to alternative tools.`,
+        `[consolidated] When replan is triggered repeatedly for the same goal, stop and report.`,
+        `[consolidated] Browser navigation failures (ERR_/timeout) require a fresh approach, not a retry.`,
+      ]
+
+      const headerLines = content.split('\n').filter(l => !(/^\d+\./.test(l.trim())))
+      const newRules    = [...summarized, ...remaining, lesson.startsWith('[') ? lesson : `[${today}] ${lesson}`]
+      const numbered    = newRules.map((r, i) => `${i + 1}. ${r.replace(/^\d+\.\s*/, '')}`)
+      const headerText  = headerLines.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd()
+      content = `${headerText}\n\n${numbered.join('\n')}\n`
+      console.log(`[Lessons] Summarized ${oldest.length} old lessons → 5 rules. Total: ${numbered.length}`)
+    } else {
+      const nextNum = lessonLines.length + 1
+      content = content.trimEnd() + `\n${nextNum}.${newLine}\n`
+    }
+
+    nodeFs.writeFileSync(LESSONS_PATH, content, 'utf-8')
+    console.log(`[Lessons] Appended: ${lesson.slice(0, 80)}`)
+  } catch (e: any) {
+    console.error('[Lessons] Failed to append lesson:', e.message)
+  }
+}
+
+// ── executeToolWithRetry — step-level retry with exponential backoff ──
+// Tools that mutate state are excluded from retry to prevent double-execution.
+const NO_RETRY_TOOLS = new Set([
+  'shell_exec', 'run_python', 'run_node', 'notify',
+  'mouse_click', 'keyboard_type', 'keyboard_press',
+  'app_launch', 'app_close',
+])
+
+async function executeToolWithRetry(tool: string, input: any, maxRetries = 2): Promise<any> {
+  const retryable = !NO_RETRY_TOOLS.has(tool)
+  const effectiveMax = retryable ? maxRetries : 0
+
+  for (let attempt = 0; attempt <= effectiveMax; attempt++) {
+    try {
+      const result = await executeTool(tool, input)
+      if (result.success) {
+        const quality = validateResultQuality(tool, input, result.output || result)
+        if (!quality.valid) {
+          console.log(`[Quality] ${tool} returned but quality check failed: ${quality.reason}`)
+          if (attempt < effectiveMax) {
+            const delay = Math.min(1000 * Math.pow(2, attempt), 5000)
+            console.log(`[Quality] Retrying ${tool} in ${delay}ms`)
+            await new Promise(r => setTimeout(r, delay))
+            continue
+          }
+          console.log(`[Quality] ${tool} — accepting low-quality result after ${effectiveMax} retries`)
+          appendLesson(`${tool} produced low-quality output (${quality.reason}) after ${effectiveMax} retries — consider alternative approach for this tool.`)
+        }
+        return result
+      }
+
+      if (attempt < effectiveMax) {
+        const delay = Math.min(1000 * Math.pow(2, attempt), 5000)
+        console.log(`[Exec] ${tool} failed, retrying in ${delay}ms (attempt ${attempt + 1}/${effectiveMax})`)
+        await new Promise(r => setTimeout(r, delay))
+      } else {
+        return result
+      }
+    } catch (error: any) {
+      if (attempt >= effectiveMax) throw error
+      const delay = Math.min(1000 * Math.pow(2, attempt), 5000)
+      console.log(`[Exec] ${tool} threw error, retrying in ${delay}ms`)
+      await new Promise(r => setTimeout(r, delay))
+    }
+  }
+  appendLesson(`${tool} failed after ${effectiveMax} retries — avoid this tool or approach for similar tasks.`)
+  return { success: false, output: '', error: 'Max retries exceeded', duration: 0, retries: effectiveMax }
+}
+
 // —— Sprint 8: dependency-group builder ——————————————
 // Groups consecutive tool steps into batches: parallel-safe tools are
 // batched together; sequential tools break the batch.
@@ -1302,6 +1521,9 @@ async function executeSingleStep(
     return { step: step.step, tool: step.tool, input: step.input, success: false, output: '', error: budgetMsg, duration: 0 }
   }
 
+  const totalSteps = plan.plan.length
+  const stepStart  = Date.now()
+  console.log(`[Exec] Step ${step.step}/${totalSteps}: ${step.tool} — RUNNING`)
   console.log(`[ExecutePlan] Step ${step.step}: ${step.tool} — input: ${JSON.stringify(step.input).slice(0, 100)}`)
   livePulse.tool('Aiden', step.tool, JSON.stringify(step.input).slice(0, 80))
 
@@ -1333,8 +1555,8 @@ async function executeSingleStep(
   // Mark step started in persistent state
   taskStateManager.startStep(state, step.step, step.tool, resolvedInput)
 
-  // Execute the tool (retries + per-tool timeout handled internally)
-  let toolResult = await executeTool(step.tool, resolvedInput)
+  // Execute the tool (step-level retry + per-tool timeout)
+  let toolResult = await executeToolWithRetry(step.tool, resolvedInput)
 
   // file_write fallback — retry at Desktop if original path failed
   if (!toolResult.success && step.tool === 'file_write' && resolvedInput.path) {
@@ -1375,10 +1597,37 @@ async function executeSingleStep(
     }
   }
 
+  const execStatus = stepResult.success ? 'SUCCESS' : 'FAILED'
+  const execDuration = Date.now() - stepStart
+  console.log(`[Exec] Step ${step.step}/${totalSteps}: ${step.tool} — ${execStatus} (${execDuration}ms)`)
+  if (!stepResult.success) {
+    console.log(`[Exec] Step ${step.step}: ${step.tool} — FAILED after ${toolResult.retries ?? 0} retries: ${stepResult.error || 'unknown error'}`)
+  }
   console.log(`[ExecutePlan] Step ${step.step} result: ${stepResult.success ? '✓' : '✗'} ${stepResult.error || stepResult.output?.slice(0, 80) || ''}`)
   console.log(`[Tool] ${step.tool} (Tier ${getToolTier(step.tool)}) — ${stepResult.duration}ms`)
   stepOutputs[step.step] = stepResult.output
   updateNode('main', { currentTool: step.tool, toolCalls: Object.keys(stepOutputs).length, tier: getToolTier(step.tool), status: 'active' })
+
+  // Persist step to executions log for crash recovery / audit
+  try {
+    const execDir = nodePath.join(process.cwd(), 'workspace', 'executions')
+    nodeFs.mkdirSync(execDir, { recursive: true })
+    const execFile = nodePath.join(execDir, `exec_${state.id}.json`)
+    const existing = nodeFs.existsSync(execFile)
+      ? JSON.parse(nodeFs.readFileSync(execFile, 'utf8'))
+      : { id: `exec_${state.id}`, goal: plan.goal, steps: [], status: 'in_progress', startedAt: Date.now() }
+    existing.steps = existing.steps.filter((s: any) => s.step !== step.step)
+    existing.steps.push({
+      step:      step.step,
+      tool:      step.tool,
+      status:    stepResult.success ? 'success' : 'failed',
+      duration:  execDuration,
+      timestamp: new Date().toISOString(),
+      error:     stepResult.error,
+    })
+    existing.totalDuration = Date.now() - (existing.startedAt || Date.now())
+    nodeFs.writeFileSync(execFile, JSON.stringify(existing, null, 2))
+  } catch { /* non-blocking — never crash the agent loop */ }
   onStep(step, stepResult)
 
   // Audit trail
@@ -1500,6 +1749,7 @@ async function executeSingleStep(
               .map(([tool, f]) => `- ${tool}: ${f.error}`)
               .join('\n')
             console.log(`[Replan] All ${MAX_REPLANS} replans exhausted for goal: "${plan.goal.slice(0, 60)}"`)
+            appendLesson(`Replan exhausted (${MAX_REPLANS} attempts) for goal: "${plan.goal.slice(0, 80)}". Failed tools: ${Array.from(replanState.failedSteps.keys()).join(', ')}.`)
             results.push({
               step: step.step + 1, tool: 'replan_exhausted', input: {},
               success: false, output: '',
@@ -1599,6 +1849,22 @@ async function executeSingleStep(
 
     skillTeacher.recordFailure(plan.goal, executedTools)
   }
+
+  // Execution summary
+  const successCount    = results.filter(r => r.success).length
+  const execTotalMs     = Date.now() - planStart
+  console.log(`[Exec] Complete: ${successCount}/${results.length} steps succeeded in ${execTotalMs}ms`)
+
+  // Finalize executions log
+  try {
+    const execFile = nodePath.join(process.cwd(), 'workspace', 'executions', `exec_${state.id}.json`)
+    if (nodeFs.existsSync(execFile)) {
+      const log = JSON.parse(nodeFs.readFileSync(execFile, 'utf8'))
+      log.status        = allSucceeded ? 'completed' : 'failed'
+      log.totalDuration = execTotalMs
+      nodeFs.writeFileSync(execFile, JSON.stringify(log, null, 2))
+    }
+  } catch { /* non-blocking */ }
 
   return results
 }
@@ -1887,7 +2153,7 @@ CRITICAL RULES FOR YOUR RESPONSE:
     if (results && results.length > 0 && results.some(r => r.success)) {
       const successResults = results.filter(r => r.success)
       const lastResult     = successResults[successResults.length - 1]
-      onToken(lastResult.output || 'Done.')
+      onToken(lastResult.output || 'Here are the results.')
       return
     }
 
