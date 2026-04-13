@@ -469,6 +469,76 @@ async function racePlannerAPIs(
   return null
 }
 
+// ── Compaction protection — critical files survive context reset ──
+// When the sliding context window summarizes older messages, we re-inject
+// these files word-for-word as a system message so identity and rules survive.
+
+const COMPACTION_PROTECTED = [
+  'SOUL.md',            // personality + boundaries
+  'STANDING_ORDERS.md', // persistent instructions
+  'LESSONS.md',         // failure rules
+  'GOALS.md',           // active goals
+  'USER.md',            // user profile
+]
+
+async function rebuildContextAfterCompaction(
+  contextHistory: any[],
+): Promise<any[]> {
+  const workspaceDir      = nodePath.join(process.cwd(), 'workspace')
+  const protectedContent: string[] = []
+
+  // Read all protected files
+  for (const filename of COMPACTION_PROTECTED) {
+    try {
+      const filepath = nodePath.join(workspaceDir, filename)
+      if (nodeFs.existsSync(filepath)) {
+        const content = nodeFs.readFileSync(filepath, 'utf-8')
+        if (content.trim()) {
+          protectedContent.push(`## ${filename}\n${content.trim()}`)
+        }
+      }
+    } catch {}
+  }
+
+  // Top 5 instincts by confidence (read directly from workspace/instincts.json)
+  let instinctCount = 0
+  try {
+    const instinctsPath = nodePath.join(workspaceDir, 'instincts.json')
+    if (nodeFs.existsSync(instinctsPath)) {
+      const raw      = JSON.parse(nodeFs.readFileSync(instinctsPath, 'utf-8')) as Array<{
+        action:     string
+        confidence: number
+        status:     string
+      }>
+      const topInsts = raw
+        .filter(i => i.status === 'active' && i.confidence >= 0.7)
+        .sort((a, b) => b.confidence - a.confidence)
+        .slice(0, 5)
+      if (topInsts.length > 0) {
+        const instinctText = topInsts
+          .map(i => `- ${i.action} (confidence: ${(i.confidence * 100).toFixed(0)}%)`)
+          .join('\n')
+        protectedContent.push(`## Active Instincts\n${instinctText}`)
+        instinctCount = topInsts.length
+      }
+    }
+  } catch {}
+
+  if (protectedContent.length === 0) return contextHistory
+
+  console.log(
+    `[Compaction] Protected ${COMPACTION_PROTECTED.length} files ` +
+    `+ ${instinctCount} instincts — re-injected into context`,
+  )
+
+  const protectedMessage = {
+    role:    'system',
+    content: `[PROTECTED CONTEXT — survives compaction]\n\n${protectedContent.join('\n\n---\n\n')}`,
+  }
+
+  return [protectedMessage, ...contextHistory]
+}
+
 // ── STEP 1: planWithLLM ────────────────────────────────────────
 
 export async function planWithLLM(
@@ -725,10 +795,11 @@ Output ONLY valid JSON, nothing else:`
           '', getOllamaModelForTask('executor'), 'ollama',
         ).catch(() => null)
         if (summary) {
-          contextHistory = [{ role: 'system', content: `Earlier conversation summary: ${summary}` }, ...recent]
+          const compacted = [{ role: 'system', content: `Earlier conversation summary: ${summary}` }, ...recent]
+          contextHistory  = await rebuildContextAfterCompaction(compacted)
           console.log(`[Planner] Context window: summarized ${older.length} older messages`)
         } else {
-          contextHistory = recent
+          contextHistory = await rebuildContextAfterCompaction(recent)
         }
       } catch {
         contextHistory = recent
