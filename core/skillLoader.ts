@@ -147,8 +147,14 @@ export class SkillLoader {
     })
   }
 
-  loadAll(): Skill[] {
-    if (this.cache) return this.cache
+  // loadAllRaw — bypasses the disabled-skills filter
+  // Used by GET /api/skills so the UI can show disabled skills too
+  loadAllRaw(): Skill[] {
+    return this.loadAll(/* includeDisabled */ true)
+  }
+
+  loadAll(includeDisabled = false): Skill[] {
+    if (!includeDisabled && this.cache) return this.cache
 
     const skills: Skill[] = []
 
@@ -160,8 +166,8 @@ export class SkillLoader {
           const skillPath = path.join(dir, entry.name, 'SKILL.md')
           if (!fs.existsSync(skillPath)) continue
           try {
-            const raw       = fs.readFileSync(skillPath, 'utf-8')
-            const sanitized = sanitizeSkill(raw, entry.name)
+            const fileContent = fs.readFileSync(skillPath, 'utf-8')
+            const sanitized   = sanitizeSkill(fileContent, entry.name)
             if (!sanitized) {
               logBlockedSkill(entry.name, 'injection pattern detected')
               continue
@@ -192,11 +198,26 @@ export class SkillLoader {
       console.log(`[SkillLoader] Deduplicated ${skills.length} → ${deduped.length} skills (removed ${skills.length - deduped.length} duplicates)`)
     }
 
-    this.cache = deduped
-    if (deduped.length > 0) {
-      console.log(`[SkillLoader] Loaded ${deduped.length} skills: ${deduped.map(s => s.name).join(', ')}`)
+    // Filter out disabled skills (unless caller wants all)
+    const DISABLED_PATH = path.join(process.cwd(), 'workspace', 'disabled-skills.json')
+    let disabled: Set<string> = new Set()
+    if (!includeDisabled) {
+      try {
+        const raw = fs.readFileSync(DISABLED_PATH, 'utf-8')
+        disabled  = new Set(JSON.parse(raw) as string[])
+      } catch {}
     }
-    return deduped
+
+    const filtered = includeDisabled ? deduped : deduped.filter(s => !disabled.has(s.name))
+
+    if (!includeDisabled) {
+      this.cache = filtered
+      if (filtered.length > 0) {
+        console.log(`[SkillLoader] Loaded ${filtered.length} skills: ${filtered.map(s => s.name).join(', ')}`)
+      }
+    }
+
+    return filtered
   }
 
   private parse(raw: string, filePath: string): Skill | null {

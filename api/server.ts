@@ -2801,23 +2801,50 @@ export function createApiServer(): Express {
     }
   })
 
-  // GET /api/skills â€” list all available skills
+  // ── Skills helpers ────────────────────────────────────────────
+  const DISABLED_SKILLS_PATH = path.join(WORKSPACE_ROOT, 'workspace', 'disabled-skills.json')
+
+  function loadDisabledSkills(): Set<string> {
+    try {
+      const raw = fs.readFileSync(DISABLED_SKILLS_PATH, 'utf-8')
+      const arr = JSON.parse(raw) as string[]
+      return new Set(arr)
+    } catch { return new Set() }
+  }
+
+  function saveDisabledSkills(disabled: Set<string>): void {
+    fs.mkdirSync(path.dirname(DISABLED_SKILLS_PATH), { recursive: true })
+    fs.writeFileSync(DISABLED_SKILLS_PATH, JSON.stringify(Array.from(disabled), null, 2), 'utf-8')
+  }
+
+  function deriveSkillSource(filePath: string): 'built-in' | 'workspace' | 'learned' | 'approved' {
+    const fp = filePath.replace(/\\/g, '/')
+    if (fp.includes('workspace/skills/approved')) return 'approved'
+    if (fp.includes('workspace/skills/learned'))  return 'learned'
+    if (fp.includes('workspace/skills'))           return 'workspace'
+    return 'built-in'
+  }
+
+  // GET /api/skills — list all available skills
   app.get('/api/skills', (_req: Request, res: Response) => {
     try {
-      const skills = skillLoader.loadAll()
+      const disabled = loadDisabledSkills()
+      const skills   = skillLoader.loadAllRaw ? skillLoader.loadAllRaw() : skillLoader.loadAll()
       res.json(skills.map(s => ({
         name:        s.name,
         description: s.description,
         version:     s.version,
         tags:        s.tags,
         filePath:    s.filePath,
+        source:      deriveSkillSource(s.filePath),
+        enabled:     !disabled.has(s.name),
       })))
     } catch (e: any) {
       res.status(500).json({ error: e.message })
     }
   })
 
-  // GET /api/skills/relevant?q=query â€” find skills for a query
+  // GET /api/skills/relevant?q=query — find skills for a query
   app.get('/api/skills/relevant', (req: Request, res: Response) => {
     const query = (req.query.q as string) || ''
     if (!query) { res.status(400).json({ error: 'q parameter required' }); return }
@@ -2825,11 +2852,50 @@ export function createApiServer(): Express {
     res.json(relevant.map(s => ({ name: s.name, description: s.description, tags: s.tags })))
   })
 
-  // POST /api/skills/refresh â€” reload all skills from disk
+  // POST /api/skills/refresh — reload all skills from disk
   app.post('/api/skills/refresh', (_req: Request, res: Response) => {
     skillLoader.refresh()
     const skills = skillLoader.loadAll()
     res.json({ success: true, count: skills.length, skills: skills.map(s => s.name) })
+  })
+
+  // POST /api/skills/:name/toggle — enable or disable a skill
+  app.post('/api/skills/:name/toggle', (req: Request, res: Response) => {
+    try {
+      const name     = String(req.params.name)
+      const disabled = loadDisabledSkills()
+      if (disabled.has(name)) {
+        disabled.delete(name)
+      } else {
+        disabled.add(name)
+      }
+      saveDisabledSkills(disabled)
+      skillLoader.refresh()
+      res.json({ success: true, name, enabled: !disabled.has(name) })
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
+  // DELETE /api/skills/:name — delete a learned or approved skill
+  app.delete('/api/skills/:name', (req: Request, res: Response) => {
+    try {
+      const name   = String(req.params.name)
+      const skills = skillLoader.loadAll()
+      const skill  = skills.find(s => s.name === name)
+      if (!skill) { res.status(404).json({ error: 'Skill not found' }); return }
+      const source = deriveSkillSource(skill.filePath)
+      if (source === 'built-in') { res.status(403).json({ error: 'Cannot delete built-in skills' }); return }
+      const skillDir = path.dirname(skill.filePath)
+      fs.rmSync(skillDir, { recursive: true, force: true })
+      // also remove from disabled list if present
+      const disabled = loadDisabledSkills()
+      if (disabled.has(name)) { disabled.delete(name); saveDisabledSkills(disabled) }
+      skillLoader.refresh()
+      res.json({ success: true, name })
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
   })
 
   // GET /api/tasks â€” list all tasks with status

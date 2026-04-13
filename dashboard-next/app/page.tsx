@@ -2168,43 +2168,139 @@ function MemoryView() {
   )
 }
 
-// ── SkillsView ────────────────────────────────────────────────
+// ── SkillsManager ─────────────────────────────────────────────
 
-function SkillsView() {
-  const [skills, setSkills] = useState<any[]>([])
-  useEffect(() => {
-    fetch('http://localhost:4200/api/skills').then(r => r.json()).then(d => setSkills(d.skills || [])).catch(() => {})
-  }, [])
+const SOURCE_COLORS: Record<string, string> = {
+  'built-in': 'var(--orange)',
+  'workspace': '#60a5fa',
+  'learned':   '#34d399',
+  'approved':  '#a78bfa',
+}
+
+function SkillsManager() {
+  const [skills, setSkills]       = useState<any[]>([])
+  const [loading, setLoading]     = useState(true)
+  const [toggling, setToggling]   = useState<string | null>(null)
+  const [deleting, setDeleting]   = useState<string | null>(null)
+  const [filter, setFilter]       = useState<'all' | 'built-in' | 'learned' | 'approved' | 'workspace'>('all')
+
+  const load = () => {
+    setLoading(true)
+    fetch('http://localhost:4200/api/skills')
+      .then(r => r.json())
+      .then(d => { setSkills(Array.isArray(d) ? d : []); setLoading(false) })
+      .catch(() => setLoading(false))
+  }
+
+  useEffect(() => { load() }, [])
+
+  const toggle = async (name: string) => {
+    setToggling(name)
+    try {
+      await fetch(`http://localhost:4200/api/skills/${encodeURIComponent(name)}/toggle`, { method: 'POST' })
+      setSkills(prev => prev.map(s => s.name === name ? { ...s, enabled: !s.enabled } : s))
+    } catch {}
+    setToggling(null)
+  }
+
+  const remove = async (name: string) => {
+    if (!confirm(`Delete skill "${name}"? This cannot be undone.`)) return
+    setDeleting(name)
+    try {
+      const r = await fetch(`http://localhost:4200/api/skills/${encodeURIComponent(name)}`, { method: 'DELETE' })
+      if (r.ok) setSkills(prev => prev.filter(s => s.name !== name))
+    } catch {}
+    setDeleting(null)
+  }
+
+  const refresh = () => {
+    fetch('http://localhost:4200/api/skills/refresh', { method: 'POST' }).then(load).catch(load)
+  }
+
+  const visible = filter === 'all' ? skills : skills.filter(s => s.source === filter)
+  const counts  = skills.reduce((acc: Record<string, number>, s) => {
+    acc[s.source] = (acc[s.source] || 0) + 1; return acc
+  }, {})
+
   return (
     <div style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>
-      {skills.length === 0 && (
-        <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 20 }}>No skills loaded yet</div>
+      {/* Summary bar */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+        {(['all', 'built-in', 'learned', 'approved', 'workspace'] as const).map(f => {
+          const count = f === 'all' ? skills.length : (counts[f] || 0)
+          if (f !== 'all' && count === 0) return null
+          return (
+            <button key={f} type="button" onClick={() => setFilter(f)} style={{
+              padding: '3px 8px', borderRadius: 4, cursor: 'pointer',
+              border: `1px solid ${filter === f ? (f === 'all' ? 'var(--orange)' : SOURCE_COLORS[f]) : 'var(--border)'}`,
+              background: filter === f ? 'rgba(255,255,255,0.05)' : 'transparent',
+              color: filter === f ? (f === 'all' ? 'var(--orange)' : SOURCE_COLORS[f]) : 'var(--muted2)',
+              fontSize: 10,
+            }}>{f} ({count})</button>
+          )
+        })}
+        <button type="button" onClick={refresh} style={{
+          marginLeft: 'auto', padding: '3px 10px', borderRadius: 4,
+          border: '1px solid var(--border)', background: 'transparent',
+          color: 'var(--muted2)', fontSize: 10, cursor: 'pointer',
+        }}>⟲ Refresh</button>
+      </div>
+
+      {/* List */}
+      {loading && <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 20 }}>Loading skills…</div>}
+      {!loading && visible.length === 0 && (
+        <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 20 }}>No skills found</div>
       )}
-      {skills.map((skill: any, i: number) => (
-        <div key={i} style={{ padding: '10px 12px', marginBottom: 8, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 6 }}>
-          <div style={{ color: 'var(--text)', fontWeight: 600, marginBottom: 3 }}>{skill.name}</div>
-          <div style={{ color: 'var(--muted2)', fontSize: 11, lineHeight: 1.5 }}>{skill.description}</div>
-          {skill.confidence !== undefined && (
-            <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ flex: 1, height: 3, background: 'var(--border)', borderRadius: 2 }}>
-                <div style={{ width: `${skill.confidence * 100}%`, height: '100%', background: 'var(--orange)', borderRadius: 2 }} />
+      {visible.map((skill: any) => {
+        const isBuiltIn  = skill.source === 'built-in'
+        const srcColor   = SOURCE_COLORS[skill.source] || 'var(--muted)'
+        const isToggling = toggling === skill.name
+        const isDeleting = deleting === skill.name
+        return (
+          <div key={skill.name} style={{
+            padding: '10px 12px', marginBottom: 6,
+            background: skill.enabled ? 'var(--bg)' : 'rgba(0,0,0,0.3)',
+            border: `1px solid ${skill.enabled ? 'var(--border)' : 'rgba(255,255,255,0.06)'}`,
+            borderRadius: 6, opacity: skill.enabled ? 1 : 0.55,
+            transition: 'opacity 0.2s',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                  <span style={{ color: 'var(--text)', fontWeight: 600 }}>{skill.name}</span>
+                  <span style={{ fontSize: 9, color: srcColor, border: `1px solid ${srcColor}`, borderRadius: 3, padding: '0 4px', opacity: 0.8 }}>{skill.source}</span>
+                  {skill.version && <span style={{ fontSize: 9, color: 'var(--muted)', opacity: 0.6 }}>v{skill.version}</span>}
+                </div>
+                <div style={{ color: 'var(--muted2)', fontSize: 11, lineHeight: 1.4 }}>{skill.description || '—'}</div>
+                {skill.tags?.length > 0 && (
+                  <div style={{ marginTop: 4, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                    {skill.tags.map((tag: string) => (
+                      <span key={tag} style={{ fontSize: 9, color: 'var(--muted)', background: 'var(--bg2)', borderRadius: 3, padding: '1px 5px' }}>{tag}</span>
+                    ))}
+                  </div>
+                )}
               </div>
-              <span style={{ fontSize: 10, color: 'var(--muted)' }}>{Math.round(skill.confidence * 100)}%</span>
+              <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                {/* Toggle */}
+                <button type="button" onClick={() => toggle(skill.name)} disabled={isToggling} title={skill.enabled ? 'Disable' : 'Enable'} style={{
+                  padding: '3px 7px', borderRadius: 4, cursor: 'pointer',
+                  border: `1px solid ${skill.enabled ? 'rgba(52,211,153,0.4)' : 'var(--border)'}`,
+                  background: skill.enabled ? 'rgba(52,211,153,0.08)' : 'transparent',
+                  color: skill.enabled ? '#34d399' : 'var(--muted)', fontSize: 10,
+                }}>{isToggling ? '…' : skill.enabled ? 'ON' : 'OFF'}</button>
+                {/* Delete — only for non built-in */}
+                {!isBuiltIn && (
+                  <button type="button" onClick={() => remove(skill.name)} disabled={isDeleting} title="Delete skill" style={{
+                    padding: '3px 7px', borderRadius: 4, cursor: 'pointer',
+                    border: '1px solid rgba(239,68,68,0.3)', background: 'transparent',
+                    color: 'var(--red)', fontSize: 10,
+                  }}>{isDeleting ? '…' : '✕'}</button>
+                )}
+              </div>
             </div>
-          )}
-        </div>
-      ))}
-      <button
-        type="button"
-        onClick={() => fetch('http://localhost:4200/api/skills/refresh', { method: 'POST' })
-          .then(() => fetch('http://localhost:4200/api/skills').then(r => r.json()).then(d => setSkills(d.skills || [])))
-          .catch(() => {})}
-        style={{
-          width: '100%', padding: '8px', marginTop: 8,
-          background: 'var(--bg2)', border: '1px solid var(--border2)',
-          borderRadius: 6, color: 'var(--muted2)', fontFamily: 'var(--mono)',
-          fontSize: 11, cursor: 'pointer',
-        }}>⟲ Refresh Skills</button>
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -3125,6 +3221,7 @@ const SETTINGS_TABS = [
   { id: 'model',    label: '🧠 Model'        },
   { id: 'usage',    label: '📊 Usage'        },
   { id: 'knowledge',label: '📚 Knowledge'   },
+  { id: 'skills',   label: '🎯 Skills'      },
   { id: 'channels', label: '💬 Channels'    },
   { id: 'guide',    label: '📖 User Guide'  },
   { id: 'setup',    label: '🔧 Setup'        },
@@ -3199,6 +3296,12 @@ function SettingsDrawer() {
           {settingsTab === 'usage' && (
             <SettingsSection title="Usage & Analytics">
               <UsageDashboard />
+            </SettingsSection>
+          )}
+
+          {settingsTab === 'skills' && (
+            <SettingsSection title="Skills Manager">
+              <SkillsManager />
             </SettingsSection>
           )}
 
