@@ -973,10 +973,12 @@ export function createApiServer(): Express {
       }
 
       send({ activity: { icon: 'ðŸ§ ', agent: 'Aiden', message: 'Working out a plan...', style: 'thinking' }, done: false })
+      send({ thinking: { stage: 'memory', message: 'Checking memory...' } })
 
       const memoryContext    = conversationMemory.buildContext()
       const proactiveMemory  = await surfaceRelevantMemories(resolvedMessage)
       const fullMemoryCtx    = memoryContext + proactiveMemory
+      send({ thinking: { stage: 'planning', message: 'Planning approach...' } })
       const plan: AgentPlan = await planWithLLM(resolvedMessage, history, plannerKeySSE, plannerModelSSE, plannerProvSSE, fullMemoryCtx)
 
       // â”€â”€ PLAN-ONLY MODE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -1050,6 +1052,7 @@ export function createApiServer(): Express {
             activity: { icon: 'ðŸ”§', agent: 'Aiden', message: humanToolMessage(step.tool, step.input as Record<string, any>), style: 'tool', rawTool: step.tool, rawInput: step.input },
             done: false,
           })
+          send({ thinking: { stage: 'executing', message: `Running ${step.tool}...`, tool: step.tool } })
           send({
             activity: {
               icon:    result.success ? 'âœ…' : 'âŒ',
@@ -1071,6 +1074,7 @@ export function createApiServer(): Express {
       // â”€â”€ STEP 3: RESPOND â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       send({ activity: { icon: 'âœï¸', agent: 'Aiden', message: 'Writing response...', style: 'thinking' }, done: false })
 
+      send({ thinking: { stage: 'reasoning', message: 'Thinking...' } })
       let streamEnded = false
       let fullReply   = ''
       const timeout = setTimeout(() => {

@@ -98,6 +98,7 @@ interface DevOSCtxType {
   // Execution
   isExecuting:    boolean
   isStreaming:    boolean
+  thinking:       { stage: string; message: string; tool?: string } | null
   activeModel:    string
   // Messages / conversations
   messages:       Message[]
@@ -1641,6 +1642,7 @@ function PlusMenu() {
 function ChatPanel() {
   const {
     messages, input, setInput, isStreaming, execMode, setExecMode,
+    thinking,
     sendMessage, handleQuickUpload,
     inputRef, kbInputRef, messagesEndRef,
     plusMenuOpen, setPlusMenuOpen,
@@ -1680,6 +1682,26 @@ function ChatPanel() {
           </div>
         )}
       </div>
+
+      {/* Thinking indicator */}
+      {thinking && (
+        <div style={{
+          maxWidth: 800, width: '100%', margin: '0 auto', padding: '4px 24px 2px',
+          display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0,
+          color: 'var(--muted)', fontSize: 13,
+        }}>
+          <div style={{ display: 'flex', gap: 4 }}>
+            {[0, 1, 2].map(i => (
+              <span key={i} style={{
+                width: 6, height: 6, borderRadius: '50%',
+                background: 'var(--orange)', display: 'inline-block',
+                animation: `thinkingPulse 1.4s ${i * 0.2}s infinite ease-in-out`,
+              }} />
+            ))}
+          </div>
+          <span style={{ opacity: 0.7 }}>{thinking.message}</span>
+        </div>
+      )}
 
       {/* Input area */}
       <div style={{
@@ -3337,6 +3359,7 @@ export default function Home() {
   const [settingsTab,    setSettingsTab]    = useState('api')
   const [isExecuting,    setIsExecuting]    = useState(false)
   const [isStreaming,    setIsStreaming]    = useState(false)
+  const [thinking,       setThinking]       = useState<{ stage: string; message: string; tool?: string } | null>(null)
   const [activeModel,    setActiveModel]    = useState<string>('')
 
   // ── Messages / conversations ────────────────────────────────
@@ -3668,6 +3691,7 @@ export default function Home() {
     if (!overrideText) setInput('')
     if (!overrideText && inputRef.current) inputRef.current.style.height = 'auto'
     setIsStreaming(true)
+    setThinking({ stage: 'planning', message: 'Planning approach...' })
 
     const thinkingId = `thinking_${Date.now()}`
     setMessages(m => [...m, { id: thinkingId, role: 'assistant', content: '', timestamp: Date.now(), isStreaming: true }])
@@ -3768,8 +3792,14 @@ export default function Home() {
               }
             }
 
+            // Thinking stage updates
+            if (data.thinking) {
+              setThinking(data.thinking)
+            }
+
             // Token
             if (data.token) {
+              setThinking(null)
               fullReply += data.token
               setMessages(m => m.map(msg =>
                 msg.id === thinkingId ? { ...msg, content: fullReply, isStreaming: true } : msg
@@ -3781,6 +3811,7 @@ export default function Home() {
 
             // Done
             if (data.done) {
+              setThinking(null)
               setIsExecuting(false)
               setIsStreaming(false)
               const finalPhases = buildPhases('done')
@@ -3802,6 +3833,7 @@ export default function Home() {
         }
       }
     } catch (e: any) {
+      setThinking(null)
       setIsExecuting(false)
       setIsStreaming(false)
       setMessages(m => m.map(msg =>
@@ -3811,6 +3843,7 @@ export default function Home() {
       ))
     } finally {
       // Guarantee cleanup — if the stream closes without a `done` event, clear state
+      setThinking(null)
       setIsStreaming(false)
       setIsExecuting(false)
       setMessages(m => m.map(msg =>
@@ -4053,13 +4086,21 @@ export default function Home() {
     }
   }, [isRecording, isStreaming, sendMessage])
 
+  // ── Auto-clear thinking on timeout ──────────────────────────
+  useEffect(() => {
+    if (thinking) {
+      const timeout = setTimeout(() => setThinking(null), 30000)
+      return () => clearTimeout(timeout)
+    }
+  }, [thinking])
+
   // ── Context value ───────────────────────────────────────────
   const ctxValue: DevOSCtxType = {
     uiMode, setUIMode, execMode, setExecMode,
     historyOpen, setHistoryOpen, liveViewOpen, setLiveViewOpen,
     activityOpen, setActivityOpen, settingsOpen, setSettingsOpen,
     settingsTab, setSettingsTab,
-    isExecuting, isStreaming, activeModel,
+    isExecuting, isStreaming, thinking, activeModel,
     messages, setMessages, conversations, setConversations, currentConvId,
     input, setInput,
     activityLogs, setActivityLogs, screenshot, setScreenshot, sessionId,
