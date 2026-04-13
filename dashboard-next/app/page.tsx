@@ -405,6 +405,60 @@ function NavBtn({
   )
 }
 
+// ── ExportButton ──────────────────────────────────────────────
+
+function ExportButton() {
+  const [open, setOpen] = useState(false)
+
+  const download = (format: 'md' | 'json') => {
+    const a = document.createElement('a')
+    a.href = `http://localhost:4200/api/export/conversation?format=${format}`
+    a.download = ''
+    a.click()
+    setOpen(false)
+  }
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <button
+        onClick={() => setOpen(v => !v)}
+        title="Export conversation"
+        style={{
+          width: 30, height: 30, borderRadius: 5,
+          background: 'transparent', border: '1px solid transparent',
+          color: 'var(--muted2)', cursor: 'pointer', fontSize: 13,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          transition: 'all 0.15s',
+        }}
+      >↓</button>
+      {open && (
+        <>
+          <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 49 }} />
+          <div style={{
+            position: 'absolute', top: '100%', right: 0, zIndex: 50,
+            background: '#1a1a1a', border: '1px solid #333', borderRadius: 6,
+            padding: 4, minWidth: 160, marginTop: 4,
+          }}>
+            {(['md', 'json'] as const).map(fmt => (
+              <button key={fmt} onClick={() => download(fmt)} style={{
+                display: 'block', width: '100%', textAlign: 'left',
+                padding: '8px 12px', background: 'none', border: 'none',
+                borderRadius: 4, color: '#ccc', cursor: 'pointer', fontSize: 13,
+                fontFamily: 'var(--mono)',
+              }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#333'; (e.currentTarget as HTMLButtonElement).style.color = '#f97316' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'none';  (e.currentTarget as HTMLButtonElement).style.color = '#ccc' }}
+              >
+                Export as {fmt === 'md' ? 'Markdown' : 'JSON'}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 // ── MarkdownContent ───────────────────────────────────────────
 
 function MarkdownContent({ content }: { content: string }) {
@@ -1308,6 +1362,7 @@ function NavBar() {
 
       {/* Controls */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <ExportButton />
         <ChatHeader />
         <div style={{ width: 1, height: 20, background: 'var(--border2)', margin: '0 4px' }} />
         <NavBtn onClick={() => setSettingsOpen(true)} title="Settings">⚙</NavBtn>

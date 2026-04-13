@@ -251,7 +251,7 @@ export function createApiServer(): Express {
 
   // GET /api/health â€” liveness probe (no auth required)
   app.get('/api/health', (_req: Request, res: Response) => {
-    res.json({ status: 'ok', version: '3.1.0', timestamp: new Date().toISOString() })
+    res.json({ status: 'ok', version: '3.2.0', timestamp: new Date().toISOString() })
   })
 
   // ── Update endpoints ─────────────────────────────────────────
@@ -263,7 +263,7 @@ export function createApiServer(): Express {
       const result = await checkForUpdate()
       res.json(result)
     } catch (e: any) {
-      res.json({ available: false, currentVersion: '3.1.0', error: e.message })
+      res.json({ available: false, currentVersion: '3.2.0', error: e.message })
     }
   })
 
@@ -2634,6 +2634,48 @@ export function createApiServer(): Express {
     }
   })
 
+  // GET /api/export/conversation?format=md|json — download conversation history
+  app.get('/api/export/conversation', (req: Request, res: Response) => {
+    try {
+      const format    = req.query.format === 'json' ? 'json' : 'md'
+      const exchanges = conversationMemory.getRecentHistory()
+      const ts        = Date.now()
+
+      if (format === 'json') {
+        res.setHeader('Content-Type', 'application/json')
+        res.setHeader('Content-Disposition', `attachment; filename="aiden-chat-${ts}.json"`)
+        res.json({
+          exported:     new Date().toISOString(),
+          messageCount: exchanges.length * 2,
+          messages:     exchanges.flatMap(ex => {
+            const msgs: Array<{ role: string; content: string; timestamp: number | null; toolsUsed?: string[] }> = []
+            if (ex.userMessage) msgs.push({ role: 'user',      content: ex.userMessage, timestamp: ex.timestamp })
+            if (ex.aiReply)     msgs.push({ role: 'assistant', content: ex.aiReply,     timestamp: ex.timestamp, toolsUsed: ex.toolsUsed })
+            return msgs
+          }),
+        })
+        return
+      }
+
+      // Markdown format
+      let md = `# Aiden Conversation\n`
+      md    += `*Exported: ${new Date().toLocaleString()}*\n\n---\n\n`
+      for (const ex of exchanges) {
+        if (ex.userMessage) md += `## You\n${ex.userMessage}\n\n`
+        if (ex.aiReply) {
+          md += `## Aiden\n${ex.aiReply}\n\n`
+          if (ex.toolsUsed?.length) md += `> *Tools used: ${ex.toolsUsed.join(', ')}*\n\n`
+        }
+      }
+
+      res.setHeader('Content-Type', 'text/markdown')
+      res.setHeader('Content-Disposition', `attachment; filename="aiden-chat-${ts}.md"`)
+      res.send(md)
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
   // GET /api/usage — detailed usage analytics (per-day history, tool stats, provider stats)
   app.get('/api/usage', (_req: Request, res: Response) => {
     try {
@@ -3503,7 +3545,7 @@ export function startApiServer(portArg?: number): Express {
     console.log(`  session_stop:    ${getHookCount('session_stop')} handler(s)`)
     console.log(`  after_tool_call: ${getHookCount('after_tool_call')} handler(s)`)
 
-    console.log(`[API] DevOS v3.1.0 - Aiden running at http://${host}:${port}`)
+    console.log(`[API] DevOS v3.2.0 - Aiden running at http://${host}:${port}`)
     console.log(`[API] Health: http://${host}:${port}/api/health`)
     console.log(`[API] LivePulse WS: ws://${host}:${port}`)
   })
