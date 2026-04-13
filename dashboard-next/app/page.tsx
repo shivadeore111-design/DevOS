@@ -2826,6 +2826,154 @@ function UpdatesTab() {
   )
 }
 
+// ── UsageDashboard ────────────────────────────────────────────
+
+interface UsageData {
+  today:      { cost: number; userCost: number; systemCost: number; byProvider: Record<string, number>; currency: string; budget: number }
+  dailyHistory: Array<{ date: string; totalUSD: number; systemUSD: number; userUSD: number; totalTokens: number; calls: number }>
+  toolStats:    Array<{ tool: string; calls: number; totalDuration: number; failures: number }>
+  providerStats: Array<{ provider: string; calls: number; totalCost: number; inputTokens: number; outputTokens: number }>
+  totalExecutions: number
+}
+
+function UsageDashboard() {
+  const [usage, setUsage]   = React.useState<UsageData | null>(null)
+  const [error, setError]   = React.useState(false)
+
+  React.useEffect(() => {
+    fetch('http://localhost:4200/api/usage')
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then((d: UsageData) => setUsage(d))
+      .catch(() => setError(true))
+  }, [])
+
+  const card = (label: string, value: string, sub?: string) => (
+    <div style={{
+      background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8,
+      padding: '14px 16px', flex: '1 1 120px', minWidth: 100,
+    }}>
+      <div style={{ fontSize: 11, color: 'var(--muted2)', fontFamily: 'var(--mono)', marginBottom: 6, textTransform: 'uppercase' }}>{label}</div>
+      <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--orange)', fontFamily: 'var(--mono)' }}>{value}</div>
+      {sub && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>{sub}</div>}
+    </div>
+  )
+
+  const th: React.CSSProperties = { textAlign: 'left', color: 'var(--muted2)', padding: '7px 10px', fontSize: 11, fontFamily: 'var(--mono)', borderBottom: '1px solid var(--border)', fontWeight: 600 }
+  const td: React.CSSProperties = { padding: '5px 10px', fontSize: 12, fontFamily: 'var(--mono)', color: 'var(--text)', borderBottom: '1px solid var(--bg2)' }
+
+  if (error) return <p style={settingsTextStyle}>Could not load usage data.</p>
+  if (!usage) return <p style={settingsTextStyle}>Loading...</p>
+
+  const budgetPct = usage.today.budget > 0 ? Math.min(100, (usage.today.userCost / usage.today.budget) * 100) : 0
+  const totalTokens7d = usage.dailyHistory.reduce((s, d) => s + d.totalTokens, 0)
+  const totalCalls7d  = usage.dailyHistory.reduce((s, d) => s + d.calls, 0)
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+      {/* ── Top stat cards ── */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+        {card('Today (user)', `$${usage.today.userCost.toFixed(4)}`, `of $${usage.today.budget.toFixed(2)} budget`)}
+        {card('Total Tasks', String(usage.totalExecutions), 'all time')}
+        {card('Tokens (7d)', totalTokens7d > 1_000_000 ? `${(totalTokens7d / 1_000_000).toFixed(1)}M` : `${(totalTokens7d / 1000).toFixed(0)}K`, `${totalCalls7d} calls`)}
+        {card('Today (system)', `$${usage.today.systemCost.toFixed(4)}`, 'background ops')}
+      </div>
+
+      {/* ── Budget bar ── */}
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+          <span style={{ fontSize: 11, color: 'var(--muted2)', fontFamily: 'var(--mono)' }}>DAILY BUDGET</span>
+          <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--mono)' }}>${usage.today.userCost.toFixed(4)} / ${usage.today.budget.toFixed(2)}</span>
+        </div>
+        <div style={{ height: 6, background: 'var(--bg2)', borderRadius: 3, overflow: 'hidden' }}>
+          <div style={{ height: '100%', width: `${budgetPct}%`, background: budgetPct > 80 ? '#ef4444' : 'var(--orange)', borderRadius: 3, transition: 'width 0.3s' }} />
+        </div>
+      </div>
+
+      {/* ── 7-day history ── */}
+      {usage.dailyHistory.length > 0 && (
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--muted2)', fontFamily: 'var(--mono)', marginBottom: 8, textTransform: 'uppercase' }}>7-Day History</div>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead><tr>
+              <th style={th}>Date</th>
+              <th style={{ ...th, textAlign: 'right' }}>Cost</th>
+              <th style={{ ...th, textAlign: 'right' }}>Tokens</th>
+              <th style={{ ...th, textAlign: 'right' }}>Calls</th>
+            </tr></thead>
+            <tbody>
+              {[...usage.dailyHistory].reverse().map(d => (
+                <tr key={d.date}>
+                  <td style={td}>{d.date}</td>
+                  <td style={{ ...td, textAlign: 'right', color: d.totalUSD > 0 ? 'var(--orange)' : 'var(--muted)' }}>${d.totalUSD.toFixed(4)}</td>
+                  <td style={{ ...td, textAlign: 'right' }}>{d.totalTokens > 1000 ? `${(d.totalTokens / 1000).toFixed(0)}K` : d.totalTokens}</td>
+                  <td style={{ ...td, textAlign: 'right' }}>{d.calls}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ── Provider stats ── */}
+      {usage.providerStats.length > 0 && (
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--muted2)', fontFamily: 'var(--mono)', marginBottom: 8, textTransform: 'uppercase' }}>By Provider (7d)</div>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead><tr>
+              <th style={th}>Provider</th>
+              <th style={{ ...th, textAlign: 'right' }}>Calls</th>
+              <th style={{ ...th, textAlign: 'right' }}>Tokens In</th>
+              <th style={{ ...th, textAlign: 'right' }}>Tokens Out</th>
+              <th style={{ ...th, textAlign: 'right' }}>Cost</th>
+            </tr></thead>
+            <tbody>
+              {usage.providerStats.map(p => (
+                <tr key={p.provider}>
+                  <td style={td}>{p.provider}</td>
+                  <td style={{ ...td, textAlign: 'right' }}>{p.calls}</td>
+                  <td style={{ ...td, textAlign: 'right' }}>{p.inputTokens > 1000 ? `${(p.inputTokens / 1000).toFixed(0)}K` : p.inputTokens}</td>
+                  <td style={{ ...td, textAlign: 'right' }}>{p.outputTokens > 1000 ? `${(p.outputTokens / 1000).toFixed(0)}K` : p.outputTokens}</td>
+                  <td style={{ ...td, textAlign: 'right', color: p.totalCost > 0 ? 'var(--orange)' : 'var(--muted)' }}>${p.totalCost.toFixed(4)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ── Tool stats ── */}
+      {usage.toolStats.length > 0 && (
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--muted2)', fontFamily: 'var(--mono)', marginBottom: 8, textTransform: 'uppercase' }}>Tool Usage</div>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead><tr>
+              <th style={th}>Tool</th>
+              <th style={{ ...th, textAlign: 'right' }}>Calls</th>
+              <th style={{ ...th, textAlign: 'right' }}>Avg ms</th>
+              <th style={{ ...th, textAlign: 'right' }}>Failures</th>
+            </tr></thead>
+            <tbody>
+              {usage.toolStats.slice(0, 15).map(t => (
+                <tr key={t.tool}>
+                  <td style={td}>{t.tool}</td>
+                  <td style={{ ...td, textAlign: 'right' }}>{t.calls}</td>
+                  <td style={{ ...td, textAlign: 'right' }}>{t.calls > 0 ? Math.round(t.totalDuration / t.calls) : 0}</td>
+                  <td style={{ ...td, textAlign: 'right', color: t.failures > 0 ? '#ef4444' : 'var(--muted)' }}>{t.failures}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {usage.toolStats.length === 0 && usage.providerStats.length === 0 && (
+        <p style={settingsTextStyle}>No usage data yet — start chatting with Aiden to see stats here.</p>
+      )}
+    </div>
+  )
+}
+
 // ── TelegramSettingsTab ───────────────────────────────────────
 
 function TelegramSettingsTab() {
@@ -2975,6 +3123,7 @@ const SETTINGS_TABS = [
   { id: 'profile',  label: '👤 My Profile'  },
   { id: 'api',      label: '🔑 API Keys'    },
   { id: 'model',    label: '🧠 Model'        },
+  { id: 'usage',    label: '📊 Usage'        },
   { id: 'knowledge',label: '📚 Knowledge'   },
   { id: 'channels', label: '💬 Channels'    },
   { id: 'guide',    label: '📖 User Guide'  },
@@ -3044,6 +3193,12 @@ function SettingsDrawer() {
           {settingsTab === 'model' && (
             <SettingsSection title="Active Model">
               <p style={settingsTextStyle}>Configure your LLM provider in the API Keys tab. DevOS automatically routes between providers based on availability.</p>
+            </SettingsSection>
+          )}
+
+          {settingsTab === 'usage' && (
+            <SettingsSection title="Usage & Analytics">
+              <UsageDashboard />
             </SettingsSection>
           )}
 

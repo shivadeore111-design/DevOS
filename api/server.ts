@@ -2634,6 +2634,100 @@ export function createApiServer(): Express {
     }
   })
 
+  // GET /api/usage — detailed usage analytics (per-day history, tool stats, provider stats)
+  app.get('/api/usage', (_req: Request, res: Response) => {
+    try {
+      const costDir = path.join(WORKSPACE_ROOT, 'workspace', 'cost')
+      const execDir = path.join(WORKSPACE_ROOT, 'workspace', 'executions')
+
+      // ── Multi-day history (last 7 days from JSONL files) ──────
+      const dailyHistory: Array<{ date: string; totalUSD: number; systemUSD: number; userUSD: number; totalTokens: number; calls: number }> = []
+      const providerStats: Record<string, { calls: number; totalCost: number; inputTokens: number; outputTokens: number }> = {}
+
+      if (fs.existsSync(costDir)) {
+        const costFiles = fs.readdirSync(costDir)
+          .filter(f => f.endsWith('.jsonl'))
+          .sort()
+          .slice(-7) // last 7 days
+
+        for (const file of costFiles) {
+          const date = file.replace('.jsonl', '')
+          let totalUSD = 0, systemUSD = 0, userUSD = 0, totalTokens = 0, calls = 0
+          try {
+            const lines = fs.readFileSync(path.join(costDir, file), 'utf-8')
+              .trim().split('\n').filter(Boolean)
+            for (const line of lines) {
+              try {
+                const r = JSON.parse(line)
+                totalUSD    += r.costUSD    || 0
+                totalTokens += (r.inputTokens || 0) + (r.outputTokens || 0)
+                calls++
+                if (r.isSystem) systemUSD += r.costUSD || 0
+                else             userUSD   += r.costUSD || 0
+                // Provider aggregation (all days)
+                if (r.provider) {
+                  if (!providerStats[r.provider]) providerStats[r.provider] = { calls: 0, totalCost: 0, inputTokens: 0, outputTokens: 0 }
+                  providerStats[r.provider].calls++
+                  providerStats[r.provider].totalCost    += r.costUSD    || 0
+                  providerStats[r.provider].inputTokens  += r.inputTokens  || 0
+                  providerStats[r.provider].outputTokens += r.outputTokens || 0
+                }
+              } catch {}
+            }
+          } catch {}
+          dailyHistory.push({ date, totalUSD, systemUSD, userUSD, totalTokens, calls })
+        }
+      }
+
+      // ── Tool stats from execution files ───────────────────────
+      const toolStats: Record<string, { calls: number; totalDuration: number; failures: number }> = {}
+      let totalExecutions = 0
+
+      if (fs.existsSync(execDir)) {
+        const execFiles = fs.readdirSync(execDir)
+          .filter(f => f.endsWith('.json'))
+        totalExecutions = execFiles.length
+
+        for (const file of execFiles.slice(-200)) { // last 200 executions
+          try {
+            const exec = JSON.parse(fs.readFileSync(path.join(execDir, file), 'utf-8'))
+            for (const step of (exec.steps || [])) {
+              if (!step.tool) continue
+              if (!toolStats[step.tool]) toolStats[step.tool] = { calls: 0, totalDuration: 0, failures: 0 }
+              toolStats[step.tool].calls++
+              toolStats[step.tool].totalDuration += step.duration || 0
+              if (step.status === 'failed' || step.state === 'failed') toolStats[step.tool].failures++
+            }
+          } catch {}
+        }
+      }
+
+      // ── Today's live summary ───────────────────────────────────
+      const today = costTracker.getDailySummary()
+
+      res.json({
+        today: {
+          cost:         today.totalUSD,
+          userCost:     today.userUSD,
+          systemCost:   today.systemUSD,
+          byProvider:   today.byProvider,
+          currency:     'USD',
+          budget:       costTracker.getDailyBudget(),
+        },
+        dailyHistory,
+        toolStats: Object.entries(toolStats)
+          .map(([tool, stats]) => ({ tool, ...stats }))
+          .sort((a, b) => b.calls - a.calls),
+        providerStats: Object.entries(providerStats)
+          .map(([provider, stats]) => ({ provider, ...stats }))
+          .sort((a, b) => b.calls - a.calls),
+        totalExecutions,
+      })
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
   // GET /api/pulse â€” SSE stream of LivePulse events (tool:start, tool:done, plan:start, plan:done)
   // Dashboard connects here to show real-time execution activity.
   app.get('/api/pulse', (req: Request, res: Response) => {
