@@ -2,6 +2,8 @@
 import {
   useState, useEffect, useRef, useMemo, useCallback,
   createContext, useContext,
+  type Dispatch, type SetStateAction, type CSSProperties,
+  type ReactNode, type RefObject, type ChangeEvent,
 } from 'react'
 import Onboarding from '../components/Onboarding'
 import { OnboardingModal } from '../components/OnboardingModal'
@@ -102,18 +104,18 @@ interface DevOSCtxType {
   activeModel:    string
   // Messages / conversations
   messages:       Message[]
-  setMessages:    React.Dispatch<React.SetStateAction<Message[]>>
+  setMessages:    Dispatch<SetStateAction<Message[]>>
   conversations:  Conversation[]
-  setConversations: React.Dispatch<React.SetStateAction<Conversation[]>>
+  setConversations: Dispatch<SetStateAction<Conversation[]>>
   currentConvId:  string
   input:          string
   setInput:       (v: string) => void
   // Activity
   activityLogs:    ActivityLog[]
-  setActivityLogs: React.Dispatch<React.SetStateAction<ActivityLog[]>>
+  setActivityLogs: Dispatch<SetStateAction<ActivityLog[]>>
   // Screenshot
   screenshot:     string | null
-  setScreenshot:  React.Dispatch<React.SetStateAction<string | null>>
+  setScreenshot:  Dispatch<SetStateAction<string | null>>
   // Session
   sessionId:      string
   // Live view data
@@ -144,21 +146,21 @@ interface DevOSCtxType {
   submitMiniPrompt:() => void
   startNewChat:   () => void
   loadConversation: (id: string) => void
-  handleQuickUpload: (e: React.ChangeEvent<HTMLInputElement>) => void
+  handleQuickUpload: (e: ChangeEvent<HTMLInputElement>) => void
   // Refs
-  inputRef:       React.RefObject<HTMLTextAreaElement>
-  kbInputRef:     React.RefObject<HTMLInputElement>
-  messagesEndRef: React.RefObject<HTMLDivElement>
-  logsEndRef:     React.RefObject<HTMLDivElement>
+  inputRef:       RefObject<HTMLTextAreaElement>
+  kbInputRef:     RefObject<HTMLInputElement>
+  messagesEndRef: RefObject<HTMLDivElement>
+  logsEndRef:     RefObject<HTMLDivElement>
   // API Keys (settings)
   providers:      any[]
   routing:        any
   addingProvider: string | null
   setAddingProvider: (v: string | null) => void
   providerKeys:   Record<string, string>
-  setProviderKeys:(v: React.SetStateAction<Record<string, string>>) => void
+  setProviderKeys:(v: SetStateAction<Record<string, string>>) => void
   providerModels: Record<string, string>
-  setProviderModels:(v: React.SetStateAction<Record<string, string>>) => void
+  setProviderModels:(v: SetStateAction<Record<string, string>>) => void
   savingKey:      boolean
   saveKey:        (providerID: string) => void
   toggleProvider: (name: string, enabled: boolean) => void
@@ -170,8 +172,8 @@ interface DevOSCtxType {
   uploadingFile:     boolean
   uploadCategory:    string
   setUploadCategory: (v: string) => void
-  knowledgeInputRef: React.RefObject<HTMLInputElement>
-  handleKnowledgeUpload: (e: React.ChangeEvent<HTMLInputElement>) => void
+  knowledgeInputRef: RefObject<HTMLInputElement>
+  handleKnowledgeUpload: (e: ChangeEvent<HTMLInputElement>) => void
   handleKnowledgeDelete: (id: string) => void
   // License / Pro
   pricingOpen:    boolean
@@ -203,12 +205,12 @@ function useDevOS() { return useContext(DevOSCtx) }
 
 // ── Style constants ───────────────────────────────────────────
 
-const codeStyle: React.CSSProperties = {
+const codeStyle: CSSProperties = {
   background: 'var(--bg3)', border: '1px solid var(--border)',
   borderRadius: 3, padding: '1px 6px',
   fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text)',
 }
-const settingsTextStyle: React.CSSProperties = {
+const settingsTextStyle: CSSProperties = {
   fontSize: 12, color: 'var(--muted2)',
   fontFamily: 'var(--mono)', lineHeight: 1.7,
 }
@@ -384,7 +386,7 @@ function PatternSuggestionBanner({
 function NavBtn({
   children, active, onClick, title,
 }: {
-  children: React.ReactNode
+  children: ReactNode
   active?:  boolean
   onClick:  () => void
   title?:   string
@@ -757,7 +759,7 @@ function ChatMessage({ message }: { message: Message }) {
 
 // ── SettingsSection ───────────────────────────────────────────
 
-function SettingsSection({ title, children }: { title: string; children: React.ReactNode }) {
+function SettingsSection({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div style={{ marginBottom: 24 }}>
       <div style={{
@@ -1658,7 +1660,7 @@ function ChatPanel() {
     inputRef.current?.focus()
   }, [inputRef])
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+  const handleInputChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value)
     e.target.style.height = 'auto'
     e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px'
@@ -2933,10 +2935,10 @@ interface UsageData {
 }
 
 function UsageDashboard() {
-  const [usage, setUsage]   = React.useState<UsageData | null>(null)
-  const [error, setError]   = React.useState(false)
+  const [usage, setUsage]   = useState<UsageData | null>(null)
+  const [error, setError]   = useState(false)
 
-  React.useEffect(() => {
+  useEffect(() => {
     fetch('http://localhost:4200/api/usage')
       .then(r => r.ok ? r.json() : Promise.reject())
       .then((d: UsageData) => setUsage(d))
@@ -2954,8 +2956,8 @@ function UsageDashboard() {
     </div>
   )
 
-  const th: React.CSSProperties = { textAlign: 'left', color: 'var(--muted2)', padding: '7px 10px', fontSize: 11, fontFamily: 'var(--mono)', borderBottom: '1px solid var(--border)', fontWeight: 600 }
-  const td: React.CSSProperties = { padding: '5px 10px', fontSize: 12, fontFamily: 'var(--mono)', color: 'var(--text)', borderBottom: '1px solid var(--bg2)' }
+  const th: CSSProperties = { textAlign: 'left', color: 'var(--muted2)', padding: '7px 10px', fontSize: 11, fontFamily: 'var(--mono)', borderBottom: '1px solid var(--border)', fontWeight: 600 }
+  const td: CSSProperties = { padding: '5px 10px', fontSize: 12, fontFamily: 'var(--mono)', color: 'var(--text)', borderBottom: '1px solid var(--bg2)' }
 
   if (error) return <p style={settingsTextStyle}>Could not load usage data.</p>
   if (!usage) return <p style={settingsTextStyle}>Loading...</p>
@@ -3073,14 +3075,14 @@ function UsageDashboard() {
 // ── TelegramSettingsTab ───────────────────────────────────────
 
 function TelegramSettingsTab() {
-  const [enabled,        setEnabled]        = React.useState(false)
-  const [botToken,       setBotToken]       = React.useState('')
-  const [allowedChatIds, setAllowedChatIds] = React.useState('')
-  const [saving,         setSaving]         = React.useState(false)
-  const [saved,          setSaved]          = React.useState(false)
-  const [loaded,         setLoaded]         = React.useState(false)
+  const [enabled,        setEnabled]        = useState(false)
+  const [botToken,       setBotToken]       = useState('')
+  const [allowedChatIds, setAllowedChatIds] = useState('')
+  const [saving,         setSaving]         = useState(false)
+  const [saved,          setSaved]          = useState(false)
+  const [loaded,         setLoaded]         = useState(false)
 
-  React.useEffect(() => {
+  useEffect(() => {
     fetch('http://localhost:4200/api/telegram/config')
       .then(r => r.ok ? r.json() : null)
       .then((data: any) => {
@@ -4246,7 +4248,7 @@ export default function Home() {
   }, [input, isStreaming, messages, execMode, sessionId, saveToConversation])
 
   // ── Quick upload (chat + button) ────────────────────────────
-  const handleQuickUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleQuickUpload = useCallback(async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     try {
@@ -4326,7 +4328,7 @@ export default function Home() {
   }, [])
 
   // ── Settings: Knowledge Base handlers ───────────────────────
-  const handleKnowledgeUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleKnowledgeUpload = useCallback(async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     setUploadingFile(true)
