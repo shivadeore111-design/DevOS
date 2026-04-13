@@ -70,9 +70,12 @@ for (const file of filesToUpdate) {
 console.log('Step 3/8: TypeScript check...')
 run('npx tsc --noEmit')
 
-// Step 4: Kill existing node processes
-console.log('Step 4/8: Killing node processes...')
-try { execSync('taskkill /F /IM node.exe /T', { stdio: 'ignore' }) } catch {}
+// Step 4: Kill existing node processes (except self)
+console.log('Step 4/8: Killing other node processes...')
+try {
+  const currentPid = process.pid
+  execSync(`powershell -Command "Get-Process node -ErrorAction SilentlyContinue | Where-Object { $_.Id -ne ${currentPid} } | Stop-Process -Force"`, { stdio: 'ignore' })
+} catch {}
 
 // Step 5: Build
 console.log('Step 5/8: Building installer...')
