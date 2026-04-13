@@ -210,11 +210,11 @@ export function logProviderStatus(): void {
     const resolvedKey = api.key.startsWith('env:')
       ? (process.env[api.key.replace('env:', '')] || '')
       : api.key
-    const keyStatus = resolvedKey.length > 0 ? '✓ key present' : '✗ key missing'
+    const keyStatus = resolvedKey.length > 0 ? '[key OK]' : '[NO KEY]'
     const status    = !api.enabled ? 'disabled' : api.rateLimited ? 'rate-limited' : resolvedKey.length === 0 ? 'SKIPPED (no key)' : `#${order++} active`
-    console.log(`  ${api.name} (${api.provider}/${api.model}) — ${keyStatus} — ${status}`)
+    console.log(`  ${api.name} (${api.provider}/${api.model}) - ${keyStatus} - ${status}`)
   }
-  console.log(`  ollama (${OLLAMA_FALLBACK_MODEL}) — local — #${order} guaranteed fallback`)
+  console.log(`  ollama (${OLLAMA_FALLBACK_MODEL}) - local - #${order} guaranteed fallback`)
 }
 
 // ── Complexity scorer ─────────────────────────────────────────
@@ -318,27 +318,18 @@ export function getModelForTask(
     return k.length > 0
   })
 
-  // Planner: groq > gemini > openrouter → local planner model
-  // Cerebras excluded: 8B model cannot follow complex SOUL-based planning prompts
-  if (task === 'planner') {
-    for (const p of ['groq', 'gemini', 'openrouter']) {
-      const api = available.find(a => a.provider === p)
-      if (api) return resolveKey(api)
+  // Planner + Responder: walk ALL apis in config order (handles multiple slots per provider).
+  // Cerebras/nvidia excluded — 8B models cannot follow complex SOUL-based prompts.
+  const CHAT_EXCLUDED = new Set(['cerebras', 'nvidia'])
+  if (task === 'planner' || task === 'responder') {
+    const chatApis = available.filter(a => !CHAT_EXCLUDED.has(a.provider))
+    if (chatApis.length > 0) {
+      const chosen = chatApis[0]
+      console.log(`[Router] ${task}: ${chosen.name} (${chosen.provider}/${chosen.model})`)
+      return resolveKey(chosen)
     }
-    const model = getOllamaModelForTask('planner')
-    console.log(`[Router] Planner: all cloud providers rate-limited — using local Ollama ${model}`)
-    return { apiKey: '', model, providerName: 'ollama', apiName: 'ollama' }
-  }
-
-  // Responder: groq > gemini > openrouter → local responder model
-  // Cerebras excluded: too small (8B) to reliably follow SOUL prompt without hallucinating
-  if (task === 'responder') {
-    for (const p of ['groq', 'gemini', 'openrouter']) {
-      const api = available.find(a => a.provider === p)
-      if (api) return resolveKey(api)
-    }
-    const model = getOllamaModelForTask('responder')
-    console.log(`[Router] Responder: all cloud providers rate-limited — using local Ollama ${model} (quality may vary)`)
+    const model = getOllamaModelForTask(task === 'planner' ? 'planner' : 'responder')
+    console.log(`[Router] ${task}: all cloud providers rate-limited - using Ollama ${model}`)
     return { apiKey: '', model, providerName: 'ollama', apiName: 'ollama' }
   }
 
@@ -349,7 +340,7 @@ export function getModelForTask(
       if (api) return resolveKey(api)
     }
     const model = getOllamaModelForTask('executor')
-    console.log(`[Router] Executor: all cloud providers unavailable — falling back to Ollama ${model}`)
+    console.log(`[Router] Executor: all cloud providers unavailable - falling back to Ollama ${model}`)
     return { apiKey: '', model, providerName: 'ollama', apiName: 'ollama' }
   }
 
@@ -397,4 +388,66 @@ export function getSmartProvider(): {
   // Last resort
   const model = getOllamaModelForTask('responder')
   return { provider: ollamaProvider, model, userName, apiName: 'ollama' }
+}
+
+// ── Graceful degradation when all providers fail ──────────────
+
+export interface DegradedResponse {
+  mode:           'degraded'
+  message:        string
+  availableTools: string[]
+  retryAfter:     number
+}
+
+let _degradedMode  = false
+let _degradedTimer: ReturnType<typeof setTimeout> | null = null
+
+export function isInDegradedMode(): boolean { return _degradedMode }
+
+export function exitDegradedMode(): void {
+  _degradedMode = false
+  if (_degradedTimer) { clearTimeout(_degradedTimer); _degradedTimer = null }
+}
+
+export function enterDegradedMode(reason: string): DegradedResponse {
+  console.log(`[Degraded] All providers unavailable: ${reason}`)
+  _degradedMode = true
+
+  // Auto-retry after 60 s — silently check if any provider is back
+  if (!_degradedTimer) {
+    _degradedTimer = setTimeout(async () => {
+      _degradedTimer = null
+      autoResetExpiredLimits()
+      const next = getNextAvailableAPI()
+      if (next) {
+        console.log(`[Degraded] Provider recovered: ${next.entry.name}`)
+        exitDegradedMode()
+        return
+      }
+      // Check if Ollama came back
+      try {
+        const r = await fetch('http://localhost:11434/api/tags', { signal: AbortSignal.timeout(2000) })
+        if (r.ok) {
+          console.log('[Degraded] Provider recovered: ollama')
+          exitDegradedMode()
+        }
+      } catch { /* still down */ }
+    }, 60_000)
+  }
+
+  return {
+    mode:    'degraded',
+    message: `I'm temporarily running in limited mode — my AI providers ` +
+      `are at capacity. I can still:\n` +
+      `• Search your files and memory\n` +
+      `• Run scheduled tasks\n` +
+      `• Execute shell commands and scripts\n` +
+      `• Open browsers and apps\n\n` +
+      `I'll automatically reconnect when providers are available. ` +
+      `This usually resolves in a few minutes.`,
+    availableTools: ['file_read', 'file_write', 'file_list',
+      'shell_exec', 'run_python', 'run_node', 'open_browser',
+      'system_info', 'notify'],
+    retryAfter: 60_000,
+  }
 }

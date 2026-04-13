@@ -17,7 +17,7 @@ import { taskStateManager, TaskState }     from './taskState'
 import { skillLoader }                     from './skillLoader'
 import { learningMemory }                  from './learningMemory'
 import { conversationMemory }             from './conversationMemory'
-import { getNextAvailableAPI, markRateLimited, incrementUsage, getModelForTask, getOllamaModelForTask } from '../providers/router'
+import { getNextAvailableAPI, markRateLimited, incrementUsage, getModelForTask, getOllamaModelForTask, enterDegradedMode } from '../providers/router'
 import { ollamaProvider } from '../providers/ollama'
 import { loadConfig }     from '../providers/index'
 import { knowledgeBase } from './knowledgeBase'
@@ -2237,7 +2237,8 @@ CRITICAL RULES FOR YOUR RESPONSE:
       }
     }
 
-    onToken('\n\nI encountered an error generating a response. Please try again.')
+    const degraded = enterDegradedMode(e.message || 'unknown error')
+    onToken(degraded.message)
   }
 }
 
