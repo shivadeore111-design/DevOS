@@ -112,6 +112,39 @@ function humanToolMessage(tool: string, input: Record<string, any>): string {
   return map[tool] || `Working on: ${tool}`
 }
 
+
+// ── Multi-question splitter ─────────────────────────────────────────────────────
+function splitQuestions(message: string): string[] {
+  if (message.length < 20) return [message]
+  const patterns = [
+    /\s+and\s+(?:also|then|please)?\s*/i,
+    /\s*\.\s+(?:Also|Then|And|Plus|Next)\s+/i,
+    /\s*\?\s+(?:Also|And|What|How|Can|Do|Is|Where|When|Who)\s+/i,
+    /\s*,\s+(?:and\s+)?(?:also|then|plus)\s+/i,
+  ]
+  let parts = [message]
+  for (const pattern of patterns) {
+    const newParts: string[] = []
+    for (const part of parts) {
+      const split = part.split(pattern).filter(s => s.trim().length > 5)
+      if (split.length > 1) { newParts.push(...split) } else { newParts.push(part) }
+    }
+    parts = newParts
+  }
+  const valid = parts.map(p => p.trim()).filter(p => p.length > 5)
+  return valid.slice(0, 4)
+}
+
+function shouldSplit(message: string): boolean {
+  const singleTaskPatterns = [
+    /^(create|build|write|make|design|implement)\s/i,
+    /^(research|analyze|compare|review)\s.*\band\b.*$/i,
+    /step.by.step/i,
+    /^(help me|can you|please)\s/i,
+  ]
+  return !singleTaskPatterns.some(p => p.test(message))
+}
+
 // â”€â”€ Chat error handler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Centralised error formatting for /api/chat catch blocks.
 // Returns user-facing tokens and activity events via the SSE send fn.
@@ -971,6 +1004,78 @@ export function createApiServer(): Express {
         res.end()
         return
       }
+
+      // ── MULTI-QUESTION DETECTION (auto mode only) ────────────────────────────
+      const mqQuestions = (mode !== 'plan' && shouldSplit(resolvedMessage))
+        ? splitQuestions(resolvedMessage)
+        : [resolvedMessage]
+
+      if (mqQuestions.length > 1) {
+        console.log(`[Multi-Q] Detected ${mqQuestions.length} questions: ${mqQuestions.map(q => q.substring(0, 40)).join(' | ')}`)
+        const mqAllToolsUsed: string[] = []
+        const mqAllFilesCreated: string[] = []
+        const mqAllSearchQueries: string[] = []
+        let   mqFullReply = ''
+        const mqMemCtx = conversationMemory.buildContext() + await surfaceRelevantMemories(resolvedMessage)
+
+        for (let mqI = 0; mqI < mqQuestions.length; mqI++) {
+          const mqQ = mqQuestions[mqI]
+          console.log(`[Multi-Q] Processing ${mqI + 1}/${mqQuestions.length}: ${mqQ.substring(0, 50)}`)
+          send({ thinking: { stage: 'multi', message: `Handling question ${mqI + 1} of ${mqQuestions.length}...` } })
+          send({ activity: { icon: '❓', agent: 'Aiden', message: `Q${mqI + 1}: ${mqQ.slice(0, 60)}`, style: 'act' }, done: false })
+
+          // Separator between answers
+          if (mqI > 0) {
+            const sep = '\n\n---\n\n'
+            mqFullReply += sep
+            send({ token: sep, done: false, provider: apiName })
+          }
+
+          const mqPlan = await planWithLLM(mqQ, history, plannerKeySSE, plannerModelSSE, plannerProvSSE, mqMemCtx)
+
+          if (mqPlan.requires_execution && mqPlan.plan.length > 0) {
+            send({ thinking: { stage: 'executing', message: `Running tools for Q${mqI + 1}...` } })
+            const mqResults: StepResult[] = await executePlan(
+              mqPlan,
+              (step: ToolStep, result: StepResult) => {
+                send({ activity: { icon: '🔧', agent: 'Aiden', message: humanToolMessage(step.tool, step.input as Record<string, any>), style: 'tool', rawTool: step.tool, rawInput: step.input }, done: false })
+                send({ activity: { icon: result.success ? '✅' : '❌', agent: 'Aiden', message: (result.success ? result.output : result.error || 'failed').slice(0, 160), style: result.success ? 'done' : 'error' }, done: false })
+              },
+              undefined,
+            )
+            send({ thinking: { stage: 'reasoning', message: `Writing answer ${mqI + 1}...` } })
+            await respondWithResults(mqQ, mqPlan, mqResults, history, userName, rawKey, activeModel, providerName, (token) => {
+              mqFullReply += token
+              send({ token, done: false, provider: apiName })
+            })
+            mqAllToolsUsed.push(...mqResults.map(r => r.tool))
+            mqAllFilesCreated.push(...mqResults.filter(r => r.tool === 'file_write' && r.success && r.input?.path).map(r => r.input.path as string))
+            mqAllSearchQueries.push(...mqResults.filter(r => (r.tool === 'web_search' || r.tool === 'deep_research') && r.input?.query).map(r => r.input.query as string))
+          } else {
+            const mqDirect = mqPlan.direct_response || mqQ
+            mqFullReply += mqDirect
+            for (const w of mqDirect.split(' ')) {
+              send({ token: w + ' ', done: false, provider: apiName })
+              await new Promise(r => setTimeout(r, 8))
+            }
+          }
+        }
+
+        conversationMemory.updateFromExecution(mqAllToolsUsed, mqAllFilesCreated, mqAllSearchQueries)
+        conversationMemory.addAssistantMessage(mqFullReply, { toolsUsed: mqAllToolsUsed, filesCreated: mqAllFilesCreated, searchQueries: mqAllSearchQueries })
+        userCognitionProfile.observe(resolvedMessage, mqFullReply)
+        setTimeout(() => {
+          sessionMemory.addExchange(sessionId || 'default', resolvedMessage, mqFullReply, mqAllFilesCreated)
+          memoryExtractor.extractFromSession(sessionId || 'default').catch(() => {})
+          refreshIdentity()
+        }, 100)
+        incrementUsage(apiName)
+        send({ done: true, provider: apiName })
+        res.end()
+        memoryLayers.write(`User: ${resolvedMessage}`, ['chat'])
+        return  // skip single-question flow
+      }
+
 
       send({ activity: { icon: 'ðŸ§ ', agent: 'Aiden', message: 'Working out a plan...', style: 'thinking' }, done: false })
       send({ thinking: { stage: 'memory', message: 'Checking memory...' } })
