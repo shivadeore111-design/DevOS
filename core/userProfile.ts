@@ -13,12 +13,27 @@ import path from 'path'
 
 export const USER_PROFILE_PATH = path.join(process.cwd(), 'workspace', 'USER.md')
 
+// ── Timezone detection ───────────────────────────────────────────
+
+export function detectTimezone(): { timezone: string; utcOffset: string } {
+  const tz     = Intl.DateTimeFormat().resolvedOptions().timeZone
+  const offset = new Date().getTimezoneOffset()
+  const hours  = Math.abs(Math.floor(offset / 60))
+  const mins   = Math.abs(offset % 60)
+  const sign   = offset <= 0 ? '+' : '-'
+  return {
+    timezone:  tz || 'Asia/Kolkata',
+    utcOffset: `UTC${sign}${hours}:${mins.toString().padStart(2, '0')}`,
+  }
+}
+
 // ── Types ────────────────────────────────────────────────────────
 
 export interface UserProfileAnswers {
   name:          string
   role:          string
-  timezone:      string
+  timezone?:     string
+  utcOffset?:    string
   github?:       string
   monitoring?:   string
   responseStyle?: 'Direct' | 'Detailed' | 'Conversational'
@@ -78,10 +93,15 @@ export function createUserProfile(answers: UserProfileAnswers): void {
   }
   const styleDesc = styleMap[answers.responseStyle ?? 'Direct'] ?? styleMap.Direct
 
+  // Auto-detect timezone if not provided
+  const detected  = detectTimezone()
+  const tz        = answers.timezone  || detected.timezone
+  const utcOffset = answers.utcOffset || detected.utcOffset
+
   const content = `# User Profile
 Name: ${answers.name.trim()}
 Role: ${answers.role.trim()}
-Timezone: ${answers.timezone}
+Timezone: ${tz} (${utcOffset})
 Location:
 
 # Preferences

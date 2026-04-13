@@ -37,6 +37,7 @@ import { loadConfig, saveConfig, APIEntry } from '../providers/index'
 import { ollamaProvider } from '../providers/ollama'
 import { getSmartProvider, markRateLimited, incrementUsage, logProviderStatus, getModelForTask, getLocalModels } from '../providers/router'
 import { discoverLocalModels, getOllamaTimeout } from '../core/modelDiscovery'
+import { detectTimezone } from '../core/userProfile'
 import { executeTool } from '../core/toolRegistry'
 import { getScreenSize, takeScreenshot as captureScreen } from '../core/computerControl'
 import { planWithLLM, executePlan, respondWithResults, callLLM, surfaceRelevantMemories } from '../core/agentLoop'
@@ -77,6 +78,7 @@ import { memoryExtractor } from '../core/memoryExtractor'
 import { getIdentity, refreshIdentity } from '../core/aidenIdentity'
 import { eventBus } from '../core/eventBus'
 import { getWorkflow } from '../core/workflowTracker'
+import { getHookCount } from '../core/hooks'
 
 // —— Sprint 25: module-level WebSocket clients registry (shared between createApiServer routes and startApiServer WS setup)
 let wsBroadcastClients = new Set<any>()
@@ -158,7 +160,7 @@ const WORKSPACE_ROOT = process.env.AIDEN_USER_DATA || process.cwd()
 
 // â”€â”€ Knowledge upload â€” multer + progress tracking â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-const KB_UPLOAD_DIR = path.join(process.cwd(), 'workspace', 'knowledge', 'uploads')
+const KB_UPLOAD_DIR = path.join(WORKSPACE_ROOT, 'workspace', 'knowledge', 'uploads')
 if (!fs.existsSync(KB_UPLOAD_DIR)) fs.mkdirSync(KB_UPLOAD_DIR, { recursive: true })
 
 const kbStorage = multer.diskStorage({
@@ -418,6 +420,21 @@ export function createApiServer(): Express {
       fastReply('That message is very long. Break it into smaller parts.'); return
     }
 
+    // ── Capability fast-path: return tool list directly from registry ──
+    const CAPABILITY_PATS = [
+      /list\s+(all\s+)?(your\s+)?(tools|skills|capabilities)/i,
+      /what\s+(tools|skills)\s+do\s+you\s+have/i,
+      /tell\s+me\s+(all\s+)?(your\s+)?(tools|skills|capabilities)/i,
+      /what\s+can\s+you\s+do/i,
+      /show\s+(me\s+)?(all\s+)?(your\s+)?(tools|skills|capabilities)/i,
+    ]
+    if (CAPABILITY_PATS.some(p => p.test(message))) {
+      const toolNames  = Object.keys(TOOL_DESCRIPTIONS)
+      const toolList   = toolNames.map(n => `• **${n}** — ${TOOL_DESCRIPTIONS[n]}`).join('\n')
+      fastReply(`I have **${toolNames.length} built-in tools**:\n\n${toolList}`)
+      return
+    }
+
     // Banned topic intercept - short-circuit before LLM
     const BANNED_TOPIC_PATS = [
       /GSTs*(rate|code|filing|return|number|percent)/i,
@@ -494,7 +511,7 @@ export function createApiServer(): Express {
     ]
     if (capabilityPatterns.some(p => p.test(message))) {
       fastReply(
-        'I have 44+ tools, 31 specialist agents, and a 6-layer memory system.\n\n' +
+        'I have 48 tools, 31 specialist agents, and a 6-layer memory system.\n\n' +
         'I am NOT a static pre-trained model. I have active living systems:\n' +
         '• **Skill Teacher** — promotes repeated successful patterns to reusable skills\n' +
         '• **Instinct System** — micro-behaviors that strengthen with use\n' +
@@ -635,6 +652,33 @@ export function createApiServer(): Express {
       }
     }
 
+    // ── Music / media replay fast-path ────────────────────────────
+    // "play that song", "play it", "play that" → replay last URL from history
+    const MUSIC_PATTERNS = [
+      /^play\s+(that|it|this|the)\s+(song|video|music|track)/i,
+      /^play\s+it[!.]*$/i,
+      /^play\s+that[!.]*$/i,
+      /^play\s+(some|any)\s+(music|songs|lofi|beats)/i,
+    ]
+    if (MUSIC_PATTERNS.some(p => p.test(message))) {
+      const hist: any[] = Array.isArray(req.body?.history) ? [...req.body.history].reverse() : []
+      const mediaEntry  = hist.find(m =>
+        typeof m.content === 'string' &&
+        (m.content.includes('youtube.com') || m.content.includes('spotify.com'))
+      )
+      if (mediaEntry) {
+        const urlMatch = (mediaEntry.content as string).match(/(https:\/\/[^\s)>"]+)/)
+        if (urlMatch) {
+          const url = urlMatch[1]
+          try { await executeTool('open_browser', { url }) } catch {}
+          fastReply(`Playing: ${url}`)
+          return
+        }
+      }
+      fastReply("What would you like me to play? Try: \"play lofi hip hop on youtube\"")
+      return
+    }
+
     // ── High-risk actions — require explicit confirmation ──────────
     const HIGH_RISK_PATTERNS = [
       'send an email',
@@ -679,6 +723,25 @@ export function createApiServer(): Express {
       try {
         const resolvedMessage = conversationMemory.addUserMessage(message)
         conversationMemory.recordUserTurn(resolvedMessage)
+
+        // Greetings bypass the planner even in JSON/plan mode
+        const JSON_ALWAYS_CONV = [
+          /^hi+\s*[!?.]*$/i, /^hey+\s*[!?.]*$/i, /^hello+\s*[!?.]*$/i,
+          /^how are you/i, /^what('?s| is) up/i,
+          /^good (morning|afternoon|evening|night)/i,
+          /^thanks?(\s+you)?[!.]*$/i, /^thank you[!.]*$/i,
+          /^ok+a?y?[!.]*$/i, /^cool[!.]*$/i, /^got it[!.]*$/i,
+          /^are you (there|ready|online|working)/i,
+        ]
+        if (JSON_ALWAYS_CONV.some(p => p.test(resolvedMessage.trim()))) {
+          await streamChat(resolvedMessage, history, userName, provider, activeModel, apiName, (data: object) => {
+            const d = data as any
+            if (d.token) jsonTokens.push(d.token)
+          }, sessionId)
+          fullReply = jsonTokens.join('').trim() || 'Hey! What do you need?'
+          conversationMemory.addAssistantMessage(fullReply)
+          res.json({ message: fullReply, provider: apiName }); return
+        }
 
         if (mode === 'chat') {
           await streamChat(resolvedMessage, history, userName, provider, activeModel, apiName, (data: object) => {
@@ -813,7 +876,10 @@ export function createApiServer(): Express {
     // ── Conversational fast-path — skip planning for simple messages ──
     // These need zero tools — routing through planWithLLM wastes 8-30 seconds.
     // MUST be AFTER `send` is declared.
-    const CONVERSATIONAL = [
+
+    // ALWAYS use streamChat for these — even in 'plan' mode.
+    // Greetings and social phrases should never produce a planner "Done." response.
+    const ALWAYS_CONVERSATIONAL = [
       /^hi+\s*[!?.]*$/i,
       /^hey+\s*[!?.]*$/i,
       /^hello+\s*[!?.]*$/i,
@@ -825,12 +891,27 @@ export function createApiServer(): Express {
       /^ok+a?y?[!.]*$/i,
       /^cool[!.]*$/i,
       /^got it[!.]*$/i,
+      /^are you (there|ready|online|working)/i,
+    ]
+
+    // Only use streamChat for these in auto/chat mode — plan mode can still plan them.
+    const AUTO_CONVERSATIONAL = [
       /^what can you do/i,
       /^what are your (skills|capabilities|tools)/i,
       /^who are you/i,
-      /^are you (there|ready|online|working)/i,
+      // Identity/profile queries — must go through streamChat which injects USER PROFILE
+      /what('?s| is) my name/i,
+      /do you know (my|who i am)/i,
+      /what do you know about me/i,
+      /tell me about (my|myself)/i,
+      /can you learn/i,
+      /do you (remember|learn|grow|improve)/i,
     ]
-    const isConversational = mode !== 'plan' && CONVERSATIONAL.some(p => p.test(message.trim()))
+
+    const isConversational =
+      ALWAYS_CONVERSATIONAL.some(p => p.test(message.trim())) ||
+      (mode !== 'plan' && AUTO_CONVERSATIONAL.some(p => p.test(message.trim())))
+
     if (isConversational) {
       try {
         const convTokens: string[] = []
@@ -1131,14 +1212,21 @@ export function createApiServer(): Express {
     // Write USER.md so the system prompt knows who this person is
     try {
       const name = userName || config.user?.name || 'User'
+      const { timezone, utcOffset } = detectTimezone()
+      const tzLine = `${timezone} (${utcOffset})`
       const userMdPath = path.join(WORKSPACE_ROOT, 'workspace', 'USER.md')
       fs.mkdirSync(path.dirname(userMdPath), { recursive: true })
       const existing = fs.existsSync(userMdPath) ? fs.readFileSync(userMdPath, 'utf8') : ''
       if (!existing.trim() || existing.startsWith('# User Profile\nName: User')) {
-        fs.writeFileSync(userMdPath, `# User Profile\nName: ${name}\n`, 'utf8')
+        fs.writeFileSync(userMdPath, `# User Profile\nName: ${name}\nTimezone: ${tzLine}\n`, 'utf8')
       } else {
-        // Update Name line only
-        const updated = existing.replace(/^Name:.*$/m, `Name: ${name}`)
+        // Update Name and upsert Timezone line
+        let updated = existing.replace(/^Name:.*$/m, `Name: ${name}`)
+        if (/^Timezone:/m.test(updated)) {
+          updated = updated.replace(/^Timezone:.*$/m, `Timezone: ${tzLine}`)
+        } else {
+          updated = updated.replace(/^(Name:.*)$/m, `$1\nTimezone: ${tzLine}`)
+        }
         fs.writeFileSync(userMdPath, updated, 'utf8')
       }
     } catch (e: any) { console.warn('[Onboarding] USER.md write failed:', e.message) }
@@ -1197,13 +1285,21 @@ export function createApiServer(): Express {
     // Write USER.md so the system prompt knows who this person is
     if (userName) {
       try {
+        const { timezone, utcOffset } = detectTimezone()
+        const tzLine = `${timezone} (${utcOffset})`
         const userMdPath = path.join(WORKSPACE_ROOT, 'workspace', 'USER.md')
         fs.mkdirSync(path.dirname(userMdPath), { recursive: true })
         const existing = fs.existsSync(userMdPath) ? fs.readFileSync(userMdPath, 'utf8') : ''
         if (!existing.trim() || existing.startsWith('# User Profile\nName: User')) {
-          fs.writeFileSync(userMdPath, `# User Profile\nName: ${userName}\n`, 'utf8')
+          fs.writeFileSync(userMdPath, `# User Profile\nName: ${userName}\nTimezone: ${tzLine}\n`, 'utf8')
         } else {
-          fs.writeFileSync(userMdPath, existing.replace(/^Name:.*$/m, `Name: ${userName}`), 'utf8')
+          let updated = existing.replace(/^Name:.*$/m, `Name: ${userName}`)
+          if (/^Timezone:/m.test(updated)) {
+            updated = updated.replace(/^Timezone:.*$/m, `Timezone: ${tzLine}`)
+          } else {
+            updated = updated.replace(/^(Name:.*)$/m, `$1\nTimezone: ${tzLine}`)
+          }
+          fs.writeFileSync(userMdPath, updated, 'utf8')
         }
       } catch (e: any) { console.warn('[Onboarding/complete] USER.md write failed:', e.message) }
     }
@@ -1621,7 +1717,7 @@ export function createApiServer(): Express {
   app.delete('/api/skills/learned/:name', (req: Request, res: Response) => {
     try {
       const skillDir = path.join(
-        process.cwd(), 'workspace', 'skills', 'learned', String(req.params.name),
+        WORKSPACE_ROOT, 'workspace', 'skills', 'learned', String(req.params.name),
       )
       if (!fs.existsSync(skillDir)) {
         res.status(404).json({ error: 'Skill not found' }); return
@@ -2070,7 +2166,7 @@ export function createApiServer(): Express {
       semanticMemory.add(trimmed, 'fact', entryTags)
 
       // Write to workspace/knowledge/clips/
-      const clipsDir = path.join(process.cwd(), 'workspace', 'knowledge', 'clips')
+      const clipsDir = path.join(WORKSPACE_ROOT, 'workspace', 'knowledge', 'clips')
       fs.mkdirSync(clipsDir, { recursive: true })
       fs.writeFileSync(
         path.join(clipsDir, `${id}.md`),
@@ -2091,7 +2187,7 @@ export function createApiServer(): Express {
   // GET /api/clips — list recent clips + bookmarklet
   app.get('/api/clips', async (_req: Request, res: Response) => {
     try {
-      const clipsDir = path.join(process.cwd(), 'workspace', 'knowledge', 'clips')
+      const clipsDir = path.join(WORKSPACE_ROOT, 'workspace', 'knowledge', 'clips')
       if (!fs.existsSync(clipsDir)) {
         return res.json({ clips: [], count: 0, bookmarklet: BOOKMARKLET }) as any
       }
@@ -2146,7 +2242,7 @@ export function createApiServer(): Express {
     try {
       const entries  = auditTrail.getToday()
       const allTime  = (() => {
-        const p = require('path').join(process.cwd(), 'workspace', 'audit', 'audit.jsonl')
+        const p = require('path').join(WORKSPACE_ROOT, 'workspace', 'audit', 'audit.jsonl')
         if (!require('fs').existsSync(p)) return []
         return require('fs').readFileSync(p, 'utf-8').trim().split('\n').filter(Boolean).map((l: string) => {
           try { return JSON.parse(l) } catch { return null }
@@ -2425,7 +2521,7 @@ export function createApiServer(): Express {
   // GET /api/plans/recent â€” list 10 most recent task plans
   app.get('/api/plans/recent', (_req: Request, res: Response) => {
     try {
-      const tasksDir = path.join(process.cwd(), 'workspace', 'tasks')
+      const tasksDir = path.join(WORKSPACE_ROOT, 'workspace', 'tasks')
       if (!fs.existsSync(tasksDir)) { res.json([]); return }
 
       const tasks = fs.readdirSync(tasksDir)
@@ -2548,7 +2644,7 @@ export function createApiServer(): Express {
   // POST /api/conversations/clear — clear all saved conversation sessions from disk
   app.post('/api/conversations/clear', (_req: Request, res: Response) => {
     try {
-      const sessionsDir = path.join(process.cwd(), 'workspace', 'sessions')
+      const sessionsDir = path.join(WORKSPACE_ROOT, 'workspace', 'sessions')
       if (fs.existsSync(sessionsDir)) {
         const files = fs.readdirSync(sessionsDir)
         files.forEach(f => { try { fs.unlinkSync(path.join(sessionsDir, f)) } catch {} })
@@ -2563,7 +2659,7 @@ export function createApiServer(): Express {
   // POST /api/knowledge/clear — clear knowledge base files
   app.post('/api/knowledge/clear', (_req: Request, res: Response) => {
     try {
-      const kbDir = path.join(process.cwd(), 'workspace', 'knowledge')
+      const kbDir = path.join(WORKSPACE_ROOT, 'workspace', 'knowledge')
       if (fs.existsSync(kbDir)) {
         const files = fs.readdirSync(kbDir)
         files.forEach(f => { try { fs.unlinkSync(path.join(kbDir, f)) } catch {} })
@@ -2615,7 +2711,7 @@ export function createApiServer(): Express {
   // GET /api/screenshot â€” serve latest screenshot from workspace/screenshots/
   app.get('/api/screenshot', (_req: Request, res: Response) => {
     try {
-      const dir = path.join(process.cwd(), 'workspace', 'screenshots')
+      const dir = path.join(WORKSPACE_ROOT, 'workspace', 'screenshots')
       if (!fs.existsSync(dir)) { res.status(404).end(); return }
       const files = fs.readdirSync(dir)
         .filter((f: string) => f.endsWith('.png'))
@@ -2768,7 +2864,7 @@ export function createApiServer(): Express {
   app.get('/api/growth/failures', (_req: Request, res: Response) => {
     try {
       const limitParam = parseInt(((_req as any).query?.limit as string) || '20', 10)
-      const logPath = require('path').join(process.cwd(), 'workspace', 'growth', 'failure-log.jsonl')
+      const logPath = require('path').join(WORKSPACE_ROOT, 'workspace', 'growth', 'failure-log.jsonl')
       const fs2     = require('fs')
       if (!fs2.existsSync(logPath)) { res.json({ failures: [] }); return }
       const lines   = fs2.readFileSync(logPath, 'utf-8').trim().split('\n').filter(Boolean)
@@ -2856,10 +2952,10 @@ export function startupCheck(): void {
 
   // Print summary
   const allOk = checks.every(c => c.ok)
-  console.log(`[Startup] Health check â€” ${allOk ? 'ALL OK' : 'SOME FAILED'}`)
+  console.log(`[Startup] Health check - ${allOk ? 'ALL OK' : 'SOME FAILED'}`)
   for (const c of checks) {
-    const icon = c.ok ? 'âœ“' : 'âœ—'
-    const detail = c.detail ? ` â€” ${c.detail}` : ''
+    const icon = c.ok ? '[OK]' : '[FAIL]'
+    const detail = c.detail ? ` - ${c.detail}` : ''
     console.log(`[Startup]   ${icon} ${c.name}${detail}`)
   }
 }
@@ -2895,7 +2991,27 @@ export function startApiServer(portArg?: number): Express {
   const app    = createApiServer()
   const server = http.createServer(app)
 
-  // â”€â”€ Startup health check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Startup workspace diagnostics ─────────────────────────────
+  // Seed workspace/SOUL.md from root SOUL.md if missing (dev mode)
+  const _wsSoulPath  = path.join(WORKSPACE_ROOT, 'workspace', 'SOUL.md')
+  const _rootSoulPath = path.join(process.cwd(), 'SOUL.md')
+  if (!fs.existsSync(_wsSoulPath) && fs.existsSync(_rootSoulPath)) {
+    try {
+      fs.mkdirSync(path.dirname(_wsSoulPath), { recursive: true })
+      fs.copyFileSync(_rootSoulPath, _wsSoulPath)
+      console.log('[Startup] Seeded workspace/SOUL.md from root SOUL.md')
+    } catch { /* non-fatal */ }
+  }
+  console.log('[Startup] WORKSPACE_ROOT:', WORKSPACE_ROOT)
+  console.log('[Startup] AIDEN_USER_DATA:', process.env.AIDEN_USER_DATA || '(not set)')
+  console.log('[Startup] SOUL.md exists:', fs.existsSync(_wsSoulPath))
+  console.log('[Startup] USER.md exists:', fs.existsSync(path.join(WORKSPACE_ROOT, 'workspace', 'USER.md')))
+  console.log('[Startup] STANDING_ORDERS exists:', fs.existsSync(path.join(WORKSPACE_ROOT, 'workspace', 'STANDING_ORDERS.md')))
+  const _soulLen = fs.existsSync(_wsSoulPath) ? fs.readFileSync(_wsSoulPath, 'utf-8').length : 0
+  console.log('[Startup] SOUL length:', _soulLen, 'chars')
+  console.log('[Startup] Tool count:', Object.keys(TOOL_DESCRIPTIONS).length)
+
+  // ── Startup health check ─────────────────────────────────────
   try { startupCheck() } catch (e: any) {
     console.error('[Startup] startupCheck threw:', e.message)
   }
@@ -2932,7 +3048,7 @@ export function startApiServer(portArg?: number): Express {
 
   // Stale task cleanup â€” mark running tasks older than 1h as failed (runs before recovery)
   try {
-    const tasksDir = path.join(process.cwd(), 'workspace', 'tasks')
+    const tasksDir = path.join(WORKSPACE_ROOT, 'workspace', 'tasks')
     if (fs.existsSync(tasksDir)) {
       const taskDirs = fs.readdirSync(tasksDir)
         .filter((d: string) => d.startsWith('task_'))
@@ -2967,8 +3083,110 @@ export function startApiServer(portArg?: number): Express {
   // Log provider chain before listening so it's visible in startup log
   try { logProviderStatus() } catch {}
 
+  // ── AUDIT 2: Tool Registry ────────────────────────────────────
+  try {
+    const toolNames = Object.keys(TOOL_DESCRIPTIONS)
+    console.log(`[Audit] Tool Registry: ${toolNames.length} tools registered`)
+    toolNames.forEach(n => console.log(`  - ${n}: ${TOOL_DESCRIPTIONS[n].slice(0, 70)}`))
+  } catch (e: any) { console.error('[Audit] Tool audit failed:', e.message) }
+
+  // ── AUDIT 3: Agent Registry (specialist personas) ─────────────
+  const AGENT_PERSONAS: Record<string, string> = {
+    engineer:     'Senior TypeScript/JavaScript engineer — writes clean code with full error handling.',
+    security:     'Security auditor — analyzes for OWASP Top 10, provides specific fixes.',
+    data_analyst: 'Data analyst — statistical analysis, patterns, and visualizable insights.',
+    designer:     'UI/UX designer — design recommendations with color codes, typography, layout.',
+    researcher:   'Research specialist — extracts entities, compares systematically.',
+    debugger:     'Debugger — forms 3 hypotheses, eliminates systematically, provides fix.',
+  }
+  console.log(`[Audit] Agent Registry: ${Object.keys(AGENT_PERSONAS).length} specialist agents`)
+  Object.entries(AGENT_PERSONAS).forEach(([name, desc]) => console.log(`  - ${name}: ${desc.slice(0, 60)}`))
+
+  // ── AUDIT 4: Provider Chain (enhanced) ───────────────────────
+  try {
+    const cfg = loadConfig()
+    console.log('[Audit] Provider Chain:')
+    cfg.providers.apis.forEach((api, i) => {
+      const envKey = api.key?.startsWith('env:') ? (process.env[api.key.replace('env:', '')] || '') : api.key
+      const hasKey = (envKey || '').length > 0
+      console.log(`  ${i + 1}. ${api.name} (${api.provider}/${api.model}) — enabled: ${api.enabled}, hasKey: ${hasKey}, rateLimited: ${api.rateLimited}`)
+    })
+    console.log(`[Audit] Ollama: model=${cfg.ollama?.model}, planner=${cfg.ollama?.plannerModel}, coder=${cfg.ollama?.coderModel}, fast=${cfg.ollama?.fastModel}`)
+  } catch (e: any) { console.error('[Audit] Provider audit failed:', e.message) }
+
+  // ── AUDIT 5: Workspace Files ──────────────────────────────────
+  const WS = path.join(WORKSPACE_ROOT, 'workspace')
+  const WS_FILES = ['SOUL.md', 'USER.md', 'STANDING_ORDERS.md', 'GOALS.md', 'HEARTBEAT.md', 'instincts.json', 'identity.json', 'semantic.json', 'entity_graph.json', 'learning.json']
+  console.log('[Audit] Workspace:', WS)
+  WS_FILES.forEach(f => {
+    const p = path.join(WS, f)
+    const exists = fs.existsSync(p)
+    const size   = exists ? fs.statSync(p).size : 0
+    console.log(`  ${exists ? '[OK]' : '[MISS]'} ${f}${exists ? ` (${(size / 1024).toFixed(1)} KB)` : ' — MISSING'}`)
+  })
+
+  // ── AUDIT 6: Memory System ────────────────────────────────────
+  try {
+    const semStats  = semanticMemory.getStats()
+    const egStats   = entityGraph.getStats()
+    const learnStats = learningMemory.getStats()
+    const skillStats = skillTeacher.getStats()
+    console.log('[Audit] Memory System:')
+    console.log(`  Semantic memories: ${semStats.total} (types: ${JSON.stringify(semStats.byType)})`)
+    console.log(`  Entity graph: ${egStats.nodes} nodes, ${egStats.edges} edges`)
+    console.log(`  Learning experiences: ${learnStats.total}, success rate: ${learnStats.successRate}%, avg duration: ${learnStats.avgDuration}ms`)
+    console.log(`  Skills learned: ${skillStats.learned}, approved: ${skillStats.approved}`)
+  } catch (e: any) { console.error('[Audit] Memory audit failed:', e.message) }
+
+  // ── AUDIT 7: Fast-Path Coverage ───────────────────────────────
+  console.log('[Audit] Fast-paths registered in /api/chat handler:')
+  console.log('  Capability patterns:      5 (list tools, what can you do, etc.)')
+  console.log('  Banned topics:            8 (GST, HSN, GSTIN, etc.)')
+  console.log('  Jailbreak detection:      JAILBREAK_PATTERNS array')
+  console.log('  Dangerous commands:       DANGEROUS_PATTERNS array')
+  console.log('  Identity (name/who):      4 patterns')
+  console.log('  Builder (who made you):   4 patterns')
+  console.log('  Capabilities/learning:    7 patterns')
+  console.log('  Local/offline:            5 patterns')
+  console.log('  Date/time:                6 patterns (what year, what time, etc.)')
+  console.log('  Goal create/show:         4 patterns')
+  console.log('  Context questions:        2 patterns')
+  console.log('  Hardware specs:           1 pattern (regex)')
+  console.log('  File-read existence:      1 pattern (path detection)')
+  console.log('  Search fast-paths:        16 regex patterns (YouTube/Spotify/Google/Wikipedia/GitHub)')
+  console.log('  High-risk actions:        5 patterns (email/SMTP)')
+  console.log('  Math eval:                1 pattern')
+  console.log('  Total fast-paths:         ~80 patterns before planner runs')
+
+  // ── AUDIT 9: Scheduler ────────────────────────────────────────
+  try {
+    const tasks = scheduler.list()
+    console.log(`[Audit] Scheduler: ${tasks.length} task(s) loaded`)
+    tasks.forEach(t => console.log(`  - [${t.enabled ? 'ON' : 'OFF'}] ${t.id}: "${t.description.slice(0, 50)}" (${t.schedule})`))
+    if (tasks.length === 0) console.log('  (no tasks scheduled yet)')
+  } catch (e: any) { console.error('[Audit] Scheduler audit failed:', e.message) }
+
   server.listen(port, host, () => {
-    console.log(`[API] DevOS v2.0 Â· Aiden running at http://${host}:${port}`)
+    // ── AUDIT 10: API Endpoints ───────────────────────────────────
+    try {
+      const routes: string[] = []
+      app._router.stack.forEach((r: any) => {
+        if (r.route) {
+          const methods = Object.keys(r.route.methods).join(',').toUpperCase()
+          routes.push(`${methods} ${r.route.path}`)
+        }
+      })
+      console.log(`[Audit] API Endpoints: ${routes.length} routes registered`)
+      routes.sort().forEach(r => console.log(`  ${r}`))
+    } catch (e: any) { console.error('[Audit] Route audit failed:', e.message) }
+
+    // ── AUDIT 8: Hook System (after all hooks are registered) ────
+    console.log('[Audit] Hook Registry (post-registration):')
+    console.log(`  pre_compact:     ${getHookCount('pre_compact')} handler(s)`)
+    console.log(`  session_stop:    ${getHookCount('session_stop')} handler(s)`)
+    console.log(`  after_tool_call: ${getHookCount('after_tool_call')} handler(s)`)
+
+    console.log(`[API] DevOS v3.1.0 - Aiden running at http://${host}:${port}`)
     console.log(`[API] Health: http://${host}:${port}/api/health`)
     console.log(`[API] LivePulse WS: ws://${host}:${port}`)
   })
@@ -3127,6 +3345,10 @@ async function streamChat(
   } catch {}
 
   // [Aiden] System prompt v8 — SOUL.md + USER.md + STANDING_ORDERS injected
+  // Resolve real Windows username and home directory to prevent LLM from using "Aiden" as username
+  const _sysUser   = process.env.USERNAME || process.env.USER || require('os').userInfo().username || 'User'
+  const _sysHome   = require('os').homedir()
+  const systemContext = `\nSYSTEM CONTEXT — use these exact paths for ANY file operations:\n- Windows username: ${_sysUser} (NOT "Aiden" — Aiden is the AI name, not the Windows user)\n- Home directory: ${_sysHome}\n- Desktop: ${require('path').join(_sysHome, 'Desktop')}\n- Documents: ${require('path').join(_sysHome, 'Documents')}\n- Downloads: ${require('path').join(_sysHome, 'Downloads')}\n`
   const soulPrefix = AIDEN_SOUL ? AIDEN_SOUL + '\n\n' : ''
   const userMdPath = path.join(WORKSPACE_ROOT, 'workspace', 'USER.md')
   let userProfile = ''
@@ -3149,14 +3371,14 @@ async function streamChat(
     ? '\n\nSTANDING ORDERS — follow always:\n' + fs.readFileSync(soPath, 'utf-8')
     : ''
   const chatPrompt = `${soulPrefix}You are Aiden — a personal AI OS built for ${userName}. You are sharp, direct, and slightly witty. You speak like a trusted co-founder. Today: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.
-${userProfile}
+${userProfile}${systemContext}
 HARD RULES — never violate:
 - Never say "As an AI language model...", "I'm here to assist", "Certainly!", "Great question!", "Of course!"
 - Never say "key findings from our research", "as per your request I have written", "here is a comparison of", "verdict:", "recommendation:" in a generic reply
 - Never mention Pega, BlueWinston, Gaude Digital, or any third-party product by name
 - Never say you can't access the internet (you have web_search) or can't create files (you have file_write)
 - Never fabricate capabilities: no graphic design, video production, or music generation
-- Never list 250+ skills — you have 44+ real tools, 31 specialist agents, and a 6-layer memory system
+- Never list 250+ skills — you have 48 real tools, 31 specialist agents, and a 6-layer memory system
 - For errors: explain what failed and what to try next
 - If you don't know something: say "I don't know"
 - Direct and concise: 1–3 sentences for simple results; more only when output is rich
@@ -3171,6 +3393,20 @@ IDENTITY — you are NOT a static pre-trained model. You have active living syst
 - XP & Leveling: gains experience, streaks, and levels up
 When asked about capabilities or learning, be accurate. NEVER say you are just a pre-trained model that cannot learn.
 ${cognitionHint}${firstMessageContext}${memoryContext}${sessionContext}${memoryIndex}${standingOrders}`
+
+  // ── AUDIT 1: System Prompt debug ─────────────────────────────
+  console.log('[DEBUG] === FULL SYSTEM PROMPT ===')
+  console.log('[DEBUG] Length:', chatPrompt.length, 'chars, ~', Math.round(chatPrompt.length / 4), 'tokens')
+  console.log('[DEBUG] Contains SOUL:', chatPrompt.includes('SOUL') || chatPrompt.includes('Aiden'))
+  console.log('[DEBUG] Contains USER:', chatPrompt.includes('Name:'))
+  console.log('[DEBUG] Contains STANDING_ORDERS:', chatPrompt.includes('STANDING ORDERS'))
+  console.log('[DEBUG] Contains tools:', chatPrompt.includes('file_read') || chatPrompt.includes('web_search'))
+  console.log('[DEBUG] Has userProfile:', userProfile.length > 0, `(${userProfile.length} chars)`)
+  console.log('[DEBUG] Has standingOrders:', standingOrders.length > 0, `(${standingOrders.length} chars)`)
+  console.log('[DEBUG] Has memoryContext:', memoryContext.length > 0, `(${memoryContext.length} chars)`)
+  console.log('[DEBUG] First 500 chars:', chatPrompt.slice(0, 500))
+  console.log('[DEBUG] Last 500 chars:', chatPrompt.slice(-500))
+  console.log('[DEBUG] === END SYSTEM PROMPT ===')
 
   const msgs = [
     { role: 'system', content: chatPrompt },
