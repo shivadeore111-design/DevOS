@@ -192,6 +192,9 @@ interface DevOSCtxType {
   setLicenseMsg:  (v: { type: 'success' | 'error'; text: string } | null) => void
   validateKey:    (key: string) => Promise<{ success: boolean; error?: string }>
   clearProLicense:() => Promise<void>
+  // Update banner
+  updateBanner:    { version: string; url: string } | null
+  setUpdateBanner: (v: { version: string; url: string } | null) => void
 }
 
 const DevOSCtx = createContext<DevOSCtxType>(null!)
@@ -1727,26 +1730,6 @@ function ChatPanel() {
             }}
           />
 
-          {/* Mode selector */}
-          <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
-            {(['auto', 'plan', 'chat'] as ExecMode[]).map(m => (
-              <button key={m} onClick={() => setExecMode(m)} title={m} style={{
-                width: 28, height: 28, borderRadius: 5, border: 'none',
-                background: execMode === m ? 'rgba(249,115,22,0.15)' : 'transparent',
-                color: execMode === m ? 'var(--orange)' : 'var(--muted)',
-                cursor: 'pointer', fontSize: 14, transition: 'all 0.15s',
-              }}>
-                {m === 'auto' ? (
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-                ) : m === 'plan' ? (
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h4"/></svg>
-                ) : (
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                )}
-              </button>
-            ))}
-          </div>
-
           {/* Voice input button — shown only when STT available */}
           {voiceStatus.stt && (
             <button
@@ -2081,7 +2064,7 @@ function LiveViewPanel() {
 // ── StatusBar (replaces ActivityBar + DisclaimerBar) ─────────
 
 function StatusBar() {
-  const { activityLogs, systemStats, activeModel } = useDevOS()
+  const { activityLogs, systemStats, activeModel, updateBanner, setSettingsOpen, setSettingsTab } = useDevOS()
   const providerLabel = activeModel
     ? activeModel.split('/').pop()?.replace(':latest', '') ?? activeModel
     : 'local'
@@ -2107,6 +2090,17 @@ function StatusBar() {
       <span>{memCount} {memCount === 1 ? 'memory' : 'memories'}</span>
       <span style={{ color: 'var(--border2)' }}>·</span>
       <span>{activityLogs.length} events</span>
+      {updateBanner && (
+        <>
+          <span style={{ color: 'var(--border2)' }}>·</span>
+          <span
+            onClick={() => { setSettingsOpen(true); setSettingsTab('updates') }}
+            style={{ color: 'var(--orange)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}
+          >
+            ⬆ Update v{updateBanner.version}
+          </span>
+        </>
+      )}
       <span style={{ color: 'var(--border2)' }}>·</span>
       <a href="https://taracod.com" target="_blank" rel="noopener" style={{ color: 'var(--muted)', textDecoration: 'none' }}>
         taracod.com
@@ -2547,125 +2541,260 @@ function UserProfileTab() {
 
 // ── UpdatesTab ────────────────────────────────────────────────
 
-function UpdatesTab() {
-  const [state, setState] = useState<'idle' | 'checking' | 'upToDate' | 'available'>('idle')
-  const [updateInfo, setUpdateInfo] = useState<{
-    latestVersion?: string; downloadUrl?: string; releaseNotes?: string; publishedAt?: string
-  }>({})
-  const [dismissed, setDismissed] = useState(false)
+type UpdateState = 'idle' | 'checking' | 'uptodate' | 'available' | 'downloading' | 'ready' | 'error'
 
-  const check = async () => {
-    setState('checking')
+function UpdatesTab() {
+  const [updateState,   setUpdateState]   = useState<UpdateState>('idle')
+  const [latestVersion, setLatestVersion] = useState('')
+  const [releaseNotes,  setReleaseNotes]  = useState('')
+  const [releaseDate,   setReleaseDate]   = useState('')
+  const [progress,      setProgress]      = useState(0)
+  const [speed,         setSpeed]         = useState(0)
+  const [transferred,   setTransferred]   = useState(0)
+  const [total,         setTotal]         = useState(0)
+  const [errorMsg,      setErrorMsg]      = useState('')
+  const [checkedAt,     setCheckedAt]     = useState('')
+  const isElectron = typeof window !== 'undefined' && !!(window as any).aidenUpdater
+
+  // ── Wire up Electron IPC listeners ─────────────────────────
+  useEffect(() => {
+    const u = (window as any).aidenUpdater
+    if (!u) return
+
+    u.onUpdateAvailable((data: any) => {
+      setUpdateState('available')
+      setLatestVersion(data.version || '')
+      setReleaseNotes(typeof data.releaseNotes === 'string' ? data.releaseNotes : '')
+      setReleaseDate(data.releaseDate ? new Date(data.releaseDate).toLocaleDateString() : '')
+    })
+    u.onUpdateNotAvailable(() => {
+      setUpdateState('uptodate')
+      setCheckedAt(new Date().toLocaleTimeString())
+    })
+    u.onUpdateProgress((data: any) => {
+      setUpdateState('downloading')
+      setProgress(data.percent ?? 0)
+      setSpeed(data.speed ?? 0)
+      setTransferred(data.transferred ?? 0)
+      setTotal(data.total ?? 0)
+    })
+    u.onUpdateDownloaded((data: any) => {
+      setUpdateState('ready')
+      setLatestVersion(data.version || latestVersion)
+    })
+    u.onUpdateError((data: any) => {
+      setUpdateState('error')
+      setErrorMsg(data.message || 'Unknown error')
+    })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Fallback API check (browser / dev mode) ─────────────────
+  const apiFallbackCheck = async () => {
+    setUpdateState('checking')
     try {
       const res  = await fetch('http://localhost:4200/api/update/check')
       const data = await res.json() as any
-      if (data.available) {
-        setUpdateInfo({
-          latestVersion: data.latestVersion,
-          downloadUrl:   data.downloadUrl,
-          releaseNotes:  data.releaseNotes,
-          publishedAt:   data.publishedAt,
-        })
-        setState('available')
+      if (data.available && data.latestVersion) {
+        setUpdateState('available')
+        setLatestVersion(data.latestVersion)
+        setReleaseNotes(data.releaseNotes || '')
+        setReleaseDate(data.publishedAt ? new Date(data.publishedAt).toLocaleDateString() : '')
       } else {
-        setState('upToDate')
+        setUpdateState('uptodate')
+        setCheckedAt(new Date().toLocaleTimeString())
       }
-    } catch {
-      setState('idle')
+    } catch (e: any) {
+      setUpdateState('error')
+      setErrorMsg(e?.message || 'Check failed')
     }
   }
 
-  const download = async () => {
-    if (!updateInfo.downloadUrl) return
-    await fetch('http://localhost:4200/api/update/download', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ downloadUrl: updateInfo.downloadUrl }),
-    })
+  const handleCheck = () => {
+    setUpdateState('checking')
+    if (isElectron) {
+      ;(window as any).aidenUpdater.checkUpdate()
+    } else {
+      apiFallbackCheck()
+    }
   }
+
+  const handleDownload = () => {
+    if (isElectron) {
+      ;(window as any).aidenUpdater.downloadUpdate()
+      setUpdateState('downloading')
+    } else {
+      // Browser fallback — open GitHub release
+      window.open('https://github.com/taracodlabs/aiden-releases/releases/latest', '_blank')
+    }
+  }
+
+  const handleInstall = () => {
+    if (isElectron) {
+      ;(window as any).aidenUpdater.installUpdate()
+    }
+  }
+
+  // ── Helpers ─────────────────────────────────────────────────
+  const fmtBytes = (b: number) => b > 1e6 ? `${(b / 1e6).toFixed(1)} MB` : `${Math.round(b / 1024)} KB`
+  const fmtSpeed = (b: number) => b > 1e6 ? `${(b / 1e6).toFixed(1)} MB/s` : `${Math.round(b / 1024)} KB/s`
+
+  const mono12 = { fontFamily: 'var(--mono)', fontSize: 12 } as const
+  const mono10 = { fontFamily: 'var(--mono)', fontSize: 10 } as const
 
   return (
     <div>
       <SettingsSection title="Software Updates">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-          {/* Current version */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10,
-            padding: '10px 14px', background: 'var(--bg2)', borderRadius: 8, border: '1px solid var(--border)' }}>
-            <div style={{ fontSize: 18 }}>🤖</div>
+          {/* Current version pill */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 10,
+            padding: '10px 14px', background: 'var(--bg2)',
+            borderRadius: 8, border: '1px solid var(--border)',
+          }}>
+            <span style={{ fontSize: 18 }}>🤖</span>
             <div>
-              <div style={{ fontSize: 12, color: 'var(--text)', fontFamily: 'var(--mono)', fontWeight: 600 }}>
-                Aiden v3.1.0
-              </div>
-              <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'var(--mono)', marginTop: 2 }}>
-                Installed · Local AI OS
+              <div style={{ ...mono12, color: 'var(--text)', fontWeight: 600 }}>Aiden v3.1.0</div>
+              <div style={{ ...mono10, color: 'var(--muted)', marginTop: 2 }}>
+                Installed · Local AI OS{!isElectron ? ' · browser mode' : ''}
               </div>
             </div>
           </div>
 
-          {/* Check button */}
-          {(state === 'idle' || state === 'upToDate') && (
-            <button onClick={check} style={{
-              padding: '8px 18px', borderRadius: 6, cursor: 'pointer',
-              background: 'var(--orange)', border: 'none', color: '#000',
-              fontFamily: 'var(--mono)', fontSize: 12, fontWeight: 600,
-              alignSelf: 'flex-start',
-            }}>
-              Check for Updates
-            </button>
-          )}
-
-          {/* Checking spinner */}
-          {state === 'checking' && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8,
-              color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 12 }}>
-              <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>⟳</span>
-              Checking...
-            </div>
-          )}
-
-          {/* Up to date */}
-          {state === 'upToDate' && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8,
-              color: 'var(--green)', fontFamily: 'var(--mono)', fontSize: 12 }}>
-              ✓ You're on the latest version
-            </div>
-          )}
-
-          {/* Update available */}
-          {state === 'available' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10,
-                padding: '10px 14px', background: 'rgba(251,146,60,0.08)',
-                borderRadius: 8, border: '1px solid rgba(251,146,60,0.3)' }}>
-                <div style={{ fontSize: 18 }}>🚀</div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 12, color: 'var(--orange)', fontFamily: 'var(--mono)', fontWeight: 600 }}>
-                    Aiden v{updateInfo.latestVersion} is available!
-                  </div>
-                  {updateInfo.publishedAt && (
-                    <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'var(--mono)', marginTop: 2 }}>
-                      Released {new Date(updateInfo.publishedAt).toLocaleDateString()}
-                    </div>
-                  )}
+          {/* ── IDLE / UP-TO-DATE ── */}
+          {(updateState === 'idle' || updateState === 'uptodate') && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {updateState === 'uptodate' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, ...mono12, color: '#4ade80' }}>
+                  ✓ Aiden v3.1.0 — You&apos;re on the latest version
+                  {checkedAt && <span style={{ ...mono10, color: 'var(--muted)' }}>· checked {checkedAt}</span>}
                 </div>
-                <button onClick={download} style={{
-                  padding: '6px 16px', borderRadius: 6, cursor: 'pointer',
+              )}
+              <button onClick={handleCheck} style={{
+                padding: '8px 18px', borderRadius: 6, cursor: 'pointer',
+                background: 'var(--orange)', border: 'none', color: '#000',
+                ...mono12, fontWeight: 600, alignSelf: 'flex-start',
+              }}>
+                {updateState === 'uptodate' ? 'Check Again' : 'Check for Updates'}
+              </button>
+            </div>
+          )}
+
+          {/* ── CHECKING ── */}
+          {updateState === 'checking' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, ...mono12, color: 'var(--muted)' }}>
+              <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>⟳</span>
+              Checking for updates…
+            </div>
+          )}
+
+          {/* ── UPDATE AVAILABLE ── */}
+          {updateState === 'available' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '10px 14px', background: 'rgba(251,146,60,0.08)',
+                borderRadius: 8, border: '1px solid rgba(251,146,60,0.3)',
+              }}>
+                <span style={{ fontSize: 18 }}>⬆</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ ...mono12, color: 'var(--orange)', fontWeight: 600 }}>
+                    Aiden v{latestVersion} is available!
+                  </div>
+                  <div style={{ ...mono10, color: 'var(--muted)', marginTop: 2 }}>
+                    Current: v3.1.0{releaseDate ? ` · Released ${releaseDate}` : ''}
+                  </div>
+                </div>
+                <button onClick={handleDownload} style={{
+                  padding: '7px 18px', borderRadius: 6, cursor: 'pointer',
                   background: 'var(--orange)', border: 'none', color: '#000',
-                  fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700,
+                  ...mono12, fontWeight: 700, flexShrink: 0,
                 }}>
                   Download Update
                 </button>
               </div>
-              {updateInfo.releaseNotes && (
+              {releaseNotes && (
                 <div style={{
                   padding: '10px 14px', background: 'var(--bg2)',
                   borderRadius: 8, border: '1px solid var(--border)',
-                  fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted2)',
+                  ...mono10, color: 'var(--muted2)',
                   whiteSpace: 'pre-wrap', lineHeight: 1.6, maxHeight: 200, overflowY: 'auto',
                 }}>
-                  {updateInfo.releaseNotes}
+                  <div style={{ color: 'var(--muted)', marginBottom: 6 }}>Release notes:</div>
+                  {releaseNotes}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* ── DOWNLOADING ── */}
+          {updateState === 'downloading' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ ...mono12, color: 'var(--text)' }}>
+                Downloading v{latestVersion || 'update'}…
+              </div>
+              {/* Progress bar */}
+              <div style={{
+                width: '100%', height: 8, background: 'var(--bg3)',
+                borderRadius: 4, overflow: 'hidden',
+              }}>
+                <div style={{
+                  height: '100%', width: `${progress}%`,
+                  background: 'var(--orange)',
+                  borderRadius: 4,
+                  transition: 'width 0.3s ease',
+                }} />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, ...mono10, color: 'var(--muted)' }}>
+                <span style={{ fontWeight: 600, color: 'var(--text)' }}>{progress}%</span>
+                {total > 0 && <span>{fmtBytes(transferred)} / {fmtBytes(total)}</span>}
+                {speed > 0 && <span>{fmtSpeed(speed)}</span>}
+              </div>
+            </div>
+          )}
+
+          {/* ── READY TO INSTALL ── */}
+          {updateState === 'ready' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{
+                padding: '10px 14px', background: 'rgba(74,222,128,0.08)',
+                borderRadius: 8, border: '1px solid rgba(74,222,128,0.25)',
+                ...mono12, color: '#4ade80',
+              }}>
+                ✓ v{latestVersion} downloaded and ready!
+                <div style={{ ...mono10, color: 'var(--muted)', marginTop: 4 }}>
+                  Aiden will restart automatically to apply the update.
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                <button onClick={handleInstall} style={{
+                  padding: '8px 20px', borderRadius: 6, cursor: 'pointer',
+                  background: '#4ade80', border: 'none', color: '#000',
+                  ...mono12, fontWeight: 700,
+                }}>
+                  Install &amp; Restart
+                </button>
+                <span style={{ ...mono10, color: 'var(--muted)', cursor: 'pointer' }}
+                  onClick={() => setUpdateState('idle')}>
+                  Later
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* ── ERROR ── */}
+          {updateState === 'error' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ ...mono12, color: '#ef4444' }}>
+                Update check failed. {errorMsg && <span style={{ ...mono10, color: 'var(--muted)' }}>{errorMsg}</span>}
+              </div>
+              <button onClick={handleCheck} style={{
+                padding: '7px 16px', borderRadius: 6, cursor: 'pointer',
+                background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text)',
+                ...mono12, alignSelf: 'flex-start',
+              }}>
+                Retry
+              </button>
             </div>
           )}
 
@@ -3174,8 +3303,18 @@ export default function Home() {
       .catch(() => {})
   }, [])
 
-  // ── Auto-check for updates 30s after launch ──────────────────
+  // ── Auto-update banner wiring ────────────────────────────────
   useEffect(() => {
+    // Electron: listen via IPC (aidenUpdater from preload)
+    const updater = typeof window !== 'undefined' ? (window as any).aidenUpdater : null
+    if (updater) {
+      updater.onUpdateAvailable((data: any) => {
+        if (data?.version) setUpdateBanner({ version: data.version, url: '' })
+      })
+      return // IPC handles everything — no polling needed
+    }
+
+    // Browser fallback: poll the API once after 30s
     const t = setTimeout(async () => {
       try {
         const res  = await fetch('http://localhost:4200/api/update/check')
@@ -3185,16 +3324,7 @@ export default function Home() {
         }
       } catch { /* silently ignore */ }
     }, 30000)
-    // Also handle update events dispatched by Electron main process
-    const handleElectronUpdate = (e: Event) => {
-      const detail = (e as CustomEvent<{ version: string; url: string }>).detail
-      if (detail?.version) setUpdateBanner({ version: detail.version, url: detail.url || '' })
-    }
-    window.addEventListener('aiden:update', handleElectronUpdate)
-    return () => {
-      clearTimeout(t)
-      window.removeEventListener('aiden:update', handleElectronUpdate)
-    }
+    return () => clearTimeout(t)
   }, [])
 
   // ── UI Mode ─────────────────────────────────────────────────
@@ -3368,12 +3498,28 @@ export default function Home() {
     refreshLicense()
   }, [])
 
-  // ── Load conversations from localStorage ────────────────────
+  // ── Load conversations from localStorage + backend ───────────
   useEffect(() => {
     try {
       const saved = localStorage.getItem('devos_conversations')
       if (saved) setConversations(JSON.parse(saved))
     } catch {}
+    // Fetch backend sessions and merge in any not already in localStorage
+    fetch('http://localhost:4200/api/sessions')
+      .then(r => r.ok ? r.json() : [])
+      .then((sessions: Array<{id: string; title: string; timestamp: number; messageCount: number; preview: string}>) => {
+        if (!sessions.length) return
+        setConversations(prev => {
+          const existingIds = new Set(prev.map((c: Conversation) => c.id))
+          const fromBackend = sessions
+            .filter(s => !existingIds.has(s.id))
+            .map(s => ({ id: s.id, title: s.title || 'Untitled', timestamp: s.timestamp, messages: [] as Message[] }))
+          return fromBackend.length > 0
+            ? [...prev, ...fromBackend].sort((a: Conversation, b: Conversation) => b.timestamp - a.timestamp)
+            : prev
+        })
+      })
+      .catch(() => {})
   }, [])
 
   // ── Save conversations to localStorage ──────────────────────
@@ -3944,6 +4090,8 @@ export default function Home() {
     licenseStatus, licenseKey, setLicenseKey,
     activatingKey, licenseMsg, setLicenseMsg,
     validateKey, clearProLicense,
+    // Update banner
+    updateBanner, setUpdateBanner,
   }
 
   // ── Loading splash ──────────────────────────────────────────

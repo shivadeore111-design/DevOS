@@ -118,6 +118,29 @@ export class ConversationMemory {
     return Object.keys(this.allSessions)
   }
 
+  getSessionsSummary(): Array<{
+    id:           string
+    title:        string
+    timestamp:    number
+    messageCount: number
+    preview:      string
+  }> {
+    return Object.entries(this.allSessions)
+      .map(([id, state]) => {
+        const firstMsg = state.exchanges.find(e => e.userMessage)
+        return {
+          id,
+          title:        firstMsg ? firstMsg.userMessage.slice(0, 40) : 'Untitled',
+          timestamp:    state.updatedAt,
+          messageCount: state.exchanges.length,
+          preview:      firstMsg ? firstMsg.userMessage.slice(0, 80) : '',
+        }
+      })
+      .filter(s => s.messageCount > 0)
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, 30)
+  }
+
   // Pull key facts from ALL sessions — useful for cross-session context
   getCrossSessionFacts(): string {
     const allFacts: string[] = []

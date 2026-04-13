@@ -1686,6 +1686,13 @@ export function createApiServer(): Express {
     } catch (err: any) { res.status(500).json({ error: err.message, conversations: [] }) }
   })
 
+  // GET /api/sessions — list recent chat sessions with rich metadata
+  app.get('/api/sessions', (_req: Request, res: Response) => {
+    try {
+      res.json(conversationMemory.getSessionsSummary())
+    } catch (err: any) { res.status(500).json({ error: err.message }) }
+  })
+
   // DELETE /api/knowledge/:fileId â€” delete a file
   app.delete('/api/knowledge/:fileId', (req: Request, res: Response) => {
     const deleted = knowledgeBase.deleteFile(String(req.params.fileId))
