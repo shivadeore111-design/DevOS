@@ -49,6 +49,7 @@ interface Conversation {
   title:     string
   timestamp: number
   messages:  Message[]
+  channels?: string[]   // channels that participated (cross-channel sessions)
 }
 
 interface ActivityLog {
@@ -1525,7 +1526,8 @@ function HistorySidebar() {
             </div>
             {convs.map(conv => (
               <button key={conv.id} onClick={() => loadConversation(conv.id)} style={{
-                display: 'block', width: '100%', textAlign: 'left',
+                display: 'flex', alignItems: 'center', gap: 4,
+                width: '100%', textAlign: 'left',
                 padding: '7px 10px', borderRadius: 5, marginBottom: 2,
                 background: currentConvId === conv.id ? 'var(--bg2)' : 'transparent',
                 border: 'none',
@@ -1533,9 +1535,15 @@ function HistorySidebar() {
                 color: currentConvId === conv.id ? 'var(--text)' : 'var(--muted2)',
                 fontFamily: 'var(--mono)', fontSize: 11, cursor: 'pointer',
                 transition: 'all 0.15s', overflow: 'hidden',
-                textOverflow: 'ellipsis', whiteSpace: 'nowrap',
               }}>
-                {conv.title.slice(0, 32)}{conv.title.length > 32 ? '...' : ''}
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                  {conv.title.slice(0, 32)}{conv.title.length > 32 ? '...' : ''}
+                </span>
+                {conv.channels && conv.channels.length > 1 && (
+                  <span className="cross-channel-badge" title={`Started on ${conv.channels[0]}`}>
+                    📱→🖥️
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -4359,13 +4367,13 @@ export default function Home() {
     // Fetch backend sessions and merge in any not already in localStorage
     fetch('http://localhost:4200/api/sessions')
       .then(r => r.ok ? r.json() : [])
-      .then((sessions: Array<{id: string; title: string; timestamp: number; messageCount: number; preview: string}>) => {
+      .then((sessions: Array<{id: string; title: string; timestamp: number; messageCount: number; preview: string; channels?: string[]}>) => {
         if (!sessions.length) return
         setConversations(prev => {
           const existingIds = new Set(prev.map((c: Conversation) => c.id))
           const fromBackend = sessions
             .filter(s => !existingIds.has(s.id))
-            .map(s => ({ id: s.id, title: s.title || 'Untitled', timestamp: s.timestamp, messages: [] as Message[] }))
+            .map(s => ({ id: s.id, title: s.title || 'Untitled', timestamp: s.timestamp, messages: [] as Message[], channels: s.channels }))
           return fromBackend.length > 0
             ? [...prev, ...fromBackend].sort((a: Conversation, b: Conversation) => b.timestamp - a.timestamp)
             : prev

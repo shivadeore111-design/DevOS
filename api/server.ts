@@ -86,6 +86,7 @@ import { TelegramBot } from '../core/telegramBot'
 import type { TelegramConfig } from '../core/telegramBot'
 import { gateway } from '../core/gateway'
 import type { IncomingMessage as GatewayMessage } from '../core/gateway'
+import { sessionRouter } from '../core/sessionRouter'
 
 // —— Sprint 25: module-level WebSocket clients registry (shared between createApiServer routes and startApiServer WS setup)
 let wsBroadcastClients   = new Set<any>()
@@ -1806,7 +1807,12 @@ export function createApiServer(): Express {
   // GET /api/sessions — list recent chat sessions with rich metadata
   app.get('/api/sessions', (_req: Request, res: Response) => {
     try {
-      res.json(conversationMemory.getSessionsSummary())
+      const summary  = conversationMemory.getSessionsSummary()
+      const enriched = summary.map(s => ({
+        ...s,
+        channels: sessionRouter.getSessionChannels(s.id),
+      }))
+      res.json(enriched)
     } catch (err: any) { res.status(500).json({ error: err.message }) }
   })
 
@@ -3705,19 +3711,22 @@ export function startApiServer(portArg?: number): Express {
   // the existing chat endpoint (JSON mode) so all channels share
   // the same memory, history, and tool pipeline.
   gateway.setProcessor(async (message: GatewayMessage): Promise<string> => {
+    // Use the stable cross-channel sessionId resolved by gateway.routeMessage;
+    // fall back to a channel-scoped ID for direct processor calls.
+    const sessionId = message.sessionId ?? `${message.channel}_${message.userId}`
     const chatResp = await fetch(`http://localhost:${port}/api/chat`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-      body:    JSON.stringify({
-        message:   message.text,
-        sessionId: `${message.channel}_${message.userId}`,
-      }),
+      body:    JSON.stringify({ message: message.text, sessionId }),
       signal: AbortSignal.timeout(120_000),
     })
     if (!chatResp.ok) throw new Error(`Chat HTTP ${chatResp.status}`)
     const data = await chatResp.json() as any
     return data.response || data.message || '(no response)'
   })
+
+  // Cleanup expired sessions every hour
+  setInterval(() => sessionRouter.cleanup(), 60 * 60 * 1000)
 
   // Dashboard and API channels deliver responses directly — mark active
   gateway.registerChannel('dashboard', async (_msg) => true)

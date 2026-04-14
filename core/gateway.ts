@@ -8,6 +8,8 @@
 // are routed through a single processor so they share the same
 // memory, context, and tool pipeline.
 
+import { sessionRouter } from './sessionRouter'
+
 // ── Types ──────────────────────────────────────────────────────
 
 export type ChannelType =
@@ -27,6 +29,7 @@ export interface IncomingMessage {
   attachments?: string[]
   timestamp:    number
   replyTo?:     string          // message ID being replied to
+  sessionId?:   string          // stable cross-channel session ID (set by routeMessage)
 }
 
 export interface OutgoingMessage {
@@ -79,20 +82,30 @@ class Gateway {
       throw new Error('No message processor registered')
     }
 
+    // Resolve stable cross-channel session and attach sessionId
+    const session        = sessionRouter.getSession(message.userId, message.channel)
+    session.messageCount++
+    message.sessionId    = session.sessionId
+
     console.log(
-      `[Gateway] ${message.channel}:${message.channelId} → ` +
-      `"${message.text.substring(0, 60)}"`,
+      `[Gateway] ${message.channel}:${message.channelId} ` +
+      `[${session.sessionId}] → "${message.text.substring(0, 60)}"`,
     )
 
     const start = Date.now()
 
     try {
-      const response = await this.messageProcessor(message)
+      let response = await this.messageProcessor(message)
       const duration = Date.now() - start
 
       console.log(
         `[Gateway] Response ready (${duration}ms) → ${message.channel}`,
       )
+
+      // Hint on Telegram first message: conversation continues on desktop
+      if (message.channel === 'telegram' && session.messageCount === 1) {
+        response += '\n\n_Tip: Continue this conversation on your desktop dashboard with full context._'
+      }
 
       return response
     } catch (error) {
