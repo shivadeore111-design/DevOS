@@ -3742,6 +3742,75 @@ function SecurityScan() {
   )
 }
 
+// ── IdeIntegration ───────────────────────────────────────────
+
+function IdeIntegration() {
+  const codeStyle: React.CSSProperties = {
+    display: 'block', background: 'var(--bg)', border: '1px solid var(--border)',
+    borderRadius: 6, padding: '10px 12px', fontFamily: 'var(--mono)', fontSize: 11,
+    color: 'var(--text2)', whiteSpace: 'pre', overflowX: 'auto', marginBottom: 16,
+  }
+  const h4Style: React.CSSProperties = {
+    fontSize: 12, fontWeight: 600, color: 'var(--text)', marginBottom: 6, marginTop: 14,
+  }
+
+  return (
+    <SettingsSection title="IDE Integration — ACP">
+      <p style={{ fontSize: 12, color: 'var(--muted3)', marginBottom: 14, lineHeight: 1.6 }}>
+        Aiden exposes an OpenAI-compatible API at <code style={{ fontFamily: 'var(--mono)', color: 'var(--orange)' }}>http://localhost:4200/v1</code>.
+        Point any OpenAI-compatible editor at that base URL and Aiden handles completions — with full memory and tools.
+      </p>
+
+      <h4 style={h4Style}>VS Code — Continue.dev</h4>
+      <code style={codeStyle}>{`// ~/.continue/config.json
+{
+  "models": [{
+    "title": "Aiden",
+    "provider": "openai",
+    "model": "aiden",
+    "apiBase": "http://localhost:4200/v1",
+    "apiKey": "not-needed"
+  }]
+}`}</code>
+
+      <h4 style={h4Style}>Cursor</h4>
+      <code style={codeStyle}>{`Settings → Models → OpenAI API Base
+  http://localhost:4200/v1
+
+API Key : any-value
+Model   : aiden`}</code>
+
+      <h4 style={h4Style}>JetBrains — AI Assistant / Grazie</h4>
+      <code style={codeStyle}>{`Settings → Tools → AI Assistant → Custom OpenAI endpoint
+  URL   : http://localhost:4200/v1/chat/completions
+  Key   : not-needed
+  Model : aiden`}</code>
+
+      <h4 style={h4Style}>Any OpenAI client</h4>
+      <code style={codeStyle}>{`from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://localhost:4200/v1",
+    api_key="not-needed",
+)
+response = client.chat.completions.create(
+    model="aiden",
+    messages=[{"role": "user", "content": "Hello"}]
+)`}</code>
+
+      <div style={{
+        marginTop: 16, padding: '10px 12px', borderRadius: 7,
+        background: 'rgba(249,115,22,0.06)', border: '1px solid rgba(249,115,22,0.2)',
+        fontSize: 12, color: 'var(--muted3)', lineHeight: 1.6,
+      }}>
+        <strong style={{ color: 'var(--orange)' }}>Available endpoints</strong><br />
+        <code style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>GET&nbsp; /v1/models</code> — model list<br />
+        <code style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>POST /v1/chat/completions</code> — streaming + non-streaming
+      </div>
+    </SettingsSection>
+  )
+}
+
 // ── SettingsDrawer ────────────────────────────────────────────
 
 const SETTINGS_TABS = [
@@ -3755,6 +3824,7 @@ const SETTINGS_TABS = [
   { id: 'skills',   label: '🎯 Skills'      },
   { id: 'channels', label: '💬 Channels'    },
   { id: 'security', label: '🛡️ Security'   },
+  { id: 'ide',      label: '💻 IDE Integration' },
   { id: 'guide',    label: '📖 User Guide'  },
   { id: 'setup',    label: '🔧 Setup'        },
   { id: 'privacy',  label: '📜 Privacy'     },
@@ -3841,6 +3911,8 @@ function SettingsDrawer() {
           {settingsTab === 'channels' && <TelegramSettingsTab />}
 
           {settingsTab === 'security' && <SecurityScan />}
+
+          {settingsTab === 'ide' && <IdeIntegration />}
 
           {settingsTab === 'pro' && (
             <SettingsSection title="License">

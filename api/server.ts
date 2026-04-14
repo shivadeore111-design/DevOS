@@ -3186,6 +3186,118 @@ export function createApiServer(): Express {
     res.json(gateway.getStatus())
   })
 
+  // ── ACP — OpenAI-compatible IDE integration ──────────────────
+  // VS Code (Continue.dev), Cursor, JetBrains, and any OpenAI client
+  // can point at http://localhost:4200/v1 and use Aiden as their backend.
+  // CORS is already global — no per-route header needed.
+
+  // GET /v1/models — list available models
+  app.get('/v1/models', (_req: Request, res: Response) => {
+    res.json({
+      object: 'list',
+      data: [
+        {
+          id:         'aiden',
+          object:     'model',
+          created:    Math.floor(Date.now() / 1000),
+          owned_by:   'aiden-local',
+          permission: [],
+          root:       'aiden',
+          parent:     null,
+        },
+        {
+          id:       'aiden/default',
+          object:   'model',
+          created:  Math.floor(Date.now() / 1000),
+          owned_by: 'aiden-local',
+        },
+      ],
+    })
+  })
+
+  // POST /v1/chat/completions — OpenAI-compatible chat
+  // Wires into the same callLLM fast-path used by mode=fast in /api/chat
+  app.post('/v1/chat/completions', async (req: Request, res: Response) => {
+    const { messages, model, stream } = req.body as {
+      messages:    { role: string; content: string }[]
+      model?:      string
+      stream?:     boolean
+      temperature?: number
+      max_tokens?:  number
+    }
+
+    // Extract last user message — matches the pattern the rest of the server uses
+    const lastUser = (messages ?? []).filter((m) => m.role === 'user').pop()
+    if (!lastUser) {
+      res.status(400).json({ error: { message: 'No user message found', type: 'invalid_request_error' } })
+      return
+    }
+
+    const userText = typeof lastUser.content === 'string'
+      ? lastUser.content
+      : JSON.stringify(lastUser.content)
+
+    // Use the responder tier — same provider selection as mode=fast in /api/chat
+    const tier         = getModelForTask('responder')
+    const rawKey       = tier.apiKey
+    const activeModel  = tier.model
+    const providerName = tier.providerName
+
+    const completionId = `chatcmpl-${Date.now()}`
+    const created      = Math.floor(Date.now() / 1000)
+    const modelName    = model || 'aiden'
+
+    if (stream) {
+      // Streaming: get full response then emit as a single content chunk
+      // (callLLM does not support token-level streaming; IDE clients accept this)
+      res.setHeader('Content-Type',  'text/event-stream')
+      res.setHeader('Cache-Control', 'no-cache')
+      res.setHeader('Connection',    'keep-alive')
+      try {
+        const text = await callLLM(userText, rawKey, activeModel, providerName)
+
+        const chunk = (delta: object, finish: string | null) =>
+          `data: ${JSON.stringify({
+            id: completionId, object: 'chat.completion.chunk',
+            created, model: modelName,
+            choices: [{ index: 0, delta, finish_reason: finish }],
+          })}\n\n`
+
+        res.write(chunk({ role: 'assistant' }, null))
+        res.write(chunk({ content: text },     null))
+        res.write(chunk({},                    'stop'))
+        res.write('data: [DONE]\n\n')
+        res.end()
+      } catch (e: any) {
+        res.write(`data: ${JSON.stringify({ error: e.message })}\n\n`)
+        res.end()
+      }
+    } else {
+      // Non-streaming: single JSON response
+      try {
+        const text = await callLLM(userText, rawKey, activeModel, providerName)
+        res.json({
+          id:      completionId,
+          object:  'chat.completion',
+          created,
+          model:   modelName,
+          choices: [{
+            index:         0,
+            message:       { role: 'assistant', content: text },
+            finish_reason: 'stop',
+          }],
+          usage: {
+            prompt_tokens:     Math.ceil(userText.length / 4),
+            completion_tokens: Math.ceil(text.length / 4),
+            total_tokens:      Math.ceil((userText.length + text.length) / 4),
+          },
+        })
+      } catch (e: any) {
+        res.status(500).json({ error: { message: e.message, type: 'server_error' } })
+      }
+    }
+  })
+
   // GET /api/security/scan — run AgentShield security scan
   app.get('/api/security/scan', async (_req: Request, res: Response) => {
     try {
