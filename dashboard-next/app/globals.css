@@ -184,3 +184,59 @@ input { font-family: inherit; }
   background: rgba(255,255,255,0.03);
   border-bottom: 1px solid rgba(255,255,255,0.06);
 }
+
+/* ── Debug Panel ────────────────────────────────────────────── */
+.debug-health-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.debug-health-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 10px 12px;
+}
+.debug-health-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted2);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.debug-health-value {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.debug-log-container {
+  background: #0a0a0a;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 10px;
+  max-height: 340px;
+  overflow-y: auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.debug-log-row {
+  display: grid;
+  grid-template-columns: 60px 46px 90px 1fr;
+  gap: 6px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  line-height: 1.5;
+}
+.debug-log-time   { color: var(--muted);  white-space: nowrap; }
+.debug-log-level  { font-weight: 600;     white-space: nowrap; }
+.debug-log-source { color: var(--orange); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.debug-log-msg    { color: var(--text2);  word-break: break-word; }
+

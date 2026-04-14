@@ -3364,6 +3364,152 @@ function TelegramSettingsTab() {
   )
 }
 
+// ── DebugPanel ────────────────────────────────────────────────
+
+function DebugPanel() {
+  const [logs,    setLogs]    = useState<any[]>([])
+  const [health,  setHealth]  = useState<any>(null)
+  const [models,  setModels]  = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [filter,  setFilter]  = useState<'all'|'info'|'warn'|'error'|'debug'>('all')
+  const logsEndRef = useRef<HTMLDivElement>(null)
+
+  const reload = async () => {
+    try {
+      const [logsRes, healthRes, modelsRes] = await Promise.all([
+        fetch('http://localhost:4200/api/debug/logs?n=200').then(r => r.json()).catch(() => ({ logs: [] })),
+        fetch('http://localhost:4200/api/debug/health').then(r => r.json()).catch(() => null),
+        fetch('http://localhost:4200/api/debug/models').then(r => r.json()).catch(() => null),
+      ])
+      setLogs(logsRes.logs || [])
+      setHealth(healthRes)
+      setModels(modelsRes)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { reload() }, [])
+
+  useEffect(() => {
+    const id = setInterval(reload, 3000)
+    return () => clearInterval(id)
+  }, [])
+
+  useEffect(() => {
+    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [logs])
+
+  const clearLogs = async () => {
+    await fetch('http://localhost:4200/api/debug/logs/clear', { method: 'POST' }).catch(() => {})
+    setLogs([])
+  }
+
+  const filteredLogs = filter === 'all' ? logs : logs.filter((l: any) => l.level === filter)
+
+  const levelColor: Record<string, string> = {
+    info:  'var(--text)',
+    warn:  '#f59e0b',
+    error: 'var(--red)',
+    debug: 'var(--muted2)',
+  }
+
+  const levelBg: Record<string, string> = {
+    info:  'transparent',
+    warn:  'rgba(245,158,11,0.06)',
+    error: 'rgba(239,68,68,0.06)',
+    debug: 'transparent',
+  }
+
+  return (
+    <div>
+      {/* Health row */}
+      {health && (
+        <div className="debug-health-grid">
+          {[
+            { label: 'Uptime',     value: `${Math.floor(health.uptime / 60)}m ${health.uptime % 60}s` },
+            { label: 'Memory',     value: `${health.memoryMB} MB` },
+            { label: 'Heap',       value: `${health.heapUsedMB}/${health.heapTotalMB} MB` },
+            { label: 'Node',       value: health.nodeVersion },
+            { label: 'Logs',       value: String(health.logBufferSize) },
+            { label: 'Model',      value: health.activeModel },
+          ].map(item => (
+            <div key={item.label} className="debug-health-card">
+              <div className="debug-health-label">{item.label}</div>
+              <div className="debug-health-value">{item.value}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Providers */}
+      {models && (
+        <SettingsSection title="Providers">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {(models.providers || []).map((p: any) => (
+              <div key={p.name} style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '6px 10px', background: 'var(--bg2)', borderRadius: 5,
+              }}>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text)' }}>
+                  {p.name}
+                </span>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: p.active ? 'var(--green)' : 'var(--muted)' }}>
+                  {p.active ? `✓ ${p.model}` : '✗ not configured'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </SettingsSection>
+      )}
+
+      {/* Log viewer */}
+      <SettingsSection title="Live Logs">
+        {/* Toolbar */}
+        <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          {(['all','info','warn','error','debug'] as const).map(lvl => (
+            <button key={lvl} onClick={() => setFilter(lvl)} style={{
+              padding: '3px 9px', borderRadius: 4, border: 'none', cursor: 'pointer',
+              fontFamily: 'var(--mono)', fontSize: 10,
+              background: filter === lvl ? 'var(--orange)' : 'var(--bg2)',
+              color:      filter === lvl ? '#fff' : 'var(--muted2)',
+            }}>{lvl}</button>
+          ))}
+          <button onClick={() => reload()} style={{
+            marginLeft: 'auto', padding: '3px 9px', borderRadius: 4, border: '1px solid var(--border)',
+            background: 'transparent', color: 'var(--muted2)', fontFamily: 'var(--mono)',
+            fontSize: 10, cursor: 'pointer',
+          }}>↻ Refresh</button>
+          <button onClick={clearLogs} style={{
+            padding: '3px 9px', borderRadius: 4, border: '1px solid rgba(239,68,68,0.3)',
+            background: 'transparent', color: 'var(--red)', fontFamily: 'var(--mono)',
+            fontSize: 10, cursor: 'pointer',
+          }}>Clear</button>
+        </div>
+
+        {/* Log list */}
+        <div className="debug-log-container">
+          {loading && <div style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 11 }}>Loading…</div>}
+          {!loading && filteredLogs.length === 0 && (
+            <div style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 11 }}>No log entries.</div>
+          )}
+          {filteredLogs.map((entry: any, i: number) => (
+            <div key={i} className="debug-log-row" style={{ background: levelBg[entry.level] || 'transparent' }}>
+              <span className="debug-log-time">{entry.timestamp?.slice(11, 19) || ''}</span>
+              <span className="debug-log-level" style={{ color: levelColor[entry.level] || 'var(--text)' }}>
+                {(entry.level || 'info').toUpperCase().padEnd(5)}
+              </span>
+              <span className="debug-log-source">[{entry.source || 'System'}]</span>
+              <span className="debug-log-msg">{entry.message}</span>
+            </div>
+          ))}
+          <div ref={logsEndRef} />
+        </div>
+      </SettingsSection>
+    </div>
+  )
+}
+
 // ── SettingsDrawer ────────────────────────────────────────────
 
 const SETTINGS_TABS = [
@@ -3382,6 +3528,7 @@ const SETTINGS_TABS = [
   { id: 'legal',    label: '⚖️ Legal'        },
   { id: 'about',    label: 'ℹ️ About'        },
   { id: 'danger',   label: '⚠️ Danger Zone' },
+  { id: 'debug',    label: '🐛 Debug'       },
 ]
 
 function SettingsDrawer() {
@@ -3835,6 +3982,8 @@ function SettingsDrawer() {
               ))}
             </div>
           )}
+
+          {settingsTab === 'debug' && <DebugPanel />}
         </div>
       </div>
     </>

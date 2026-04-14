@@ -61,6 +61,7 @@ import { learningMemory }                               from '../core/learningMe
 import { knowledgeBase }                               from '../core/knowledgeBase'
 import { extractYouTubeTranscript }                    from '../core/youtubeTranscript'
 import { importChatGPT, importOpenClaw }               from '../core/importers'
+import { logBuffer }                                   from '../core/logBuffer'
 import { deepKB }                                      from '../core/deepKB'
 import multer                                           from 'multer'
 import { skillTeacher }                               from '../core/skillTeacher'
@@ -3088,6 +3089,48 @@ export function createApiServer(): Express {
       const result = await importOpenClaw(directoryPath)
       res.json(result)
     } catch (e: any) { res.status(500).json({ error: e.message }) }
+  })
+
+  // ── Debug endpoints ──────────────────────────────────────────
+
+  // GET /api/debug/logs?n=100 — recent log entries
+  app.get('/api/debug/logs', (req: Request, res: Response) => {
+    const n = req.query.n ? parseInt(req.query.n as string, 10) : undefined
+    res.json({ logs: logBuffer.getRecent(n), total: logBuffer.size })
+  })
+
+  // POST /api/debug/logs/clear — clear the log buffer
+  app.post('/api/debug/logs/clear', (_req: Request, res: Response) => {
+    logBuffer.clear()
+    res.json({ ok: true })
+  })
+
+  // GET /api/debug/health — system health snapshot
+  app.get('/api/debug/health', (_req: Request, res: Response) => {
+    const mem  = process.memoryUsage()
+    const cfg  = loadConfig()
+    res.json({
+      uptime:       Math.floor(process.uptime()),
+      memoryMB:     Math.round(mem.rss / 1024 / 1024),
+      heapUsedMB:   Math.round(mem.heapUsed / 1024 / 1024),
+      heapTotalMB:  Math.round(mem.heapTotal / 1024 / 1024),
+      nodeVersion:  process.version,
+      platform:     process.platform,
+      logBufferSize: logBuffer.size,
+      activeModel:  cfg.model?.activeModel || 'unknown',
+    })
+  })
+
+  // GET /api/debug/models — list configured providers and their model
+  app.get('/api/debug/models', (_req: Request, res: Response) => {
+    const cfg       = loadConfig()
+    const entries   = cfg.providers?.apis || []
+    const providers = entries.map((a: APIEntry) => ({
+      name:   a.name,
+      model:  a.model || '—',
+      active: !!(a.key && a.enabled),
+    }))
+    res.json({ providers, activeModel: cfg.model?.activeModel || 'unknown' })
   })
 
   // GET /api/memory/semantic?q=query â€” semantic search or stats
