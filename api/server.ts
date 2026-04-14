@@ -84,6 +84,8 @@ import { getWorkflow } from '../core/workflowTracker'
 import { getHookCount } from '../core/hooks'
 import { TelegramBot } from '../core/telegramBot'
 import type { TelegramConfig } from '../core/telegramBot'
+import { gateway } from '../core/gateway'
+import type { IncomingMessage as GatewayMessage } from '../core/gateway'
 
 // —— Sprint 25: module-level WebSocket clients registry (shared between createApiServer routes and startApiServer WS setup)
 let wsBroadcastClients   = new Set<any>()
@@ -3172,6 +3174,11 @@ export function createApiServer(): Express {
     res.json({ providers, activeModel: cfg.model?.activeModel || 'unknown' })
   })
 
+  // GET /api/gateway/status — active channel list
+  app.get('/api/gateway/status', (_req: Request, res: Response) => {
+    res.json(gateway.getStatus())
+  })
+
   // GET /api/memory/semantic?q=query â€” semantic search or stats
   app.get('/api/memory/semantic', (req: Request, res: Response) => {
     const query = req.query.q as string
@@ -3693,6 +3700,29 @@ export function startApiServer(portArg?: number): Express {
     console.log(`[API] LivePulse WS: ws://${host}:${port}`)
   })
 
+  // ── Gateway bootstrap ─────────────────────────────────────────
+  // Register central processor — routes any IncomingMessage through
+  // the existing chat endpoint (JSON mode) so all channels share
+  // the same memory, history, and tool pipeline.
+  gateway.setProcessor(async (message: GatewayMessage): Promise<string> => {
+    const chatResp = await fetch(`http://localhost:${port}/api/chat`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body:    JSON.stringify({
+        message:   message.text,
+        sessionId: `${message.channel}_${message.userId}`,
+      }),
+      signal: AbortSignal.timeout(120_000),
+    })
+    if (!chatResp.ok) throw new Error(`Chat HTTP ${chatResp.status}`)
+    const data = await chatResp.json() as any
+    return data.response || data.message || '(no response)'
+  })
+
+  // Dashboard and API channels deliver responses directly — mark active
+  gateway.registerChannel('dashboard', async (_msg) => true)
+  gateway.registerChannel('api',       async (_msg) => true)
+
   // ── Telegram Bot ─────────────────────────────────────────────
   try {
     const tgCfg = (loadConfig() as any).telegram as TelegramConfig | undefined
@@ -3721,17 +3751,22 @@ export function startApiServer(portArg?: number): Express {
           return `✅ Aiden is online\nMode: auto\nProvider: ${provider}\nMemory: ${semStats.total} entries\nUptime: ${uptimeStr}`
         }
 
-        // ── Normal message — route through chat endpoint (JSON mode) ──
-        const chatResp = await fetch(`http://localhost:${port}/api/chat`, {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-          body:    JSON.stringify({ message: text, sessionId: `telegram_${chatId}` }),
-          signal:  AbortSignal.timeout(120_000),
+        // ── Normal message — route through unified gateway ──────
+        return await gateway.routeMessage({
+          channel:   'telegram',
+          channelId: chatId,
+          userId:    `telegram_${chatId}`,
+          text,
+          timestamp: Date.now(),
         })
-        if (!chatResp.ok) throw new Error(`Chat HTTP ${chatResp.status}`)
-        const data = await chatResp.json() as any
-        return data.response || data.message || '(no response)'
       }).catch((e: Error) => console.error('[Telegram] Polling error:', e.message))
+
+      // Register Telegram delivery so gateway.deliver() / broadcast() can send back
+      const _tgBot = activeTelegramBot!
+      gateway.registerChannel('telegram', async (msg) => {
+        await _tgBot.sendMessage(msg.channelId, msg.text)
+        return true
+      })
 
       console.log('[Telegram] Bot connected and polling')
     } else {

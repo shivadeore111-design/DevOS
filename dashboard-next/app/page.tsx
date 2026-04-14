@@ -3367,6 +3367,37 @@ function TelegramSettingsTab() {
           </p>
         ))}
       </SettingsSection>
+
+      <SettingsSection title="Gateway Status">
+        <GatewayStatus />
+      </SettingsSection>
+    </div>
+  )
+}
+
+// ── GatewayStatus — live channel connection list ──────────────
+
+function GatewayStatus() {
+  const [channels, setChannels] = useState<Array<{ channel: string; active: boolean }>>([])
+
+  useEffect(() => {
+    fetch('/api/gateway/status')
+      .then(r => r.json())
+      .then(setChannels)
+      .catch(() => {})
+  }, [])
+
+  return (
+    <div className="gateway-channel-list">
+      {channels.map(ch => (
+        <div key={ch.channel} className="channel-status">
+          <span className={`status-dot ${ch.active ? 'active' : 'inactive'}`} />
+          <span className="channel-name">{ch.channel}</span>
+          <span className="channel-state">
+            {ch.active ? 'Connected' : 'Not configured'}
+          </span>
+        </div>
+      ))}
     </div>
   )
 }
