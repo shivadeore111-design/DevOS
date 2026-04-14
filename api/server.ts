@@ -3091,6 +3091,45 @@ export function createApiServer(): Express {
     } catch (e: any) { res.status(500).json({ error: e.message }) }
   })
 
+  // ── Calendar + Gmail config endpoints ────────────────────────
+
+  // GET /api/calendar-gmail/config — return current calendar/gmail settings (passwords redacted)
+  app.get('/api/calendar-gmail/config', (_req: Request, res: Response) => {
+    const cfg = loadConfig()
+    res.json({
+      icalUrl:       cfg.calendar?.icalUrl       || '',
+      gmailEmail:    cfg.gmail?.email            || '',
+      // never send the password back to the UI
+      gmailPassword: cfg.gmail?.appPassword ? '••••••••••••••••' : '',
+    })
+  })
+
+  // POST /api/calendar-gmail/config — save calendar/gmail settings
+  app.post('/api/calendar-gmail/config', (req: Request, res: Response) => {
+    const { icalUrl, gmailEmail, gmailPassword } = req.body as {
+      icalUrl?: string; gmailEmail?: string; gmailPassword?: string
+    }
+    const cfg = loadConfig()
+
+    if (icalUrl !== undefined) {
+      cfg.calendar = { icalUrl: icalUrl.trim() }
+    }
+
+    if (gmailEmail !== undefined || gmailPassword !== undefined) {
+      const existing = cfg.gmail || { email: '', appPassword: '' }
+      cfg.gmail = {
+        email:       (gmailEmail       ?? existing.email).trim(),
+        // only overwrite password if a real value (not the redaction placeholder) was sent
+        appPassword: (gmailPassword && !gmailPassword.startsWith('•'))
+          ? gmailPassword.trim()
+          : existing.appPassword,
+      }
+    }
+
+    saveConfig(cfg)
+    res.json({ ok: true })
+  })
+
   // ── Debug endpoints ──────────────────────────────────────────
 
   // GET /api/debug/logs?n=100 — recent log entries

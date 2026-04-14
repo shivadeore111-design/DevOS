@@ -33,6 +33,9 @@ import { runInSandbox }    from './codeInterpreter'
 import { responseCache }   from './responseCache'
 import { extractYouTubeTranscript } from './youtubeTranscript'
 import { knowledgeBase }            from './knowledgeBase'
+import { getCalendarEvents }        from './tools/calendarTool'
+import { readGmail, sendGmail }     from './tools/gmailTool'
+import { loadConfig }               from '../providers/index'
 
 const execAsync = promisify(exec)
 
@@ -1486,6 +1489,92 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
     }
   },
 
+  // ── get_calendar — fetch upcoming events from Google Calendar iCal ──
+  get_calendar: async (p) => {
+    const cfg      = loadConfig()
+    const icalUrl  = cfg.calendar?.icalUrl
+    if (!icalUrl) {
+      return {
+        success: false,
+        output:  '',
+        error:   'Calendar not configured. Add your Google Calendar iCal URL in Settings → Channels.',
+      }
+    }
+
+    const daysAhead = typeof p.daysAhead === 'number' ? p.daysAhead : 7
+    try {
+      const events = await getCalendarEvents(icalUrl, daysAhead)
+      if (events.length === 0) {
+        return { success: true, output: `No upcoming events in the next ${daysAhead} day(s).` }
+      }
+      const formatted = events.map(e => {
+        const when = e.start.toLocaleString()
+        const loc  = e.location ? ` @ ${e.location}` : ''
+        return `• ${e.title} — ${when}${loc}`
+      }).join('\n')
+      return { success: true, output: `Upcoming events (next ${daysAhead} days):\n${formatted}` }
+    } catch (err: any) {
+      return { success: false, output: '', error: `Calendar fetch failed: ${String(err).slice(0, 120)}` }
+    }
+  },
+
+  // ── read_email — read recent Gmail messages via App Password ──
+  read_email: async (p) => {
+    const cfg         = loadConfig()
+    const email       = cfg.gmail?.email
+    const appPassword = cfg.gmail?.appPassword
+    if (!email || !appPassword) {
+      return {
+        success: false,
+        output:  '',
+        error:   'Gmail not configured. Add your email and App Password in Settings → Channels.',
+      }
+    }
+
+    const count = typeof p.count === 'number' ? p.count : 10
+    const messages = await readGmail({ email, appPassword }, count, p.folder || 'INBOX')
+
+    if (messages.length === 0) {
+      return {
+        success: true,
+        output:  'No unread messages found, or imap-simple is not yet installed (run: npm install imap-simple).',
+      }
+    }
+
+    const formatted = messages.map(m =>
+      `• From: ${m.from}\n  Subject: ${m.subject}\n  Date: ${m.date}`,
+    ).join('\n\n')
+
+    return { success: true, output: `Recent emails (${messages.length}):\n\n${formatted}` }
+  },
+
+  // ── send_email — send an email via Gmail App Password ─────────
+  send_email: async (p) => {
+    const cfg         = loadConfig()
+    const email       = cfg.gmail?.email
+    const appPassword = cfg.gmail?.appPassword
+    if (!email || !appPassword) {
+      return {
+        success: false,
+        output:  '',
+        error:   'Gmail not configured. Add your email and App Password in Settings → Channels.',
+      }
+    }
+
+    const to      = String(p.to      || '')
+    const subject = String(p.subject || '')
+    const body    = String(p.body    || '')
+    if (!to || !subject) {
+      return { success: false, output: '', error: '`to` and `subject` are required.' }
+    }
+
+    const result = await sendGmail({ email, appPassword }, to, subject, body)
+    if (result.success) {
+      return { success: true, output: `Email sent to ${to}: "${subject}"` }
+    }
+    return { success: false, output: '', error: result.error || 'Send failed' }
+  },
+
   // ── compact_context — summarize and compress conversation history ──
   compact_context: async (p) => {
     const { sessionMemory } = await import('./sessionMemory')
@@ -1668,6 +1757,9 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   get_briefing:            'Run the morning briefing: weather, markets, news, and daily summary',
   respond:                 'Send a direct conversational response to the user. Use for greetings, capability questions, clarifications, simple factual answers, and anything that does NOT require external tools. This is the default tool when no other tool is needed.',
   manage_goals:            'Track and manage goals and projects. Use when user asks what to work on, mentions a project, deadline, or launch plan. Actions: list, add, update, complete, remove, suggest.',
+  get_calendar:            'Get upcoming calendar events from Google Calendar (requires iCal URL in Settings → Channels). Parameters: daysAhead (number, default 7).',
+  read_email:              'Read recent unread emails from Gmail (requires App Password in Settings → Channels). Parameters: count (number, default 10), folder (string, default INBOX).',
+  send_email:              'Send an email via Gmail (requires App Password in Settings → Channels). Parameters: to (string), subject (string), body (string).',
   compact_context:         'Summarize and compress the current conversation context. Saves session to disk and extracts durable memories. Call when context is getting long.',
   get_natural_events:      'Fetch active natural events from NASA EONET API. Returns current earthquakes, wildfires, storms, floods, and other natural events worldwide.',
 }
@@ -1698,6 +1790,9 @@ const TOOL_TIERS: Record<string, ToolTier> = {
   wait:                    1,
   get_briefing:            1,
   get_natural_events:      1,
+  get_calendar:            1,
+  read_email:              1,
+  send_email:              1,
   run_agent:               1,
 
   // Tier 2 — File system, shell, code execution
@@ -1812,6 +1907,9 @@ const TOOL_CATEGORIES: Record<string, ToolCategory[]> = {
   git_commit:              ['git'],
   git_push:                ['git'],
   ingest_youtube:          ['web', 'memory'],
+  get_calendar:            ['data', 'system'],
+  read_email:              ['data', 'system'],
+  send_email:              ['data', 'system'],
 }
 
 export function detectToolCategories(message: string): ToolCategory[] {

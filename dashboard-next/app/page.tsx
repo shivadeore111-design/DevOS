@@ -3353,13 +3353,118 @@ function TelegramSettingsTab() {
         </button>
       </SettingsSection>
 
+      <SettingsSection title="Google Calendar">
+        <p style={{ ...settingsTextStyle, marginBottom: 10 }}>
+          Go to <b>Google Calendar → Settings → your calendar → "Secret address in iCal format"</b>. Paste the URL below.
+        </p>
+        <CalendarGmailSettings />
+      </SettingsSection>
+
       <SettingsSection title="Other Channels">
-        {['WhatsApp', 'Discord', 'Slack', 'Email'].map(ch => (
+        {['WhatsApp', 'Discord', 'Slack'].map(ch => (
           <p key={ch} style={{ ...settingsTextStyle, marginBottom: 8 }}>
             <b>{ch}</b> — configure in your .env or DevOS config.
           </p>
         ))}
       </SettingsSection>
+    </div>
+  )
+}
+
+// ── CalendarGmailSettings — inline form inside Channels tab ───
+
+function CalendarGmailSettings() {
+  const [icalUrl,       setIcalUrl]       = useState('')
+  const [gmailEmail,    setGmailEmail]    = useState('')
+  const [gmailPassword, setGmailPassword] = useState('')
+  const [saving,        setSaving]        = useState(false)
+  const [saved,         setSaved]         = useState(false)
+
+  useEffect(() => {
+    fetch('http://localhost:4200/api/calendar-gmail/config')
+      .then(r => r.ok ? r.json() : null)
+      .then((data: any) => {
+        if (!data) return
+        setIcalUrl(data.icalUrl || '')
+        setGmailEmail(data.gmailEmail || '')
+        setGmailPassword(data.gmailPassword || '')
+      })
+      .catch(() => {})
+  }, [])
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      await fetch('http://localhost:4200/api/calendar-gmail/config', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ icalUrl, gmailEmail, gmailPassword }),
+      })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } catch {}
+    setSaving(false)
+  }
+
+  const inputStyle: React.CSSProperties = {
+    width: '100%', padding: '8px 10px', borderRadius: 6,
+    background: 'var(--bg)', border: '1px solid var(--border)',
+    color: 'var(--text)', fontFamily: 'var(--mono)', fontSize: 12,
+    marginBottom: 8, boxSizing: 'border-box',
+  }
+
+  return (
+    <div>
+      {/* Calendar iCal URL */}
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 11, color: 'var(--muted2)', fontFamily: 'var(--mono)', marginBottom: 5 }}>
+          iCal URL
+        </div>
+        <input
+          type="text"
+          placeholder="https://calendar.google.com/calendar/ical/…"
+          value={icalUrl}
+          onChange={e => setIcalUrl(e.target.value)}
+          style={inputStyle}
+        />
+      </div>
+
+      {/* Gmail */}
+      <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14, marginBottom: 16 }}>
+        <div style={{ fontSize: 12, color: 'var(--text)', fontFamily: 'var(--mono)', marginBottom: 6, fontWeight: 600 }}>
+          Gmail (App Password)
+        </div>
+        <p style={{ ...settingsTextStyle, marginBottom: 8 }}>
+          Go to <b>Google Account → Security → App Passwords → Generate for "DevOS"</b>. Paste the 16-character password below.
+        </p>
+        <input
+          type="email"
+          placeholder="you@gmail.com"
+          value={gmailEmail}
+          onChange={e => setGmailEmail(e.target.value)}
+          style={inputStyle}
+        />
+        <input
+          type="password"
+          placeholder="App Password (16 chars)"
+          value={gmailPassword}
+          onChange={e => setGmailPassword(e.target.value)}
+          style={inputStyle}
+        />
+      </div>
+
+      <button
+        onClick={save}
+        disabled={saving}
+        style={{
+          padding: '8px 18px', borderRadius: 6, border: 'none',
+          background: saved ? 'var(--green)' : 'var(--orange)',
+          color: '#fff', fontFamily: 'var(--mono)', fontSize: 12,
+          cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1,
+        }}
+      >
+        {saved ? '✓ Saved' : saving ? 'Saving…' : 'Save'}
+      </button>
     </div>
   )
 }

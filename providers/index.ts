@@ -54,6 +54,13 @@ export interface DevOSConfig {
   }
   onboardingComplete: boolean
   telegram?:          TelegramConfig
+  calendar?: {
+    icalUrl: string   // Google Calendar "Secret address in iCal format"
+  }
+  gmail?: {
+    email:       string   // Gmail address
+    appPassword: string   // 16-char Google App Password
+  }
 }
 
 const CONFIG_PATH = path.join(process.cwd(), 'config', 'devos.config.json')
