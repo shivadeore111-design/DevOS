@@ -1,0 +1,34 @@
+name: stock-analysis
+version: "1.0"
+description: Analyze an NSE stock with technical indicators and recent news
+trigger:
+  - "analyze {{symbol}}"
+  - "check {{symbol}} stock"
+  - "{{symbol}} analysis"
+params:
+  symbol:
+    type: string
+    required: true
+    description: "NSE stock symbol (e.g., RELIANCE)"
+steps:
+  - id: fetch_price
+    tool: get_market_data
+    args:
+      symbol: "{{params.symbol}}"
+    onFail: abort
+    retries: 2
+  - id: search_news
+    tool: web_search
+    args:
+      query: "{{params.symbol}} NSE latest news"
+    onFail: skip
+  - id: compile
+    tool: respond
+    args:
+      message: |
+        Stock Analysis: {{params.symbol}}
+
+        Price Data: {{steps.fetch_price.output}}
+
+        Recent News: {{steps.search_news.output}}
+output: "{{steps.compile.output}}"

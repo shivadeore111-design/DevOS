@@ -1,6 +1,6 @@
 {
   "name": "devos-ai",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "description": "Autonomous AI Operating System — Local, Private, Free. Runs on your machine with Ollama.",
   "author": "Taracod <hello@taracod.com>",
   "license": "Apache-2.0",
@@ -189,6 +189,7 @@
   },
   "devDependencies": {
     "@types/dockerode": "^4.0.1",
+    "@types/js-yaml": "^4.0.9",
     "@types/multer": "^1.4.12",
     "@types/node": "^25.3.0",
     "@types/node-telegram-bot-api": "^0.64.14",

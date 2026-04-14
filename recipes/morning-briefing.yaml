@@ -1,0 +1,39 @@
+name: morning-briefing
+version: "1.0"
+description: Generate a morning briefing with weather, market, and news
+trigger:
+  - "morning briefing"
+  - "daily briefing"
+  - "catch me up"
+params:
+  city:
+    type: string
+    required: false
+    default: "Mumbai"
+    description: "City for weather"
+steps:
+  - id: weather
+    tool: web_search
+    args:
+      query: "weather {{params.city}} today"
+    onFail: skip
+  - id: market
+    tool: get_market_data
+    args:
+      symbol: "^NSEI"
+    onFail: skip
+  - id: news
+    tool: web_search
+    args:
+      query: "top tech news today"
+    onFail: skip
+  - id: compile
+    tool: respond
+    args:
+      message: |
+        Good morning! Here's your briefing:
+
+        Weather: {{steps.weather.output}}
+        Market: {{steps.market.output}}
+        News: {{steps.news.output}}
+output: "{{steps.compile.output}}"

@@ -9,6 +9,7 @@
 //   STEP 3: RESPOND — LLM sees real results, streams natural language
 
 import { executeTool, TOOLS, getToolTier, detectToolCategories, getToolsForCategories } from './toolRegistry'
+import { loadAllRecipes, matchRecipe, executeRecipe } from './recipeEngine'
 import { livePulse }          from '../coordination/livePulse'
 import { planTool }                        from './planTool'
 import type { Phase }                      from './planTool'
@@ -566,6 +567,27 @@ export async function planWithLLM(
       phases:             [],
       direct_response:    'I need more detail. What specifically should I do, with what, and where?',
       reason:             'goal_too_vague',
+    }
+  }
+
+  // ── Recipe engine — YAML workflow definitions ─────────────────
+  // Check before LLM planning: if a recipe trigger matches, execute
+  // the structured workflow instead of the probabilistic planner.
+  const recipes     = loadAllRecipes()
+  const recipeMatch = matchRecipe(message, recipes)
+  if (recipeMatch) {
+    try {
+      const recipeResult = await executeRecipe(recipeMatch.recipe, recipeMatch.params)
+      return {
+        goal:               message,
+        requires_execution: false,
+        plan:               [],
+        phases:             [],
+        direct_response:    recipeResult.output || `Completed recipe: ${recipeMatch.recipe.name}`,
+        reason:             `recipe:${recipeMatch.recipe.name}`,
+      }
+    } catch (err) {
+      console.warn(`[Recipe] Execution failed for ${recipeMatch.recipe.name}: ${err} — falling through to LLM planner`)
     }
   }
 
