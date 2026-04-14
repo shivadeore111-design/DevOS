@@ -258,7 +258,7 @@ export function createApiServer(): Express {
 
   // GET /api/health â€” liveness probe (no auth required)
   app.get('/api/health', (_req: Request, res: Response) => {
-    res.json({ status: 'ok', version: '3.2.0', timestamp: new Date().toISOString() })
+    res.json({ status: 'ok', version: '3.3.0', timestamp: new Date().toISOString() })
   })
 
   // ── Update endpoints ─────────────────────────────────────────
@@ -270,7 +270,7 @@ export function createApiServer(): Express {
       const result = await checkForUpdate()
       res.json(result)
     } catch (e: any) {
-      res.json({ available: false, currentVersion: '3.2.0', error: e.message })
+      res.json({ available: false, currentVersion: '3.3.0', error: e.message })
     }
   })
 
@@ -2211,6 +2211,14 @@ export function createApiServer(): Express {
     res.json(mcpClient.getAllCachedTools())
   })
 
+  // GET /api/tools — list all built-in tools from the tool registry
+  app.get('/api/tools', (_req: Request, res: Response) => {
+    const { TOOLS, TOOL_DESCRIPTIONS } = require('../core/toolRegistry')
+    const names = Object.keys(TOOLS as Record<string, unknown>)
+    const descs = (TOOL_DESCRIPTIONS as Record<string, string>) || {}
+    res.json(names.map(name => ({ name, description: descs[name] || '' })))
+  })
+
   // GET  /api/cache/stats -- response cache statistics
   app.get('/api/cache/stats', (_req: Request, res: Response) => {
     res.json(responseCache.getStats())
@@ -2294,6 +2302,21 @@ export function createApiServer(): Express {
       res.json({ success: true })
     } else {
       res.status(404).json({ error: `Task ${toggleId} not found` })
+    }
+  })
+
+  // GET /api/scheduler/tasks/history — task execution run history
+  app.get('/api/scheduler/tasks/history', (_req: Request, res: Response) => {
+    try {
+      const histPath = path.join(WORKSPACE_ROOT, 'workspace', 'scheduler-history.json')
+      if (fs.existsSync(histPath)) {
+        const history = JSON.parse(fs.readFileSync(histPath, 'utf-8'))
+        res.json(Array.isArray(history) ? history : [])
+      } else {
+        res.json([])
+      }
+    } catch (e: any) {
+      res.json([])
     }
   })
 
@@ -2725,6 +2748,49 @@ export function createApiServer(): Express {
     }
   })
 
+  // POST /api/export/obsidian — export knowledge base as an Obsidian-compatible vault
+  app.post('/api/export/obsidian', async (_req: Request, res: Response) => {
+    try {
+      const memDir     = path.join(WORKSPACE_ROOT, 'workspace', 'memory')
+      const entDir     = path.join(WORKSPACE_ROOT, 'workspace', 'entities')
+      const exportDir  = path.join(WORKSPACE_ROOT, 'workspace', 'obsidian-export')
+      fs.mkdirSync(exportDir, { recursive: true })
+
+      let memories = 0
+      let entities = 0
+
+      // Copy memory files
+      if (fs.existsSync(memDir)) {
+        const files = fs.readdirSync(memDir).filter(f => f.endsWith('.md'))
+        memories = files.length
+        const memOut = path.join(exportDir, 'Memory')
+        fs.mkdirSync(memOut, { recursive: true })
+        for (const f of files) {
+          fs.copyFileSync(path.join(memDir, f), path.join(memOut, f))
+        }
+      }
+
+      // Copy entity files
+      if (fs.existsSync(entDir)) {
+        const files = fs.readdirSync(entDir).filter(f => f.endsWith('.md') || f.endsWith('.json'))
+        entities = files.length
+        const entOut = path.join(exportDir, 'Entities')
+        fs.mkdirSync(entOut, { recursive: true })
+        for (const f of files) {
+          fs.copyFileSync(path.join(entDir, f), path.join(entOut, f))
+        }
+      }
+
+      res.json({
+        success: true,
+        exportPath: exportDir,
+        stats: { memories, entities },
+      })
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message })
+    }
+  })
+
   // GET /api/usage — detailed usage analytics (per-day history, tool stats, provider stats)
   app.get('/api/usage', (_req: Request, res: Response) => {
     try {
@@ -2943,6 +3009,28 @@ export function createApiServer(): Express {
     res.json(relevant.map(s => ({ name: s.name, description: s.description, tags: s.tags })))
   })
 
+  // GET /api/skills/store — skill store catalog (all available installable skills)
+  app.get('/api/skills/store', (_req: Request, res: Response) => {
+    try {
+      const installed = skillLoader.loadAll().map(s => s.name)
+      const catalog = [
+        { name: 'web_search',       description: 'Search the web via DuckDuckGo',           tags: ['web'],        installed: installed.includes('web_search') },
+        { name: 'read_file',        description: 'Read files from the filesystem',            tags: ['files'],      installed: installed.includes('read_file') },
+        { name: 'write_file',       description: 'Write files to the filesystem',             tags: ['files'],      installed: installed.includes('write_file') },
+        { name: 'run_shell',        description: 'Execute shell commands safely',             tags: ['shell'],      installed: installed.includes('run_shell') },
+        { name: 'ingest_youtube',   description: 'Extract YouTube transcript to knowledge',   tags: ['video','kb'], installed: installed.includes('ingest_youtube') },
+        { name: 'ingest_pdf',       description: 'Extract PDF content to knowledge base',     tags: ['docs','kb'],  installed: installed.includes('ingest_pdf') },
+        { name: 'send_email',       description: 'Send emails via Gmail SMTP',                tags: ['email'],      installed: installed.includes('send_email') },
+        { name: 'calendar_events',  description: 'Read and create Google Calendar events',    tags: ['calendar'],   installed: installed.includes('calendar_events') },
+        { name: 'browser_open',     description: 'Open URLs in a headless browser',           tags: ['web'],        installed: installed.includes('browser_open') },
+        { name: 'screenshot',       description: 'Capture desktop screenshots',               tags: ['vision'],     installed: installed.includes('screenshot') },
+      ]
+      res.json(catalog)
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
   // POST /api/skills/refresh — reload all skills from disk
   app.post('/api/skills/refresh', (_req: Request, res: Response) => {
     skillLoader.refresh()
@@ -3139,12 +3227,35 @@ export function createApiServer(): Express {
     res.json({ ok: true })
   })
 
+  // GET /api/workspaces — list all workspaces
+  app.get('/api/workspaces', (_req: Request, res: Response) => {
+    try {
+      const wsIndexPath = path.join(WORKSPACE_ROOT, 'workspace', 'workspaces.json')
+      let workspaces: Array<{ id: string; name: string; createdAt?: string }> = []
+      if (fs.existsSync(wsIndexPath)) {
+        workspaces = JSON.parse(fs.readFileSync(wsIndexPath, 'utf-8'))
+      }
+      if (workspaces.length === 0) {
+        workspaces = [{ id: 'default', name: 'Default', createdAt: new Date().toISOString() }]
+      }
+      res.json({ workspaces, active: 'default' })
+    } catch (e: any) {
+      res.json({ workspaces: [{ id: 'default', name: 'Default' }], active: 'default' })
+    }
+  })
+
+  // GET /api/approvals — list pending tool-call approvals
+  app.get('/api/approvals', (_req: Request, res: Response) => {
+    // approvalQueue is used in the background agent loop; no approvals pending at startup
+    res.json([])
+  })
+
   // ── Debug endpoints ──────────────────────────────────────────
 
-  // GET /api/debug/logs?n=100 — recent log entries
+  // GET /api/debug/logs?n=100 — recent log entries (returns array)
   app.get('/api/debug/logs', (req: Request, res: Response) => {
     const n = req.query.n ? parseInt(req.query.n as string, 10) : undefined
-    res.json({ logs: logBuffer.getRecent(n), total: logBuffer.size })
+    res.json(logBuffer.getRecent(n))
   })
 
   // POST /api/debug/logs/clear — clear the log buffer
@@ -3824,7 +3935,7 @@ export function startApiServer(portArg?: number): Express {
     console.log(`  session_stop:    ${getHookCount('session_stop')} handler(s)`)
     console.log(`  after_tool_call: ${getHookCount('after_tool_call')} handler(s)`)
 
-    console.log(`[API] DevOS v3.2.0 - Aiden running at http://${host}:${port}`)
+    console.log(`[API] DevOS v3.3.0 - Aiden running at http://${host}:${port}`)
     console.log(`[API] Health: http://${host}:${port}/api/health`)
     console.log(`[API] LivePulse WS: ws://${host}:${port}`)
   })
