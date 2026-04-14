@@ -23,6 +23,8 @@ export interface WorkflowNode {
   toolCalls:    number
   currentTool?: string        // tool running right now
   tier?:        number        // 1-4
+  parallel?:    boolean       // true when step ran concurrently with siblings
+  groupSize?:   number        // how many steps were in the parallel batch
 }
 
 export interface WorkflowEdge {

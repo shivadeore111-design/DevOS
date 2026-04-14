@@ -35,6 +35,7 @@ import { getActiveGoalsSummary }  from './goalTracker'
 import { fireHook }               from './hooks'
 import { instinctSystem }         from './instinctSystem'
 import { startWorkflow, addNode, updateNode, completeWorkflow } from './workflowTracker'
+import { MAX_PARALLEL, chunkSteps, hasParallelism } from './parallelExecutor'
 import * as nodeFs             from 'fs'
 import * as nodePath           from 'path'
 import * as nodeOs             from 'os'
@@ -1500,6 +1501,7 @@ const PARALLEL_SAFE = new Set([
   'social_research', 'fetch_url', 'fetch_page', 'get_company_info',
   'deep_research', 'code_interpreter_python', 'code_interpreter_node',
   'clipboard_read', 'window_list', 'watch_folder_list',
+  'get_calendar', 'read_email', 'get_natural_events', 'ingest_youtube',
 ])
 
 const SEQUENTIAL_ONLY = new Set([
@@ -1758,6 +1760,7 @@ async function executeSingleStep(
   // —— Sprint 8: group-based dispatch (parallel where safe) ———————————
   const groups = buildDependencyGroups(plan.plan)
   console.log(`[ExecutePlan] Dependency groups: ${groups.map(g => g.length === 1 ? g[0].tool : `[${g.map(s => s.tool).join('+')}]`).join(' → ')}`)
+  if (hasParallelism(groups)) console.log(`[ExecutePlan] Parallel execution enabled — ${groups.filter(g => g.length > 1).length} concurrent batch(es) detected`)
 
   let _gi = 0
   while (_gi < groups.length) {
@@ -1855,24 +1858,32 @@ async function executeSingleStep(
 
     } else {
       // —— Parallel group ———————————————————————
-      livePulse.act('Aiden', `Running ${unskipped.length} steps in parallel: ${unskipped.map(s => s.tool).join(', ')}`)
-      const settled = await Promise.allSettled(
-        unskipped.map(step => executeSingleStep(step, stepOutputs, state, plan, workspace, onStep))
-      )
-      for (let i = 0; i < unskipped.length; i++) {
-        const s      = unskipped[i]
-        const result = settled[i]
-        if (result.status === 'fulfilled') {
-          stepOutputs[s.step] = result.value.output
-          results.push(result.value)
-        } else {
-          const errResult: StepResult = {
-            step: s.step, tool: s.tool, input: s.input,
-            success: false, output: '', error: String(result.reason), duration: 0,
+      // Chunk oversized groups so we never exceed MAX_PARALLEL concurrent calls
+      const chunks = unskipped.length > MAX_PARALLEL ? chunkSteps(unskipped, MAX_PARALLEL) : [unskipped]
+      for (const chunk of chunks) {
+        livePulse.act('Aiden', `Running ${chunk.length} steps in parallel: ${chunk.map(s => s.tool).join(', ')}`)
+        // Emit parallel metadata onto workflow nodes before dispatch
+        for (const s of chunk) {
+          updateNode(`step_${s.step}`, { parallel: true, groupSize: chunk.length })
+        }
+        const settled = await Promise.allSettled(
+          chunk.map(step => executeSingleStep(step, stepOutputs, state, plan, workspace, onStep))
+        )
+        for (let i = 0; i < chunk.length; i++) {
+          const s      = chunk[i]
+          const result = settled[i]
+          if (result.status === 'fulfilled') {
+            stepOutputs[s.step] = result.value.output
+            results.push(result.value)
+          } else {
+            const errResult: StepResult = {
+              step: s.step, tool: s.tool, input: s.input,
+              success: false, output: '', error: String(result.reason), duration: 0,
+            }
+            results.push(errResult)
+            taskStateManager.failStep(state, s.step, errResult.error || 'parallel rejected')
+            livePulse.error('Aiden', `${s.tool} parallel rejected: ${result.reason}`)
           }
-          results.push(errResult)
-          taskStateManager.failStep(state, s.step, errResult.error || 'parallel rejected')
-          livePulse.error('Aiden', `${s.tool} parallel rejected: ${result.reason}`)
         }
       }
     }
