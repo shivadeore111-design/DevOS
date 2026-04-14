@@ -3654,6 +3654,94 @@ function DebugPanel() {
   )
 }
 
+// ── SecurityScan ─────────────────────────────────────────────
+
+function SecurityScan() {
+  const [result,  setResult]  = useState<any>(null)
+  const [loading, setLoading] = useState(false)
+  const [error,   setError]   = useState<string | null>(null)
+
+  const runScan = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch('http://localhost:4200/api/security/scan')
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      setResult(await res.json())
+    } catch (e: any) {
+      setError(e.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const riskClass = (score: number) =>
+    score >= 50 ? 'risk-high' : score >= 20 ? 'risk-medium' : 'risk-low'
+
+  const severityColor: Record<string, string> = {
+    critical: '#ef4444',
+    high:     '#f97316',
+    medium:   '#eab308',
+    low:      '#3b82f6',
+    info:     '#6b7280',
+  }
+
+  return (
+    <SettingsSection title="AgentShield — Security Scanner">
+      <p style={{ fontSize: 12, color: 'var(--muted3)', marginBottom: 14, lineHeight: 1.6 }}>
+        Scans skill files, config, and identity documents for injection patterns, exposed secrets, and obfuscated payloads.
+      </p>
+
+      <button onClick={runScan} disabled={loading} style={{
+        background: loading ? 'var(--bg3)' : 'var(--orange)',
+        color: '#fff', border: 'none', borderRadius: 6,
+        padding: '7px 16px', fontSize: 12, fontWeight: 600,
+        cursor: loading ? 'not-allowed' : 'pointer', marginBottom: 16,
+        fontFamily: 'var(--mono)',
+      }}>
+        {loading ? '⏳ Scanning…' : '🛡️ Run Scan'}
+      </button>
+
+      {error && (
+        <div style={{ color: 'var(--red)', fontSize: 12, marginBottom: 12 }}>⚠️ {error}</div>
+      )}
+
+      {result && (
+        <div className="security-scan">
+          {/* Risk score */}
+          <div className={`risk-score ${riskClass(result.riskScore)}`}>
+            <span style={{ fontSize: 24, fontWeight: 700 }}>{result.riskScore}</span>
+            <span style={{ fontSize: 11, opacity: 0.8 }}>/100 risk score</span>
+            <span style={{ fontSize: 11, marginLeft: 'auto', opacity: 0.7 }}>
+              {result.scanned.skills} skills · {result.scanned.configs} configs · {result.duration}ms
+            </span>
+          </div>
+
+          {/* Findings */}
+          {result.findings.length === 0 ? (
+            <div style={{ color: 'var(--green)', fontSize: 13, padding: '10px 0' }}>✅ No issues found</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 12 }}>
+              {result.findings.map((f: any, i: number) => (
+                <div key={i} className={`finding finding-${f.severity}`}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                    <span className="finding-severity" style={{ background: severityColor[f.severity] }}>
+                      {f.severity.toUpperCase()}
+                    </span>
+                    <span className="finding-file">{f.file}</span>
+                  </div>
+                  <div className="finding-desc">{f.description}</div>
+                  <div className="finding-rec">→ {f.recommendation}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </SettingsSection>
+  )
+}
+
 // ── SettingsDrawer ────────────────────────────────────────────
 
 const SETTINGS_TABS = [
@@ -3666,6 +3754,7 @@ const SETTINGS_TABS = [
   { id: 'knowledge',label: '📚 Knowledge'   },
   { id: 'skills',   label: '🎯 Skills'      },
   { id: 'channels', label: '💬 Channels'    },
+  { id: 'security', label: '🛡️ Security'   },
   { id: 'guide',    label: '📖 User Guide'  },
   { id: 'setup',    label: '🔧 Setup'        },
   { id: 'privacy',  label: '📜 Privacy'     },
@@ -3750,6 +3839,8 @@ function SettingsDrawer() {
           )}
 
           {settingsTab === 'channels' && <TelegramSettingsTab />}
+
+          {settingsTab === 'security' && <SecurityScan />}
 
           {settingsTab === 'pro' && (
             <SettingsSection title="License">

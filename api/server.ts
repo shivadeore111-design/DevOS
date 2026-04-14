@@ -87,6 +87,7 @@ import type { TelegramConfig } from '../core/telegramBot'
 import { gateway } from '../core/gateway'
 import type { IncomingMessage as GatewayMessage } from '../core/gateway'
 import { sessionRouter } from '../core/sessionRouter'
+import { runSecurityScan } from '../core/agentShield'
 
 // —— Sprint 25: module-level WebSocket clients registry (shared between createApiServer routes and startApiServer WS setup)
 let wsBroadcastClients   = new Set<any>()
@@ -3185,6 +3186,16 @@ export function createApiServer(): Express {
     res.json(gateway.getStatus())
   })
 
+  // GET /api/security/scan — run AgentShield security scan
+  app.get('/api/security/scan', async (_req: Request, res: Response) => {
+    try {
+      const result = await runSecurityScan()
+      res.json(result)
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
   // GET /api/memory/semantic?q=query â€” semantic search or stats
   app.get('/api/memory/semantic', (req: Request, res: Response) => {
     const query = req.query.q as string
@@ -3731,6 +3742,15 @@ export function startApiServer(portArg?: number): Express {
   // Dashboard and API channels deliver responses directly — mark active
   gateway.registerChannel('dashboard', async (_msg) => true)
   gateway.registerChannel('api',       async (_msg) => true)
+
+  // ── AgentShield startup scan ──────────────────────────────────
+  runSecurityScan().then(scan => {
+    if (scan.riskScore > 50) {
+      console.warn(`[AgentShield] ⚠️ High risk score: ${scan.riskScore}/100 — ${scan.findings.filter(f => f.severity === 'critical' || f.severity === 'high').length} critical/high finding(s). Check Settings → Security.`)
+    } else {
+      console.log(`[AgentShield] ✅ Scan complete — risk score ${scan.riskScore}/100`)
+    }
+  }).catch((e: Error) => console.error('[AgentShield] Scan failed:', e.message))
 
   // ── Telegram Bot ─────────────────────────────────────────────
   try {

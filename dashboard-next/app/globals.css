@@ -252,3 +252,33 @@ input { font-family: inherit; }
 /* ── Cross-channel session badge ─────────────────────────────── */
 .cross-channel-badge  { font-size: 9px; flex-shrink: 0; opacity: 0.7; }
 
+/* ── AgentShield security scan ───────────────────────────────── */
+.security-scan        { display: flex; flex-direction: column; }
+
+.risk-score {
+  display: flex; align-items: center; gap: 8;
+  padding: 12px 14px; border-radius: 8px; margin-bottom: 4px;
+  font-family: var(--mono); border: 1px solid transparent;
+}
+.risk-low    { background: rgba(34,197,94,0.08);  border-color: rgba(34,197,94,0.2);  color: #22c55e; }
+.risk-medium { background: rgba(234,179,8,0.08);  border-color: rgba(234,179,8,0.2);  color: #eab308; }
+.risk-high   { background: rgba(239,68,68,0.08);  border-color: rgba(239,68,68,0.2);  color: #ef4444; }
+
+.finding {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 7px; padding: 10px 12px;
+}
+.finding-critical { border-left: 3px solid #ef4444; }
+.finding-high     { border-left: 3px solid #f97316; }
+.finding-medium   { border-left: 3px solid #eab308; }
+.finding-low      { border-left: 3px solid #3b82f6; }
+.finding-info     { border-left: 3px solid #6b7280; }
+
+.finding-severity {
+  font-family: var(--mono); font-size: 9px; font-weight: 700;
+  padding: 2px 6px; border-radius: 3px; color: #fff; letter-spacing: 0.05em;
+}
+.finding-file { font-family: var(--mono); font-size: 11px; color: var(--orange); }
+.finding-desc { font-size: 12px; color: var(--text2); margin-bottom: 4px; }
+.finding-rec  { font-size: 11px; color: var(--muted3); font-style: italic; }
+
