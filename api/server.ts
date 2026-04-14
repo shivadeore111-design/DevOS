@@ -60,6 +60,7 @@ import { entityGraph }                                  from '../core/entityGrap
 import { learningMemory }                               from '../core/learningMemory'
 import { knowledgeBase }                               from '../core/knowledgeBase'
 import { extractYouTubeTranscript }                    from '../core/youtubeTranscript'
+import { importChatGPT, importOpenClaw }               from '../core/importers'
 import { deepKB }                                      from '../core/deepKB'
 import multer                                           from 'multer'
 import { skillTeacher }                               from '../core/skillTeacher'
@@ -3065,6 +3066,28 @@ export function createApiServer(): Express {
     } catch (e: any) {
       res.status(500).json({ success: false, error: e.message })
     }
+  })
+
+  // POST /api/import/chatgpt — import ChatGPT conversations.json export
+  app.post('/api/import/chatgpt', async (req: Request, res: Response) => {
+    const { filePath } = req.body as { filePath?: string }
+    if (!filePath) { res.status(400).json({ error: 'filePath required' }); return }
+    if (!fs.existsSync(filePath)) { res.status(400).json({ error: 'File not found' }); return }
+    try {
+      const result = await importChatGPT(filePath)
+      res.json(result)
+    } catch (e: any) { res.status(500).json({ error: e.message }) }
+  })
+
+  // POST /api/import/openclaw — import OpenClaw workspace directory
+  app.post('/api/import/openclaw', async (req: Request, res: Response) => {
+    const { directoryPath } = req.body as { directoryPath?: string }
+    if (!directoryPath) { res.status(400).json({ error: 'directoryPath required' }); return }
+    if (!fs.existsSync(directoryPath)) { res.status(400).json({ error: 'Directory not found' }); return }
+    try {
+      const result = await importOpenClaw(directoryPath)
+      res.json(result)
+    } catch (e: any) { res.status(500).json({ error: e.message }) }
   })
 
   // GET /api/memory/semantic?q=query â€” semantic search or stats

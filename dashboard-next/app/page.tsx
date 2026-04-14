@@ -1305,6 +1305,102 @@ function KnowledgeBaseTab() {
           })
         )}
       </SettingsSection>
+
+      <SettingsSection title="Import Data">
+        {/* ChatGPT import */}
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 11, color: 'var(--text)', fontFamily: 'var(--mono)', fontWeight: 600, marginBottom: 4 }}>
+            Import from ChatGPT
+          </div>
+          <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'var(--mono)', marginBottom: 8, lineHeight: 1.6 }}>
+            ChatGPT → Settings → Data Controls → Export Data. Download the ZIP, extract it,
+            then paste the path to conversations.json below.
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input
+              type="text"
+              id="chatgpt-import-path"
+              placeholder="C:\Users\you\Downloads\chatgpt-export\conversations.json"
+              style={{
+                flex: 1, background: 'var(--bg2)', border: '1px solid var(--border2)',
+                borderRadius: 6, padding: '8px 10px', fontFamily: 'var(--mono)',
+                fontSize: 11, color: 'var(--text)', outline: 'none',
+              }}
+            />
+            <button
+              onClick={async () => {
+                const el = document.getElementById('chatgpt-import-path') as HTMLInputElement
+                const filePath = el?.value?.trim()
+                if (!filePath) return
+                try {
+                  const res = await fetch('http://localhost:4200/api/import/chatgpt', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filePath }),
+                  })
+                  const r = await res.json()
+                  if (!res.ok) { alert(`Error: ${r.error || 'Import failed'}`); return }
+                  alert(`Imported ${r.conversationsImported} conversations${r.errors?.length > 0 ? `\n${r.errors.length} error(s)` : ''}`)
+                } catch { alert('Import failed — check the server is running') }
+              }}
+              style={{
+                padding: '8px 14px', borderRadius: 6, background: 'var(--orange)',
+                border: 'none', color: '#000', fontFamily: 'var(--mono)',
+                fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
+              }}
+            >
+              Import ChatGPT
+            </button>
+          </div>
+        </div>
+
+        {/* OpenClaw import */}
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--text)', fontFamily: 'var(--mono)', fontWeight: 600, marginBottom: 4 }}>
+            Import from OpenClaw
+          </div>
+          <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'var(--mono)', marginBottom: 8, lineHeight: 1.6 }}>
+            Paste the path to your OpenClaw workspace directory (usually ~/.openclaw/).
+            All .md files are ingested; memory and lesson files are also written to Aiden&apos;s memory.
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input
+              type="text"
+              id="openclaw-import-path"
+              placeholder="C:\Users\you\.openclaw"
+              style={{
+                flex: 1, background: 'var(--bg2)', border: '1px solid var(--border2)',
+                borderRadius: 6, padding: '8px 10px', fontFamily: 'var(--mono)',
+                fontSize: 11, color: 'var(--text)', outline: 'none',
+              }}
+            />
+            <button
+              onClick={async () => {
+                const el = document.getElementById('openclaw-import-path') as HTMLInputElement
+                const directoryPath = el?.value?.trim()
+                if (!directoryPath) return
+                try {
+                  const res = await fetch('http://localhost:4200/api/import/openclaw', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ directoryPath }),
+                  })
+                  const r = await res.json()
+                  if (!res.ok) { alert(`Error: ${r.error || 'Import failed'}`); return }
+                  alert(`Imported ${r.conversationsImported} files, ${r.memoriesExtracted} memories${r.errors?.length > 0 ? `\n${r.errors.length} error(s)` : ''}`)
+                } catch { alert('Import failed — check the server is running') }
+              }}
+              style={{
+                padding: '8px 14px', borderRadius: 6, background: 'var(--orange)',
+                border: 'none', color: '#000', fontFamily: 'var(--mono)',
+                fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
+              }}
+            >
+              Import OpenClaw
+            </button>
+          </div>
+        </div>
+      </SettingsSection>
     </div>
   )
 }
