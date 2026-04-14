@@ -59,6 +59,7 @@ import { semanticMemory }                               from '../core/semanticMe
 import { entityGraph }                                  from '../core/entityGraph'
 import { learningMemory }                               from '../core/learningMemory'
 import { knowledgeBase }                               from '../core/knowledgeBase'
+import { extractYouTubeTranscript }                    from '../core/youtubeTranscript'
 import { deepKB }                                      from '../core/deepKB'
 import multer                                           from 'multer'
 import { skillTeacher }                               from '../core/skillTeacher'
@@ -1853,6 +1854,43 @@ export function createApiServer(): Express {
   // GET /api/knowledge/stats
   app.get('/api/knowledge/stats', (_req: Request, res: Response) => {
     res.json(knowledgeBase.getStats())
+  })
+
+  // POST /api/knowledge/youtube — extract transcript and ingest into Knowledge Base
+  app.post('/api/knowledge/youtube', async (req: Request, res: Response) => {
+    const { url } = req.body as { url?: string }
+    if (!url) { res.status(400).json({ error: 'URL required' }); return }
+
+    const result = await extractYouTubeTranscript(url)
+    if (!result) {
+      res.status(400).json({
+        error: 'Could not extract transcript. The video may not have captions, ' +
+               'or YouTube blocked the request. Install yt-dlp for a fallback, ' +
+               'or paste the transcript text directly into the chat.',
+      })
+      return
+    }
+
+    const ingestResult = knowledgeBase.ingestText(
+      result.fullText,
+      `youtube_${result.title.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 60)}.txt`,
+      'transcript',
+      ['youtube', 'video', 'transcript'],
+      'public',
+    )
+
+    if (!ingestResult.success) {
+      res.status(500).json({ error: ingestResult.error || 'Knowledge Base ingestion failed' })
+      return
+    }
+
+    res.json({
+      success:    true,
+      title:      result.title,
+      segments:   result.transcript.length,
+      characters: result.fullText.length,
+      chunks:     ingestResult.chunkCount,
+    })
   })
 
   // â”€â”€ Skill teacher endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

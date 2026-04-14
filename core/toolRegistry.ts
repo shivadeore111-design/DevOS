@@ -31,6 +31,8 @@ import { getCompanyInfo }  from './tools/companyFilingsTool'
 import { mcpClient }       from './mcpClient'
 import { runInSandbox }    from './codeInterpreter'
 import { responseCache }   from './responseCache'
+import { extractYouTubeTranscript } from './youtubeTranscript'
+import { knowledgeBase }            from './knowledgeBase'
 
 const execAsync = promisify(exec)
 
@@ -1446,6 +1448,44 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
     }
   },
 
+  // ── ingest_youtube — extract transcript and store in Knowledge Base ──
+  ingest_youtube: async (p) => {
+    const url = String(p.url || '')
+    if (!url) return { success: false, output: '', error: 'URL required' }
+
+    const result = await extractYouTubeTranscript(url)
+
+    if (!result) {
+      return {
+        success: false,
+        output:  '',
+        error:   'Could not extract transcript. The video may not have captions, ' +
+                 'or YouTube blocked the request. Try installing yt-dlp, or paste ' +
+                 'the transcript text directly into the chat.',
+      }
+    }
+
+    const ingestResult = knowledgeBase.ingestText(
+      result.fullText,
+      `youtube_${result.title.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 60)}.txt`,
+      'transcript',
+      ['youtube', 'video', 'transcript'],
+      'public',
+    )
+
+    if (!ingestResult.success) {
+      return { success: false, output: '', error: ingestResult.error || 'Knowledge Base ingestion failed' }
+    }
+
+    console.log(`[YouTube] Ingested: "${result.title}" (${result.transcript.length} segments)`)
+    return {
+      success: true,
+      output:  `Ingested transcript for "${result.title}" — ${result.transcript.length} segments, ` +
+               `${result.fullText.length} characters stored in ${ingestResult.chunkCount} chunks. ` +
+               `Now searchable in Knowledge Base.`,
+    }
+  },
+
   // ── compact_context — summarize and compress conversation history ──
   compact_context: async (p) => {
     const { sessionMemory } = await import('./sessionMemory')
@@ -1771,6 +1811,7 @@ const TOOL_CATEGORIES: Record<string, ToolCategory[]> = {
   git_status:              ['git'],
   git_commit:              ['git'],
   git_push:                ['git'],
+  ingest_youtube:          ['web', 'memory'],
 }
 
 export function detectToolCategories(message: string): ToolCategory[] {
