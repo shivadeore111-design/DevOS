@@ -25,6 +25,10 @@ export function registerHook(event: HookEvent, handler: HookHandler): void {
   registry.set(event, handlers)
 }
 
+export function getHookCount(event: HookEvent): number {
+  return registry.get(event)?.length ?? 0
+}
+
 export async function fireHook(event: HookEvent, payload?: Record<string, any>): Promise<void> {
   const handlers = registry.get(event)
   if (!handlers || handlers.length === 0) return
@@ -38,4 +42,22 @@ export async function fireHook(event: HookEvent, payload?: Record<string, any>):
       console.error(`[Hooks] Handler error for "${event}": ${e.message}`)
     }
   }
+}
+
+// ── Plugin hook registration ───────────────────────────────────
+// Validates the event is a known HookEvent before delegating to registerHook.
+
+const VALID_HOOK_EVENTS: HookEvent[] = ['pre_compact', 'session_stop', 'after_tool_call']
+
+export function registerExternalHook(
+  event:   string,
+  handler: HookHandler,
+  source:  string,
+): void {
+  if (!VALID_HOOK_EVENTS.includes(event as HookEvent)) {
+    console.warn(`[Hooks] Plugin "${source}" tried unknown event "${event}" — valid: ${VALID_HOOK_EVENTS.join(', ')}`)
+    return
+  }
+  registerHook(event as HookEvent, handler)
+  console.log(`[Hooks] Plugin "${source}" registered hook for "${event}"`)
 }

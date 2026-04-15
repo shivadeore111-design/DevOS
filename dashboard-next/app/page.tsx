@@ -2853,6 +2853,87 @@ function UserProfileTab() {
   )
 }
 
+// ── PluginsList ────────────────────────────────────────────────
+
+interface PluginInfo {
+  name:        string
+  version:     string
+  description: string
+  author?:     string
+  active:      boolean
+}
+
+function PluginsList() {
+  const [plugins, setPlugins] = useState<PluginInfo[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetch('/api/plugins')
+      .then(r => r.json())
+      .then((d: { plugins: PluginInfo[] }) => { setPlugins(d.plugins || []); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [])
+
+  if (loading) return <p style={settingsTextStyle}>Loading plugins...</p>
+
+  return (
+    <div>
+      {plugins.length === 0 ? (
+        <div style={{ ...settingsTextStyle, padding: '16px 0' }}>
+          No plugins loaded. Drop a plugin folder into{' '}
+          <code style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--orange)' }}>
+            workspace/plugins/
+          </code>{' '}
+          to get started.
+        </div>
+      ) : (
+        plugins.map(p => (
+          <div key={p.name} style={{
+            background: 'var(--bg2)', border: '1px solid var(--border)',
+            borderRadius: 8, padding: '12px 14px', marginBottom: 10,
+            display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10,
+          }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--text)', fontWeight: 600 }}>
+                {p.name}
+                <span style={{ color: 'var(--muted)', fontWeight: 400, marginLeft: 6 }}>
+                  v{p.version}
+                </span>
+                {p.author && (
+                  <span style={{ color: 'var(--muted2)', fontWeight: 400, marginLeft: 8, fontSize: 10 }}>
+                    by {p.author}
+                  </span>
+                )}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.4 }}>
+                {p.description}
+              </div>
+            </div>
+            <span style={{
+              background:    p.active ? 'rgba(34,197,94,0.12)' : 'var(--bg3)',
+              color:         p.active ? 'var(--green)'          : 'var(--muted)',
+              fontSize:      9,
+              fontFamily:    'var(--mono)',
+              padding:       '2px 7px',
+              borderRadius:  4,
+              fontWeight:    700,
+              letterSpacing: '0.05em',
+              flexShrink:    0,
+            }}>
+              {p.active ? 'ACTIVE' : 'INACTIVE'}
+            </span>
+          </div>
+        ))
+      )}
+      <p style={{ ...settingsTextStyle, marginTop: 16, fontSize: 10 }}>
+        Each plugin needs a{' '}
+        <code style={{ fontFamily: 'var(--mono)' }}>plugin.json</code> manifest and a JS entry file.
+        See <code style={{ fontFamily: 'var(--mono)' }}>workspace/plugins/hello-world/</code> for an example.
+      </p>
+    </div>
+  )
+}
+
 // ── UpdatesTab ────────────────────────────────────────────────
 
 type UpdateState = 'idle' | 'checking' | 'uptodate' | 'available' | 'downloading' | 'ready' | 'error'
@@ -3857,6 +3938,7 @@ const SETTINGS_TABS = [
   { id: 'usage',    label: '📊 Usage'        },
   { id: 'knowledge',label: '📚 Knowledge'   },
   { id: 'skills',   label: '🎯 Skills'      },
+  { id: 'plugins',  label: '🧩 Plugins'    },
   { id: 'channels', label: '💬 Channels'    },
   { id: 'security', label: '🛡️ Security'   },
   { id: 'ide',      label: '💻 IDE Integration' },
@@ -3940,6 +4022,12 @@ function SettingsDrawer() {
           {settingsTab === 'skills' && (
             <SettingsSection title="Skills Manager">
               <SkillsManager />
+            </SettingsSection>
+          )}
+
+          {settingsTab === 'plugins' && (
+            <SettingsSection title="Plugins">
+              <PluginsList />
             </SettingsSection>
           )}
 

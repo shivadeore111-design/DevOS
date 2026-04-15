@@ -1601,29 +1601,48 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
   },
 }
 
+// ── Plugin-registered tools ───────────────────────────────────
+
+const externalTools: Record<string, (payload: any) => Promise<RawResult>> = {}
+
+export function registerExternalTool(
+  name:   string,
+  fn:     (input: Record<string, any>) => Promise<{ success: boolean; output: string }>,
+  source: string,
+): void {
+  externalTools[name] = async (input: any): Promise<RawResult> => {
+    const r = await fn(input)
+    return { success: r.success, output: r.output }
+  }
+  console.log(`[ToolRegistry] Plugin "${source}" registered tool: ${name}`)
+}
+
 // ── Internal dispatcher — no retry, no timeout ────────────────
 
 async function runTool(tool: string, input: Record<string, any>): Promise<RawResult> {
+  // Core tool
   const fn = TOOLS[tool]
-  if (!fn) {
-    // ── MCP tool dispatch ─────────────────────────────────────
-    // Tool names follow the pattern: mcp_<serverName>_<toolName>
-    if (tool.startsWith('mcp_')) {
-      const withoutPrefix = tool.slice(4)                     // drop "mcp_"
-      const underIdx      = withoutPrefix.indexOf('_')
-      if (underIdx !== -1) {
-        const serverName  = withoutPrefix.slice(0, underIdx)
-        const mcpToolName = withoutPrefix.slice(underIdx + 1)
-        const result      = await mcpClient.callTool(serverName, mcpToolName, input)
-        return { success: result.success, output: result.output }
-      }
+  if (fn) return fn(input)
+
+  // Plugin-registered tool
+  if (externalTools[tool]) return externalTools[tool](input)
+
+  // ── MCP tool dispatch ─────────────────────────────────────
+  // Tool names follow the pattern: mcp_<serverName>_<toolName>
+  if (tool.startsWith('mcp_')) {
+    const withoutPrefix = tool.slice(4)                     // drop "mcp_"
+    const underIdx      = withoutPrefix.indexOf('_')
+    if (underIdx !== -1) {
+      const serverName  = withoutPrefix.slice(0, underIdx)
+      const mcpToolName = withoutPrefix.slice(underIdx + 1)
+      const result      = await mcpClient.callTool(serverName, mcpToolName, input)
+      return { success: result.success, output: result.output }
     }
-    // Last resort: try shell_exec
-    const cmd = input?.command || ''
-    if (cmd) return TOOLS.shell_exec({ command: cmd })
-    throw new Error(`Unknown tool: ${tool}`)
   }
-  return fn(input)
+  // Last resort: try shell_exec
+  const cmd = input?.command || ''
+  if (cmd) return TOOLS.shell_exec({ command: cmd })
+  throw new Error(`Unknown tool: ${tool}`)
 }
 
 // ── Public executor — retry + per-tool timeout ────────────────

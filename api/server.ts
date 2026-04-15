@@ -78,6 +78,7 @@ import { unifiedMemoryRecall, buildMemoryInjection } from '../core/memoryRecall'
 import { costTracker }   from '../core/costTracker'
 import { sessionMemory, getSessionLineage, loadSessionMetadata } from '../core/sessionMemory'
 import { memoryExtractor } from '../core/memoryExtractor'
+import { pluginManager }   from '../core/pluginSystem'
 import { getIdentity, refreshIdentity } from '../core/aidenIdentity'
 import { eventBus } from '../core/eventBus'
 import { getWorkflow } from '../core/workflowTracker'
@@ -2084,6 +2085,13 @@ export function createApiServer(): Express {
       const lineage = getSessionLineage(id)
       res.json({ sessionId: id, lineage })
     } catch (err: any) { res.status(500).json({ error: err.message }) }
+  })
+
+  // GET /api/plugins — list loaded community plugins
+  app.get('/api/plugins', (_req: Request, res: Response) => {
+    try {
+      res.json({ plugins: pluginManager.list() })
+    } catch (e: any) { res.status(500).json({ error: e.message }) }
   })
 
   // GET /api/telegram/config — load Telegram bot config
@@ -4101,6 +4109,9 @@ export function startApiServer(portArg?: number): Express {
 
   // Run crash recovery on startup â€” non-blocking, finds 'running' tasks from prior session
   recoverTasks().catch(e => console.error('[Startup] Recovery error:', e.message))
+
+  // Load community plugins from workspace/plugins/
+  pluginManager.loadAll().catch(e => console.error('[Plugins] Load failed:', e.message))
 
   // Start background license refresh (12-hour interval, silent)
   startLicenseRefresh()
