@@ -83,8 +83,9 @@ import { getIdentity, refreshIdentity } from '../core/aidenIdentity'
 import { eventBus } from '../core/eventBus'
 import { getWorkflow } from '../core/workflowTracker'
 import { getHookCount } from '../core/hooks'
-import { TelegramBot } from '../core/telegramBot'
+import { TelegramBot, registerTelegramCallbacks } from '../core/telegramBot'
 import type { TelegramConfig } from '../core/telegramBot'
+import { callbacks } from '../core/callbackSystem'
 import { gateway } from '../core/gateway'
 import type { IncomingMessage as GatewayMessage } from '../core/gateway'
 import { sessionRouter } from '../core/sessionRouter'
@@ -1110,7 +1111,7 @@ export function createApiServer(): Express {
 
         const results: StepResult[] = await executePlan(
           plan,
-          (_step: ToolStep, _result: StepResult) => { /* silent in JSON mode */ },
+          (step: ToolStep, _result: StepResult) => { callbacks.emit('tool_start', sessionId || 'default', { tool: step.tool, input: step.input }).catch(() => {}) },
         )
 
         await respondWithResults(
@@ -1159,6 +1160,22 @@ export function createApiServer(): Express {
         console.error('[Chat] SSE write failed:', writeErr.message)
       }
     }
+
+    // ── Callback system — additive layer alongside existing SSE sends ──
+    const sid = (sessionId as string | undefined) || 'default'
+    callbacks.emit('session_start', sid, { message }).catch(() => {})
+
+    // Forward callback events from other sessions to this SSE connection.
+    // The sessionId guard prevents re-sending this session's own emitted events.
+    const unsubscribeSSE = callbacks.onAny((payload) => {
+      if (payload.sessionId !== sid) {
+        send({ event: payload.event, ...payload.data, sessionId: payload.sessionId })
+      }
+    })
+    res.on('close', () => {
+      unsubscribeSSE()
+      callbacks.emit('session_end', sid, {}).catch(() => {})
+    })
 
     // Sprint 6: tiered model selection
     const responderTierSSE = getModelForTask('responder')
@@ -1347,11 +1364,13 @@ export function createApiServer(): Express {
 
       send({ activity: { icon: 'ðŸ§ ', agent: 'Aiden', message: 'Working out a plan...', style: 'thinking' }, done: false })
       send({ thinking: { stage: 'memory', message: 'Checking memory...' } })
+      callbacks.emit('memory_read', sid, { stage: 'memory', message: 'Checking memory...' }).catch(() => {})
 
       const memoryContext    = conversationMemory.buildContext()
       const proactiveMemory  = await surfaceRelevantMemories(resolvedMessage)
       const fullMemoryCtx    = memoryContext + proactiveMemory
       send({ thinking: { stage: 'planning', message: 'Planning approach...' } })
+      callbacks.emit('planning_start', sid, { message: 'Planning approach...' }).catch(() => {})
       const plan: AgentPlan = await planWithLLM(resolvedMessage, history, plannerKeySSE, plannerModelSSE, plannerProvSSE, fullMemoryCtx)
 
       // â”€â”€ PLAN-ONLY MODE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -1425,6 +1444,7 @@ export function createApiServer(): Express {
             activity: { icon: 'ðŸ”§', agent: 'Aiden', message: humanToolMessage(step.tool, step.input as Record<string, any>), style: 'tool', rawTool: step.tool, rawInput: step.input },
             done: false,
           })
+          callbacks.emit('tool_start', sid, { tool: step.tool, input: step.input, message: humanToolMessage(step.tool, step.input as Record<string, any>) }).catch(() => {})
           send({ thinking: { stage: 'executing', message: `Running ${step.tool}...`, tool: step.tool } })
           send({
             activity: {
@@ -1435,8 +1455,12 @@ export function createApiServer(): Express {
             },
             done: false,
           })
+          callbacks.emit('tool_end', sid, { tool: step.tool, success: result.success, output: (result.success ? result.output : result.error || 'failed').slice(0, 160) }).catch(() => {})
           const budgetSnap = getBudgetState()
-          if (budgetSnap) send({ budget: budgetSnap })
+          if (budgetSnap) {
+            send({ budget: budgetSnap })
+            callbacks.emit('budget_update', sid, { budget: budgetSnap }).catch(() => {})
+          }
         },
         (phase: Phase, index: number, total: number) => {
           send({
@@ -1490,6 +1514,7 @@ export function createApiServer(): Express {
 
       incrementUsage(apiName)
       send({ done: true, provider: apiName })
+      callbacks.emit('stream_done', sid, { provider: apiName }).catch(() => {})
       res.end()
       memoryLayers.write(`User: ${resolvedMessage}`, ['chat'])
 
@@ -4303,6 +4328,7 @@ export function startApiServer(portArg?: number): Express {
 
       // Register Telegram delivery so gateway.deliver() / broadcast() can send back
       const _tgBot = activeTelegramBot!
+      registerTelegramCallbacks(_tgBot)
       gateway.registerChannel('telegram', async (msg) => {
         await _tgBot.sendMessage(msg.channelId, msg.text)
         return true

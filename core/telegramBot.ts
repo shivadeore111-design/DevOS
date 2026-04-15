@@ -6,6 +6,8 @@
 // core/telegramBot.ts — Telegram bot integration for Aiden.
 // Uses native fetch (Node 18+). No external dependencies.
 
+import { callbacks } from './callbackSystem'
+
 export interface TelegramConfig {
   enabled:         boolean
   botToken:        string
@@ -135,6 +137,7 @@ export class TelegramBot {
   // ── Chunk long messages ─────────────────────────────────────
 
   private chunkMessage(text: string, maxLength: number): string[] {
+
     if (text.length <= maxLength) return [text]
 
     const chunks: string[] = []
@@ -163,4 +166,26 @@ export class TelegramBot {
 
     return chunks
   }
+}
+
+// ── Callback integration ──────────────────────────────────────────────────────
+
+/**
+ * Register a persistent callback subscriber that sends a typing indicator to
+ * the relevant Telegram chat whenever a tool starts executing in any session
+ * that originated from Telegram.
+ *
+ * The gateway routes Telegram messages with sessionId `telegram_telegram_{chatId}`,
+ * so we extract the chatId from that pattern and call sendTyping().
+ *
+ * @returns An unsubscribe function — call it when the bot is stopped.
+ */
+export function registerTelegramCallbacks(bot: TelegramBot): () => void {
+  return callbacks.on('tool_start', async (payload) => {
+    const prefix = 'telegram_telegram_'
+    if (payload.sessionId.startsWith(prefix)) {
+      const chatId = payload.sessionId.slice(prefix.length)
+      await bot.sendTyping(chatId)
+    }
+  })
 }

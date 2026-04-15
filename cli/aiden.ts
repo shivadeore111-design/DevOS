@@ -103,6 +103,17 @@ async function streamChat(message: string): Promise<void> {
               }${RESET}`
             )
           }
+
+          // ── Callback system event shapes (forwarded from other sessions) ──
+          if (event.event === 'thinking_start' || event.event === 'memory_read' || event.event === 'planning_start') {
+            const msg = (event as any).message || (event as any).data?.message || 'Thinking...'
+            process.stdout.write(`\n${DIM}  ⟳ ${msg}${RESET}\n`)
+          }
+
+          if (event.event === 'tool_start') {
+            const tool = (event as any).tool || (event as any).data?.tool || '?'
+            process.stdout.write(`\n${CYAN}  ▸ ${tool}${RESET}${DIM} running...${RESET}`)
+          }
         } catch { /* ignore malformed SSE frames */ }
       }
     }
