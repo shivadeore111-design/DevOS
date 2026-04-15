@@ -215,6 +215,7 @@ const OPENAI_COMPAT_ENDPOINTS: Record<string, string> = {
   cerebras:   'https://api.cerebras.ai/v1/chat/completions',
   nvidia:     'https://integrate.api.nvidia.com/v1/chat/completions',
   github:     'https://models.inference.ai.azure.com/v1/chat/completions',
+  boa:        'https://api.boa.ai/v1/chat/completions',
 }
 
 function buildHeaders(providerName: string, apiKey: string): Record<string, string> {

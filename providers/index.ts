@@ -12,6 +12,7 @@ import { ollamaProvider } from './ollama'
 import { createGroqProvider } from './groq'
 import { createOpenRouterProvider } from './openrouter'
 import { createGeminiProvider } from './gemini'
+import { createBOAProvider } from './boa'
 
 // ── Config schema ─────────────────────────────────────────────
 
@@ -153,6 +154,8 @@ export function getActiveProvider(): { provider: Provider; model: string; userNa
       return { provider: createOpenRouterProvider(key), model: apiConfig.model || 'meta-llama/llama-3.3-70b-instruct', userName }
     case 'gemini':
       return { provider: createGeminiProvider(key), model: apiConfig.model || 'gemini-1.5-flash', userName }
+    case 'boa':
+      return { provider: createBOAProvider(key), model: apiConfig.model || 'llama-3.3-70b', userName }
     default:
       return { provider: ollamaProvider, model: config.model.activeModel || 'mistral:7b', userName }
   }

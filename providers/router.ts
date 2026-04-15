@@ -13,6 +13,7 @@ import { createOpenRouterProvider } from './openrouter'
 import { createGeminiProvider } from './gemini'
 import { createCerebrasProvider } from './cerebras'
 import { createNvidiaProvider } from './nvidia'
+import { createBOAProvider } from './boa'
 import { Provider } from './types'
 import { discoverLocalModels, DiscoveredModels } from '../core/modelDiscovery'
 
@@ -32,6 +33,7 @@ const RATE_LIMIT_WINDOWS: Record<string, number> = {
   nvidia:     60  * 1000,
   cloudflare: 30  * 1000,
   github:     30  * 1000,
+  boa:        30  * 1000,
   ollama:     0,           // local — never rate-limited
 }
 const DEFAULT_RATE_LIMIT_MS = 60 * 1000 // 1 minute fallback
@@ -106,6 +108,7 @@ function buildProvider(entry: APIEntry): Provider {
     case 'gemini':     return createGeminiProvider(key)
     case 'cerebras':   return createCerebrasProvider(key)
     case 'nvidia':     return createNvidiaProvider(key)
+    case 'boa':        return createBOAProvider(key)
     default:           return ollamaProvider
   }
 }
