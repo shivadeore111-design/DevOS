@@ -87,6 +87,108 @@ export function getBudgetState(): { current: number; max: number; remaining: num
   }
 }
 
+// ── Token-based preflight compression ─────────────────────────
+
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4)
+}
+
+function estimateConversationTokens(messages: { role: string; content: string }[]): number {
+  return messages.reduce((sum, msg) => {
+    const content = typeof msg.content === 'string'
+      ? msg.content
+      : JSON.stringify(msg.content || '')
+    return sum + estimateTokens(content) + 4  // 4 tokens per message overhead
+  }, 0)
+}
+
+const MODEL_CONTEXT_LIMITS: Record<string, number> = {
+  'llama-3.1-8b-instant':           8192,
+  'llama-3.3-70b-versatile':        32768,
+  'gemma-7b-it':                    8192,
+  'gemma2-9b-it':                   8192,
+  'mixtral-8x7b-32768':             32768,
+  'deepseek-r1-distill-llama-70b':  32768,
+  'qwen-2.5-72b-instruct':          32768,
+  'gemini-2.0-flash':               1048576,
+  'gemini-1.5-flash':               1048576,
+  'gpt-4o':                         128000,
+  'claude-sonnet-4-20250514':       200000,
+  'default':                        8192,
+}
+
+function getContextLimit(model: string): number {
+  return MODEL_CONTEXT_LIMITS[model] ?? MODEL_CONTEXT_LIMITS['default']
+}
+
+async function flushMemoryFromMessages(messages: { role: string; content: string }[]): Promise<void> {
+  const userMessages = messages
+    .filter(m => m.role === 'user')
+    .map(m => String(m.content))
+    .join('\n')
+
+  if (userMessages.length > 100) {
+    try {
+      semanticMemory.add(userMessages.slice(0, 500), 'exchange', ['preflight_compression'])
+      console.log('[Context] Memory flushed before compression')
+    } catch {
+      console.log('[Context] Memory flush skipped — extractor unavailable')
+    }
+  }
+}
+
+async function preflightCompressionCheck(
+  messages: { role: string; content: string }[],
+  model:    string,
+): Promise<{ role: string; content: string }[]> {
+  const tokenCount   = estimateConversationTokens(messages)
+  const contextLimit = getContextLimit(model)
+  const usage        = tokenCount / contextLimit
+
+  console.log(`[Context] ${tokenCount} tokens / ${contextLimit} limit (${(usage * 100).toFixed(0)}%)`)
+
+  if (usage < 0.5) {
+    // Under 50% — no compression needed
+    return messages
+  }
+
+  console.log(`[Context] Over 50% — compressing middle messages`)
+
+  // Step 1: Flush memory before compressing
+  await flushMemoryFromMessages(messages)
+
+  // Step 2: Keep first 2 messages (system + first user) and last 10 messages
+  const protectedStart = messages.slice(0, 2)
+  const protectedEnd   = messages.slice(-10)
+  const middleMessages = messages.slice(2, -10)
+
+  if (middleMessages.length < 3) {
+    return messages  // not enough to compress
+  }
+
+  // Step 3: Summarize middle messages into a single system message
+  const middleText = middleMessages
+    .map(m => `${m.role}: ${String(m.content).substring(0, 200)}`)
+    .join('\n')
+
+  const summary: { role: string; content: string } = {
+    role:    'system',
+    content: `[COMPRESSED CONTEXT — ${middleMessages.length} messages summarized]\n` +
+      `Previous conversation covered: ${middleText.substring(0, 1000)}\n` +
+      `[End compressed context]`,
+  }
+
+  const compressed = [...protectedStart, summary, ...protectedEnd]
+
+  const newTokens = estimateConversationTokens(compressed)
+  console.log(
+    `[Context] Compressed: ${tokenCount} → ${newTokens} tokens ` +
+    `(${messages.length} → ${compressed.length} messages)`,
+  )
+
+  return compressed
+}
+
 // ── Proactive memory surfacing ─────────────────────────────────
 
 const SKIP_MEMORY_PATTERNS = [
@@ -2200,11 +2302,12 @@ CRITICAL RULES FOR YOUR RESPONSE:
     ? `User asked: "${originalMessage}"\n\nReal execution results:\n${executionSummary}\n\nRespond naturally based on these real results only. Show the actual output, not a description of it.${depthInstruction}${memSection}`
     : `${originalMessage}${memSection}`
 
-  const messages = [
+  let messages: { role: string; content: string }[] = [
     { role: 'system', content: systemWithResults },
     ...history.slice(-6),
     { role: 'user',   content: userContent },
   ]
+  messages = await preflightCompressionCheck(messages, model)
 
   if (executionInterrupted) return
   const _respCtrl = new AbortController()
