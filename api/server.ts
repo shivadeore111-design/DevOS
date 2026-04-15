@@ -40,7 +40,7 @@ import { discoverLocalModels, getOllamaTimeout } from '../core/modelDiscovery'
 import { detectTimezone } from '../core/userProfile'
 import { executeTool, getActiveBrowserPage } from '../core/toolRegistry'
 import { getScreenSize, takeScreenshot as captureScreen } from '../core/computerControl'
-import { planWithLLM, executePlan, respondWithResults, callLLM, surfaceRelevantMemories, interruptCurrentCall } from '../core/agentLoop'
+import { planWithLLM, executePlan, respondWithResults, callLLM, surfaceRelevantMemories, interruptCurrentCall, getBudgetState } from '../core/agentLoop'
 import { TOOL_DESCRIPTIONS } from '../core/toolRegistry'
 import { runReActLoop, ReActStep }                                 from '../core/reactLoop'
 import { scheduler }                                              from '../core/scheduler'
@@ -1434,6 +1434,8 @@ export function createApiServer(): Express {
             },
             done: false,
           })
+          const budgetSnap = getBudgetState()
+          if (budgetSnap) send({ budget: budgetSnap })
         },
         (phase: Phase, index: number, total: number) => {
           send({

@@ -56,6 +56,37 @@ export function interruptCurrentCall(): void {
   }
 }
 
+// ── Iteration budget ───────────────────────────────────────────
+interface IterationBudget {
+  maxIterations:    number
+  currentIteration: number
+  cautionThreshold: number   // 0.7 (70%)
+  warningThreshold: number   // 0.9 (90%)
+}
+
+function getBudgetWarning(budget: IterationBudget): string | null {
+  const usage     = budget.currentIteration / budget.maxIterations
+  const remaining = budget.maxIterations - budget.currentIteration
+  if (usage >= budget.warningThreshold) {
+    return `[BUDGET WARNING: Turn ${budget.currentIteration}/${budget.maxIterations}. Only ${remaining} turn(s) left. Provide your final response NOW. Do not start new tool calls.]`
+  }
+  if (usage >= budget.cautionThreshold) {
+    return `[BUDGET: Turn ${budget.currentIteration}/${budget.maxIterations}. ${remaining} turns left. Start consolidating your work and prepare a response.]`
+  }
+  return null
+}
+
+let _activeBudget: IterationBudget | null = null
+
+export function getBudgetState(): { current: number; max: number; remaining: number } | null {
+  if (!_activeBudget) return null
+  return {
+    current:   _activeBudget.currentIteration,
+    max:       _activeBudget.maxIterations,
+    remaining: _activeBudget.maxIterations - _activeBudget.currentIteration,
+  }
+}
+
 // ── Proactive memory surfacing ─────────────────────────────────
 
 const SKIP_MEMORY_PATTERNS = [
@@ -1568,6 +1599,16 @@ export async function executePlan(
 ): Promise<StepResult[]> {
 
   executionInterrupted = false  // reset on each new plan execution
+
+  // ── Iteration budget ─────────────────────────────────────────
+  const budget: IterationBudget = {
+    maxIterations:    Math.max(plan.plan.length + 5, 15),
+    currentIteration: 0,
+    cautionThreshold: 0.7,
+    warningThreshold: 0.9,
+  }
+  _activeBudget = budget
+
   const results:      StepResult[]           = []
   const stepOutputs:  Record<number, string> = {}
   const planStart     = Date.now()
@@ -1815,9 +1856,31 @@ async function executeSingleStep(
 
     if (unskipped.length === 1) {
       // —— Sequential single step ————————————————
-      const step       = unskipped[0]
+      const step = unskipped[0]
+
+      // ── Budget: increment before execution ────────────────────────
+      budget.currentIteration++
+      if (budget.currentIteration >= budget.maxIterations) {
+        console.log('[Budget] Exhausted — forcing final response')
+        const summary = results.filter(s => s.success)
+          .map(s => `✓ ${s.tool}: ${String(s.output).substring(0, 100)}`).join('\n')
+        results.push({
+          step: step.step, tool: 'budget_exhausted', input: {},
+          success: false, output: `I've reached my iteration limit. Here's what I completed:\n\n${summary}\n\nLet me know if you need me to continue.`,
+          error: 'iteration budget exhausted', duration: 0,
+        })
+        break
+      }
+
       const stepResult = await executeSingleStep(step, stepOutputs, state, plan, workspace, onStep)
       stepOutputs[step.step] = stepResult.output
+
+      // ── Budget: append pressure warning to result output ──────────
+      const budgetWarning = getBudgetWarning(budget)
+      if (budgetWarning) {
+        stepResult.output = stepResult.output + '\n\n' + budgetWarning
+      }
+
       results.push(stepResult)
 
       // ── Interrupt check ────────────────────────────────────────────
@@ -1889,6 +1952,9 @@ async function executeSingleStep(
       // Chunk oversized groups so we never exceed MAX_PARALLEL concurrent calls
       const chunks = unskipped.length > MAX_PARALLEL ? chunkSteps(unskipped, MAX_PARALLEL) : [unskipped]
       for (const chunk of chunks) {
+        // ── Budget: one increment per parallel chunk ───────────────────
+        budget.currentIteration++
+
         livePulse.act('Aiden', `Running ${chunk.length} steps in parallel: ${chunk.map(s => s.tool).join(', ')}`)
         // Emit parallel metadata onto workflow nodes before dispatch
         for (const s of chunk) {

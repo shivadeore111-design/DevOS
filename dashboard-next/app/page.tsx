@@ -102,6 +102,7 @@ interface DevOSCtxType {
   isExecuting:    boolean
   isStreaming:    boolean
   thinking:       { stage: string; message: string; tool?: string } | null
+  budget:         { current: number; max: number; remaining: number } | null
   activeModel:    string
   // Messages / conversations
   messages:       Message[]
@@ -1804,7 +1805,7 @@ function PlusMenu() {
 function ChatPanel() {
   const {
     messages, input, setInput, isStreaming, execMode, setExecMode,
-    thinking,
+    thinking, budget,
     sendMessage, stopExecution, handleQuickUpload,
     inputRef, kbInputRef, messagesEndRef,
     plusMenuOpen, setPlusMenuOpen,
@@ -1862,6 +1863,14 @@ function ChatPanel() {
             ))}
           </div>
           <span style={{ opacity: 0.7 }}>{thinking.message}</span>
+          {budget && (
+            <span style={{
+              marginLeft: 'auto', fontSize: 11, opacity: 0.5,
+              fontVariantNumeric: 'tabular-nums',
+            }}>
+              {budget.current}/{budget.max}
+            </span>
+          )}
         </div>
       )}
 
@@ -4378,6 +4387,7 @@ export default function Home() {
   const [isExecuting,    setIsExecuting]    = useState(false)
   const [isStreaming,    setIsStreaming]    = useState(false)
   const [thinking,       setThinking]       = useState<{ stage: string; message: string; tool?: string } | null>(null)
+  const [budget,         setBudget]         = useState<{ current: number; max: number; remaining: number } | null>(null)
   const [activeModel,    setActiveModel]    = useState<string>('')
 
   // ── Messages / conversations ────────────────────────────────
@@ -4818,6 +4828,11 @@ export default function Home() {
               }
             }
 
+            // Budget turn counter
+            if (data.budget) {
+              setBudget(data.budget)
+            }
+
             // Thinking stage updates
             if (data.thinking) {
               setThinking(data.thinking)
@@ -4838,6 +4853,7 @@ export default function Home() {
             // Done
             if (data.done) {
               setThinking(null)
+              setBudget(null)
               setIsExecuting(false)
               setIsStreaming(false)
               const finalPhases = buildPhases('done')
@@ -5126,7 +5142,7 @@ export default function Home() {
     historyOpen, setHistoryOpen, liveViewOpen, setLiveViewOpen,
     activityOpen, setActivityOpen, settingsOpen, setSettingsOpen,
     settingsTab, setSettingsTab,
-    isExecuting, isStreaming, thinking, activeModel,
+    isExecuting, isStreaming, thinking, budget, activeModel,
     messages, setMessages, conversations, setConversations, currentConvId,
     input, setInput,
     activityLogs, setActivityLogs, screenshot, setScreenshot, sessionId,
