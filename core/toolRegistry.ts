@@ -157,6 +157,9 @@ const SHELL_ALLOWLIST: RegExp[] = [
   /^(tar|zip|unzip|7z|gzip|gunzip)\b/i,
   // 12. PowerShell safe cmdlets (read, navigate, item management, output)
   /^(Get-|Select-|Where-|Sort-|Format-|Out-|Write-Output|Write-Host|ConvertTo-|ConvertFrom-|Measure-|Test-Path|Resolve-Path|Split-Path|Join-Path|Compare-Object|New-Item|Copy-Item|Move-Item|Rename-Item|Remove-Item|Set-Content|Add-Content|Clear-Content|Set-Location|Push-Location|Pop-Location)/i,
+  // 13. Instant Actions: lock screen (rundll32) and volume one-liners (powershell -c)
+  /^rundll32\b/i,
+  /^powershell\s+-c\b/i,
 ]
 
 function isCommandAllowed(cmd: string): { allowed: boolean; needsApproval: boolean } {

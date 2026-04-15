@@ -96,6 +96,171 @@ let activeTelegramBot: TelegramBot | null = null
 // ── Bookmarklet — clip selected text from any page ────────────
 const BOOKMARKLET = `javascript:void(fetch('http://localhost:4200/api/clip',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:window.getSelection().toString()||document.title,source:window.location.href,title:document.title})}).then(()=>alert('Clipped!')))`
 
+// ── Instant Actions — 15 common OS commands that bypass the planner entirely ──
+// Matched and executed before searchFastPaths, so zero LLM latency.
+// Actions use app_launch (no SHELL_ALLOWLIST needed) or approved shell commands.
+
+interface InstantAction {
+  patterns: RegExp[]
+  action:   (match: RegExpMatchArray, message: string) => Promise<string>
+}
+
+const INSTANT_ACTIONS: InstantAction[] = [
+  // 1. Open Chrome
+  {
+    patterns: [/^open\s+chrome\s*$/i],
+    action: async () => {
+      try { await executeTool('app_launch', { app: 'chrome' }) } catch {}
+      return 'Opening Chrome...'
+    },
+  },
+  // 2. Open Firefox
+  {
+    patterns: [/^open\s+firefox\s*$/i],
+    action: async () => {
+      try { await executeTool('app_launch', { app: 'firefox' }) } catch {}
+      return 'Opening Firefox...'
+    },
+  },
+  // 3. Open Edge
+  {
+    patterns: [/^open\s+(?:microsoft\s+)?edge\s*$/i],
+    action: async () => {
+      try { await executeTool('app_launch', { app: 'msedge' }) } catch {}
+      return 'Opening Microsoft Edge...'
+    },
+  },
+  // 4. Open Notepad
+  {
+    patterns: [/^open\s+notepad\s*$/i],
+    action: async () => {
+      try { await executeTool('app_launch', { app: 'notepad' }) } catch {}
+      return 'Opening Notepad...'
+    },
+  },
+  // 5. Open Calculator
+  {
+    patterns: [/^open\s+calc(?:ulator)?\s*$/i],
+    action: async () => {
+      try { await executeTool('app_launch', { app: 'calc' }) } catch {}
+      return 'Opening Calculator...'
+    },
+  },
+  // 6. Open VS Code
+  {
+    patterns: [/^open\s+(?:vs[\s-]?code|vscode)\s*$/i],
+    action: async () => {
+      try { await executeTool('app_launch', { app: 'code' }) } catch {}
+      return 'Opening VS Code...'
+    },
+  },
+  // 7. Open Terminal / CMD
+  {
+    patterns: [/^open\s+(?:terminal|cmd|command\s+prompt)\s*$/i],
+    action: async () => {
+      try { await executeTool('app_launch', { app: 'cmd' }) } catch {}
+      return 'Opening terminal...'
+    },
+  },
+  // 8. Open File Explorer
+  {
+    patterns: [
+      /^open\s+(?:file\s+)?explorer\s*$/i,
+      /^open\s+(?:my\s+)?files?\s*$/i,
+    ],
+    action: async () => {
+      try { await executeTool('app_launch', { app: 'explorer' }) } catch {}
+      return 'Opening File Explorer...'
+    },
+  },
+  // 9. Take Screenshot
+  {
+    patterns: [
+      /^(?:take\s+(?:a\s+)?)?screenshot\s*$/i,
+      /^capture\s+(?:the\s+)?screen\s*$/i,
+    ],
+    action: async () => {
+      try {
+        const result = await executeTool('screenshot', {})
+        if (result.success && result.output) return result.output
+      } catch {}
+      return 'Screenshot taken.'
+    },
+  },
+  // 10. Volume Up
+  {
+    patterns: [/^(?:turn\s+(?:the\s+)?)?volume\s+up\s*$/i],
+    action: async () => {
+      try {
+        await executeTool('shell_exec', { command: 'powershell -c “(New-Object -com WScript.Shell).SendKeys([char]175)”' })
+      } catch {}
+      return 'Volume up.'
+    },
+  },
+  // 11. Volume Down
+  {
+    patterns: [/^(?:turn\s+(?:the\s+)?)?volume\s+down\s*$/i],
+    action: async () => {
+      try {
+        await executeTool('shell_exec', { command: 'powershell -c “(New-Object -com WScript.Shell).SendKeys([char]174)”' })
+      } catch {}
+      return 'Volume down.'
+    },
+  },
+  // 12. Mute / Unmute
+  {
+    patterns: [/^(?:toggle\s+)?mute\s*$/i, /^unmute\s*$/i],
+    action: async () => {
+      try {
+        await executeTool('shell_exec', { command: 'powershell -c “(New-Object -com WScript.Shell).SendKeys([char]173)”' })
+      } catch {}
+      return 'Toggled mute.'
+    },
+  },
+  // 13. Set Timer
+  {
+    patterns: [
+      /^set\s+(?:a\s+)?timer\s+(?:for\s+)?(\d+)\s*(second|minute|hour)s?\s*$/i,
+      /^(?:start|create)\s+(?:a\s+)?(\d+)\s*(second|minute|hour)s?\s+timer\s*$/i,
+    ],
+    action: async (match) => {
+      const n    = parseInt(match[1] || '1', 10)
+      const unit = (match[2] || 'minute').toLowerCase()
+      const ms   = unit.startsWith('s') ? n * 1000
+                 : unit.startsWith('h') ? n * 3_600_000
+                 :                        n * 60_000
+      setTimeout(async () => {
+        try { await executeTool('notify', { message: `Your ${n}-${unit} timer is up!` }) } catch {}
+      }, ms)
+      return `Timer set for ${n} ${unit}${n !== 1 ? 's' : ''}. I will notify you when it is done.`
+    },
+  },
+  // 14. System Info
+  {
+    patterns: [
+      /^(?:show\s+)?(?:system\s+info(?:rmation)?|pc\s+info|my\s+specs?)\s*$/i,
+      /^what(?:'s|s|\s+is)\s+my\s+(?:pc|computer)\s+(?:info|specs?)\s*$/i,
+    ],
+    action: async () => {
+      try {
+        const result = await executeTool('shell_exec', { command: 'systeminfo' })
+        if (result.success) return `System info:\n\`\`\`\n${result.output.slice(0, 1500)}\n\`\`\``
+      } catch {}
+      return 'Could not retrieve system info.'
+    },
+  },
+  // 15. Lock Screen
+  {
+    patterns: [/^lock\s+(?:the\s+)?(?:screen|pc|computer|workstation)\s*$/i],
+    action: async () => {
+      try {
+        await executeTool('shell_exec', { command: 'rundll32.exe user32.dll,LockWorkStation' })
+      } catch {}
+      return 'Locking screen...'
+    },
+  },
+]
+
 // â”€â”€ Human-readable tool message helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function humanToolMessage(tool: string, input: Record<string, any>): string {
   const map: Record<string, string> = {
@@ -648,6 +813,19 @@ export function createApiServer(): Express {
       }
     }
 
+    // ── Instant Actions — 15 direct OS commands, zero LLM overhead ─────────────
+    for (const ia of INSTANT_ACTIONS) {
+      for (const pat of ia.patterns) {
+        const m = message.match(pat)
+        if (m) {
+          console.log(`[InstantAction] "${message}"`)
+          const response = await ia.action(m, message)
+          fastReply(response)
+          return
+        }
+      }
+    }
+
     // ── Search / launch fast-path — intercepts BEFORE the planner ──────────────
     // Prevents the LLM from trying to type into browser URL bars.
     // Constructs the correct URL and calls open_browser directly.
@@ -721,9 +899,9 @@ export function createApiServer(): Express {
       }
     }
 
-    // 1. "open spotify" → launch desktop app
+    // 1. "open spotify" → launch desktop app (app_launch avoids the Start-Process denylist)
     if (/^open\s+spotify\s*$/i.test(message)) {
-      try { await executeTool('shell_exec', { command: 'Start-Process spotify' }) } catch {}
+      try { await executeTool('app_launch', { app: 'spotify' }) } catch {}
       fastReply('Opening Spotify...')
       return
     }
