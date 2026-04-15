@@ -429,7 +429,9 @@ async function racePlannerAPIs(
     .filter(a => {
       if (!a.enabled || a.rateLimited) return false
       const k = a.key.startsWith('env:') ? (process.env[a.key.replace('env:', '')] || '') : a.key
-      return k.length > 0 && a.provider !== 'ollama'
+      // Only race providers that use the OpenAI-compat format.
+      // Gemini and Cloudflare use different APIs — they'll be tried via callLLM in the main loop.
+      return k.length > 0 && OPENAI_COMPAT_ENDPOINTS[a.provider] !== undefined
     })
     .slice(0, topN)
 
@@ -871,7 +873,13 @@ Output ONLY valid JSON, nothing else:`
   let raw         = ''
   let parsed: any = null
 
-  for (let attempt = 0; attempt < 3; attempt++) {
+  // Use enough attempts to walk the FULL provider chain:
+  // groq-1..4 → gemini-1..4 → openrouter-* → boa → ollama
+  // Without this, the loop caps at 3 and never reaches Gemini or OpenRouter.
+  const _plannerChain     = loadConfig().providers.apis.filter(a => a.enabled && a.provider !== 'ollama')
+  const maxPlannerAttempts = Math.max(3, Math.min(_plannerChain.length, 12))
+
+  for (let attempt = 0; attempt < maxPlannerAttempts; attempt++) {
     raw = '' // reset each attempt so stale values don't bleed through
     try {
       // Sprint 5: on first attempt, race top-2 providers simultaneously
