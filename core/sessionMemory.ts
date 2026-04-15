@@ -10,7 +10,7 @@
 
 import fs   from 'fs'
 import path from 'path'
-import { callBgLLM } from './bgLLM'
+import { auxiliaryClient } from './auxiliaryClient'
 
 const SESSIONS_DIR = path.join(process.env.AIDEN_USER_DATA || process.cwd(), 'workspace', 'sessions')
 
@@ -263,7 +263,7 @@ class SessionMemory {
 
     try {
       const prompt  = buildPrompt(state)
-      const content = await callBgLLM(prompt, `session_${sessionId}`)
+      const content = await auxiliaryClient.complete(prompt, { task: 'reflection', maxTokens: 500 })
       if (!content || !content.includes('# Session Title')) return
 
       const filePath = sessionPath(sessionId)

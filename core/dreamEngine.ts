@@ -10,8 +10,8 @@
 
 import fs   from 'fs'
 import path from 'path'
-import { callBgLLM }    from './bgLLM'
-import { auditTrail }   from './auditTrail'
+import { auxiliaryClient } from './auxiliaryClient'
+import { auditTrail }      from './auditTrail'
 
 const LOCK_FILE    = path.join(process.cwd(), 'workspace', 'dream.lock')
 const MEMORY_DIR   = path.join(process.cwd(), 'workspace', 'memory')
@@ -192,7 +192,7 @@ Rules:
 - Output ONLY valid JSON array`
 
   try {
-    const raw  = await callBgLLM(prompt, 'dream_consolidate')
+    const raw  = await auxiliaryClient.complete(prompt, { task: 'dream', maxTokens: 500 })
     if (!raw) return { filesUpdated: 0 }
 
     const jsonMatch = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').match(/\[[\s\S]*\]/)

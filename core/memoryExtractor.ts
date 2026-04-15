@@ -10,7 +10,7 @@
 
 import fs   from 'fs'
 import path from 'path'
-import { callBgLLM } from './bgLLM'
+import { auxiliaryClient } from './auxiliaryClient'
 
 const MEMORY_DIR   = path.join(process.cwd(), 'workspace', 'memory')
 const INDEX_PATH   = path.join(MEMORY_DIR, 'MEMORY_INDEX.md')
@@ -18,7 +18,14 @@ const SESSIONS_DIR = path.join(process.cwd(), 'workspace', 'sessions')
 
 // ── Types ─────────────────────────────────────────────────────
 
-type MemoryType = 'user_preference' | 'project_fact' | 'tool_pattern' | 'learned_behavior'
+type MemoryType   = 'user_preference' | 'project_fact' | 'tool_pattern' | 'learned_behavior'
+type MemorySource = 'user_stated' | 'tool_result' | 'llm_inferred'
+
+const SOURCE_CONFIDENCE: Record<MemorySource, number> = {
+  user_stated:  1.0,
+  tool_result:  0.8,
+  llm_inferred: 0.5,
+}
 
 interface MemoryFile {
   filename: string
@@ -81,7 +88,9 @@ Extract 1-5 memory items. For each one output JSON in this format:
     "filename": "user_name.md or project_architecture.md (use type prefix + snake_case descriptor)",
     "title": "Short descriptive title",
     "content": "Concise actionable fact. 1-4 sentences.",
-    "summary": "One-line summary for index"
+    "summary": "One-line summary for index",
+    "source": "user_stated|tool_result|llm_inferred",
+    "confidence": 0.5
   }
 ]
 
@@ -92,6 +101,10 @@ Rules:
 - tool_pattern: commands that work/fail, file paths
 - project_fact: architecture, design decisions
 - user_preference: communication style, preferences
+- source rules:
+  - "user_stated": the user directly said/told this fact → confidence 1.0
+  - "tool_result": fact came from a tool's returned data → confidence 0.8
+  - "llm_inferred": you are summarizing or inferring from context → confidence 0.5
 - Output ONLY valid JSON array, nothing else`
 }
 
@@ -117,7 +130,7 @@ class MemoryExtractor {
         : ''
 
       const prompt = buildExtractionPrompt(sessionContent, existingIndex)
-      const raw    = await callBgLLM(prompt, `memory_extract_${sessionId}`)
+      const raw    = await auxiliaryClient.complete(prompt, { task: 'memory_extraction', maxTokens: 300 })
 
       if (!raw) return
 
@@ -126,11 +139,13 @@ class MemoryExtractor {
       if (!jsonMatch) return
 
       const items = JSON.parse(jsonMatch[0]) as Array<{
-        type:     string
-        filename: string
-        title:    string
-        content:  string
-        summary:  string
+        type:       string
+        filename:   string
+        title:      string
+        content:    string
+        summary:    string
+        source?:    string
+        confidence?: number
       }>
 
       if (!Array.isArray(items) || items.length === 0) return
@@ -139,7 +154,9 @@ class MemoryExtractor {
 
       for (const item of items) {
         if (!item.filename || !item.title || !item.content) continue
-        await this.writeMemoryFile(item.filename, item.type as MemoryType, item.title, item.content, existingEntries)
+        const source     = (item.source as MemorySource) || 'llm_inferred'
+        const confidence = item.confidence ?? SOURCE_CONFIDENCE[source]
+        await this.writeMemoryFile(item.filename, item.type as MemoryType, item.title, item.content, existingEntries, source, confidence, sessionId)
       }
 
       // Update index
@@ -159,6 +176,9 @@ class MemoryExtractor {
     title:          string,
     content:        string,
     indexEntries:   MemoryFile[],
+    source:         MemorySource = 'llm_inferred',
+    confidence:     number       = 0.5,
+    sessionId:      string       = '',
   ): Promise<void> {
     const filePath = memoryFilePath(filename)
     const now      = today()
@@ -178,6 +198,9 @@ title: ${title}
 type: ${type}
 created: ${created}
 updated: ${now}
+source: ${source}
+confidence: ${confidence}
+session: ${sessionId}
 ---
 
 ${content.trim()}
