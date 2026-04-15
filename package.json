@@ -1,6 +1,6 @@
 {
   "name": "devos-ai",
-  "version": "3.2.0",
+  "version": "3.3.0",
   "description": "Autonomous AI Operating System — Local, Private, Free. Runs on your machine with Ollama.",
   "author": "Taracod <hello@taracod.com>",
   "license": "Apache-2.0",
@@ -25,7 +25,8 @@
   },
   "bin": {
     "devos-ai": "./dist/bin/npx-init.js",
-    "devos": "./dist/index.js"
+    "devos": "./dist/index.js",
+    "aiden": "./cli/aiden.js"
   },
   "main": "./dist/index.js",
   "files": [
@@ -60,6 +61,8 @@
     "test:api": "npx ts-node tests/e2e/masterTestSuite.ts --part1 --part2",
     "test:chat": "npx ts-node tests/e2e/masterTestSuite.ts --part3",
     "test:reliability": "npx ts-node tests/reliability-sprint.ts",
+    "test:full": "npx ts-node tests/full-suite.ts",
+    "cli": "npx ts-node cli/aiden.ts",
     "livepulse": "powershell -ExecutionPolicy Bypass -File scripts\\livepulse.ps1",
     "obfuscate": "javascript-obfuscator dist/ --output dist/ --compact true --string-array true --rotate-string-array true --string-array-threshold 0.75",
     "release": "node scripts/release.js"

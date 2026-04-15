@@ -3962,9 +3962,10 @@ export function startApiServer(portArg?: number): Express {
   // Cleanup expired sessions every hour
   setInterval(() => sessionRouter.cleanup(), 60 * 60 * 1000)
 
-  // Dashboard and API channels deliver responses directly — mark active
+  // Dashboard, API, and TUI channels deliver responses directly — mark active
   gateway.registerChannel('dashboard', async (_msg) => true)
   gateway.registerChannel('api',       async (_msg) => true)
+  gateway.registerChannel('tui',       async (_msg) => true)  // TUI output handled by stdout
 
   // ── AgentShield startup scan ──────────────────────────────────
   runSecurityScan().then(scan => {

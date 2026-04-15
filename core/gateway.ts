@@ -20,6 +20,7 @@ export type ChannelType =
   | 'whatsapp'
   | 'email'
   | 'api'
+  | 'tui'
 
 export interface IncomingMessage {
   channel:      ChannelType
