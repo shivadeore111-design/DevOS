@@ -38,7 +38,7 @@ import { ollamaProvider } from '../providers/ollama'
 import { getSmartProvider, markRateLimited, incrementUsage, logProviderStatus, getModelForTask, getLocalModels } from '../providers/router'
 import { discoverLocalModels, getOllamaTimeout } from '../core/modelDiscovery'
 import { detectTimezone } from '../core/userProfile'
-import { executeTool } from '../core/toolRegistry'
+import { executeTool, getActiveBrowserPage } from '../core/toolRegistry'
 import { getScreenSize, takeScreenshot as captureScreen } from '../core/computerControl'
 import { planWithLLM, executePlan, respondWithResults, callLLM, surfaceRelevantMemories } from '../core/agentLoop'
 import { TOOL_DESCRIPTIONS } from '../core/toolRegistry'
@@ -695,15 +695,61 @@ export function createApiServer(): Express {
       }
     }
 
-    // ── Music / media replay fast-path ────────────────────────────
-    // "play that song", "play it", "play that" → replay last URL from history
-    const MUSIC_PATTERNS = [
+    // ── Music / media fast-path ────────────────────────────────────
+    // Handles: "play X on youtube/spotify", "open spotify",
+    //          "play that song" (replay from history), "play X" (generic → YouTube)
+
+    const buildMusicUrl = (query: string, platform: string): string => {
+      const encoded = encodeURIComponent(query.trim())
+      if (platform === 'spotify') {
+        return `https://open.spotify.com/search/${encoded}`
+      }
+      return `https://www.youtube.com/results?search_query=${encoded}+music`
+    }
+
+    const autoClickYouTube = async (url: string): Promise<void> => {
+      if (!url.includes('youtube.com/results')) return
+      await new Promise(r => setTimeout(r, 2500))
+      try {
+        const page = getActiveBrowserPage()
+        if (page) {
+          await page.click('ytd-video-renderer a#thumbnail', { timeout: 3000 })
+          console.log('[Music] Auto-clicked first YouTube result')
+        }
+      } catch {
+        console.log('[Music] Could not auto-click — user can click manually')
+      }
+    }
+
+    // 1. "open spotify" → launch desktop app
+    if (/^open\s+spotify\s*$/i.test(message)) {
+      try { await executeTool('shell_exec', { command: 'Start-Process spotify' }) } catch {}
+      fastReply('Opening Spotify...')
+      return
+    }
+
+    // 2. "play X on youtube" / "play X on spotify"
+    const onPlatformMatch = /^play\s+(.+?)\s+on\s+(youtube|spotify)\s*$/i.exec(message)
+    if (onPlatformMatch) {
+      const query    = onPlatformMatch[1].trim()
+      const platform = onPlatformMatch[2].toLowerCase()
+      const url      = buildMusicUrl(query, platform)
+      try {
+        await executeTool('open_browser', { url })
+        await autoClickYouTube(url)
+      } catch {}
+      fastReply(`Playing "${query}" on ${platform}: ${url}`)
+      return
+    }
+
+    // 3. Replay patterns → look in history for a known media URL
+    const REPLAY_PATTERNS = [
       /^play\s+(that|it|this|the)\s+(song|video|music|track)/i,
       /^play\s+it[!.]*$/i,
       /^play\s+that[!.]*$/i,
-      /^play\s+(some|any)\s+(music|songs|lofi|beats)/i,
+      /^(play\s+)?it\s+again/i,
     ]
-    if (MUSIC_PATTERNS.some(p => p.test(message))) {
+    if (REPLAY_PATTERNS.some(p => p.test(message))) {
       const hist: any[] = Array.isArray(req.body?.history) ? [...req.body.history].reverse() : []
       const mediaEntry  = hist.find(m =>
         typeof m.content === 'string' &&
@@ -713,12 +759,45 @@ export function createApiServer(): Express {
         const urlMatch = (mediaEntry.content as string).match(/(https:\/\/[^\s)>"]+)/)
         if (urlMatch) {
           const url = urlMatch[1]
-          try { await executeTool('open_browser', { url }) } catch {}
+          try {
+            await executeTool('open_browser', { url })
+            await autoClickYouTube(url)
+          } catch {}
           fastReply(`Playing: ${url}`)
           return
         }
       }
-      fastReply("What would you like me to play? Try: \"play lofi hip hop on youtube\"")
+      // Fallback: look for a quoted song name in recent assistant messages
+      const songHist = hist.find((m: any) =>
+        typeof m.content === 'string' && m.role === 'assistant' &&
+        /playing|opened|searched/i.test(m.content)
+      )
+      if (songHist) {
+        const nameMatch = (songHist.content as string).match(/["\u201C\u201D]([^"\u201C\u201D]+)["\u201C\u201D]/i)
+        if (nameMatch) {
+          const url = buildMusicUrl(nameMatch[1], 'youtube')
+          try {
+            await executeTool('open_browser', { url })
+            await autoClickYouTube(url)
+          } catch {}
+          fastReply(`Playing "${nameMatch[1]}" on YouTube`)
+          return
+        }
+      }
+      fastReply('What would you like me to play? Try: "play lofi hip hop on youtube"')
+      return
+    }
+
+    // 4. "play X" (generic, no platform) → YouTube search
+    const playMatch = /^play\s+(?:some\s+|any\s+)?(.+)/i.exec(message)
+    if (playMatch) {
+      const rawQuery = playMatch[1].trim()
+      const url      = buildMusicUrl(rawQuery, 'youtube')
+      try {
+        await executeTool('open_browser', { url })
+        await autoClickYouTube(url)
+      } catch {}
+      fastReply(`Playing "${rawQuery}" on YouTube: ${url}`)
       return
     }
 

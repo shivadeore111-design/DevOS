@@ -248,6 +248,11 @@ function resetBrowserIdleTimer(): void {
   }, 5 * 60 * 1000)
 }
 
+/** Returns the currently active Playwright page, or null if no browser is open. */
+export function getActiveBrowserPage(): any {
+  return activeBrowserPage
+}
+
 async function getBrowserContext(): Promise<any> {
   if (!browserContext) {
     const { chromium } = await import('playwright')
