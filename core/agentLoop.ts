@@ -37,6 +37,7 @@ import { fireHook }               from './hooks'
 import { instinctSystem }         from './instinctSystem'
 import { startWorkflow, addNode, updateNode, completeWorkflow } from './workflowTracker'
 import { MAX_PARALLEL, chunkSteps, hasParallelism } from './parallelExecutor'
+import { sanitizeMessages } from './messageValidator'
 import * as nodeFs             from 'fs'
 import * as nodePath           from 'path'
 import * as nodeOs             from 'os'
@@ -2320,6 +2321,7 @@ CRITICAL RULES FOR YOUR RESPONSE:
     { role: 'user',   content: userContent },
   ]
   messages = await preflightCompressionCheck(messages, model, sessionId)
+  messages = sanitizeMessages(messages)
 
   if (executionInterrupted) return
   const _respCtrl = new AbortController()
