@@ -149,13 +149,26 @@ async function streamChat(message: string): Promise<void> {
       signal: state.abortCtrl.signal,
     })
 
-    if (!res.ok || !res.body) {
+    if (!res.ok) {
       process.stdout.write(`\n${C.red}  ✗ ${res.status} ${res.statusText}${C.reset}\n`)
       return
     }
 
     process.stdout.write(`\n${C.orange}Aiden${C.reset} `)
 
+    // Greeting fast-path returns application/json; real chat uses text/event-stream.
+    // Handle both so a plain "hi" doesn't produce an empty reply.
+    const isSSE = (res.headers.get('content-type') || '').includes('text/event-stream')
+
+    if (!isSSE) {
+      const data  = await res.json() as any
+      const reply = (data.reply || data.message || data.content || data.response || '') as string
+      process.stdout.write(reply || `${C.dim}(no response)${C.reset}`)
+      fullReply = reply
+      if (data.provider) provider = data.provider as string
+    }
+
+    if (isSSE) {
     const reader  = (res.body as any).getReader()
     const decoder = new TextDecoder()
     let   buffer  = ''
@@ -196,7 +209,7 @@ async function streamChat(message: string): Promise<void> {
         // ── Thinking ──
         if (evt.thinking) {
           const msg = evt.thinking.message || evt.thinking.stage || 'Thinking…'
-          process.stdout.write(`\n${C.dim}  ⟳ ${msg}${C.reset}`)
+          process.stdout.write(`\n${C.dim}  ~ ${msg}${C.reset}`)
         }
 
         // ── Activity / tool execution ──
@@ -205,7 +218,7 @@ async function streamChat(message: string): Promise<void> {
           if (!act.done) {
             // Open tool card
             if (!inToolCard) {
-              process.stdout.write(`\n${C.cyan}  ┌─ ${act.icon || '▸'} ${act.agent || ''} ${C.reset}`)
+              process.stdout.write(`\n${C.cyan}  ┌─ > ${act.agent || ''} ${C.reset}`)
               process.stdout.write(`\n${C.cyan}  │${C.reset} ${C.dim}${act.message || ''}${C.reset}`)
               inToolCard = true
             } else {
@@ -222,7 +235,7 @@ async function streamChat(message: string): Promise<void> {
         // ── Callback-forwarded events ──
         if (evt.event === 'thinking_start' || evt.event === 'memory_read' || evt.event === 'planning_start') {
           const msg = evt.message || evt.data?.message || 'Thinking…'
-          process.stdout.write(`\n${C.dim}  ⟳ ${msg}${C.reset}`)
+          process.stdout.write(`\n${C.dim}  ~ ${msg}${C.reset}`)
         }
 
         if (evt.event === 'tool_start') {
@@ -255,6 +268,7 @@ async function streamChat(message: string): Promise<void> {
     if (inToolCard) {
       process.stdout.write(`\n${C.dim}  └─────────────────────────────${C.reset}`)
     }
+    } // end if (isSSE)
 
     // ── Finalise ──
     state.lastTurnMs = Date.now() - startedAt
@@ -281,7 +295,7 @@ async function streamChat(message: string): Promise<void> {
 
   } catch (err: any) {
     if (err?.name === 'AbortError') {
-      process.stdout.write(`\n${C.yellow}  ⊘ Interrupted${C.reset}\n\n`)
+      process.stdout.write(`\n${C.yellow}  [x] Interrupted${C.reset}\n\n`)
     } else {
       process.stdout.write(`\n${C.red}  ✗ ${err?.message || err}${C.reset}\n`)
       process.stdout.write(`${C.dim}  Is Aiden running? Start the desktop app first.${C.reset}\n\n`)
@@ -296,7 +310,7 @@ async function streamChat(message: string): Promise<void> {
 
 const COMMANDS = [
   '/help', '/new', '/reset', '/clear', '/history', '/stop', '/export',
-  '/status', '/tools', '/providers', '/models', '/memory', '/goals',
+  '/status', '/tools', '/providers', '/models', '/model', '/memory', '/goals',
   '/skills', '/recipes', '/sessions', '/budget', '/workspace',
   '/security', '/debug', '/provider', '/quit', '/exit',
 ]
@@ -443,7 +457,7 @@ ${C.green}  ✓ Aiden Online${C.reset}
   }
 
   // ── /models ───────────────────────────────────────────────
-  if (command === '/models') {
+  if (command === '/models' || command === '/model') {
     const m = await apiFetch<any>('/api/debug/models', {})
     console.log(`
 ${C.bold}  Models:${C.reset}
@@ -471,7 +485,7 @@ ${C.bold}  Models:${C.reset}
     } else {
       console.log(`\n${C.bold}  Goals:${C.reset}`)
       for (const goal of goals) {
-        const dot = goal.status === 'active' ? `${C.green}◉` : `${C.dim}○`
+        const dot = goal.status === 'active' ? `${C.green}*` : `${C.dim}-`
         console.log(`  ${dot}${C.reset} ${goal.title}`)
       }
       console.log()
@@ -561,7 +575,7 @@ ${C.bold}  Models:${C.reset}
     if (threats.length === 0) {
       console.log(`  ${C.green}✓ No threats detected${C.reset}\n`)
     } else {
-      console.log(`  ${C.red}⚠ ${threats.length} issue(s) found:${C.reset}`)
+      console.log(`  ${C.red}[!] ${threats.length} issue(s) found:${C.reset}`)
       for (const t of threats) {
         console.log(`    ${C.yellow}•${C.reset} ${t.message || JSON.stringify(t)}`)
       }
@@ -693,7 +707,7 @@ async function main(): Promise<void> {
       // Interrupt generation
       state.abortCtrl?.abort()
       await apiPost('/api/stop')
-      process.stdout.write(`\n${C.yellow}  ⊘ Interrupted${C.reset}\n\n`)
+      process.stdout.write(`\n${C.yellow}  [x] Interrupted${C.reset}\n\n`)
       rl.prompt()
       return
     }
