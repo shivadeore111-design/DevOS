@@ -143,6 +143,7 @@ interface DevOSCtxType {
   startRecording: () => void
   // Handlers
   sendMessage:     (text?: string) => void
+  stopExecution:   () => void
   takeScreenshot:  () => void
   submitMiniPrompt:() => void
   startNewChat:   () => void
@@ -1804,7 +1805,7 @@ function ChatPanel() {
   const {
     messages, input, setInput, isStreaming, execMode, setExecMode,
     thinking,
-    sendMessage, handleQuickUpload,
+    sendMessage, stopExecution, handleQuickUpload,
     inputRef, kbInputRef, messagesEndRef,
     plusMenuOpen, setPlusMenuOpen,
     voiceStatus, isRecording, ttsEnabled, setTtsEnabled, recordingTimer, startRecording,
@@ -1954,22 +1955,39 @@ function ChatPanel() {
             </button>
           )}
 
-          {/* Send */}
-          <button
-            onClick={() => sendMessage()}
-            disabled={!input.trim() || isStreaming}
-            style={{
-              width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
-              background: input.trim() && !isStreaming ? 'var(--orange)' : 'var(--bg3)',
-              border: 'none',
-              color: input.trim() && !isStreaming ? '#000' : 'var(--muted)',
-              cursor: input.trim() && !isStreaming ? 'pointer' : 'not-allowed',
-              fontSize: 14, transition: 'all 0.2s',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-          </button>
+          {/* Stop / Send */}
+          {thinking ? (
+            <button
+              onClick={stopExecution}
+              title="Stop"
+              style={{
+                width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
+                background: 'rgba(239,68,68,0.12)',
+                border: '1px solid rgba(239,68,68,0.4)',
+                color: '#ef4444',
+                cursor: 'pointer', fontSize: 14, transition: 'all 0.2s',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+            </button>
+          ) : (
+            <button
+              onClick={() => sendMessage()}
+              disabled={!input.trim() || isStreaming}
+              style={{
+                width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
+                background: input.trim() && !isStreaming ? 'var(--orange)' : 'var(--bg3)',
+                border: 'none',
+                color: input.trim() && !isStreaming ? '#000' : 'var(--muted)',
+                cursor: input.trim() && !isStreaming ? 'pointer' : 'not-allowed',
+                fontSize: 14, transition: 'all 0.2s',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            </button>
+          )}
         </div>
       </div>
     </section>
@@ -4677,6 +4695,14 @@ export default function Home() {
     })
   }, [currentConvId])
 
+  // ── Stop execution ───────────────────────────────────────────
+  const stopExecution = useCallback(() => {
+    fetch('http://localhost:4200/api/stop', { method: 'POST' }).catch(() => {})
+    setIsStreaming(false)
+    setThinking(null)
+    setIsExecuting(false)
+  }, [])
+
   // ── Send message ────────────────────────────────────────────
   const sendMessage = useCallback(async (overrideText?: string) => {
     const text = overrideText ?? input
@@ -5105,7 +5131,7 @@ export default function Home() {
     input, setInput,
     activityLogs, setActivityLogs, screenshot, setScreenshot, sessionId,
     systemStats, recentTasks,
-    sendMessage, startNewChat, loadConversation,
+    sendMessage, stopExecution, startNewChat, loadConversation,
     handleQuickUpload,
     inputRef, kbInputRef, messagesEndRef, logsEndRef,
     // Plus menu

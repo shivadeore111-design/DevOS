@@ -40,7 +40,7 @@ import { discoverLocalModels, getOllamaTimeout } from '../core/modelDiscovery'
 import { detectTimezone } from '../core/userProfile'
 import { executeTool, getActiveBrowserPage } from '../core/toolRegistry'
 import { getScreenSize, takeScreenshot as captureScreen } from '../core/computerControl'
-import { planWithLLM, executePlan, respondWithResults, callLLM, surfaceRelevantMemories } from '../core/agentLoop'
+import { planWithLLM, executePlan, respondWithResults, callLLM, surfaceRelevantMemories, interruptCurrentCall } from '../core/agentLoop'
 import { TOOL_DESCRIPTIONS } from '../core/toolRegistry'
 import { runReActLoop, ReActStep }                                 from '../core/reactLoop'
 import { scheduler }                                              from '../core/scheduler'
@@ -423,7 +423,7 @@ export function createApiServer(): Express {
 
   // GET /api/health â€” liveness probe (no auth required)
   app.get('/api/health', (_req: Request, res: Response) => {
-    res.json({ status: 'ok', version: '3.3.0', timestamp: new Date().toISOString() })
+    res.json({ status: 'ok', version: '3.3.1', timestamp: new Date().toISOString() })
   })
 
   // ── Update endpoints ─────────────────────────────────────────
@@ -435,7 +435,7 @@ export function createApiServer(): Express {
       const result = await checkForUpdate()
       res.json(result)
     } catch (e: any) {
-      res.json({ available: false, currentVersion: '3.3.0', error: e.message })
+      res.json({ available: false, currentVersion: '3.3.1', error: e.message })
     }
   })
 
@@ -3176,6 +3176,13 @@ export function createApiServer(): Express {
   // GET  /api/automate/log, GET /api/automate/session
   registerComputerUseRoutes(app)
 
+  // POST /api/stop — cancel any in-flight LLM call and halt the execution loop
+  app.post('/api/stop', (_req: Request, res: Response) => {
+    interruptCurrentCall()
+    console.log('[Server] /api/stop — execution interrupted')
+    res.json({ ok: true })
+  })
+
   // GET /api/plan/:id â€” get plan status
   app.get('/api/plan/:id', (req: Request, res: Response) => {
     const plan = planTool.getPlan(String(req.params.id))
@@ -4192,7 +4199,7 @@ export function startApiServer(portArg?: number): Express {
     console.log(`  session_stop:    ${getHookCount('session_stop')} handler(s)`)
     console.log(`  after_tool_call: ${getHookCount('after_tool_call')} handler(s)`)
 
-    console.log(`[API] DevOS v3.3.0 - Aiden running at http://${host}:${port}`)
+    console.log(`[API] DevOS v3.3.1 - Aiden running at http://${host}:${port}`)
     console.log(`[API] Health: http://${host}:${port}/api/health`)
     console.log(`[API] LivePulse WS: ws://${host}:${port}`)
   })

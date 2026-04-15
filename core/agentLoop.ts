@@ -44,6 +44,18 @@ import * as nodeOs             from 'os'
 // Fire pre_compact hook when history has this many messages
 const COMPACT_THRESHOLD = 40
 
+// ── Interrupt / stop state ─────────────────────────────────────
+let currentAbortController: AbortController | null = null
+let executionInterrupted = false
+
+export function interruptCurrentCall(): void {
+  executionInterrupted = true
+  if (currentAbortController) {
+    currentAbortController.abort()
+    currentAbortController = null
+  }
+}
+
 // ── Proactive memory surfacing ─────────────────────────────────
 
 const SKIP_MEMORY_PATTERNS = [
@@ -1555,6 +1567,7 @@ export async function executePlan(
   replanProvider?: string,
 ): Promise<StepResult[]> {
 
+  executionInterrupted = false  // reset on each new plan execution
   const results:      StepResult[]           = []
   const stepOutputs:  Record<number, string> = {}
   const planStart     = Date.now()
@@ -1806,6 +1819,12 @@ async function executeSingleStep(
       const stepResult = await executeSingleStep(step, stepOutputs, state, plan, workspace, onStep)
       stepOutputs[step.step] = stepResult.output
       results.push(stepResult)
+
+      // ── Interrupt check ────────────────────────────────────────────
+      if (executionInterrupted) {
+        console.log('[AgentLoop] Execution interrupted by user — stopping early')
+        break
+      }
 
       // ── Smart replan on failure ────────────────────────────────────
       if (!stepResult.success) {
@@ -2121,6 +2140,10 @@ CRITICAL RULES FOR YOUR RESPONSE:
     { role: 'user',   content: userContent },
   ]
 
+  if (executionInterrupted) return
+  const _respCtrl = new AbortController()
+  currentAbortController = _respCtrl
+
   try {
     if (providerName === 'gemini') {
       const contents = messages
@@ -2137,6 +2160,7 @@ CRITICAL RULES FOR YOUR RESPONSE:
             contents,
             systemInstruction: system ? { parts: [{ text: system }] } : undefined,
           }),
+          signal: AbortSignal.any([AbortSignal.timeout(30000), _respCtrl.signal]),
         },
       )
       if (!r.ok) {
@@ -2154,7 +2178,7 @@ CRITICAL RULES FOR YOUR RESPONSE:
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model, stream: true, messages }),
-        signal:  AbortSignal.timeout(ollamaMs),
+        signal:  AbortSignal.any([AbortSignal.timeout(ollamaMs), _respCtrl.signal]),
       })
       if (!r.body) throw new Error('Ollama: no response body')
       const reader  = (r.body as any).getReader()
@@ -2179,6 +2203,7 @@ CRITICAL RULES FOR YOUR RESPONSE:
         method:  'POST',
         headers: buildHeaders(providerName, apiKey),
         body: JSON.stringify({ model, messages, stream: true }),
+        signal: AbortSignal.any([AbortSignal.timeout(30000), _respCtrl.signal]),
       })
       if (!r.ok) {
         const errText = await r.text().catch(() => '')
@@ -2188,6 +2213,7 @@ CRITICAL RULES FOR YOUR RESPONSE:
       await streamOpenAIResponse(r, onToken)
     }
   } catch (e: any) {
+    if (e.name === 'AbortError') return
     console.error('[Responder] Error:', e.message)
     if (
       e.message?.includes('timeout') ||
@@ -2293,6 +2319,9 @@ export async function callLLM(
   providerName: string,
   opts?: { traceId?: string; isSystem?: boolean },
 ): Promise<string> {
+  if (executionInterrupted) return ''
+  const _ctrl = new AbortController()
+  currentAbortController = _ctrl
   const messages = [{ role: 'user', content: prompt }]
   try {
     if (providerName === 'gemini') {
@@ -2305,7 +2334,7 @@ export async function callLLM(
             contents: [{ role: 'user', parts: [{ text: prompt }] }],
             generationConfig: { maxOutputTokens: 2000 },
           }),
-          signal: AbortSignal.timeout(12000),
+          signal: AbortSignal.any([AbortSignal.timeout(12000), _ctrl.signal]),
         },
       )
       if (r.status === 429) {
@@ -2331,7 +2360,7 @@ export async function callLLM(
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: model || 'mistral:7b', stream: false, messages }),
-        signal: AbortSignal.timeout(getOllamaTimeout(model || '')),
+        signal: AbortSignal.any([AbortSignal.timeout(getOllamaTimeout(model || '')), _ctrl.signal]),
       })
       if (r.status === 429) {
         try { markRateLimited(providerName) } catch {}
@@ -2360,7 +2389,7 @@ export async function callLLM(
           method:  'POST',
           headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
           body:    JSON.stringify({ messages }),
-          signal:  AbortSignal.timeout(20000),
+          signal:  AbortSignal.any([AbortSignal.timeout(20000), _ctrl.signal]),
         }
       )
       if (r.status === 429) {
@@ -2382,7 +2411,7 @@ export async function callLLM(
         method:  'POST',
         headers,
         body: JSON.stringify({ model, messages, stream: false, max_tokens: 2000 }),
-        signal: AbortSignal.timeout(12000),
+        signal: AbortSignal.any([AbortSignal.timeout(12000), _ctrl.signal]),
       })
       if (r.status === 429) {
         try { markRateLimited(providerName) } catch {}
@@ -2403,6 +2432,7 @@ export async function callLLM(
       return d?.choices?.[0]?.message?.content || ''
     }
   } catch (e: any) {
+    if (e.name === 'AbortError') return ''
     console.error('[callLLM] error:', e.message)
     return ''
   }
