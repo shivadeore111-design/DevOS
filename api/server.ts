@@ -76,7 +76,7 @@ import { scanAndRedact, containsSecret } from '../core/secretScanner'
 import { loadBriefingConfig, saveBriefingConfig, deliverBriefing } from '../core/morningBriefing'
 import { unifiedMemoryRecall, buildMemoryInjection } from '../core/memoryRecall'
 import { costTracker }   from '../core/costTracker'
-import { sessionMemory } from '../core/sessionMemory'
+import { sessionMemory, getSessionLineage, loadSessionMetadata } from '../core/sessionMemory'
 import { memoryExtractor } from '../core/memoryExtractor'
 import { getIdentity, refreshIdentity } from '../core/aidenIdentity'
 import { eventBus } from '../core/eventBus'
@@ -2071,8 +2071,18 @@ export function createApiServer(): Express {
       const enriched = summary.map(s => ({
         ...s,
         channels: sessionRouter.getSessionChannels(s.id),
+        depth:    loadSessionMetadata(s.id)?.depth ?? 0,
       }))
       res.json(enriched)
+    } catch (err: any) { res.status(500).json({ error: err.message }) }
+  })
+
+  // GET /api/sessions/:id/lineage — session lineage chain
+  app.get('/api/sessions/:id/lineage', (req: Request, res: Response) => {
+    try {
+      const id      = String(req.params.id)
+      const lineage = getSessionLineage(id)
+      res.json({ sessionId: id, lineage })
     } catch (err: any) { res.status(500).json({ error: err.message }) }
   })
 

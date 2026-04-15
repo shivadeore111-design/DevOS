@@ -31,6 +31,7 @@ import { unifiedMemoryRecall, buildMemoryInjection } from './memoryRecall'
 import { costTracker } from './costTracker'
 import { getOllamaTimeout } from './modelDiscovery'
 import { semanticMemory }          from './semanticMemory'
+import { createChildSession }      from './sessionMemory'
 import { getActiveGoalsSummary }  from './goalTracker'
 import { fireHook }               from './hooks'
 import { instinctSystem }         from './instinctSystem'
@@ -138,8 +139,9 @@ async function flushMemoryFromMessages(messages: { role: string; content: string
 }
 
 async function preflightCompressionCheck(
-  messages: { role: string; content: string }[],
-  model:    string,
+  messages:   { role: string; content: string }[],
+  model:      string,
+  sessionId?: string,
 ): Promise<{ role: string; content: string }[]> {
   const tokenCount   = estimateConversationTokens(messages)
   const contextLimit = getContextLimit(model)
@@ -153,6 +155,15 @@ async function preflightCompressionCheck(
   }
 
   console.log(`[Context] Over 50% — compressing middle messages`)
+
+  // Track parent/child lineage across compressions
+  if (sessionId) {
+    try {
+      createChildSession(sessionId, 'preflight_compression', messages.length, tokenCount)
+    } catch {
+      console.log('[Context] Session lineage tracking skipped')
+    }
+  }
 
   // Step 1: Flush memory before compressing
   await flushMemoryFromMessages(messages)
@@ -2223,6 +2234,7 @@ export async function respondWithResults(
   model:           string,
   providerName:    string,
   onToken:         (token: string) => void,
+  sessionId?:      string,
 ): Promise<void> {
 
   const date = new Date().toLocaleDateString('en-US', {
@@ -2307,7 +2319,7 @@ CRITICAL RULES FOR YOUR RESPONSE:
     ...history.slice(-6),
     { role: 'user',   content: userContent },
   ]
-  messages = await preflightCompressionCheck(messages, model)
+  messages = await preflightCompressionCheck(messages, model, sessionId)
 
   if (executionInterrupted) return
   const _respCtrl = new AbortController()

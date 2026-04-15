@@ -12,7 +12,7 @@ import fs   from 'fs'
 import path from 'path'
 import { callBgLLM } from './bgLLM'
 
-const SESSIONS_DIR = path.join(process.cwd(), 'workspace', 'sessions')
+const SESSIONS_DIR = path.join(process.env.AIDEN_USER_DATA || process.cwd(), 'workspace', 'sessions')
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -30,6 +30,111 @@ interface SessionState {
   startTs:        number
   exchanges:      Exchange[]
   lastWrittenAt?: number
+}
+
+// ── Session Lineage ────────────────────────────────────────────
+
+export interface SessionMetadata {
+  id:                             string
+  parentId?:                      string
+  childId?:                       string
+  depth:                          number
+  compressionReason?:             string
+  originalSessionId:              string
+  createdAt:                      number
+  compressedAt?:                  number
+  messageCountBeforeCompression?: number
+  tokenCountBeforeCompression?:   number
+}
+
+function metaPath(sessionId: string): string {
+  return path.join(SESSIONS_DIR, `${sessionId}.meta.json`)
+}
+
+export function saveSessionMetadata(meta: SessionMetadata): void {
+  try {
+    fs.mkdirSync(SESSIONS_DIR, { recursive: true })
+    fs.writeFileSync(metaPath(meta.id), JSON.stringify(meta, null, 2), 'utf-8')
+  } catch (e: any) {
+    console.error('[SessionLineage] Save failed:', e.message)
+  }
+}
+
+export function loadSessionMetadata(sessionId: string): SessionMetadata | null {
+  try {
+    const p = metaPath(sessionId)
+    if (!fs.existsSync(p)) return null
+    return JSON.parse(fs.readFileSync(p, 'utf-8')) as SessionMetadata
+  } catch {
+    return null
+  }
+}
+
+export function getSessionLineage(sessionId: string): SessionMetadata[] {
+  const lineage: SessionMetadata[] = []
+  let   current                    = loadSessionMetadata(sessionId)
+  if (!current) return lineage
+
+  const visited = new Set<string>()
+
+  // Walk back to root via parentId chain
+  while (current && !visited.has(current.id)) {
+    visited.add(current.id)
+    lineage.unshift(current)
+    if (!current.parentId) break
+    current = loadSessionMetadata(current.parentId)
+  }
+
+  // Walk forward from tail to include any children not yet visited
+  let tail = lineage[lineage.length - 1]
+  while (tail?.childId && !visited.has(tail.childId)) {
+    visited.add(tail.childId)
+    const child = loadSessionMetadata(tail.childId)
+    if (!child) break
+    lineage.push(child)
+    tail = child
+  }
+
+  return lineage
+}
+
+export function createChildSession(
+  parentSessionId: string,
+  reason:          string,
+  messageCount:    number,
+  tokenCount:      number,
+): string {
+  const childId = `session_${Date.now()}`
+  const now     = Date.now()
+
+  // Load or bootstrap parent metadata
+  const parentMeta: SessionMetadata = loadSessionMetadata(parentSessionId) ?? {
+    id:                parentSessionId,
+    depth:             0,
+    originalSessionId: parentSessionId,
+    createdAt:         now,
+  }
+
+  // Stamp compression info on parent
+  parentMeta.childId                        = childId
+  parentMeta.compressedAt                   = now
+  parentMeta.messageCountBeforeCompression  = messageCount
+  parentMeta.tokenCountBeforeCompression    = tokenCount
+  saveSessionMetadata(parentMeta)
+
+  // Create child metadata
+  const childMeta: SessionMetadata = {
+    id:                childId,
+    parentId:          parentSessionId,
+    depth:             parentMeta.depth + 1,
+    compressionReason: reason,
+    originalSessionId: parentMeta.originalSessionId,
+    createdAt:         now,
+  }
+  saveSessionMetadata(childMeta)
+
+  console.log(`[SessionLineage] Created child ${childId} (depth ${childMeta.depth}) from ${parentSessionId}`)
+  return childId
 }
 
 // ── Section headers (must match exactly) ──────────────────────

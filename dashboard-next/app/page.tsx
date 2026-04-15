@@ -50,6 +50,7 @@ interface Conversation {
   timestamp: number
   messages:  Message[]
   channels?: string[]   // channels that participated (cross-channel sessions)
+  depth?:    number     // compression lineage depth (0 = original)
 }
 
 interface ActivityLog {
@@ -1544,6 +1545,13 @@ function HistorySidebar() {
                 {conv.channels && conv.channels.length > 1 && (
                   <span className="cross-channel-badge" title={`Started on ${conv.channels[0]}`}>
                     📱→🖥️
+                  </span>
+                )}
+                {typeof conv.depth === 'number' && conv.depth > 0 && (
+                  <span className="lineage-badge" title={`Compression depth ${conv.depth}`} style={{
+                    fontSize: 9, color: 'var(--muted)', fontFamily: 'var(--mono)',
+                  }}>
+                    ↳ {conv.depth}
                   </span>
                 )}
               </button>
@@ -4558,13 +4566,13 @@ export default function Home() {
     // Fetch backend sessions and merge in any not already in localStorage
     fetch('http://localhost:4200/api/sessions')
       .then(r => r.ok ? r.json() : [])
-      .then((sessions: Array<{id: string; title: string; timestamp: number; messageCount: number; preview: string; channels?: string[]}>) => {
+      .then((sessions: Array<{id: string; title: string; timestamp: number; messageCount: number; preview: string; channels?: string[]; depth?: number}>) => {
         if (!sessions.length) return
         setConversations(prev => {
           const existingIds = new Set(prev.map((c: Conversation) => c.id))
           const fromBackend = sessions
             .filter(s => !existingIds.has(s.id))
-            .map(s => ({ id: s.id, title: s.title || 'Untitled', timestamp: s.timestamp, messages: [] as Message[], channels: s.channels }))
+            .map(s => ({ id: s.id, title: s.title || 'Untitled', timestamp: s.timestamp, messages: [] as Message[], channels: s.channels, depth: s.depth }))
           return fromBackend.length > 0
             ? [...prev, ...fromBackend].sort((a: Conversation, b: Conversation) => b.timestamp - a.timestamp)
             : prev
