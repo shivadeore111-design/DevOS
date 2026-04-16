@@ -18,7 +18,7 @@ import { taskStateManager, TaskState }     from './taskState'
 import { skillLoader }                     from './skillLoader'
 import { learningMemory }                  from './learningMemory'
 import { conversationMemory }             from './conversationMemory'
-import { getNextAvailableAPI, markRateLimited, incrementUsage, getModelForTask, getOllamaModelForTask, enterDegradedMode } from '../providers/router'
+import { getNextAvailableAPI, markRateLimited, markHealthy, incrementUsage, getModelForTask, getOllamaModelForTask, enterDegradedMode } from '../providers/router'
 import { ollamaProvider } from '../providers/ollama'
 import { loadConfig }     from '../providers/index'
 import { knowledgeBase } from './knowledgeBase'
@@ -1091,6 +1091,7 @@ Output ONLY valid JSON, nothing else:`
         } else {
           parsed = JSON.parse(jsonMatch[0])
           try { incrementUsage(curApiName) } catch {}
+          try { if (curApiName !== 'ollama') markHealthy(curApiName) } catch {}
           break // success — exit retry loop
         }
       }

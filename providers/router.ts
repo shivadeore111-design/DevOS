@@ -44,6 +44,10 @@ const DEFAULT_RATE_LIMIT_MS = 60 * 1000 // 1 minute fallback
 // Separate from the config file so it resets on restart without persisting stale values.
 const responseTimesMs = new Map<string, number>()
 
+// In-memory consecutive failure tracking for exponential backoff.
+// Resets to 0 on markHealthy; increments on each markRateLimited call.
+const consecutiveFailures = new Map<string, number>()
+
 // ── Local model discovery cache ───────────────────────────────
 // Populated once at startup via initLocalModels(). Read-only after that.
 
@@ -154,11 +158,15 @@ function autoResetExpiredLimits(): boolean {
 
   config.providers.apis = config.providers.apis.map(api => {
     if (api.rateLimited && api.rateLimitedAt) {
-      const window = RATE_LIMIT_WINDOWS[api.provider] ?? DEFAULT_RATE_LIMIT_MS
+      // Use stored backoff window if available (set by exponential markRateLimited),
+      // otherwise fall back to the static per-provider window.
+      const window = (api as any).rateLimitWindow
+        ?? RATE_LIMIT_WINDOWS[api.provider]
+        ?? DEFAULT_RATE_LIMIT_MS
       if (window === 0 || Date.now() - api.rateLimitedAt > window) {
         changed = true
-        const { rateLimitedAt, ...rest } = api
-        return { ...rest, rateLimited: false }
+        const { rateLimitedAt, ...rest } = api as any
+        return { ...rest, rateLimited: false, rateLimitWindow: undefined }
       }
     }
     return api
@@ -200,21 +208,43 @@ export function getNextAvailableAPI(): { provider: Provider; model: string; entr
   return { provider: buildProvider(entry), model: entry.model, entry }
 }
 
-// ── Mark an API as rate-limited ───────────────────────────────
+// ── Mark an API as rate-limited (exponential backoff) ────────
 
 export function markRateLimited(apiName: string): void {
   const config = loadConfig()
-  // Find the provider type to get the right window
   const entry  = config.providers.apis.find(a => a.name === apiName)
-  const window = entry ? (RATE_LIMIT_WINDOWS[entry.provider] ?? DEFAULT_RATE_LIMIT_MS) : DEFAULT_RATE_LIMIT_MS
+  const base   = entry ? (RATE_LIMIT_WINDOWS[entry.provider] ?? DEFAULT_RATE_LIMIT_MS) : DEFAULT_RATE_LIMIT_MS
+
+  // Exponential backoff: base → 2× → 4× → 8× … capped at 5 min
+  const failures = (consecutiveFailures.get(apiName) ?? 0) + 1
+  consecutiveFailures.set(apiName, failures)
+  const backoffMs = Math.min(300_000, base * Math.pow(2, failures - 1))
+
   config.providers.apis = config.providers.apis.map(api =>
     api.name === apiName
-      ? { ...api, rateLimited: true, rateLimitedAt: Date.now() }
+      ? { ...api, rateLimited: true, rateLimitedAt: Date.now(), rateLimitWindow: backoffMs }
       : api
   )
   saveConfig(config)
-  const resetSecs = window === 0 ? 'never' : `${window / 1000}s`
-  console.log(`[Router] ${apiName} rate limited — auto-reset in ${resetSecs}`)
+  console.log(`[Router] ${apiName} rate limited (failure #${failures}) — retry in ${Math.round(backoffMs / 1000)}s`)
+}
+
+// ── Mark an API as healthy ────────────────────────────────────
+
+export function markHealthy(apiName: string): void {
+  if (apiName === 'ollama') return
+  const prev = consecutiveFailures.get(apiName) ?? 0
+  if (prev === 0) return // already healthy, skip disk write
+
+  consecutiveFailures.set(apiName, 0)
+  const config = loadConfig()
+  config.providers.apis = config.providers.apis.map(api =>
+    api.name === apiName
+      ? { ...api, rateLimited: false, rateLimitedAt: undefined }
+      : api
+  )
+  saveConfig(config)
+  console.log(`[Router] ${apiName} marked healthy — backoff cleared`)
 }
 
 // ── Record response time (EWMA) ───────────────────────────────
