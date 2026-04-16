@@ -10,6 +10,12 @@
 import readline from 'readline'
 import fs       from 'fs'
 import path     from 'path'
+import { paint, fg, RST, COLORS, MARKS, BOLD as THM_BOLD } from '../core/theme'
+import { renderStatusBar }                                   from '../core/statusBar'
+import { table, panel }                                      from '../core/panel'
+import type { ColDef }                                       from '../core/panel'
+import { SPINNER_FRAMES_RAW }                               from '../core/spinner'
+import { checkForUpdate, formatUpdateLine }                  from '../core/updateCheck'
 
 // ── Constants ────────────────────────────────────────────────────────────────────
 
@@ -117,6 +123,22 @@ function fmtDuration(ms: number): string {
 
 function num(n: number): string { return n.toLocaleString() }
 
+/** Colored source badge for skill tables. */
+function sourceBadgeStr(source: string): string {
+  const s = (source || '').toLowerCase()
+  if (s === 'builtin' || s === 'built-in')
+    return `${fg(COLORS.success)}${s || 'builtin'}${RST}`
+  if (s === 'npm')
+    return `${fg(COLORS.warning)}npm${RST}`
+  return `${fg(COLORS.orange)}${source || 'local'}${RST}`
+}
+
+/** Trust stars: ★★★☆☆ (score clamped to 0-5). */
+function trustStars(score: number): string {
+  const n = Math.max(0, Math.min(5, Math.round(score)))
+  return `${fg(COLORS.orange)}${'★'.repeat(n)}${RST}${T.dim}${'☆'.repeat(5 - n)}${T.reset}`
+}
+
 function ctxColor(pct: number): string {
   if (pct < 50) return T.success
   if (pct < 80) return T.warning
@@ -132,7 +154,7 @@ function ctxBar(pct: number): string {
 
 // ── Spinner frames ────────────────────────────────────────────────────────────────
 
-const SPINNER_FRAMES = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏']
+const SPINNER_FRAMES = SPINNER_FRAMES_RAW
 
 // ── API helpers ───────────────────────────────────────────────────────────────────
 
@@ -195,29 +217,54 @@ async function printBanner(): Promise<void> {
   const toolCount = Array.isArray(toolsData) ? toolsData.length : 0
   const memSem    = memData?.semantic ?? (Array.isArray(memData) ? memData.length : memData?.total ?? 0)
   const memEnt    = memData?.entities ?? 0
-  const tagline   = TAGLINES[Math.floor(Math.random() * TAGLINES.length)]
 
   if (active.length > 0) {
     state.lastProvider = provName
     state.lastModel    = modelName
   }
 
+  // Kick off update check in background (non-blocking)
+  const updatePromise = checkForUpdate(version)
+
+  // ── Wordmark ──
   console.log()
   for (const line of ASCII_BANNER) {
-    console.log(`  ${T.primary}${line}${T.reset}`)
+    console.log(`  ${fg(COLORS.orange)}${line}${RST}`)
   }
   console.log()
-  console.log(`  ${T.dim}${tagline}${T.reset}`)
+
+  // ── Capability flex ──
+  const sep = `${T.dim} · ${T.reset}`
+  const provDot  = active.length > 0 ? `${T.success}●${T.reset}` : `${T.error}●${T.reset}`
+  const memDot   = (memSem + memEnt) > 0 ? `${T.success}●${T.reset}` : `${T.dim}○${T.reset}`
+  const skillDot = enabled.length > 0 ? `${T.success}●${T.reset}` : `${T.dim}○${T.reset}`
+
+  console.log(
+    `  ${provDot} ${fg(COLORS.orange)}${provName}${RST} ${T.dim}${modelName}${T.reset}` +
+    sep +
+    `${skillDot} ${T.dim}${enabled.length} skills${T.reset}` +
+    sep +
+    `${T.dim}${toolCount} tools${T.reset}` +
+    sep +
+    `${memDot} ${T.dim}${num(memSem)} mem${T.reset}`
+  )
+
+  // ── Session ──
   console.log(`  ${T.dim}${hr()}${T.reset}`)
-  console.log(`  ${'Provider'.padEnd(12)}${T.accent}${provName}${T.reset} ${T.dim}(${modelName})${T.reset}`)
-  if (memSem || memEnt) {
-    console.log(`  ${'Memory'.padEnd(12)}${T.dim}${num(memSem)} semantic · ${num(memEnt)} entities${T.reset}`)
-  }
-  console.log(`  ${'Skills'.padEnd(12)}${T.dim}${enabled.length} loaded · ${recipes} recipes${T.reset}`)
-  console.log(`  ${'Tools'.padEnd(12)}${T.dim}${toolCount} registered${T.reset}`)
-  console.log(`  ${'Session'.padEnd(12)}${T.dim}${SESSION_ID}${T.reset}`)
+  console.log(`  ${T.dim}session  ${T.reset}${T.dim}${SESSION_ID}${T.reset}`)
+  console.log(`  ${T.dim}v${version}${T.reset}`)
+
+  // ── Update-available line (await with 0-ms fallback so banner isn't blocked) ──
+  const updateInfo = await Promise.race([
+    updatePromise,
+    new Promise<null>(r => setTimeout(() => r(null), 0)),
+  ])
+  const updateLine = formatUpdateLine(updateInfo)
+  if (updateLine) console.log(updateLine)
+
+  // ── Ready prompt ──
   console.log(`  ${T.dim}${hr()}${T.reset}`)
-  console.log(`  ${T.dim}${toolCount} tools · ${enabled.length} skills · /help for commands${T.reset}`)
+  console.log(`  ${fg(COLORS.orange)}ready ${MARKS.ARROW}${RST}  ${T.dim}/help for commands${T.reset}`)
   console.log()
 }
 
@@ -556,12 +603,16 @@ async function streamChat(message: string): Promise<void> {
     }
 
     // ── Status bar ──
-    const ctxC = ctxColor(state.ctxPercent)
-    process.stdout.write(
-      `  ${T.dim}${state.lastProvider} · ${T.reset}` +
-      `${ctxC}ctx ${ctxBar(state.ctxPercent)}${T.reset}` +
-      `${T.dim} · turn ${state.turnCount}/${MAX_TURNS} · ${fmtMs(state.lastTurnMs)}${T.reset}\n\n`
-    )
+    process.stdout.write(renderStatusBar({
+      provider   : state.lastProvider,
+      model      : state.lastModel || 'unknown',
+      ctxUsed    : totChars,
+      ctxMax     : 160_000,
+      ctxPercent : state.ctxPercent,
+      elapsedMs  : Date.now() - SESSION_START,
+      asyncCount : 0,
+      privateMode: state.privateMode,
+    }) + '\n\n')
 
   } catch (err: any) {
     stopActivityRender()
@@ -594,7 +645,7 @@ const COMMANDS = [
 
 function getPrompt(): string {
   const privTag = state.privateMode ? ` ${T.warning}[private]${T.reset}` : ''
-  return `  ${T.dim}›${T.reset}${privTag} `
+  return `  ${fg(COLORS.orange)}${MARKS.TRI}${RST}${privTag} `
 }
 
 async function handleCommand(cmd: string, rl: readline.Interface): Promise<boolean> {
@@ -603,56 +654,67 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
 
   // ── /help ─────────────────────────────────────────────────────────────────────
   if (command === '/help') {
-    const P = T.primary, D = T.dim, R = T.reset, B = T.bold
-    console.log(`
-${B}  Session${R}
-  ${D}${hr()}${R}
-  ${P}/new  /reset${R}         Start fresh session
-  ${P}/clear${R}               Clear screen
-  ${P}/history${R}             Conversation history
-  ${P}/stop${R}                Interrupt execution
-  ${P}/export${R} md|json      Export conversation
-  ${P}/fork${R} <name>         Fork current session
-  ${P}/checkpoint${R}          Save state snapshot
+    const O  = fg(COLORS.orange)
+    const D  = T.dim
+    const R  = T.reset
+    const B  = T.bold
 
-${B}  Info${R}
-  ${D}${hr()}${R}
-  ${P}/status${R}              Health + uptime
-  ${P}/tools${R}               All registered tools
-  ${P}/providers${R}           Provider chain + rate limits
-  ${P}/models${R}              Model assignments
-  ${P}/memory${R}              Memory stats
-  ${P}/goals${R}               Active goals
-  ${P}/skills${R}              Loaded skills
-  ${P}/recipes${R}             YAML recipes
-  ${P}/sessions${R}            Recent sessions
-  ${P}/analytics${R}           Usage over time
-  ${P}/budget${R}              Token cost estimate
-  ${P}/workspace${R}           Current workspace
+    function helpRow(cmd: string, desc: string): string {
+      return `  ${O}${cmd.padEnd(26)}${RST}${D}${desc}${R}`
+    }
+    function helpSection(title: string): string {
+      return `\n  ${B}${MARKS.TRI} ${title}${R}\n  ${D}${hr()}${R}`
+    }
 
-${B}  Config${R}
-  ${D}${hr()}${R}
-  ${P}/model${R} <name>        Switch model
-  ${P}/provider${R} <name>     Switch provider (or add / remove <id> / test <id>)
-  ${P}/theme${R} <name>        Change theme (default mono slate ember)
-  ${P}/persona${R} <name>      Change persona (default concise technical)
-  ${P}/detail${R}              Cycle detail level (off → tools → verbose)
-  ${P}/depth${R}               Cycle reasoning depth (low → medium → high)
-  ${P}/config${R}              Show current configuration
+    const lines: string[] = [
+      helpSection('Session'),
+      helpRow('/new  /reset',       'Start fresh session'),
+      helpRow('/clear',             'Clear screen'),
+      helpRow('/history',           'Conversation history'),
+      helpRow('/stop',              'Interrupt execution'),
+      helpRow('/export md|json',    'Export conversation'),
+      helpRow('/fork <name>',       'Fork current session'),
+      helpRow('/checkpoint',        'Save state snapshot'),
+      helpSection('Info'),
+      helpRow('/status',            'Health + uptime'),
+      helpRow('/tools',             'All registered tools'),
+      helpRow('/providers',         'Provider chain + rate limits'),
+      helpRow('/models',            'Model assignments'),
+      helpRow('/memory',            'Memory stats'),
+      helpRow('/goals',             'Active goals'),
+      helpRow('/skills',            'Loaded skills  (browse / inspect <n>)'),
+      helpRow('/recipes',           'YAML recipes'),
+      helpRow('/sessions',          'Recent sessions'),
+      helpRow('/analytics',         'Usage over time'),
+      helpRow('/budget',            'Token cost estimate'),
+      helpRow('/workspace',         'Current workspace'),
+      helpSection('Config'),
+      helpRow('/model <name>',      'Switch model'),
+      helpRow('/provider <name>',   'Switch provider  (add / remove / test)'),
+      helpRow('/theme <name>',      'Change theme  (default mono slate ember)'),
+      helpRow('/persona <name>',    'Change persona  (default concise technical)'),
+      helpRow('/detail',            'Cycle detail level  (off → tools → verbose)'),
+      helpRow('/depth',             'Cycle reasoning depth  (low → med → high)'),
+      helpRow('/config',            'Show current configuration'),
+      helpSection('Power'),
+      helpRow('/quick <q>',         'Quick side question  (no history, no tools)'),
+      helpRow('/compact',           'Manual context compression'),
+      helpRow('/async <task>',      'Run task in background'),
+      helpRow('/security',          'AgentShield scan'),
+      helpRow('/debug',             'Recent logs'),
+      helpRow('/private',           'Toggle private mode  (suppresses memory writes)'),
+      helpSection('Exit'),
+      helpRow('/quit  /exit  /q',   ''),
+      '',
+    ]
 
-${B}  Power${R}
-  ${D}${hr()}${R}
-  ${P}/quick${R} <q>           Quick side question (no history, no tools)
-  ${P}/compact${R}             Manual context compression
-  ${P}/async${R} <task>        Run task in background
-  ${P}/security${R}            AgentShield scan
-  ${P}/debug${R}               Recent logs
-  ${P}/private${R}             Toggle private mode (suppresses all memory writes)
-
-${B}  Exit${R}
-  ${D}${hr()}${R}
-  ${P}/quit  /exit  /q${R}
-`)
+    console.log()
+    console.log(panel({
+      title: `${MARKS.TRI} ▲IDEN Commands`,
+      lines,
+      accent: COLORS.orange,
+    }))
+    console.log()
     return true
   }
 
@@ -763,12 +825,19 @@ ${B}  Exit${R}
   // ── /tools ─────────────────────────────────────────────────────────────────────
   if (command === '/tools') {
     const tools = await apiFetch<any[]>('/api/tools', [])
-    console.log(`\n  ${T.bold}Tools (${tools.length})${T.reset}`)
-    console.log(`  ${T.dim}${hr()}${T.reset}`)
-    for (const t of tools) {
-      console.log(`  ${T.accent}▸${T.reset} ${(t.name || '').padEnd(26)}${T.dim}${(t.description || '').substring(0, 52)}${T.reset}`)
-    }
+    const colDefs: ColDef[] = [
+      { header: '#',    width: 4,  align: 'right', color: COLORS.dim },
+      { header: 'Name', width: 26, align: 'left'  },
+      { header: 'Description'                      }, // flex
+    ]
+    const rows = tools.map((t: any, i: number) => [
+      String(i + 1),
+      t.name        || '',
+      (t.description || '').substring(0, 80),
+    ])
     console.log()
+    console.log(table(colDefs, rows))
+    console.log(`\n  ${T.dim}${tools.length} tools registered${T.reset}\n`)
     return true
   }
 
@@ -869,13 +938,66 @@ ${B}  Exit${R}
   }
 
   // ── /skills ────────────────────────────────────────────────────────────────────
-  if (command === '/skills') {
+  if (command === '/skills' || command === '/skills' && parts[1]) {
+    const sub    = parts[1]?.toLowerCase()
     const skills = await apiFetch<any[]>('/api/skills', [])
-    console.log(`\n  ${T.bold}Skills (${skills.length})${T.reset}`)
-    console.log(`  ${T.dim}${hr()}${T.reset}`)
-    for (const s of skills) {
-      const mark = s.enabled ? `${T.success}✓` : `${T.dim}✗`
-      console.log(`  ${mark}${T.reset} ${(s.name || '').padEnd(26)}${T.dim}${s.source || s.path || ''}${T.reset}`)
+
+    // ── /skills inspect <n> ────────────────────────────────────────────────────
+    if (sub === 'inspect') {
+      const idx = parseInt(parts[2] ?? '1', 10) - 1
+      const s   = skills[idx]
+      if (!s) {
+        console.log(`  ${T.error}No skill at index ${idx + 1}.${T.reset}\n`)
+        return true
+      }
+      const sourceBadge = sourceBadgeStr(s.source || s.type || '')
+      const trust       = trustStars(s.trust ?? 3)
+      const detailLines = [
+        `  ${T.bold}${s.name || '(unnamed)'}${T.reset}`,
+        `  ${T.dim}${s.description || 'No description.'}${T.reset}`,
+        '',
+        `  Source   ${sourceBadge}`,
+        `  Trust    ${trust}`,
+        `  Enabled  ${s.enabled ? T.success + '●' + T.reset : T.error + '○' + T.reset}`,
+        s.path ? `  Path     ${T.dim}${s.path}${T.reset}` : '',
+        s.version ? `  Version  ${T.dim}v${s.version}${T.reset}` : '',
+      ].filter(l => l !== undefined)
+      console.log()
+      console.log(panel({ title: `${MARKS.TRI} Skill Detail`, lines: detailLines, accent: COLORS.orange }))
+      console.log()
+      return true
+    }
+
+    // ── /skills list / /skills browse / /skills (default) ─────────────────────
+    const PAGE_SIZE = 10
+    const page  = sub === 'browse' ? (parseInt(parts[2] ?? '1', 10) - 1) : 0
+    const start = page * PAGE_SIZE
+    const slice = skills.slice(start, start + PAGE_SIZE)
+
+    const colDefs: ColDef[] = [
+      { header: '#',           width: 4,  align: 'right', color: COLORS.dim },
+      { header: 'Skill',       width: 20, align: 'left'  },
+      { header: 'Description'                             }, // flex
+      { header: 'Source',      width: 10, align: 'left'  },
+      { header: 'Trust',       width: 7,  align: 'left'  },
+    ]
+    const rows = slice.map((s: any, i: number) => [
+      String(start + i + 1),
+      (s.name || '').substring(0, 20),
+      (s.description || '').substring(0, 60),
+      sourceBadgeStr(s.source || s.type || ''),
+      trustStars(s.trust ?? 3),
+    ])
+
+    console.log()
+    console.log(table(colDefs, rows))
+
+    const total = skills.length
+    const pages = Math.ceil(total / PAGE_SIZE)
+    if (pages > 1) {
+      console.log(`\n  ${T.dim}Page ${page + 1}/${pages} · /skills browse <page> · /skills inspect <n>${T.reset}`)
+    } else {
+      console.log(`\n  ${T.dim}${total} skills loaded · /skills inspect <n> for detail${T.reset}`)
     }
     console.log()
     return true
