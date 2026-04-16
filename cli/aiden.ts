@@ -1462,22 +1462,38 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       return true
     }
 
-    // ── /skills recommend <query> ───────────────────────────────────────────────
+    // ── /skills recommend [query] ───────────────────────────────────────────────
     if (sub === 'recommend') {
-      if (!arg) { console.log(`  ${T.dim}Usage: /skills recommend <task>${T.reset}\n`); return true }
-      const results = await apiFetch<any[]>(`/api/skills/relevant?q=${encodeURIComponent(arg)}`, [])
+      // If no explicit query, infer one from the last 20 history exchanges
+      let query = arg
+      let inferredFromHistory = false
+      if (!query) {
+        const recent = state.history.slice(-20)
+        query = recent
+          .filter(h => h.role === 'user')
+          .map(h => h.content)
+          .join(' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .substring(0, 300)
+        inferredFromHistory = true
+      }
+      if (!query) { console.log(`  ${T.dim}No history yet — try /skills recommend <task>${T.reset}\n`); return true }
+      const results = await apiFetch<any[]>(`/api/skills/relevant?q=${encodeURIComponent(query)}`, [])
+      const title   = inferredFromHistory ? `${MARKS.TRI} Recommend — from recent history` : `${MARKS.TRI} Recommend — "${arg}"`
       const lines: string[] = ['']
       if (results.length === 0) {
-        lines.push(`  ${T.dim}No recommendations for that task.${T.reset}`)
+        lines.push(`  ${T.dim}No recommendations found.${T.reset}`)
       } else {
-        for (const r of results.slice(0, 5)) {
+        for (const r of results.slice(0, 3)) {
           lines.push(`  ${fg(COLORS.orange)}${MARKS.ARROW}${RST} ${r.name}`)
           if (r.description) lines.push(`    ${T.dim}${r.description}${T.reset}`)
+          lines.push(`    ${T.dim}/skills install ${r.name}${T.reset}`)
+          lines.push('')
         }
       }
-      lines.push('')
       console.log()
-      console.log(panel({ title: `${MARKS.TRI} Recommend — "${arg}"`, lines }))
+      console.log(panel({ title, lines }))
       console.log()
       return true
     }
