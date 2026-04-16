@@ -1056,13 +1056,21 @@ export function createApiServer(): Express {
           /^are you (there|ready|online|working)/i,
         ]
         if (JSON_ALWAYS_CONV.some(p => p.test(resolvedMessage.trim()))) {
-          await streamChat(resolvedMessage, history, userName, provider, activeModel, apiName, (data: object) => {
-            const d = data as any
-            if (d.token) jsonTokens.push(d.token)
-          }, sessionId)
-          fullReply = jsonTokens.join('').trim() || 'Hey! What do you need?'
+          // Fast-path: build deterministic reply from preamble — no LLM call needed
+          const preamble   = await buildGreetingPreamble(sessionId)
+          const nameMatch  = preamble?.match(/^User name: (.+)/m)
+          const lastMatch  = preamble?.match(/Last session: (.+?)(?= — |$)/m)
+          const goalsMatch = preamble?.match(/Active goals: (.+)/m)
+          const nameStr    = nameMatch ? ` ${nameMatch[1]}` : ''
+          if (lastMatch) {
+            fullReply = `Hey${nameStr}! Picking up from "${lastMatch[1]}". What would you like to work on?`
+          } else if (goalsMatch) {
+            fullReply = `Hey${nameStr}! Currently tracking: ${goalsMatch[1]}. What do you need?`
+          } else {
+            fullReply = `Hey${nameStr}! What do you need?`
+          }
           conversationMemory.addAssistantMessage(fullReply)
-          res.json({ message: fullReply, provider: apiName }); return
+          res.json({ message: fullReply, provider: 'local' }); return
         }
 
         if (mode === 'chat') {
@@ -4706,7 +4714,7 @@ async function streamChat(
   let greetingPreamble = ''
   if (!memoryContext || memoryContext.trim().length === 0) {
     try {
-      const preamble = await buildGreetingPreamble()
+      const preamble = await buildGreetingPreamble(sessionId)
       if (preamble) greetingPreamble = `\n\n${preamble}`
     } catch {}
   }

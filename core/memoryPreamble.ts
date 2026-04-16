@@ -16,8 +16,38 @@
 //   const preamble = await buildGreetingPreamble()
 //   // => "GREETING CONTEXT:\nRecent files: report.py\nActive goals: ..." | null
 
+import fs   from 'fs'
+import path from 'path'
 import { conversationMemory } from './conversationMemory'
 import { getActiveGoalsSummary } from './goalTracker'
+import { sessionMemory }         from './sessionMemory'
+
+const USER_MD = path.join(process.env.AIDEN_USER_DATA || process.cwd(), 'workspace', 'USER.md')
+
+function readUserName(): string | null {
+  try {
+    if (!fs.existsSync(USER_MD)) return null
+    const content = fs.readFileSync(USER_MD, 'utf-8')
+    const match   = content.match(/^Name:\s*(.+)/m)
+    if (!match) return null
+    const name = match[1].trim()
+    if (!name || name.toLowerCase() === 'user') return null
+    return name
+  } catch { return null }
+}
+
+function extractLastSessionSummary(raw: string): string | null {
+  if (!raw) return null
+  const titleMatch = raw.match(/# Session Title\s*\n_?([^\n_#]+)/)
+  const stateMatch = raw.match(/# Current State\s*\n_?([\s\S]*?)(?=\n#|$)/)
+  const parts: string[] = []
+  if (titleMatch?.[1]?.trim()) parts.push(`Last session: ${titleMatch[1].trim()}`)
+  if (stateMatch?.[1]?.trim()) {
+    const state = stateMatch[1].replace(/^_|_$/g, '').trim().slice(0, 120)
+    if (state) parts.push(`State: ${state}`)
+  }
+  return parts.length > 0 ? parts.join(' — ') : null
+}
 
 // ── Main export ───────────────────────────────────────────────────────────────
 
@@ -26,12 +56,23 @@ import { getActiveGoalsSummary } from './goalTracker'
  * Returns null when there is nothing meaningful to surface
  * (e.g. a brand-new session with no prior history).
  */
-export async function buildGreetingPreamble(): Promise<string | null> {
+export async function buildGreetingPreamble(sessionId?: string): Promise<string | null> {
   try {
     const facts = conversationMemory.getFacts()
     const goals = getActiveGoalsSummary()
 
     const parts: string[] = []
+
+    // User name from USER.md
+    const name = readUserName()
+    if (name) parts.push(`User name: ${name}`)
+
+    // Last session context
+    if (sessionId) {
+      const lastCtx       = sessionMemory.getLastContext(sessionId)
+      const sessionSummary = extractLastSessionSummary(lastCtx)
+      if (sessionSummary) parts.push(sessionSummary)
+    }
 
     if (facts.lastFilesCreated.length > 0) {
       parts.push(`Recent files: ${facts.lastFilesCreated.slice(-3).join(', ')}`)
