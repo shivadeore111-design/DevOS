@@ -4434,6 +4434,81 @@ export function createApiServer(): Express {
     })
   })
 
+  // ── /api/garden — aggregate view of all memory layers ─────────────────────────
+  app.get('/api/garden', async (_req: Request, res: Response) => {
+    try {
+      const mlStats   = await memoryLayers.getStats()
+      const semStats  = semanticMemory.getStats()
+      const egStats   = entityGraph.getStats()
+      const lmStats   = learningMemory.getStats()
+      const factsData = conversationMemory.getFacts()
+      const factsCount = (Object.values(factsData) as unknown[])
+        .filter(Array.isArray)
+        .reduce((s: number, a: unknown[]) => s + a.length, 0)
+      const history   = conversationMemory.getRecentHistory()
+      res.json({
+        layers: {
+          hot:      mlStats.hot,
+          warm:     mlStats.warm,
+          cold:     mlStats.cold,
+          semantic: semStats.total,
+          entities: egStats.nodes,
+          edges:    egStats.edges,
+          learning: lmStats.total,
+          facts:    factsCount,
+          history:  history.length,
+        },
+        semantic: semStats,
+        entities: egStats,
+        learning: lmStats,
+      })
+    } catch (e: any) { res.status(500).json({ error: e.message }) }
+  })
+
+  // ── /api/decisions — per-turn reasoning trace ──────────────────────────────────
+  const DECISION_LOG_PATH = path.join(WORKSPACE_ROOT, 'workspace', 'decision-log.jsonl')
+
+  // GET /api/decisions?limit=N
+  app.get('/api/decisions', (req: Request, res: Response) => {
+    try {
+      const limit = Math.min(parseInt(String(req.query.limit ?? '20'), 10), 200)
+      if (!fs.existsSync(DECISION_LOG_PATH)) { res.json({ decisions: [] }); return }
+      const raw   = fs.readFileSync(DECISION_LOG_PATH, 'utf-8')
+      const lines = raw.split('\n').filter(Boolean)
+      const tail  = lines.slice(-limit)
+      const decisions = tail.map(l => { try { return JSON.parse(l) } catch { return null } }).filter(Boolean)
+      res.json({ decisions })
+    } catch (e: any) { res.status(500).json({ error: e.message }) }
+  })
+
+  // POST /api/decisions  { action, reasoning, outcome?, sessionId? }
+  app.post('/api/decisions', (req: Request, res: Response) => {
+    try {
+      const { action, reasoning, outcome, sessionId } = req.body as {
+        action?: string; reasoning?: string; outcome?: string; sessionId?: string
+      }
+      if (!action) { res.status(400).json({ error: 'action required' }); return }
+      const entry = {
+        ts:        Date.now(),
+        sessionId: sessionId || 'unknown',
+        action:    String(action).slice(0, 200),
+        reasoning: String(reasoning || '').slice(0, 500),
+        outcome:   String(outcome   || '').slice(0, 200),
+      }
+      fs.mkdirSync(path.dirname(DECISION_LOG_PATH), { recursive: true })
+      fs.appendFileSync(DECISION_LOG_PATH, JSON.stringify(entry) + '\n')
+      res.json({ ok: true, entry })
+    } catch (e: any) { res.status(500).json({ error: e.message }) }
+  })
+
+  // DELETE /api/decisions — wipe the log
+  app.delete('/api/decisions', (_req: Request, res: Response) => {
+    try {
+      if (fs.existsSync(DECISION_LOG_PATH)) fs.writeFileSync(DECISION_LOG_PATH, '')
+      res.json({ ok: true })
+    } catch (e: any) { res.status(500).json({ error: e.message }) }
+  })
+
   // GET /api/memory/sessions â€” list all session IDs
   app.get('/api/memory/sessions', (_req: Request, res: Response) => {
     res.json({ sessions: conversationMemory.getSessions() })

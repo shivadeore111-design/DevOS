@@ -650,6 +650,7 @@ const COMMANDS = [
   '/focus', '/explore', '/pulse',
   '/rewind', '/pin',
   '/diff', '/trust', '/timeline',
+  '/garden', '/decision',
   '/recipes', '/sessions',
   '/analytics', '/budget', '/workspace',
   '/quick', '/compact', '/async', '/security', '/debug', '/config',
@@ -709,6 +710,8 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       helpRow('/diff',              'Filesystem changes since last commit  (git status)'),
       helpRow('/trust',             'Per-tool approval levels  (list / set <tool> <0-3> / reset <tool>)'),
       helpRow('/timeline',          'Session history tree'),
+      helpRow('/garden',            'Memory layer explorer  (semantic / entities / learning / facts / hot / cold)'),
+      helpRow('/decision',          'Per-turn reasoning trace  (last / clear)'),
       helpRow('/recipes',           'YAML recipes'),
       helpRow('/sessions',          'Recent sessions'),
       helpRow('/analytics',         'Usage over time'),
@@ -1979,6 +1982,181 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
     console.log(panel({
       title: `${MARKS.TRI} /timeline  (${sessions.length} session${sessions.length !== 1 ? 's' : ''})`,
       lines: ['', ...treeLines, '', `  ${T.dim}/sessions for details  ·  /fork <name> to branch${T.reset}`, ''],
+    }))
+    console.log()
+    return true
+  }
+
+  // ── /garden ───────────────────────────────────────────────────────────────────
+  if (command === '/garden') {
+    const sub = parts[1]?.toLowerCase()
+
+    interface GardenData {
+      layers:   Record<string, number>
+      semantic: { total: number; byType?: Record<string, number> }
+      entities: { nodes: number; edges: number }
+      learning: { total: number; successRate: number; avgDuration: number }
+    }
+
+    const data = await apiFetch<GardenData>('/api/garden', {
+      layers:   {},
+      semantic: { total: 0 },
+      entities: { nodes: 0, edges: 0 },
+      learning: { total: 0, successRate: 0, avgDuration: 0 },
+    })
+
+    console.log()
+
+    // Subcommand: drill into a specific layer
+    if (sub === 'semantic') {
+      const rows = Object.entries(data.semantic.byType ?? {}).map(
+        ([t, n]) => `  ${fg(COLORS.cyan)}${t.padEnd(18)}${RST}${T.dim}${n} entries${T.reset}`
+      )
+      console.log(panel({
+        title: `${MARKS.TRI} /garden semantic  (${data.semantic.total} total)`,
+        lines: rows.length ? ['', ...rows, ''] : ['', `  ${T.dim}No semantic entries.${T.reset}`, ''],
+      }))
+      console.log()
+      return true
+    }
+
+    if (sub === 'entities') {
+      console.log(panel({
+        title: `${MARKS.TRI} /garden entities`,
+        lines: [
+          '',
+          `  ${fg(COLORS.cyan)}Nodes${RST}  ${data.entities.nodes}`,
+          `  ${fg(COLORS.cyan)}Edges${RST}  ${data.entities.edges}`,
+          '',
+        ],
+      }))
+      console.log()
+      return true
+    }
+
+    if (sub === 'learning') {
+      const sr  = (data.learning.successRate * 100).toFixed(1)
+      const avg = data.learning.avgDuration > 0 ? `${Math.round(data.learning.avgDuration)}ms` : '—'
+      console.log(panel({
+        title: `${MARKS.TRI} /garden learning  (${data.learning.total} experiences)`,
+        lines: [
+          '',
+          `  ${fg(COLORS.cyan)}Success rate${RST}  ${sr}%`,
+          `  ${fg(COLORS.cyan)}Avg duration${RST} ${avg}`,
+          '',
+        ],
+      }))
+      console.log()
+      return true
+    }
+
+    if (sub === 'facts') {
+      const mem = await apiFetch<{ facts: string[] }>('/api/memory', { facts: [] })
+      const facts = mem.facts ?? []
+      const rows  = facts.slice(0, 20).map(f => `  ${T.dim}●${T.reset} ${String(f).substring(0, 90)}`)
+      console.log(panel({
+        title: `${MARKS.TRI} /garden facts  (${facts.length})`,
+        lines: rows.length ? ['', ...rows, ''] : ['', `  ${T.dim}No facts recorded.${T.reset}`, ''],
+      }))
+      console.log()
+      return true
+    }
+
+    // Default: overview of all layers
+    const L = data.layers
+    const BAR_W  = 18
+    function miniBar(n: number, max: number): string {
+      const filled = max > 0 ? Math.round((n / max) * BAR_W) : 0
+      return fg(COLORS.orange) + '█'.repeat(filled) + T.dim + '░'.repeat(BAR_W - filled) + RST
+    }
+    const vals = Object.values(L).filter(v => typeof v === 'number') as number[]
+    const maxV = vals.length ? Math.max(...vals, 1) : 1
+
+    const rows = [
+      ['HOT cache',    L.hot      ?? 0],
+      ['WARM cache',   L.warm     ?? 0],
+      ['COLD store',   L.cold     ?? 0],
+      ['Semantic',     L.semantic ?? 0],
+      ['Entities',     L.entities ?? 0],
+      ['Graph edges',  L.edges    ?? 0],
+      ['Learning',     L.learning ?? 0],
+      ['Facts',        L.facts    ?? 0],
+      ['History',      L.history  ?? 0],
+    ] as [string, number][]
+
+    const lines = rows.map(([label, n]) =>
+      `  ${label.padEnd(14)}${miniBar(n, maxV)}  ${T.dim}${n}${T.reset}`
+    )
+    console.log(panel({
+      title: `${MARKS.TRI} /garden — memory overview`,
+      lines: ['', ...lines, '', `  ${T.dim}Drill: /garden semantic · entities · learning · facts${T.reset}`, ''],
+    }))
+    console.log()
+    return true
+  }
+
+  // ── /decision ─────────────────────────────────────────────────────────────────
+  if (command === '/decision') {
+    const sub = parts[1]?.toLowerCase()
+
+    interface DecisionEntry {
+      ts:        number
+      sessionId: string
+      action:    string
+      reasoning: string
+      outcome:   string
+    }
+
+    // /decision clear — wipe the log
+    if (sub === 'clear') {
+      const r = await apiDelete('/api/decisions')
+      if (r?.ok) {
+        console.log(`  ${fg(COLORS.success)}✓${RST}  Decision log cleared.\n`)
+      } else {
+        console.log(`  ${T.error}Failed to clear log.${T.reset}\n`)
+      }
+      return true
+    }
+
+    // /decision last — show only the most recent
+    const limit = sub === 'last' ? 1 : parseInt(parts[1] ?? '', 10) || 10
+    const data  = await apiFetch<{ decisions: DecisionEntry[] }>(`/api/decisions?limit=${limit}`, { decisions: [] })
+    const list  = data.decisions ?? []
+
+    console.log()
+    if (list.length === 0) {
+      console.log(panel({
+        title: `${MARKS.TRI} /decision — no trace`,
+        lines: [
+          '',
+          `  ${T.dim}No reasoning steps logged yet.${T.reset}`,
+          `  ${T.dim}Steps are recorded when Aiden uses tools.${T.reset}`,
+          '',
+        ],
+      }))
+      console.log()
+      return true
+    }
+
+    const lines: string[] = ['']
+    for (const d of list) {
+      const ago = `${Math.round((Date.now() - d.ts) / 60000)}m ago`
+      lines.push(`  ${fg(COLORS.orange)}${MARKS.ARROW}${RST} ${T.bold}${d.action}${T.reset}  ${T.dim}${ago}${T.reset}`)
+      if (d.reasoning) {
+        const trimmed = d.reasoning.substring(0, 100)
+        lines.push(`    ${T.dim}${trimmed}${d.reasoning.length > 100 ? '…' : ''}${T.reset}`)
+      }
+      if (d.outcome) {
+        lines.push(`    ${fg(COLORS.success)}→${RST} ${T.dim}${d.outcome.substring(0, 80)}${T.reset}`)
+      }
+      lines.push('')
+    }
+    lines.push(`  ${T.dim}/decision <N> for more  ·  /decision clear to wipe${T.reset}`)
+    lines.push('')
+
+    console.log(panel({
+      title: `${MARKS.TRI} /decision  (${list.length} step${list.length !== 1 ? 's' : ''})`,
+      lines,
     }))
     console.log()
     return true
