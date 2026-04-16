@@ -7,7 +7,7 @@
 
 import { Provider, ToolDefinition, ToolCall } from './types'
 
-const BOA_BASE = 'https://api.boa.ai/v1/chat/completions'
+const BOA_BASE = 'https://api.bayofassets.com/v1/chat/completions'
 
 export function createBOAProvider(apiKey: string): Provider {
   return {

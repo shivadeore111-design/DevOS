@@ -116,6 +116,9 @@ const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   'gemini-1.5-flash':               1048576,
   'gpt-4o':                         128000,
   'claude-sonnet-4-20250514':       200000,
+  'gemini-3-flash':                 1048576,
+  'gemini-3.1-pro':                 1048576,
+  'gpt-5.3-codex':                  200000,
   'default':                        8192,
 }
 
@@ -372,7 +375,7 @@ const OPENAI_COMPAT_ENDPOINTS: Record<string, string> = {
   cerebras:   'https://api.cerebras.ai/v1/chat/completions',
   nvidia:     'https://integrate.api.nvidia.com/v1/chat/completions',
   github:     'https://models.inference.ai.azure.com/v1/chat/completions',
-  boa:        'https://api.boa.ai/v1/chat/completions',
+  boa:        'https://api.bayofassets.com/v1/chat/completions',
 }
 
 function buildHeaders(providerName: string, apiKey: string): Record<string, string> {
