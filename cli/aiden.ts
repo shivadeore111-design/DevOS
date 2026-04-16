@@ -105,6 +105,7 @@ const state = {
   yoloMode    : false,
   attachments : [] as string[],
   sessionName : '',
+  redoStack   : [] as HistoryEntry[][],
 }
 
 // ── Terminal helpers ──────────────────────────────────────────────────────────────
@@ -1774,9 +1775,8 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
   // ── /rewind ────────────────────────────────────────────────────────────────────
   if (command === '/rewind') {
     const sub = parts[1]?.toLowerCase()
-    const arg = parts[2] ?? ''
 
-    // /rewind mark [label] — create undo point
+    // /rewind mark [label] — create named checkpoint
     if (sub === 'mark') {
       const label = parts.slice(2).join(' ') || undefined
       const result = await apiPost('/api/undo-points', { label })
@@ -1785,54 +1785,44 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       return true
     }
 
-    // /rewind undo — pop last exchange
+    // /rewind undo — restore last popped exchange(s) from redo stack
     if (sub === 'undo') {
-      const result = await apiPost('/api/conversation/pop')
-      if (!result?.success) { console.log(`  ${T.error}Pop failed.${T.reset}\n`); return true }
-      console.log(`  ${T.dim}${MARKS.DOT} last turn removed from context.${T.reset}\n`)
+      if (state.redoStack.length === 0) {
+        console.log(`  ${T.dim}Nothing to redo.${T.reset}\n`)
+        return true
+      }
+      const restored = state.redoStack.pop()!
+      state.history.push(...restored)
+      console.log(`  ${fg(COLORS.success)}${MARKS.TRI}${RST} Restored ${restored.length / 2} exchange(s).\n`)
       return true
     }
 
-    // /rewind <n> — restore to undo point N
+    // /rewind <n> — pop last n exchanges from history
     if (sub && /^\d+$/.test(sub)) {
-      const result = await apiPost(`/api/undo-points/${sub}/restore`)
-      if (!result?.success) { console.log(`  ${T.error}Restore failed.${T.reset}\n`); return true }
-      console.log(`  ${fg(COLORS.success)}${MARKS.TRI}${RST} restored to ${T.dim}${result.label}${T.reset}\n`)
+      const n     = Math.max(1, parseInt(sub, 10))
+      const count = Math.min(n * 2, state.history.length)
+      if (count === 0) { console.log(`  ${T.dim}Nothing to rewind.${T.reset}\n`); return true }
+      const popped = state.history.splice(-count)
+      state.redoStack.push(popped)
+      await apiPost('/api/conversation/pop', { count })
+      console.log(`  ${fg(COLORS.orange)}${MARKS.TRI}${RST} Rewound ${count / 2} exchange(s). Use /rewind undo to restore.\n`)
       return true
     }
 
-    // /rewind (default) — list undo points
-    const pts = await apiFetch<any[]>('/api/undo-points', [])
-    if (pts.length === 0) {
-      console.log()
-      console.log(panel({
-        title: `${MARKS.TRI} Rewind`,
-        lines: [
-          '',
-          `  ${T.dim}No undo points yet.${T.reset}`,
-          `  ${T.dim}Use /rewind mark [label] to create one.${T.reset}`,
-          '',
-        ],
-      }))
-      console.log()
+    // /rewind (no arg) — pop last 1 exchange
+    if (!sub) {
+      if (state.history.length < 2) {
+        console.log(`  ${T.dim}Nothing to rewind.${T.reset}\n`)
+        return true
+      }
+      const popped = state.history.splice(-2)
+      state.redoStack.push(popped)
+      await apiPost('/api/conversation/pop', { count: 1 })
+      console.log(`  ${fg(COLORS.orange)}${MARKS.TRI}${RST} Rewound 1 exchange. Use /rewind undo to restore.\n`)
       return true
     }
-    const colDefs: ColDef[] = [
-      { header: '#',     width: 4,  align: 'right', color: COLORS.dim },
-      { header: 'Label', width: 28, align: 'left'  },
-      { header: 'Turns', width: 6,  align: 'right', color: COLORS.dim },
-      { header: 'Time'                              },
-    ]
-    const rows = pts.map(p => [
-      String(p.id),
-      (p.label || '').substring(0, 26),
-      String(p.turns ?? '?'),
-      p.ts ? new Date(p.ts).toLocaleTimeString() : '—',
-    ])
-    console.log()
-    console.log(panel({ title: `${MARKS.TRI} Rewind`, lines: [''] }))
-    console.log(table(colDefs, rows))
-    console.log(`\n  ${T.dim}/rewind <n> to restore · /rewind mark [label] · /rewind undo${T.reset}\n`)
+
+    console.log(`  ${T.dim}Usage: /rewind [n] · /rewind mark [label] · /rewind undo${T.reset}\n`)
     return true
   }
 
