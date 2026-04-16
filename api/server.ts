@@ -95,6 +95,7 @@ import { asyncTasks }     from '../core/asyncTasks'
 import { registerSlashMirrorTools } from '../core/slashAsTool'
 import { buildGreetingPreamble }    from '../core/memoryPreamble'
 import { matchFastPath }            from '../core/fastPathExpansion'
+import { setupHttpKeepalive }       from '../core/httpKeepalive'
 import { isCurrentTurnPrivate, clearTurnPrivate, toggleSessionPrivate, isSessionPrivate } from '../core/privateMode'
 
 // —— Sprint 25: module-level WebSocket clients registry (shared between createApiServer routes and startApiServer WS setup)
@@ -4376,6 +4377,11 @@ export function startApiServer(portArg?: number): Express {
   // Phase 3: register read-only slash commands as callable agent tools
   try { registerSlashMirrorTools() } catch (e: any) {
     console.error('[Startup] registerSlashMirrorTools failed:', e.message)
+  }
+
+  // Phase 7: enable TCP keepalive for all outbound fetch() calls
+  try { setupHttpKeepalive() } catch (e: any) {
+    console.error('[Startup] setupHttpKeepalive failed:', e.message)
   }
 
   // Load community plugins from workspace/plugins/
