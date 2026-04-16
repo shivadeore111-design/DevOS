@@ -150,7 +150,12 @@ async function streamChat(message: string): Promise<void> {
     })
 
     if (!res.ok) {
-      process.stdout.write(`\n${C.red}  ✗ ${res.status} ${res.statusText}${C.reset}\n`)
+      let errText = res.statusText
+      try {
+        const errBody = await res.json() as any
+        if (errBody?.error) errText = errBody.error
+      } catch { /* use statusText */ }
+      process.stdout.write(`\n${C.red}  ✗ ${res.status} ${errText}${C.reset}\n`)
       return
     }
 
@@ -184,7 +189,7 @@ async function streamChat(message: string): Promise<void> {
       for (const line of lines) {
         if (!line.startsWith('data: ')) continue
         const raw = line.slice(6).trim()
-        if (raw === '[DONE]') continue
+        if (raw === '[DONE]') break
 
         let evt: any
         try { evt = JSON.parse(raw) } catch { continue }
@@ -204,6 +209,7 @@ async function streamChat(message: string): Promise<void> {
         // ── Stream complete ──
         if (evt.done === true) {
           if (evt.provider) provider = evt.provider
+          break
         }
 
         // ── Thinking ──
