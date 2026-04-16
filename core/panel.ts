@@ -56,7 +56,7 @@ export interface PanelOpts {
  */
 export function panel(opts: PanelOpts): string {
   const { title, lines, accent = COLORS.orange } = opts
-  const width  = opts.width ?? Math.max(40, cols() - 2)
+  const width  = opts.width ?? Math.max(50, Math.min(cols() - 2, 100))
   const inner  = width - 4   // 2 border chars + 2 padding spaces
   const acc    = fg(accent)
   const border = (s: string) => `${acc}${s}${RST}`
@@ -66,10 +66,10 @@ export function panel(opts: PanelOpts): string {
   if (title) {
     const titleStr  = ` ${BOLD}${title}${RST}${acc} `
     const titleVis  = visLen(titleStr)
-    const fillRight = Math.max(0, inner - 1 - titleVis)
+    const fillRight = Math.max(0, width - 1 - titleVis)
     top = border(`╔═`) + titleStr + border(`${'═'.repeat(fillRight)}╗`)
   } else {
-    top = border(`╔${'═'.repeat(inner + 2)}╗`)
+    top = border(`╔${'═'.repeat(inner + 4)}╗`)
   }
 
   // Body lines
@@ -80,7 +80,7 @@ export function panel(opts: PanelOpts): string {
   })
 
   // Bottom border
-  const bottom = border(`╚${'═'.repeat(inner + 2)}╝`)
+  const bottom = border(`╚${'═'.repeat(inner + 4)}╝`)
 
   return [top, ...bodyLines, bottom].join('\n')
 }
