@@ -101,6 +101,7 @@ const state = {
   persona     : 'default',
   themeName   : 'default' as ThemeName,
   privateMode : false,
+  focusMode   : false,
 }
 
 // ── Terminal helpers ──────────────────────────────────────────────────────────────
@@ -646,6 +647,7 @@ const COMMANDS = [
   '/export', '/fork', '/checkpoint', '/help',
   '/status', '/tools', '/kit', '/providers', '/models', '/model', '/primary',
   '/memory', '/goals', '/skills', '/lessons', '/teach',
+  '/focus', '/explore', '/pulse',
   '/rewind', '/pin',
   '/recipes', '/sessions',
   '/analytics', '/budget', '/workspace',
@@ -698,6 +700,9 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       helpRow('/skills',            'Skill lifecycle  (search / install / list / check / update / audit / remove / publish / export / import / source / stats / recommend / test)'),
       helpRow('/lessons',           'Browse permanent failure rules  (search / <category>)'),
       helpRow('/teach',             'Add a manual rule to LESSONS.md'),
+      helpRow('/focus',             'Toggle zen mode — suppress tool traces and status output'),
+      helpRow('/explore',           'Capability browser  (tools / skills / providers)'),
+      helpRow('/pulse',             'Live system dashboard — uptime, RAM, providers, async tasks'),
       helpRow('/rewind',            'Time-travel undo  (mark / undo / <n>)'),
       helpRow('/pin',               'Protect exchange from compaction  (list / unpin <idx>)'),
       helpRow('/recipes',           'YAML recipes'),
@@ -1418,6 +1423,132 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
     console.log()
     console.log(`  ${T.dim}${footerStats}${T.reset}`)
     console.log(`  ${T.dim}${footerNav}${T.reset}`)
+    console.log()
+    return true
+  }
+
+  // ── /focus ─────────────────────────────────────────────────────────────────────
+  if (command === '/focus') {
+    state.focusMode = !state.focusMode
+    if (state.focusMode) {
+      console.log()
+      console.log(panel({
+        title: `${MARKS.TRI} Focus Mode — ON`,
+        lines: [
+          '',
+          `  ${T.dim}Tool traces, status bars and intermediate output suppressed.${T.reset}`,
+          `  ${T.dim}Type /focus again to return to normal.${T.reset}`,
+          '',
+        ],
+      }))
+      console.log()
+    } else {
+      console.log(`  ${T.dim}${MARKS.DOT_O} Focus mode off — normal output restored.${T.reset}\n`)
+    }
+    return true
+  }
+
+  // ── /explore ───────────────────────────────────────────────────────────────────
+  if (command === '/explore') {
+    const sub = parts[1]?.toLowerCase()
+    const [toolsData, skillsData, healthData] = await Promise.all([
+      apiFetch<any[]>('/api/tools',         []),
+      apiFetch<any[]>('/api/skills',        []),
+      apiFetch<any>  ('/api/pulse/snapshot', {}),
+    ])
+    const tools   = Array.isArray(toolsData)  ? toolsData  : []
+    const skills  = Array.isArray(skillsData) ? skillsData : []
+    const provs   = (healthData?.providers || []) as any[]
+
+    if (sub === 'tools') {
+      const colDefs: ColDef[] = [
+        { header: 'Tool',   width: 26, align: 'left' },
+        { header: 'Source', width: 12, align: 'left' },
+        { header: 'Description'                      },
+      ]
+      const rows = tools.map((t: any) => [
+        (t.name || '').substring(0, 24),
+        sourceBadgeStr(t.source || 'aiden'),
+        (t.description || '').substring(0, 50),
+      ])
+      console.log()
+      console.log(panel({ title: `${MARKS.TRI} Explore — Tools (${tools.length})`, lines: [''] }))
+      console.log(table(colDefs, rows))
+      console.log()
+      return true
+    }
+
+    if (sub === 'skills') {
+      const colDefs: ColDef[] = [
+        { header: 'Skill',   width: 22, align: 'left' },
+        { header: 'Tags',    width: 20, align: 'left', color: COLORS.dim },
+        { header: 'Description'                        },
+      ]
+      const rows = skills.map((s: any) => [
+        (s.name || '').substring(0, 20),
+        (s.tags || []).join(', ').substring(0, 18),
+        (s.description || '').substring(0, 50),
+      ])
+      console.log()
+      console.log(panel({ title: `${MARKS.TRI} Explore — Skills (${skills.length})`, lines: [''] }))
+      console.log(table(colDefs, rows))
+      console.log()
+      return true
+    }
+
+    // default: capability overview
+    const activeProvs = provs.filter((p: any) => p.ok).length
+    const lines: string[] = [
+      '',
+      `  ${T.dim}${'Tools'.padEnd(16)}${T.reset}${fg(COLORS.orange)}${tools.length}${RST}  ${T.dim}registered${T.reset}`,
+      `  ${T.dim}${'Skills'.padEnd(16)}${T.reset}${fg(COLORS.orange)}${skills.length}${RST}  ${T.dim}loaded${T.reset}`,
+      `  ${T.dim}${'Providers'.padEnd(16)}${T.reset}${fg(COLORS.orange)}${activeProvs}${RST}/${provs.length}  ${T.dim}healthy${T.reset}`,
+      '',
+      `  ${T.dim}Drill down:  /explore tools  /explore skills${T.reset}`,
+      `  ${T.dim}Or:          /tools   /kit   /skills   /models${T.reset}`,
+      '',
+    ]
+    console.log()
+    console.log(panel({ title: `${MARKS.TRI} Explore — Capabilities`, lines }))
+    console.log()
+    return true
+  }
+
+  // ── /pulse ─────────────────────────────────────────────────────────────────────
+  if (command === '/pulse') {
+    const snap = await apiFetch<any>('/api/pulse/snapshot', null)
+    if (!snap) { console.log(`  ${T.error}Pulse unavailable.${T.reset}\n`); return true }
+
+    const uptimeFmt = (() => {
+      const s = snap.uptime || 0
+      const m = Math.floor(s / 60)
+      const h = Math.floor(m / 60)
+      return h > 0 ? `${h}h ${m % 60}m` : m > 0 ? `${m}m ${s % 60}s` : `${s}s`
+    })()
+
+    const provLines = (snap.providers || []).map((p: any) =>
+      `  ${p.ok ? fg(COLORS.success) + MARKS.DOT : T.dim + MARKS.DOT_O}${RST} ${(p.name || '').padEnd(18)}${T.dim}${p.avgMs}ms  ${p.failCount > 0 ? `${p.failCount} fails` : 'ok'}${T.reset}`)
+
+    const taskLines = (snap.tasks || []).length === 0
+      ? [`  ${T.dim}no async tasks${T.reset}`]
+      : (snap.tasks || []).map((t: any) =>
+          `  ${T.dim}${(t.id || '').substring(0, 8)}  ${t.status.padEnd(10)}${t.prompt}${T.reset}`)
+
+    const lines: string[] = [
+      '',
+      `  ${T.dim}${'Uptime'.padEnd(14)}${T.reset}${uptimeFmt}`,
+      `  ${T.dim}${'RAM'.padEnd(14)}${T.reset}${snap.ramMB} MB`,
+      `  ${T.dim}${'Skills'.padEnd(14)}${T.reset}${snap.skills}`,
+      '',
+      `  ${T.dim}Providers${T.reset}`,
+      ...provLines,
+      '',
+      `  ${T.dim}Async Tasks${T.reset}`,
+      ...taskLines,
+      '',
+    ]
+    console.log()
+    console.log(panel({ title: `${MARKS.TRI} Live Pulse`, lines }))
     console.log()
     return true
   }

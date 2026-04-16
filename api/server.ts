@@ -3488,6 +3488,36 @@ export function createApiServer(): Express {
     })
   })
 
+  // GET /api/pulse/snapshot — current system state snapshot (non-SSE, for CLI /pulse)
+  app.get('/api/pulse/snapshot', (_req: Request, res: Response) => {
+    try {
+      const uptime  = process.uptime()
+      const ramMB   = Math.round(process.memoryUsage().heapUsed / 1024 / 1024)
+      const tasks   = asyncTasks.list().map((t: any) => ({
+        id:     t.id,
+        prompt: (t.prompt || '').substring(0, 50),
+        status: t.status,
+      }))
+      const { getProviderHealthState } = require('../providers/router') as typeof import('../providers/router')
+      const health = getProviderHealthState()
+      const providers = Object.keys(health.consecutiveFailures).map(name => ({
+        name,
+        ok:        (health.consecutiveFailures[name] ?? 0) === 0,
+        failCount: health.consecutiveFailures[name] ?? 0,
+        avgMs:     Math.round(health.responseTimesMs[name] ?? 0),
+      }))
+      const skills = (skillLoader.loadAllRaw ? skillLoader.loadAllRaw() : skillLoader.loadAll()).length
+      res.json({
+        uptime:    Math.floor(uptime),
+        ramMB,
+        skills,
+        tasks,
+        providers,
+        ts:        Date.now(),
+      })
+    } catch (e: any) { res.status(500).json({ error: e.message }) }
+  })
+
   // â”€â”€ Computer-use routes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // POST /api/automate, POST /api/automate/stop,
   // GET  /api/automate/log, GET /api/automate/session
