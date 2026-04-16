@@ -661,6 +661,7 @@ const COMMANDS = [
   '/quick', '/compact', '/async', '/security', '/debug', '/config',
   '/theme', '/persona', '/detail', '/depth', '/provider',
   '/private',
+  '/run',
   '/quit', '/exit', '/q',
 ]
 
@@ -778,6 +779,10 @@ const COMMAND_DETAIL: Record<string, CmdDetail> = {
   '/quick':      { section: 'Power',     desc: 'Quick side question — no history, no tools.',               usage: '/quick <question>' },
   '/compact':    { section: 'Power',     desc: 'Manual context compression.',                               usage: '/compact' },
   '/async':      { section: 'Power',     desc: 'Run a task in the background.',                             usage: '/async <task>' },
+  '/run':        { section: 'Power',     desc: 'Execute JS in the Aiden VM sandbox with full SDK access.',
+    subs:     ['<file.js>', '- [desc]', 'examples', 'help', 'help <ns>'],
+    examples: ['/run scripts/port_checker.js', '/run -', '/run examples', '/run help', '/run help web'],
+  },
   '/security':   { section: 'Power',     desc: 'Run AgentShield security scan.',                            usage: '/security' },
   '/debug':      { section: 'Power',     desc: 'Recent server log entries.',                                usage: '/debug' },
   '/private':    { section: 'Power',     desc: 'Toggle private mode — suppresses memory writes.',           usage: '/private' },
@@ -3123,6 +3128,172 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       console.log(`\n  ${T.error}✗ Could not reach server.${T.reset}\n`)
     }
     return true
+  }
+
+  // ── /run [<file>|'-'|examples|help [ns]] ─────────────────────────────────────
+  if (command === '/run') {
+    const sub  = parts[1]
+    const D    = T.dim
+    const R    = T.reset
+    const O    = fg(COLORS.orange)
+    const G    = T.success
+
+    // ── /run help [<namespace>] ──────────────────────────────────────────────
+    if (sub === 'help') {
+      const ns = parts[2]?.toLowerCase()
+      try {
+        const { getSdkMethods, getSdkNamespaces, buildSdkSurface } = await import('../core/aidenSdk')
+        if (!ns) {
+          // Full SDK surface
+          const surface = buildSdkSurface()
+          console.log(panel({
+            title: `${MARKS.TRI} /run SDK reference`,
+            lines: ['', ...surface.split('\n').map(l => `  ${l}`), ''],
+            accent: COLORS.orange,
+          }))
+        } else {
+          // Namespace detail
+          const methods = getSdkMethods().filter(m => (m.namespace || '_top') === ns)
+          if (!methods.length) {
+            const namespaces = getSdkNamespaces().join(', ')
+            console.log(`\n  ${D}Unknown namespace "${ns}". Available: ${namespaces}${R}\n`)
+          } else {
+            const lines: string[] = ['']
+            for (const m of methods) {
+              lines.push(`  ${O}aiden.${ns}.${m.method}${R}`)
+              lines.push(`  ${D}${m.signature}${R}`)
+              lines.push(`  ${m.description}`)
+              lines.push('')
+            }
+            console.log(panel({ title: `${MARKS.TRI} aiden.${ns} — SDK detail`, lines, accent: COLORS.orange }))
+          }
+        }
+      } catch (e: any) {
+        console.log(`\n  ${T.error}✗ Could not load SDK: ${e?.message}${R}\n`)
+      }
+      return true
+    }
+
+    // ── /run examples ───────────────────────────────────────────────────────
+    if (sub === 'examples') {
+      const scriptDir = path.join(__dirname, '..', 'scripts')
+      const lines: string[] = ['']
+      try {
+        const files = fs.readdirSync(scriptDir).filter(f => f.endsWith('.js') || f.endsWith('.ts'))
+        if (!files.length) {
+          lines.push(`  ${D}No scripts found in scripts/${R}`)
+        } else {
+          for (const f of files) {
+            const firstLine = fs.readFileSync(path.join(scriptDir, f), 'utf8')
+              .split('\n').find(l => l.startsWith('//'))?.replace(/^\/\/\s*/, '') ?? ''
+            lines.push(`  ${O}${f.padEnd(32)}${R}${D}${firstLine}${R}`)
+          }
+          lines.push('')
+          lines.push(`  ${D}Run with: /run scripts/<file>.js${R}`)
+        }
+      } catch {
+        lines.push(`  ${D}scripts/ directory not found${R}`)
+      }
+      lines.push('')
+      console.log(panel({ title: `${MARKS.TRI} /run example scripts`, lines, accent: COLORS.orange }))
+      return true
+    }
+
+    // ── /run - [description] (stdin) ────────────────────────────────────────
+    if (sub === '-') {
+      const desc = parts.slice(2).join(' ')
+      console.log(`\n  ${D}Paste JavaScript (end with empty line):${R}`)
+      const codeLines: string[] = []
+      const rl2 = readline.createInterface({ input: process.stdin, terminal: false })
+      await new Promise<void>(resolve => {
+        rl2.on('line', ln => {
+          if (ln === '') { rl2.close(); resolve() }
+          else codeLines.push(ln)
+        })
+        rl2.on('close', resolve)
+      })
+      const code = codeLines.join('\n')
+      if (!code.trim()) { console.log(`\n  ${D}No code entered.${R}\n`); return true }
+      await _executeRunCode(code, desc, O, G, R, D)
+      return true
+    }
+
+    // ── /run <file> ──────────────────────────────────────────────────────────
+    if (sub) {
+      const filePath = path.isAbsolute(sub) ? sub : path.resolve(process.cwd(), sub)
+      try {
+        const code = fs.readFileSync(filePath, 'utf8')
+        const desc = parts.slice(2).join(' ') || path.basename(filePath)
+        await _executeRunCode(code, desc, O, G, R, D)
+      } catch (e: any) {
+        console.log(`\n  ${T.error}✗ Cannot read file: ${filePath}\n  ${e?.message}${R}\n`)
+      }
+      return true
+    }
+
+    // ── /run (no args) ───────────────────────────────────────────────────────
+    console.log(panel({
+      title: `${MARKS.TRI} /run — Aiden VM sandbox`,
+      lines: [
+        '',
+        `  ${D}Execute JavaScript with full Aiden SDK access.${R}`,
+        '',
+        `  ${O}Usage:${R}`,
+        `    ${D}/run <file.js>          ${R}Execute a script file`,
+        `    ${D}/run -                  ${R}Paste code from stdin (empty line = run)`,
+        `    ${D}/run examples           ${R}Browse example scripts in scripts/`,
+        `    ${D}/run help               ${R}Full SDK surface reference`,
+        `    ${D}/run help <namespace>   ${R}Detail for one namespace (web, file, shell…)`,
+        '',
+        `  ${O}SDK namespaces:${R}`,
+        `    ${D}aiden.web   aiden.file   aiden.shell   aiden.browser   aiden.screen${R}`,
+        `    ${D}aiden.memory   aiden.system   aiden.git   aiden.data${R}`,
+        '',
+      ],
+      accent: COLORS.orange,
+    }))
+    return true
+  }
+
+  /** Internal helper — POST code to /api/run and render result. */
+  async function _executeRunCode(
+    code: string,
+    description: string,
+    O: string, G: string, R: string, D: string,
+  ) {
+    console.log(`\n  ${D}▲ Running…${R}`)
+    const t0  = Date.now()
+    const res = await apiPost('/api/run', { code, description })
+    const ms  = Date.now() - t0
+
+    if (!res) {
+      console.log(`\n  ${T.error}✗ Could not reach server. Is Aiden running?${R}\n`)
+      return
+    }
+
+    const lines: string[] = ['']
+    if (res.output?.length) {
+      for (const l of res.output) lines.push(`  ${l}`)
+      lines.push('')
+    }
+    if (res.toolCalls?.length) {
+      lines.push(`  ${D}Tool calls (${res.toolCalls.length}):${R}`)
+      for (const tc of res.toolCalls) {
+        lines.push(`    ${D}${tc.tool.padEnd(20)} ${tc.durationMs}ms${R}`)
+      }
+      lines.push('')
+    }
+    const status = res.success
+      ? `${G}✓ success${R}  ${D}${ms}ms${R}`
+      : `${T.error}✗ error — ${res.error ?? 'unknown'}${R}`
+    lines.push(`  ${status}`)
+    lines.push('')
+
+    console.log(panel({
+      title: `${MARKS.TRI} /run${description ? ` — ${description}` : ''}`,
+      lines,
+      accent: res.success ? COLORS.success : COLORS.error,
+    }))
   }
 
   console.log(`  ${T.dim}Unknown command. /help for list.${T.reset}\n`)

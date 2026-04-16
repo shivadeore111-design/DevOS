@@ -2806,6 +2806,27 @@ export function createApiServer(): Express {
     res.json(mcpClient.listServers())
   })
 
+  // POST /api/run -- execute code in the Aiden VM sandbox
+  app.post('/api/run', async (req: Request, res: Response) => {
+    const { code, description, timeout, maxToolCalls } = req.body as {
+      code?: string; description?: string; timeout?: number; maxToolCalls?: number
+    }
+    if (!code) {
+      res.status(400).json({ error: 'code is required' })
+      return
+    }
+    try {
+      const { runInSandbox } = await import('../core/runSandbox')
+      const result = await runInSandbox(code, {
+        timeout:      typeof timeout      === 'number' ? timeout      : 30_000,
+        maxToolCalls: typeof maxToolCalls === 'number' ? maxToolCalls : 20,
+      })
+      res.json({ ...result, description: description ?? '' })
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message ?? String(err) })
+    }
+  })
+
   // POST /api/mcp/servers -- register a new MCP server and discover its tools
   app.post('/api/mcp/servers', async (req: Request, res: Response) => {
     const { name, url, description } = req.body as { name?: string; url?: string; description?: string }
