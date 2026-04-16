@@ -1604,6 +1604,7 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
 // ── Plugin-registered tools ───────────────────────────────────
 
 const externalTools: Record<string, (payload: any) => Promise<RawResult>> = {}
+const externalToolsMeta: Record<string, { source: string }> = {}
 
 export function registerExternalTool(
   name:   string,
@@ -1614,7 +1615,13 @@ export function registerExternalTool(
     const r = await fn(input)
     return { success: r.success, output: r.output }
   }
+  externalToolsMeta[name] = { source }
   console.log(`[ToolRegistry] Plugin "${source}" registered tool: ${name}`)
+}
+
+/** Returns a snapshot of all plugin-registered tool metadata (source, etc.). */
+export function getExternalToolsMeta(): Record<string, { source: string }> {
+  return { ...externalToolsMeta }
 }
 
 // ── Internal dispatcher — no retry, no timeout ────────────────

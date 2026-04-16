@@ -195,12 +195,14 @@ export function getNextAvailableAPI(): { provider: Provider; model: string; entr
   if (!available.length) return null
 
   // Score: lower is better — blend usage count, response time, and failure history
+  const primary = config.primaryProvider
   const scored = available
     .map(api => {
-      const avgMs      = responseTimesMs.get(api.name) ?? 2000  // assume 2s if unknown
-      const usageScore = (api.usageCount || 0) * 0.1
-      const timeScore  = avgMs / 1000
-      return { api, score: usageScore + timeScore }
+      const avgMs         = responseTimesMs.get(api.name) ?? 2000  // assume 2s if unknown
+      const usageScore    = (api.usageCount || 0) * 0.1
+      const timeScore     = avgMs / 1000
+      const primaryBoost  = (primary && (api.name === primary || api.provider === primary)) ? -1000 : 0
+      return { api, score: usageScore + timeScore + primaryBoost }
     })
     .sort((a, b) => a.score - b.score)
 
@@ -273,6 +275,11 @@ export function logProviderStatus(): void {
   const config = loadConfig()
   const apis   = mergeCustomProviders(config.providers.apis)
 
+  if (config.primaryProvider) {
+    console.log(`[Router] Primary provider: ${config.primaryProvider} (user override)`)
+  } else {
+    console.log('[Router] Primary provider: (default ordering)')
+  }
   console.log('[Router] Provider chain:')
   let order = 1
   for (const api of apis) {
@@ -393,10 +400,17 @@ export function getModelForTask(
   // Cerebras/nvidia excluded — 8B models cannot follow complex SOUL-based prompts.
   const CHAT_EXCLUDED = new Set(['cerebras', 'nvidia'])
   if (task === 'planner' || task === 'responder') {
-    const chatApis = available.filter(a => !CHAT_EXCLUDED.has(a.provider))
+    let chatApis = available.filter(a => !CHAT_EXCLUDED.has(a.provider))
+    // Primary provider pinning — move primary to front of chain
+    const primaryPin = config.primaryProvider
+    if (primaryPin && chatApis.length > 1) {
+      const idx = chatApis.findIndex(a => a.name === primaryPin || a.provider === primaryPin)
+      if (idx > 0) chatApis = [chatApis[idx], ...chatApis.slice(0, idx), ...chatApis.slice(idx + 1)]
+    }
     if (chatApis.length > 0) {
-      const chosen = chatApis[0]
-      console.log(`[Router] ${task}: ${chosen.name} (${chosen.provider}/${chosen.model})`)
+      const chosen    = chatApis[0]
+      const pinTag    = primaryPin && (chosen.name === primaryPin || chosen.provider === primaryPin) ? ' [primary]' : ''
+      console.log(`[Router] ${task}: ${chosen.name} (${chosen.provider}/${chosen.model})${pinTag}`)
       return resolveKey(chosen)
     }
     const model = getOllamaModelForTask(task === 'planner' ? 'planner' : 'responder')
@@ -520,5 +534,17 @@ export function enterDegradedMode(reason: string): DegradedResponse {
       'shell_exec', 'run_python', 'run_node', 'open_browser',
       'system_info', 'notify'],
     retryAfter: 60_000,
+  }
+}
+
+// ── In-memory health snapshot (for /api/providers/state) ─────
+
+export function getProviderHealthState(): {
+  consecutiveFailures: Record<string, number>
+  responseTimesMs:     Record<string, number>
+} {
+  return {
+    consecutiveFailures: Object.fromEntries(consecutiveFailures),
+    responseTimesMs:     Object.fromEntries(responseTimesMs),
   }
 }

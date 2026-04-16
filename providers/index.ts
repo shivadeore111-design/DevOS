@@ -67,6 +67,7 @@ export interface DevOSConfig {
     fallbackToOllama: boolean            // if all APIs rate limited, use Ollama
   }
   onboardingComplete:  boolean
+  primaryProvider?:    string               // name or provider slug pinned to front of chain
   customProviders?:    CustomProviderEntry[]
   telegram?:           TelegramConfig
   calendar?: {

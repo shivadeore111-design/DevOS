@@ -634,7 +634,7 @@ async function streamChat(message: string): Promise<void> {
 const COMMANDS = [
   '/new', '/reset', '/clear', '/history', '/stop',
   '/export', '/fork', '/checkpoint', '/help',
-  '/status', '/tools', '/providers', '/models', '/model',
+  '/status', '/tools', '/providers', '/models', '/model', '/primary',
   '/memory', '/goals', '/skills', '/recipes', '/sessions',
   '/analytics', '/budget', '/workspace',
   '/quick', '/compact', '/async', '/security', '/debug', '/config',
@@ -691,6 +691,7 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       helpSection('Config'),
       helpRow('/model <name>',      'Switch model'),
       helpRow('/provider <name>',   'Switch provider  (add / remove / test)'),
+      helpRow('/primary <name>',    'Pin provider to front of chain  (reset to clear)'),
       helpRow('/theme <name>',      'Change theme  (default mono slate ember)'),
       helpRow('/persona <name>',    'Change persona  (default concise technical)'),
       helpRow('/detail',            'Cycle detail level  (off → tools → verbose)'),
@@ -1507,6 +1508,34 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
   if (command === '/quit' || command === '/exit' || command === '/q') {
     printSessionSummary()
     process.exit(0)
+  }
+
+  // ── /primary [name|reset] ─────────────────────────────────────────────────────
+  if (command === '/primary') {
+    const arg = parts[1]
+    try {
+      if (!arg) {
+        // Show current primary
+        const data = await apiFetch<any>('/api/config/primary', {})
+        const pin = data?.primaryProvider
+        if (pin) console.log(`\n  ${T.success}Primary provider: ${pin}${T.reset}\n`)
+        else     console.log(`\n  ${T.dim}No primary provider set (default ordering)${T.reset}\n`)
+      } else if (arg === 'reset') {
+        const r = await fetch('http://localhost:4200/api/config/primary', { method: 'DELETE' })
+        if (r.ok) console.log(`\n  ${T.success}✓ Primary provider cleared — default ordering restored${T.reset}\n`)
+        else      console.log(`\n  ${T.error}✗ Failed to clear primary provider${T.reset}\n`)
+      } else {
+        const r = await fetch('http://localhost:4200/api/config/primary', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: arg }),
+        })
+        if (r.ok) console.log(`\n  ${T.success}✓ Primary provider pinned: ${arg}${T.reset}\n`)
+        else      console.log(`\n  ${T.error}✗ Failed to set primary provider${T.reset}\n`)
+      }
+    } catch {
+      console.log(`\n  ${T.error}✗ Could not reach server.${T.reset}\n`)
+    }
+    return true
   }
 
   console.log(`  ${T.dim}Unknown command. /help for list.${T.reset}\n`)

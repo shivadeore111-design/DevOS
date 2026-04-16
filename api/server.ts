@@ -1902,6 +1902,53 @@ export function createApiServer(): Express {
     res.json({ success: true })
   })
 
+  // ── Primary provider pin ─────────────────────────────────────
+
+  // GET /api/config/primary — get current primary provider pin
+  app.get('/api/config/primary', (_req: Request, res: Response) => {
+    const config = loadConfig()
+    res.json({ primaryProvider: config.primaryProvider || null })
+  })
+
+  // POST /api/config/primary — set primary provider (by name or provider slug)
+  app.post('/api/config/primary', (req: Request, res: Response) => {
+    const { name } = req.body as { name?: string }
+    if (!name) { res.status(400).json({ error: 'name required' }); return }
+    const config = loadConfig()
+    config.primaryProvider = name
+    saveConfig(config)
+    res.json({ success: true, primaryProvider: name })
+  })
+
+  // DELETE /api/config/primary — clear primary provider pin (restore default ordering)
+  app.delete('/api/config/primary', (_req: Request, res: Response) => {
+    const config = loadConfig()
+    delete config.primaryProvider
+    saveConfig(config)
+    res.json({ success: true, primaryProvider: null })
+  })
+
+  // GET /api/providers/state — diagnostic: live provider health from in-memory maps
+  app.get('/api/providers/state', (_req: Request, res: Response) => {
+    const { getProviderHealthState } = require('../providers/router') as typeof import('../providers/router')
+    const config  = loadConfig()
+    const health  = getProviderHealthState()
+    const primary = config.primaryProvider || null
+    const providers = config.providers.apis.map(api => ({
+      name:                api.name,
+      provider:            api.provider,
+      model:               api.model,
+      enabled:             api.enabled,
+      rateLimited:         api.rateLimited,
+      rateLimitedAt:       api.rateLimitedAt ?? null,
+      isPrimary:           primary ? (api.name === primary || api.provider === primary) : false,
+      consecutiveFailures: health.consecutiveFailures[api.name] ?? 0,
+      avgResponseMs:       health.responseTimesMs[api.name]     ?? null,
+    }))
+    const currentChain = providers.filter(p => p.enabled && !p.rateLimited)
+    res.json({ primary, providers, currentChain })
+  })
+
   // ── Custom provider endpoints ─────────────────────────────────
   // Store any OpenAI-compatible endpoint (Together AI, Fireworks, LM Studio, vLLM, etc.)
 
@@ -2697,12 +2744,20 @@ export function createApiServer(): Express {
     res.json(mcpClient.getAllCachedTools())
   })
 
-  // GET /api/tools — list all built-in tools from the tool registry
+  // GET /api/tools — list all built-in + plugin-registered tools
   app.get('/api/tools', (_req: Request, res: Response) => {
-    const { TOOLS, TOOL_DESCRIPTIONS } = require('../core/toolRegistry')
-    const names = Object.keys(TOOLS as Record<string, unknown>)
-    const descs = (TOOL_DESCRIPTIONS as Record<string, string>) || {}
-    res.json(names.map(name => ({ name, description: descs[name] || '' })))
+    const { TOOLS, TOOL_DESCRIPTIONS, getExternalToolsMeta } = require('../core/toolRegistry')
+    const names   = Object.keys(TOOLS as Record<string, unknown>)
+    const descs   = (TOOL_DESCRIPTIONS as Record<string, string>) || {}
+    const extMeta = (getExternalToolsMeta as () => Record<string, { source: string }>)()
+    const coreTools = names.map(name => ({ name, description: descs[name] || '', source: 'core' }))
+    const extTools  = Object.entries(extMeta).map(([name, m]) => ({
+      name,
+      description: descs[name] || '',
+      source:      m.source,
+      category:    m.source === 'slash-mirror' ? 'introspection' : 'plugin',
+    }))
+    res.json([...coreTools, ...extTools])
   })
 
   // GET  /api/cache/stats -- response cache statistics
