@@ -1451,7 +1451,7 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
         title: `${MARKS.TRI} ${arg} — source`,
         lines: [
           '',
-          `  ${T.dim}${'Source'.padEnd(10)}${T.reset}${sourceBadgeStr(s.source || '')}`,
+          `  ${T.dim}${'Source'.padEnd(10)}${T.reset}${sourceBadgeStr(s.origin || s.source || '')}`,
           `  ${T.dim}${'Path'.padEnd(10)}${T.reset}${T.dim}${s.filePath || '—'}${T.reset}`,
           `  ${T.dim}${'Version'.padEnd(10)}${T.reset}${T.dim}${s.version || '?'}${T.reset}`,
           '',
@@ -1545,7 +1545,7 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
           '',
           `  ${T.dim}${'Name'.padEnd(10)}${T.reset}${s.name}`,
           `  ${T.dim}${'Version'.padEnd(10)}${T.reset}${T.dim}${s.version || '?'}${T.reset}`,
-          `  ${T.dim}${'Source'.padEnd(10)}${T.reset}${sourceBadgeStr(s.source || '')}`,
+          `  ${T.dim}${'Source'.padEnd(10)}${T.reset}${sourceBadgeStr(s.origin || s.source || '')}`,
           `  ${T.dim}${'Enabled'.padEnd(10)}${T.reset}${s.enabled !== false
             ? `${fg(COLORS.success)}● yes${RST}` : `${T.dim}○ no${T.reset}`}`,
           `  ${T.dim}${'Tags'.padEnd(10)}${T.reset}${T.dim}${(s.tags || []).join(', ') || '—'}${T.reset}`,
@@ -1567,7 +1567,7 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
            ?? skills[parseInt(key, 10) - 1]
       if (!s) { console.log(`  ${T.error}No skill matching "${key}".${T.reset}\n`); return true }
       const skillName   = s.name || '(unnamed)'
-      const sourceBadge = sourceBadgeStr(s.source || s.type || '')
+      const sourceBadge = sourceBadgeStr(s.origin || s.source || s.type || '')
       const trust       = trustStars(s.trust ?? 3)
       const detailLines: string[] = ['']
       if (s.description) {
@@ -1625,7 +1625,7 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       String(start + i + 1),
       (s.name || '').substring(0, 20),
       (s.description || '').substring(0, 55),
-      sourceBadgeStr(s.source || s.type || ''),
+      sourceBadgeStr(s.origin || s.source || s.type || ''),
       trustStars(s.trust ?? 3),
     ])
     const footerStats = `${total} skills · ${installed} installed${pro > 0 ? ` · ${pro} pro` : ''} · page ${page + 1}/${pages}`

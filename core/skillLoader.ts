@@ -117,6 +117,7 @@ export interface Skill {
   tags:        string[]
   content:     string
   filePath:    string
+  origin:      'aiden' | 'community' | 'local'
 }
 
 // Keywords that map skills to task categories
@@ -224,10 +225,13 @@ export class SkillLoader {
     try {
       const match = raw.match(/^---\s*([\s\S]*?)\s*---\s*([\s\S]*)$/)
 
+      const origin: 'aiden' | 'community' | 'local' =
+        filePath.includes(path.sep + 'workspace' + path.sep) ? 'local' : 'aiden'
+
       if (!match) {
         // No frontmatter — use directory name as skill name
         const name = path.basename(path.dirname(filePath))
-        return { name, description: name, version: '1.0.0', tags: [name], content: raw.trim(), filePath }
+        return { name, description: name, version: '1.0.0', tags: [name], content: raw.trim(), filePath, origin }
       }
 
       const frontmatter = match[1]
@@ -252,6 +256,7 @@ export class SkillLoader {
         tags,
         content,
         filePath,
+        origin,
       }
     } catch { return null }
   }
