@@ -1599,6 +1599,30 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
       return { success: false, output: '', error: `Compact failed: ${e.message}` }
     }
   },
+
+  // ── ▲ run — execute JavaScript/TypeScript in the Aiden SDK sandbox ──────
+  run: async (p) => {
+    const code        = p.code || p.script || ''
+    const description = p.description || ''
+    if (!code) return { success: false, output: '', error: 'No code provided' }
+    try {
+      // Lazy import to avoid circular dependency at module init
+      const { runInSandbox }  = await import('./runSandbox')
+      const result = await runInSandbox(code, { timeout: p.timeout ?? 30000, maxToolCalls: p.maxToolCalls ?? 20 })
+      const summary = [
+        description ? `// ${description}` : '',
+        result.output.join('\n'),
+        result.error ? `[error] ${result.error}` : '',
+        result.toolCalls.length > 0
+          ? `[tools] ${result.toolCalls.map(c => `${c.tool}(${c.durationMs}ms)`).join(', ')}`
+          : '',
+        `[duration] ${result.durationMs}ms`,
+      ].filter(Boolean).join('\n')
+      return { success: result.success, output: summary, error: result.error }
+    } catch (e: any) {
+      return { success: false, output: '', error: e.message }
+    }
+  },
 }
 
 // ── Plugin-registered tools ───────────────────────────────────
@@ -1956,6 +1980,7 @@ const TOOL_CATEGORIES: Record<string, ToolCategory[]> = {
   whoami:                  ['introspection'],
   channels_status:         ['introspection'],
   goals:                   ['introspection', 'memory'],
+  run:                     ['code'],
 }
 
 export function detectToolCategories(message: string): ToolCategory[] {

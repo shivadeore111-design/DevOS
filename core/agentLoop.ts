@@ -870,6 +870,28 @@ WHEN TO USE TOOLS vs NOT:
 - System info → system_info
 - Research with real sources → deep_research
 - Git repo state (status, branch, commits, changes) → git_status — ALWAYS run the tool, never answer from training data
+- Compound tasks needing multiple steps (fetch + process + save) → run
+
+## When to use the run tool
+
+For compound tasks that need multiple steps, prefer run over separate tool calls.
+Write JavaScript that composes the aiden SDK:
+
+  aiden.web.search(query), aiden.file.write(path, content), aiden.shell.exec(cmd), etc.
+
+This collapses what would be 5 LLM turns into 1. Much faster.
+
+Example — instead of:
+  turn 1: web_search("hn top")
+  turn 2: fetch_url(article[0].url)
+  turn 3: web_search(related)
+  turn 4: file_write(summary)
+
+Use run:
+  const top = await aiden.web.search("hn top")
+  const article = await aiden.web.fetch(top[0].url)
+  const related = await aiden.web.search(article.title)
+  await aiden.file.write("/tmp/brief.md", ...)
 
 ❌ Do NOT use tools for:
 - "What is the capital of X" → just answer
