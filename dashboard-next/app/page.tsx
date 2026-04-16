@@ -1184,6 +1184,192 @@ function ApiKeysTab() {
   )
 }
 
+// ── CustomProvidersTab ────────────────────────────────────────
+
+const CUSTOM_TEMPLATES: {
+  id: string; label: string; baseUrl: string; defaultModel: string; keyRequired: boolean; docsUrl: string
+}[] = [
+  { id: 'together',  label: 'Together AI',   baseUrl: 'https://api.together.xyz/v1/chat/completions',            defaultModel: 'meta-llama/Llama-3-70b-chat-hf',   keyRequired: true,  docsUrl: 'https://api.together.ai' },
+  { id: 'fireworks', label: 'Fireworks AI',  baseUrl: 'https://api.fireworks.ai/inference/v1/chat/completions',  defaultModel: 'accounts/fireworks/models/llama-v3p1-70b-instruct', keyRequired: true, docsUrl: 'https://fireworks.ai' },
+  { id: 'deepinfra', label: 'DeepInfra',     baseUrl: 'https://api.deepinfra.com/v1/openai/chat/completions',   defaultModel: 'meta-llama/Llama-3.3-70B-Instruct', keyRequired: true,  docsUrl: 'https://deepinfra.com/dash' },
+  { id: 'perplexity',label: 'Perplexity',    baseUrl: 'https://api.perplexity.ai/chat/completions',             defaultModel: 'llama-3.1-sonar-large-128k-online', keyRequired: true,  docsUrl: 'https://docs.perplexity.ai' },
+  { id: 'lmstudio',  label: 'LM Studio',     baseUrl: 'http://localhost:1234/v1/chat/completions',              defaultModel: 'local-model',                       keyRequired: false, docsUrl: 'https://lmstudio.ai' },
+  { id: 'ollama-oc', label: 'Ollama (OpenAI compat)', baseUrl: 'http://localhost:11434/v1/chat/completions',    defaultModel: 'llama3.2',                          keyRequired: false, docsUrl: 'https://ollama.com' },
+  { id: 'vllm',      label: 'vLLM / TabbyAPI', baseUrl: 'http://localhost:8000/v1/chat/completions',           defaultModel: 'your-model-name',                   keyRequired: false, docsUrl: 'https://docs.vllm.ai' },
+  { id: 'custom',    label: 'Custom Endpoint', baseUrl: '',                                                     defaultModel: '',                                  keyRequired: false, docsUrl: '' },
+]
+
+function CustomProvidersTab() {
+  const [customProviders, setCustomProviders]   = useState<any[]>([])
+  const [loading, setLoading]                   = useState(true)
+  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null)
+  const [form, setForm]                         = useState({ displayName: '', baseUrl: '', apiKey: '', model: '', tier: 5 })
+  const [saving, setSaving]                     = useState(false)
+  const [testing, setTesting]                   = useState<string | null>(null)
+  const [testResult, setTestResult]             = useState<Record<string, { ok: boolean; msg: string }>>({})
+
+  const fetchList = async () => {
+    try {
+      const r    = await fetch('http://localhost:4200/api/providers/custom')
+      const data = await r.json() as any
+      setCustomProviders(data.customProviders || [])
+    } catch { /* server may be starting */ }
+    setLoading(false)
+  }
+
+  useEffect(() => { fetchList() }, [])
+
+  const pickTemplate = (tid: string) => {
+    const t = CUSTOM_TEMPLATES.find(t => t.id === tid)
+    if (!t) return
+    setSelectedTemplate(tid)
+    setForm({ displayName: t.label, baseUrl: t.baseUrl, apiKey: '', model: t.defaultModel, tier: 5 })
+  }
+
+  const handleSave = async () => {
+    if (!form.displayName || !form.baseUrl || !form.model) return
+    setSaving(true)
+    try {
+      await fetch('http://localhost:4200/api/providers/custom', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(form),
+      })
+      setSelectedTemplate(null)
+      setForm({ displayName: '', baseUrl: '', apiKey: '', model: '', tier: 5 })
+      await fetchList()
+    } catch { /* noop */ }
+    setSaving(false)
+  }
+
+  const handleDelete = async (id: string) => {
+    await fetch(`http://localhost:4200/api/providers/custom/${id}`, { method: 'DELETE' })
+    await fetchList()
+  }
+
+  const handleTest = async (id: string) => {
+    setTesting(id)
+    try {
+      const r    = await fetch(`http://localhost:4200/api/providers/custom/${id}/test`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+      const data = await r.json() as any
+      setTestResult(prev => ({ ...prev, [id]: { ok: data.valid, msg: data.valid ? `✓ ${data.reply || 'ok'}` : `✗ ${data.error || 'failed'}` } }))
+    } catch (e: any) {
+      setTestResult(prev => ({ ...prev, [id]: { ok: false, msg: `✗ ${e.message}` } }))
+    }
+    setTesting(null)
+  }
+
+  const inputStyle: CSSProperties = {
+    width: '100%', background: 'var(--bg3)', border: '1px solid var(--border2)',
+    borderRadius: 6, padding: '7px 10px', fontFamily: 'var(--mono)', fontSize: 11,
+    color: 'var(--text)', outline: 'none', boxSizing: 'border-box', marginBottom: 6,
+  }
+
+  return (
+    <div>
+      <div style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 12, fontFamily: 'var(--mono)' }}>
+        Any OpenAI-Compatible Endpoint
+      </div>
+
+      {/* Existing custom providers */}
+      {!loading && customProviders.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'var(--mono)', marginBottom: 8 }}>Configured</div>
+          {customProviders.map((cp: any) => (
+            <div key={cp.id} style={{
+              background: 'var(--bg2)', border: '1px solid var(--border)',
+              borderRadius: 8, padding: '10px 14px', marginBottom: 6,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ width: 7, height: 7, borderRadius: '50%', background: cp.enabled ? 'var(--green)' : 'var(--muted)', flexShrink: 0 }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 12, color: 'var(--text)', fontFamily: 'var(--mono)' }}>{cp.displayName}</div>
+                  <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'var(--mono)', marginTop: 2 }}>{cp.baseUrl} · {cp.model}</div>
+                  {testResult[cp.id] && (
+                    <div style={{ fontSize: 10, fontFamily: 'var(--mono)', marginTop: 3, color: testResult[cp.id].ok ? 'var(--green)' : 'var(--red)' }}>
+                      {testResult[cp.id].msg}
+                    </div>
+                  )}
+                </div>
+                <button onClick={() => handleTest(cp.id)} disabled={testing === cp.id} style={{
+                  fontSize: 10, padding: '2px 8px', borderRadius: 4, cursor: 'pointer',
+                  background: 'transparent', border: '1px solid var(--border2)', color: 'var(--muted2)', fontFamily: 'var(--mono)',
+                }}>
+                  {testing === cp.id ? '...' : 'test'}
+                </button>
+                <button onClick={() => handleDelete(cp.id)} style={{
+                  fontSize: 10, padding: '2px 8px', borderRadius: 4, cursor: 'pointer',
+                  background: 'transparent', border: '1px solid rgba(239,68,68,0.3)', color: 'var(--red)', fontFamily: 'var(--mono)',
+                }}>✕</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {loading && <div style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--mono)', marginBottom: 12 }}>Loading...</div>}
+
+      {/* Template picker */}
+      <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'var(--mono)', marginBottom: 8 }}>Add Provider</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 12 }}>
+        {CUSTOM_TEMPLATES.map(t => (
+          <button key={t.id} onClick={() => pickTemplate(t.id)} style={{
+            padding: '3px 10px', borderRadius: 5, fontSize: 10, cursor: 'pointer',
+            background: selectedTemplate === t.id ? 'rgba(249,115,22,0.12)' : 'var(--bg2)',
+            border: `1px solid ${selectedTemplate === t.id ? 'rgba(249,115,22,0.3)' : 'var(--border2)'}`,
+            color: selectedTemplate === t.id ? 'var(--orange)' : 'var(--muted2)',
+            fontFamily: 'var(--mono)',
+          }}>{t.label}</button>
+        ))}
+      </div>
+
+      {/* Add form */}
+      {selectedTemplate !== null && (
+        <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, padding: 14, marginBottom: 8 }}>
+          {CUSTOM_TEMPLATES.find(t => t.id === selectedTemplate)?.docsUrl && (
+            <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'var(--mono)', marginBottom: 8 }}>
+              Docs:{' '}
+              <a href={CUSTOM_TEMPLATES.find(t => t.id === selectedTemplate)?.docsUrl} target="_blank" rel="noopener" style={{ color: 'var(--orange)', textDecoration: 'none' }}>
+                {CUSTOM_TEMPLATES.find(t => t.id === selectedTemplate)?.docsUrl}
+              </a>
+            </div>
+          )}
+          <input placeholder="Display name *" value={form.displayName} onChange={e => setForm(f => ({ ...f, displayName: e.target.value }))} style={inputStyle} />
+          <input placeholder="Base URL (full chat/completions endpoint) *" value={form.baseUrl} onChange={e => setForm(f => ({ ...f, baseUrl: e.target.value }))} style={inputStyle} />
+          <input placeholder="API key (leave empty for local)" value={form.apiKey} onChange={e => setForm(f => ({ ...f, apiKey: e.target.value }))} style={{ ...inputStyle, fontFamily: 'monospace' }} type="password" />
+          <input placeholder="Model name *" value={form.model} onChange={e => setForm(f => ({ ...f, model: e.target.value }))} style={inputStyle} />
+          <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+            <button
+              onClick={handleSave}
+              disabled={!form.displayName || !form.baseUrl || !form.model || saving}
+              style={{
+                flex: 1, padding: '7px', borderRadius: 6, cursor: 'pointer',
+                background: 'var(--orange)', border: 'none',
+                color: '#000', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600,
+                opacity: (!form.displayName || !form.baseUrl || !form.model || saving) ? 0.5 : 1,
+              }}
+            >
+              {saving ? 'Saving...' : 'Save Provider'}
+            </button>
+            <button onClick={() => setSelectedTemplate(null)} style={{
+              padding: '7px 14px', borderRadius: 6, cursor: 'pointer',
+              background: 'transparent', border: '1px solid var(--border2)',
+              color: 'var(--muted)', fontFamily: 'var(--mono)', fontSize: 11,
+            }}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      <div style={{ marginTop: 12, padding: 10, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6 }}>
+        <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'var(--mono)', lineHeight: 1.7 }}>
+          Custom providers use the OpenAI chat/completions wire format.<br />
+          They join the routing chain before Ollama fallback (tier 5).<br />
+          Leave API key empty for local endpoints (LM Studio, vLLM, Ollama).
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── KnowledgeBaseTab ──────────────────────────────────────────
 
 // Format badge colours: PDF=red, EPUB=purple, TXT=blue, MD=green
@@ -3934,6 +4120,7 @@ const SETTINGS_TABS = [
   { id: 'updates',  label: '🔄 Updates'     },
   { id: 'profile',  label: '👤 My Profile'  },
   { id: 'api',      label: '🔑 API Keys'    },
+  { id: 'custom',   label: '🔌 Custom Providers' },
   { id: 'model',    label: '🧠 Model'        },
   { id: 'usage',    label: '📊 Usage'        },
   { id: 'knowledge',label: '📚 Knowledge'   },
@@ -4004,6 +4191,7 @@ function SettingsDrawer() {
         <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
           {settingsTab === 'profile'   && <UserProfileTab />}
           {settingsTab === 'api'       && <ApiKeysTab />}
+          {settingsTab === 'custom'    && <CustomProvidersTab />}
           {settingsTab === 'knowledge' && <KnowledgeBaseTab />}
           {settingsTab === 'updates'   && <UpdatesTab />}
 

@@ -425,7 +425,7 @@ export function createApiServer(): Express {
 
   // GET /api/health â€” liveness probe (no auth required)
   app.get('/api/health', (_req: Request, res: Response) => {
-    res.json({ status: 'ok', version: '3.3.1', timestamp: new Date().toISOString() })
+    res.json({ status: 'ok', version: '3.4.0', timestamp: new Date().toISOString() })
   })
 
   // ── Update endpoints ─────────────────────────────────────────
@@ -437,7 +437,7 @@ export function createApiServer(): Express {
       const result = await checkForUpdate()
       res.json(result)
     } catch (e: any) {
-      res.json({ available: false, currentVersion: '3.3.1', error: e.message })
+      res.json({ available: false, currentVersion: '3.4.0', error: e.message })
     }
   })
 
@@ -1825,6 +1825,100 @@ export function createApiServer(): Express {
     config.model = { active: active || 'ollama', activeModel: activeModel || 'mistral:7b' }
     saveConfig(config)
     res.json({ success: true })
+  })
+
+  // ── Custom provider endpoints ─────────────────────────────────
+  // Store any OpenAI-compatible endpoint (Together AI, Fireworks, LM Studio, vLLM, etc.)
+
+  // GET /api/providers/custom — list all custom providers (keys masked)
+  app.get('/api/providers/custom', (_req: Request, res: Response) => {
+    const config = loadConfig()
+    const list   = (config.customProviders || []).map(cp => ({
+      ...cp,
+      apiKey: cp.apiKey ? '***' : '',
+    }))
+    res.json({ customProviders: list })
+  })
+
+  // POST /api/providers/custom — add or update a custom provider
+  app.post('/api/providers/custom', (req: Request, res: Response) => {
+    const { id, displayName, baseUrl, apiKey, model, enabled = true, tier = 5 } = req.body as {
+      id?: string; displayName?: string; baseUrl?: string
+      apiKey?: string; model?: string; enabled?: boolean; tier?: number
+    }
+    if (!displayName || !baseUrl || !model) {
+      res.status(400).json({ error: 'displayName, baseUrl, and model are required' })
+      return
+    }
+    const config = loadConfig()
+    if (!config.customProviders) config.customProviders = []
+
+    const slug = id || displayName.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' +
+      (config.customProviders.length + 1)
+
+    const entry = {
+      id:          slug,
+      displayName,
+      baseUrl,
+      apiKey:      apiKey || '',
+      model,
+      enabled:     enabled !== false,
+      tier:        typeof tier === 'number' ? tier : 5,
+    }
+
+    const idx = config.customProviders.findIndex(cp => cp.id === slug)
+    if (idx >= 0) config.customProviders[idx] = entry
+    else          config.customProviders.push(entry)
+
+    saveConfig(config)
+    res.json({ success: true, entry: { ...entry, apiKey: entry.apiKey ? '***' : '' } })
+  })
+
+  // DELETE /api/providers/custom/:id — remove a custom provider
+  app.delete('/api/providers/custom/:id', (req: Request, res: Response) => {
+    const config = loadConfig()
+    if (!config.customProviders) { res.json({ success: true }); return }
+    config.customProviders = config.customProviders.filter(cp => cp.id !== req.params.id)
+    saveConfig(config)
+    res.json({ success: true })
+  })
+
+  // POST /api/providers/custom/:id/test — test a custom provider endpoint
+  app.post('/api/providers/custom/:id/test', async (req: Request, res: Response) => {
+    const config = loadConfig()
+    const cp     = (config.customProviders || []).find(c => c.id === req.params.id)
+    if (!cp) { res.status(404).json({ valid: false, error: 'Custom provider not found' }); return }
+
+    // Allow inline override of baseUrl/apiKey/model for “test before save” UX
+    const baseUrl = (req.body as any).baseUrl || cp.baseUrl
+    const apiKey  = (req.body as any).apiKey  || cp.apiKey
+    const model   = (req.body as any).model   || cp.model
+
+    try {
+      const r = await fetch(baseUrl, {
+        method:  'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {}),
+        },
+        body:   JSON.stringify({
+          model,
+          messages: [{ role: 'user', content: 'Say “ok” in one word only.' }],
+          max_tokens: 10,
+          stream:    false,
+        }),
+        signal: AbortSignal.timeout(10_000),
+      })
+      const data  = await r.json() as any
+      const reply = data?.choices?.[0]?.message?.content || ''
+      if (!r.ok) {
+        res.json({ valid: false, status: r.status, error: JSON.stringify(data) })
+        return
+      }
+      res.json({ valid: true, status: r.status, reply: reply.substring(0, 80) })
+    } catch (err: any) {
+      res.json({ valid: false, error: err.message })
+    }
   })
 
   // â”€â”€ Knowledge Base endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -4247,7 +4341,7 @@ export function startApiServer(portArg?: number): Express {
     console.log(`  session_stop:    ${getHookCount('session_stop')} handler(s)`)
     console.log(`  after_tool_call: ${getHookCount('after_tool_call')} handler(s)`)
 
-    console.log(`[API] DevOS v3.3.1 - Aiden running at http://${host}:${port}`)
+    console.log(`[API] DevOS v3.4.0 - Aiden running at http://${host}:${port}`)
     console.log(`[API] Health: http://${host}:${port}/api/health`)
     console.log(`[API] LivePulse WS: ws://${host}:${port}`)
   })

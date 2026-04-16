@@ -6,7 +6,7 @@
 // providers/router.ts — Smart multi-API routing engine
 // Round-robin across available keys, auto-marks 429s, falls back to Ollama
 
-import { loadConfig, saveConfig, APIEntry } from './index'
+import { loadConfig, saveConfig, APIEntry, CustomProviderEntry } from './index'
 import { ollamaProvider } from './ollama'
 import { createGroqProvider } from './groq'
 import { createOpenRouterProvider } from './openrouter'
@@ -14,6 +14,7 @@ import { createGeminiProvider } from './gemini'
 import { createCerebrasProvider } from './cerebras'
 import { createNvidiaProvider } from './nvidia'
 import { createBOAProvider } from './boa'
+import { createCustomProvider } from './custom'
 import { Provider } from './types'
 import { discoverLocalModels, DiscoveredModels } from '../core/modelDiscovery'
 
@@ -34,6 +35,7 @@ const RATE_LIMIT_WINDOWS: Record<string, number> = {
   cloudflare: 30  * 1000,
   github:     30  * 1000,
   boa:        30  * 1000,
+  custom:     30  * 1000,  // user-defined endpoints — 30 s default
   ollama:     0,           // local — never rate-limited
 }
 const DEFAULT_RATE_LIMIT_MS = 60 * 1000 // 1 minute fallback
@@ -109,8 +111,39 @@ function buildProvider(entry: APIEntry): Provider {
     case 'cerebras':   return createCerebrasProvider(key)
     case 'nvidia':     return createNvidiaProvider(key)
     case 'boa':        return createBOAProvider(key)
+    case 'custom':     return createCustomProvider(entry.baseUrl || '', key, entry.name)
     default:           return ollamaProvider
   }
+}
+
+// ── Convert a CustomProviderEntry to a transient APIEntry ─────
+// Lets custom providers flow through the same scoring + routing
+// machinery as built-in APIs without modifying that logic.
+
+function customToAPIEntry(cp: CustomProviderEntry): APIEntry {
+  return {
+    name:        cp.id,
+    provider:    'custom',
+    key:         cp.apiKey,
+    model:       cp.model,
+    enabled:     cp.enabled,
+    rateLimited: false,
+    usageCount:  0,
+    baseUrl:     cp.baseUrl,
+  }
+}
+
+// ── Merge custom providers into an APIEntry pool ──────────────
+// Inserts enabled custom providers in tier order before Ollama.
+// Skips providers whose baseUrl is empty.
+
+function mergeCustomProviders(base: APIEntry[]): APIEntry[] {
+  const config  = loadConfig()
+  const customs = (config.customProviders || [])
+    .filter(cp => cp.enabled && cp.baseUrl.trim().length > 0)
+    .sort((a, b) => a.tier - b.tier)
+    .map(customToAPIEntry)
+  return [...base, ...customs]
 }
 
 // ── Auto-reset stale rate limits ──────────────────────────────
@@ -140,8 +173,11 @@ function autoResetExpiredLimits(): boolean {
 export function getNextAvailableAPI(): { provider: Provider; model: string; entry: APIEntry } | null {
   autoResetExpiredLimits()
   const config    = loadConfig()
-  const available = config.providers.apis.filter(api => {
+  const allApis   = mergeCustomProviders(config.providers.apis)
+  const available = allApis.filter(api => {
     if (!api.enabled || api.rateLimited) return false
+    // Custom providers use baseUrl instead of a key — allow empty key for local endpoints
+    if (api.provider === 'custom') return (api.baseUrl || '').trim().length > 0
     // Resolve the actual key value — skip if env var is missing or empty
     const resolvedKey = api.key.startsWith('env:')
       ? (process.env[api.key.replace('env:', '')] || '')
@@ -205,11 +241,17 @@ export function incrementUsage(apiName: string): void {
 
 export function logProviderStatus(): void {
   const config = loadConfig()
-  const apis   = config.providers.apis
+  const apis   = mergeCustomProviders(config.providers.apis)
 
   console.log('[Router] Provider chain:')
   let order = 1
   for (const api of apis) {
+    if (api.provider === 'custom') {
+      const hasUrl = (api.baseUrl || '').trim().length > 0
+      const status = !api.enabled ? 'disabled' : !hasUrl ? 'SKIPPED (no url)' : `#${order++} active`
+      console.log(`  ${api.name} (custom/${api.model}) - [${hasUrl ? 'url OK' : 'NO URL'}] - ${status}`)
+      continue
+    }
     const resolvedKey = api.key.startsWith('env:')
       ? (process.env[api.key.replace('env:', '')] || '')
       : api.key
@@ -315,8 +357,10 @@ export function getModelForTask(
 
   autoResetExpiredLimits()
   const config    = loadConfig()
-  const available = config.providers.apis.filter(a => {
+  const allApis   = mergeCustomProviders(config.providers.apis)
+  const available = allApis.filter(a => {
     if (!a.enabled || a.rateLimited) return false
+    if (a.provider === 'custom') return (a.baseUrl || '').trim().length > 0
     const k = a.key.startsWith('env:') ? (process.env[a.key.replace('env:', '')] || '') : a.key
     return k.length > 0
   })

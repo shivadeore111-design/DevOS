@@ -629,7 +629,7 @@ ${B}  Info${R}
 ${B}  Config${R}
   ${D}${hr()}${R}
   ${P}/model${R} <name>        Switch model
-  ${P}/provider${R} <name>     Switch provider
+  ${P}/provider${R} <name>     Switch provider (or add / remove <id> / test <id>)
   ${P}/theme${R} <name>        Change theme (default mono slate ember)
   ${P}/persona${R} <name>      Change persona (default concise technical)
   ${P}/detail${R}              Cycle detail level (off → tools → verbose)
@@ -769,14 +769,25 @@ ${B}  Exit${R}
 
   // ── /providers ─────────────────────────────────────────────────────────────────
   if (command === '/providers') {
-    const data = await apiFetch<any>('/api/providers', { apis: [], routing: {} })
-    const apis  = Array.isArray(data.apis) ? data.apis : []
+    const [data, customData] = await Promise.all([
+      apiFetch<any>('/api/providers', { apis: [], routing: {} }),
+      apiFetch<any>('/api/providers/custom', { customProviders: [] }),
+    ])
+    const apis    = Array.isArray(data.apis) ? data.apis : []
+    const customs = Array.isArray(customData.customProviders) ? customData.customProviders : []
     console.log(`\n  ${T.bold}Providers${T.reset}`)
     console.log(`  ${T.dim}${hr()}${T.reset}`)
     for (const a of apis) {
       const dot = a.enabled && a.hasKey ? `${T.success}●` : `${T.dim}○`
       const rl  = a.rateLimited ? ` ${T.warning}[rate-limited]${T.reset}` : ''
       console.log(`  ${dot}${T.reset} ${(a.name || '').padEnd(18)}${T.dim}${a.model || ''}${T.reset}${rl}`)
+    }
+    if (customs.length > 0) {
+      console.log(`\n  ${T.dim}Custom (OpenAI-compat)${T.reset}`)
+      for (const cp of customs) {
+        const dot = cp.enabled ? `${T.success}●` : `${T.dim}○`
+        console.log(`  ${dot}${T.reset} ${(cp.id || '').padEnd(18)}${T.dim}${cp.displayName} · ${cp.model || ''}${T.reset}`)
+      }
     }
     if (data.routing?.mode) console.log(`\n  ${T.dim}Routing: ${data.routing.mode}${T.reset}`)
     console.log()
@@ -1201,10 +1212,79 @@ ${B}  Exit${R}
     return true
   }
 
-  // ── /provider <name> ───────────────────────────────────────────────────────────
+  // ── /provider [sub] ────────────────────────────────────────────────────────────
   if (command === '/provider') {
-    const name = parts[1]
-    if (!name) { console.log(`  ${T.dim}Usage: /provider <name>${T.reset}\n`); return true }
+    const sub = parts[1]
+
+    // /provider add — interactive wizard for adding a custom provider
+    if (sub === 'add') {
+      const rl2 = readline.createInterface({ input: process.stdin, output: process.stdout })
+      const ask = (q: string) => new Promise<string>(res => rl2.question(`  ${T.dim}${q}${T.reset} `, res))
+      try {
+        console.log(`\n  ${T.bold}Add Custom Provider${T.reset}`)
+        console.log(`  ${T.dim}Any OpenAI-compatible chat/completions endpoint.${T.reset}\n`)
+        const displayName = await ask('Display name:')
+        const baseUrl     = await ask('Base URL (full endpoint):')
+        const apiKey      = await ask('API key (enter to skip):')
+        const model       = await ask('Model name:')
+        rl2.close()
+        if (!displayName.trim() || !baseUrl.trim() || !model.trim()) {
+          console.log(`  ${T.error}✗ display name, URL and model are required.${T.reset}\n`)
+          return true
+        }
+        const r = await fetch('http://localhost:4200/api/providers/custom', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ displayName, baseUrl, apiKey, model }),
+        })
+        if (r.ok) {
+          const d = await r.json() as any
+          console.log(`  ${T.success}✓ Added: ${d.entry?.id || displayName}${T.reset}\n`)
+        } else {
+          console.log(`  ${T.error}✗ Failed to add provider.${T.reset}\n`)
+        }
+      } catch {
+        rl2.close()
+        console.log(`  ${T.error}✗ Aborted.${T.reset}\n`)
+      }
+      return true
+    }
+
+    // /provider remove <id>
+    if (sub === 'remove') {
+      const id = parts[2]
+      if (!id) { console.log(`  ${T.dim}Usage: /provider remove <id>${T.reset}\n`); return true }
+      const r = await fetch(`http://localhost:4200/api/providers/custom/${id}`, { method: 'DELETE' })
+      if (r.ok) console.log(`  ${T.success}✓ Removed: ${id}${T.reset}\n`)
+      else      console.log(`  ${T.error}✗ Could not remove ${id}${T.reset}\n`)
+      return true
+    }
+
+    // /provider test <id>
+    if (sub === 'test') {
+      const id = parts[2]
+      if (!id) { console.log(`  ${T.dim}Usage: /provider test <id>${T.reset}\n`); return true }
+      process.stdout.write(`  ${T.dim}Testing ${id}...${T.reset}`)
+      try {
+        const r    = await fetch(`http://localhost:4200/api/providers/custom/${id}/test`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+        })
+        const data = await r.json() as any
+        process.stdout.write('\r\x1b[K')
+        if (data.valid) console.log(`  ${T.success}✓ ${id}: ${data.reply || 'ok'}${T.reset}\n`)
+        else            console.log(`  ${T.error}✗ ${id}: ${data.error || 'failed'}${T.reset}\n`)
+      } catch (e: any) {
+        process.stdout.write('\r\x1b[K')
+        console.log(`  ${T.error}✗ ${id}: ${e.message}${T.reset}\n`)
+      }
+      return true
+    }
+
+    // /provider <name> — switch active provider (legacy behaviour)
+    const name = sub
+    if (!name) {
+      console.log(`  ${T.dim}Usage: /provider <name>  |  /provider add  |  /provider remove <id>  |  /provider test <id>${T.reset}\n`)
+      return true
+    }
     const res = await apiPost('/api/providers/active', { provider: name })
     if (res) {
       state.lastProvider = name

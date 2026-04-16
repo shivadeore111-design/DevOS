@@ -25,13 +25,26 @@ export interface TelegramConfig {
 
 export interface APIEntry {
   name:           string        // e.g. "groq-1", "groq-2"
-  provider:       string        // "groq" | "openrouter" | "gemini" | "cerebras" | "nvidia"
+  provider:       string        // "groq" | "openrouter" | "gemini" | "cerebras" | "nvidia" | "custom"
   key:            string        // actual API key (or "env:VAR_NAME")
   model:          string        // default model for this entry
   enabled:        boolean       // user can disable without deleting
   rateLimited:    boolean       // auto-set to true when 429 hit
   rateLimitedAt?: number        // timestamp when rate limited
   usageCount:     number        // how many times used this session
+  baseUrl?:       string        // only for provider === 'custom'
+}
+
+// ── Custom provider entry (OpenAI-compatible endpoints) ───────
+
+export interface CustomProviderEntry {
+  id:           string   // unique slug, e.g. "together-1"
+  displayName:  string   // human label, e.g. "Together AI"
+  baseUrl:      string   // full chat completions URL
+  apiKey:       string   // bearer token (or empty for local)
+  model:        string   // default model name
+  enabled:      boolean
+  tier:         number   // insertion priority — lower = preferred; 5 = before Ollama fallback
 }
 
 export interface DevOSConfig {
@@ -53,8 +66,9 @@ export interface DevOSConfig {
     mode:            'auto' | 'manual'   // auto = cycle through, manual = use active only
     fallbackToOllama: boolean            // if all APIs rate limited, use Ollama
   }
-  onboardingComplete: boolean
-  telegram?:          TelegramConfig
+  onboardingComplete:  boolean
+  customProviders?:    CustomProviderEntry[]
+  telegram?:           TelegramConfig
   calendar?: {
     icalUrl: string   // Google Calendar "Secret address in iCal format"
   }
@@ -117,6 +131,8 @@ export function loadConfig(): DevOSConfig {
     }
     // Back-compat: add routing if missing
     if (!raw.routing) raw.routing = { mode: 'auto', fallbackToOllama: true }
+    // Back-compat: add customProviders if missing
+    if (!raw.customProviders) raw.customProviders = []
     return raw as DevOSConfig
   } catch {
     return defaultConfig()
