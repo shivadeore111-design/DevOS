@@ -37,7 +37,8 @@ import { fireHook }               from './hooks'
 import { instinctSystem }         from './instinctSystem'
 import { startWorkflow, addNode, updateNode, completeWorkflow } from './workflowTracker'
 import { MAX_PARALLEL, chunkSteps, hasParallelism } from './parallelExecutor'
-import { sanitizeMessages } from './messageValidator'
+import { sanitizeMessages }  from './messageValidator'
+import { repairToolName }    from './toolNameRepair'
 import * as nodeFs             from 'fs'
 import * as nodePath           from 'path'
 import * as nodeOs             from 'os'
@@ -274,6 +275,7 @@ export interface AgentPlan {
   workspaceDir?:      string
   phases?:            Phase[]
   reason?:            string
+  repairLog?:         string[]   // Phase 2: tool name auto-repairs applied
 }
 
 export interface StepResult {
@@ -1230,6 +1232,9 @@ Output ONLY valid JSON, nothing else:`
   const validation = validatePlan(candidatePlan)
   if (validation.warnings.length > 0) {
     console.warn(`[Planner] Validation warnings:\n  ${validation.warnings.join('\n  ')}`)
+    // Carry repair log onto the plan so SSE clients can show ↺ repair events
+    const repairWarnings = validation.warnings.filter(w => w.includes('auto-repaired'))
+    if (repairWarnings.length > 0) candidatePlan.repairLog = repairWarnings
   }
   if (!validation.valid) {
     console.warn(`[Planner] Plan has validation errors:\n  ${validation.errors.join('\n  ')}`)
@@ -1309,10 +1314,17 @@ export function validatePlan(plan: AgentPlan): ValidationResult {
   }
 
   for (const step of plan.plan) {
-    // Check tool name is valid
+    // Check tool name — attempt fuzzy repair before flagging as error
     if (!VALID_TOOLS.includes(step.tool)) {
-      errors.push(`Step ${step.step}: unknown tool "${step.tool}"`)
-      continue
+      const repair = repairToolName(step.tool, VALID_TOOLS)
+      if (repair) {
+        warnings.push(`Step ${step.step}: auto-repaired tool "${repair.original}" → "${repair.repaired}" (edit distance ${repair.distance})`)
+        console.log(`[ToolRepair] ↺ "${repair.original}" → "${repair.repaired}" (distance ${repair.distance})`)
+        step.tool = repair.repaired  // mutate in-place — plan will execute with correct name
+      } else {
+        errors.push(`Step ${step.step}: unknown tool "${step.tool}"`)
+        continue
+      }
     }
 
     const input = step.input || {}

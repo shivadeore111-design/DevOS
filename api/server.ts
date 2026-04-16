@@ -1385,6 +1385,13 @@ export function createApiServer(): Express {
       callbacks.emit('planning_start', sid, { message: 'Planning approach...' }).catch(() => {})
       const plan: AgentPlan = await planWithLLM(resolvedMessage, history, plannerKeySSE, plannerModelSSE, plannerProvSSE, fullMemoryCtx)
 
+      // ── Phase 2: surface tool-name repair events to SSE clients ──
+      if (plan.repairLog && plan.repairLog.length > 0) {
+        for (const repairMsg of plan.repairLog) {
+          send({ activity: { icon: '↺', agent: 'Aiden', message: repairMsg, style: 'act' }, done: false })
+        }
+      }
+
       // â”€â”€ PLAN-ONLY MODE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       if (mode === 'plan') {
         const planText = plan.requires_execution && plan.plan.length > 0
