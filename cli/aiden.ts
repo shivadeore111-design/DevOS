@@ -6,284 +6,447 @@
 //
 // cli/aiden.ts — Production Terminal UI for Aiden
 // Connects to the API server at http://localhost:4200
-// Same brain, same memory, same tools — just a different front-end.
-//
-// Usage:
-//   npm run cli                        — run with ts-node
-//   AIDEN_API=http://... npm run cli   — custom server URL
 
 import readline from 'readline'
-import crypto   from 'crypto'
+import fs       from 'fs'
+import path     from 'path'
 
-// ── Config ─────────────────────────────────────────────────────────────────────
+// ── Constants ────────────────────────────────────────────────────────────────────
 
-const API_BASE  = process.env.AIDEN_API || 'http://localhost:4200'
-const SESSION_ID = crypto.randomUUID()
+const API_BASE      = process.env.AIDEN_API || 'http://localhost:4200'
+const SESSION_ID    = `session_${Date.now()}`
+const SESSION_START = Date.now()
+const CONFIG_PATH   = path.join(__dirname, '..', 'config', 'devos.config.json')
 
-// ── Color palette ───────────────────────────────────────────────────────────────
+// ── Theme ─────────────────────────────────────────────────────────────────────────
 
-const C = {
-  orange : '\x1b[38;5;208m',
-  green  : '\x1b[32m',
-  red    : '\x1b[31m',
-  cyan   : '\x1b[36m',
-  yellow : '\x1b[33m',
-  dim    : '\x1b[2m',
-  bold   : '\x1b[1m',
-  reset  : '\x1b[0m',
-  bg     : '\x1b[48;5;235m',
-  white  : '\x1b[97m',
-  blue   : '\x1b[34m',
-  magenta: '\x1b[35m',
+type ThemeName = 'default' | 'mono' | 'slate' | 'ember'
+
+interface Theme {
+  primary: string; accent: string; dim: string
+  success: string; error: string;  warning: string
+  bold: string;    reset: string;  white: string
 }
 
-// ── State ───────────────────────────────────────────────────────────────────────
-
-interface HistoryEntry {
-  role   : 'user' | 'assistant'
-  content: string
+const THEMES: Record<ThemeName, Theme> = {
+  default: {
+    primary: '\x1b[38;5;208m', accent : '\x1b[36m',         dim    : '\x1b[2m',
+    success: '\x1b[32m',       error  : '\x1b[31m',         warning: '\x1b[33m',
+    bold   : '\x1b[1m',        reset  : '\x1b[0m',          white  : '\x1b[97m',
+  },
+  mono: {
+    primary: '\x1b[97m',       accent : '\x1b[90m',         dim    : '\x1b[2m',
+    success: '\x1b[97m',       error  : '\x1b[31m',         warning: '\x1b[97m',
+    bold   : '\x1b[1m',        reset  : '\x1b[0m',          white  : '\x1b[97m',
+  },
+  slate: {
+    primary: '\x1b[38;5;111m', accent : '\x1b[38;5;147m',  dim    : '\x1b[2m',
+    success: '\x1b[32m',       error  : '\x1b[31m',         warning: '\x1b[33m',
+    bold   : '\x1b[1m',        reset  : '\x1b[0m',          white  : '\x1b[97m',
+  },
+  ember: {
+    primary: '\x1b[38;5;160m', accent : '\x1b[38;5;214m',  dim    : '\x1b[2m',
+    success: '\x1b[32m',       error  : '\x1b[31m',         warning: '\x1b[33m',
+    bold   : '\x1b[1m',        reset  : '\x1b[0m',          white  : '\x1b[97m',
+  },
 }
+
+let T: Theme = THEMES.default
+
+function applyTheme(name: ThemeName): void {
+  T = THEMES[name] ?? THEMES.default
+}
+
+// ── Config helpers ────────────────────────────────────────────────────────────────
+
+function loadCfg(): any {
+  try { return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')) } catch { return {} }
+}
+
+function saveCfg(cfg: any): void {
+  try { fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2) + '\n') } catch {}
+}
+
+// Load saved theme on startup
+;(() => {
+  const cfg  = loadCfg()
+  const name = (cfg?.cli?.theme || 'default') as ThemeName
+  if (THEMES[name]) applyTheme(name)
+})()
+
+// ── State ─────────────────────────────────────────────────────────────────────────
+
+interface HistoryEntry { role: 'user' | 'assistant'; content: string }
 
 const state = {
-  history      : [] as HistoryEntry[],
-  turnCount    : 0,
-  ctxPercent   : 0,
-  lastProvider : 'unknown',
-  lastTurnMs   : 0,
-  inputHistory : [] as string[],
-  histIdx      : -1,
-  streaming    : false,
-  abortCtrl    : null as AbortController | null,
+  history     : [] as HistoryEntry[],
+  turnCount   : 0,
+  ctxPercent  : 0,
+  lastProvider: 'aiden',
+  lastModel   : '',
+  lastTurnMs  : 0,
+  inputHistory: [] as string[],
+  streaming   : false,
+  abortCtrl   : null as AbortController | null,
+  detailLevel : 'tools'  as 'off' | 'tools' | 'verbose',
+  depthLevel  : 'medium' as 'low' | 'medium' | 'high',
+  persona     : 'default',
+  themeName   : 'default' as ThemeName,
 }
 
-// ── API helpers ─────────────────────────────────────────────────────────────────
+// ── Terminal helpers ──────────────────────────────────────────────────────────────
 
-async function apiFetch<T>(path: string, fallback: T): Promise<T> {
-  try {
-    const res = await fetch(`${API_BASE}${path}`, {
-      signal: AbortSignal.timeout(3000),
-    })
-    if (!res.ok) return fallback
-    return await res.json() as T
-  } catch {
-    return fallback
+const cols = (): number => Math.min(process.stdout.columns || 80, 100)
+const hr   = (): string => '─'.repeat(cols() - 2)
+
+function fmtMs(ms: number): string {
+  return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`
+}
+
+function fmtDuration(ms: number): string {
+  const s = Math.floor(ms / 1000)
+  const m = Math.floor(s / 60)
+  const h = Math.floor(m / 60)
+  if (h > 0) return `${h}h ${m % 60}m ${s % 60}s`
+  if (m > 0) return `${m}m ${s % 60}s`
+  return `${s}s`
+}
+
+function num(n: number): string { return n.toLocaleString() }
+
+function ctxColor(pct: number): string {
+  if (pct < 50) return T.success
+  if (pct < 80) return T.warning
+  if (pct < 95) return T.primary
+  return T.error
+}
+
+// ── Spinner ───────────────────────────────────────────────────────────────────────
+
+const SPIN = ['◐', '◓', '◑', '◒']
+let spinIdx   = 0
+let spinTimer : ReturnType<typeof setInterval> | null = null
+let spinMsg   = ''
+
+function startSpinner(msg: string): void {
+  spinMsg = msg
+  spinIdx = 0
+  process.stdout.write(`  ${T.dim}${SPIN[0]} ${msg}...${T.reset}`)
+  spinTimer = setInterval(() => {
+    spinIdx = (spinIdx + 1) % SPIN.length
+    process.stdout.write(`\r  ${T.dim}${SPIN[spinIdx]} ${spinMsg}...${T.reset}`)
+  }, 200)
+}
+
+function stopSpinner(): void {
+  if (spinTimer) {
+    clearInterval(spinTimer)
+    spinTimer = null
+    process.stdout.write('\r\x1b[K')
   }
 }
 
-async function apiPost(path: string): Promise<void> {
+// ── API helpers ───────────────────────────────────────────────────────────────────
+
+async function apiFetch<T>(p: string, fallback: T): Promise<T> {
   try {
-    await fetch(`${API_BASE}${path}`, {
-      method : 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body   : JSON.stringify({}),
-    })
-  } catch { /* best-effort */ }
+    const res = await fetch(`${API_BASE}${p}`, { signal: AbortSignal.timeout(4000) })
+    if (!res.ok) return fallback
+    return await res.json() as T
+  } catch { return fallback }
 }
 
-// ── Banner ──────────────────────────────────────────────────────────────────────
+async function apiPost(p: string, body: any = {}): Promise<any> {
+  try {
+    const res = await fetch(`${API_BASE}${p}`, {
+      method : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body   : JSON.stringify(body),
+    })
+    return res.ok ? (await res.json().catch(() => null)) : null
+  } catch { return null }
+}
+
+// ── Response box ──────────────────────────────────────────────────────────────────
+
+function boxTop(title = 'Aiden'): string {
+  const w    = cols()
+  const rest = Math.max(0, w - title.length - 4)
+  return `${T.dim}┌─${T.reset}${T.primary}${T.bold} ${title} ${T.reset}${T.dim}${'─'.repeat(rest)}${T.reset}`
+}
+
+function boxBottom(): string {
+  return `${T.dim}└${'─'.repeat(cols() - 1)}${T.reset}`
+}
+
+function boxLeft(): string {
+  return `${T.dim}│${T.reset}`
+}
+
+// ── ASCII banner ──────────────────────────────────────────────────────────────────
+
+const ASCII_BANNER = [
+  '▄▄▄       ██▓▓█████▄ ▓█████  ███▄    █ ',
+  '▒████▄    ▓██▒▒██▀ ██▌▓█   ▀  ██ ▀█   █',
+  '▒██  ▀█▄  ▒██▒░██   █▌▒███   ▓██  ▀█ ██▒',
+  '░██▄▄▄▄██ ░██░░▓█▄   ▌▒▓█  ▄ ▓██▒  ▐▌██▒',
+  '▓█   ▓██▒░██░░▒████▓ ░▒████▒▒██░   ▓██░',
+  '▒▒   ▓▒█░░▓   ▒▒▓  ▒ ░░ ▒░ ░░ ▒░   ▒ ▒ ',
+  ' ▒   ▒▒ ░ ▒ ░ ░ ▒  ▒  ░ ░  ░░ ░░   ░ ▒░',
+]
 
 async function printBanner(): Promise<void> {
-  // Fetch live stats in parallel
-  const [health, providersData, skillsData, toolsData] = await Promise.all([
+  const [health, memData, provData, skillsData, toolsData] = await Promise.all([
     apiFetch<any>('/api/health',    {}),
+    apiFetch<any>('/api/memories',  {}),
     apiFetch<any>('/api/providers', { apis: [] }),
     apiFetch<any[]>('/api/skills',  []),
     apiFetch<any[]>('/api/tools',   []),
   ])
 
-  const version    = health.version   || '—'
-  const status     = health.status === 'ok' ? `${C.green}●${C.reset}` : `${C.red}●${C.reset}`
-  const apis       = Array.isArray(providersData.apis) ? providersData.apis : []
-  const activeApis = apis.filter((a: any) => a.enabled && a.hasKey)
-  const provStr    = activeApis.length > 0
-    ? activeApis.map((a: any) => a.name).slice(0, 3).join(', ')
-    : `${C.dim}none${C.reset}`
-  const skillCount = Array.isArray(skillsData) ? skillsData.filter((s: any) => s.enabled).length : 0
-  const toolCount  = Array.isArray(toolsData)  ? toolsData.length : 0
+  const version   = health.version || '3.4.0'
+  const cfg       = loadCfg()
+  const apis      = Array.isArray(provData.apis) ? provData.apis : []
+  const active    = apis.filter((a: any) => a.enabled && a.hasKey)
+  const provName  = cfg?.model?.active       || active[0]?.name  || 'local'
+  const modelName = cfg?.model?.activeModel  || active[0]?.model || 'unknown'
+  const skillArr  = Array.isArray(skillsData) ? skillsData : []
+  const enabled   = skillArr.filter((s: any) => s.enabled)
+  const recipes   = skillArr.filter((s: any) => s.type === 'recipe' || s.isRecipe).length
+  const toolCount = Array.isArray(toolsData) ? toolsData.length : 0
+  const memSem    = memData?.semantic ?? (Array.isArray(memData) ? memData.length : memData?.total ?? 0)
+  const memEnt    = memData?.entities ?? 0
 
-  if (activeApis.length > 0) {
-    state.lastProvider = activeApis[0].name
+  if (active.length > 0) {
+    state.lastProvider = provName
+    state.lastModel    = modelName
   }
 
-  console.log(`
-${C.orange}  ╔════════════════════════════════════════╗
-  ║  ${C.bold}${C.white}A/ Aiden${C.reset}${C.orange}  —  Autonomous AI System    ║
-  ╚════════════════════════════════════════╝${C.reset}
-
-  ${status} v${version}   ${C.dim}|${C.reset}  ${C.cyan}${provStr}${C.reset}  ${C.dim}|${C.reset}  ${C.dim}${skillCount} skills  ${toolCount} tools${C.reset}
-
-  ${C.dim}Type naturally, or /help for commands.
-  Ctrl+C to interrupt  ·  Ctrl+C twice to exit${C.reset}
-`)
+  console.log()
+  for (const line of ASCII_BANNER) {
+    console.log(`  ${T.primary}${line}${T.reset}`)
+  }
+  console.log()
+  console.log(`  ${T.primary}●${T.reset} Aiden v${version} — Personal AI OS`)
+  console.log(`  ${T.dim}${hr()}${T.reset}`)
+  console.log(`  ${'Provider'.padEnd(12)}${T.accent}${provName}${T.reset} ${T.dim}(${modelName})${T.reset}`)
+  if (memSem || memEnt) {
+    console.log(`  ${'Memory'.padEnd(12)}${T.dim}${num(memSem)} semantic · ${num(memEnt)} entities${T.reset}`)
+  }
+  console.log(`  ${'Skills'.padEnd(12)}${T.dim}${enabled.length} loaded · ${recipes} recipes${T.reset}`)
+  console.log(`  ${'Tools'.padEnd(12)}${T.dim}${toolCount} registered${T.reset}`)
+  console.log(`  ${'Session'.padEnd(12)}${T.dim}${SESSION_ID}${T.reset}`)
+  console.log(`  ${T.dim}${hr()}${T.reset}`)
+  console.log(`  ${T.dim}${toolCount} tools · ${enabled.length} skills · /help for commands${T.reset}`)
+  console.log()
 }
 
-// ── Streaming chat ──────────────────────────────────────────────────────────────
+// ── Session summary ───────────────────────────────────────────────────────────────
+
+function printSessionSummary(): void {
+  const ms        = Date.now() - SESSION_START
+  const userMsgs  = state.history.filter(h => h.role === 'user').length
+  const totChars  = state.history.reduce((n, h) => n + h.content.length, 0)
+  const approxTok = Math.round(totChars / 4)
+  const cost      = (approxTok / 1_000_000 * 0.10).toFixed(4)
+  console.log()
+  console.log(`  ${T.dim}Session ended${T.reset}`)
+  console.log(`  ${T.dim}${hr()}${T.reset}`)
+  console.log(`  ${'Duration'.padEnd(14)}${fmtDuration(ms)}`)
+  console.log(`  ${'Messages'.padEnd(14)}${state.history.length} (${userMsgs} user, ${state.turnCount} turns)`)
+  console.log(`  ${'Tokens'.padEnd(14)}~${num(approxTok)}`)
+  console.log(`  ${'Cost'.padEnd(14)}~$${cost}`)
+  console.log(`  ${'Session'.padEnd(14)}${T.dim}${SESSION_ID}${T.reset}`)
+  console.log(`  ${T.dim}${hr()}${T.reset}`)
+  console.log()
+}
+
+// ── Stream chat ───────────────────────────────────────────────────────────────────
 
 async function streamChat(message: string): Promise<void> {
-  state.streaming  = true
-  state.abortCtrl  = new AbortController()
-  const startedAt  = Date.now()
-  let   fullReply  = ''
-  let   provider   = ''
-  let   inToolCard = false
+  state.streaming = true
+  state.abortCtrl = new AbortController()
+  const startedAt = Date.now()
+  let fullReply   = ''
+  let provider    = ''
+  let boxOpen     = false
+  let linePos     = 0
+  let streamDone  = false
+  const toolTimers: Record<string, number> = {}
+  let thinkPhase  = 0
 
-  // Build history array for this request (last 20 turns)
-  const historyPayload = state.history.slice(-20).map(h => ({
-    role   : h.role,
-    content: h.content,
-  }))
+  const AVAIL = (): number => cols() - 5
+
+  function openResponseBox(): void {
+    process.stdout.write('\n' + boxTop() + '\n')
+    process.stdout.write(boxLeft() + '\n')
+    process.stdout.write(boxLeft() + '  ')
+    boxOpen = true
+    linePos = 0
+  }
+
+  function closeResponseBox(): void {
+    if (!boxOpen) return
+    process.stdout.write('\n' + boxLeft() + '\n')
+    process.stdout.write(boxBottom() + '\n')
+    boxOpen = false
+  }
+
+  function writeToken(token: string): void {
+    if (!boxOpen) openResponseBox()
+    for (const ch of token) {
+      if (ch === '\n') {
+        process.stdout.write('\n' + boxLeft() + '  ')
+        linePos = 0
+      } else {
+        if (linePos >= AVAIL()) {
+          process.stdout.write('\n' + boxLeft() + '  ')
+          linePos = 0
+        }
+        process.stdout.write(ch)
+        linePos++
+      }
+    }
+  }
+
+  const histPayload = state.history.slice(-20).map(h => ({ role: h.role, content: h.content }))
 
   try {
+    startSpinner('planning')
+
     const res = await fetch(`${API_BASE}/api/chat`, {
       method : 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept'      : 'text/event-stream',
-      },
-      body  : JSON.stringify({
-        message,
-        mode     : 'auto',
-        history  : historyPayload,
-        sessionId: SESSION_ID,
-      }),
-      signal: state.abortCtrl.signal,
+      headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
+      body   : JSON.stringify({ message, mode: 'auto', history: histPayload, sessionId: SESSION_ID }),
+      signal : state.abortCtrl.signal,
     })
+
+    stopSpinner()
 
     if (!res.ok) {
       let errText = res.statusText
       try {
         const errBody = await res.json() as any
         if (errBody?.error) errText = errBody.error
-      } catch { /* use statusText */ }
-      process.stdout.write(`\n${C.red}  ✗ ${res.status} ${errText}${C.reset}\n`)
+      } catch {}
+      process.stdout.write(`\n  ${T.error}✗ ${res.status} ${errText}${T.reset}\n\n`)
       return
     }
 
-    process.stdout.write(`\n${C.orange}Aiden${C.reset} `)
-
-    // Greeting fast-path returns application/json; real chat uses text/event-stream.
-    // Handle both so a plain "hi" doesn't produce an empty reply.
     const isSSE = (res.headers.get('content-type') || '').includes('text/event-stream')
 
+    // ── JSON fast-path (non-SSE response) ──
     if (!isSSE) {
       const data  = await res.json() as any
       const reply = (data.reply || data.message || data.content || data.response || '') as string
-      process.stdout.write(reply || `${C.dim}(no response)${C.reset}`)
-      fullReply = reply
-      if (data.provider) provider = data.provider as string
-    }
-
-    if (isSSE) {
-    const reader  = (res.body as any).getReader()
-    const decoder = new TextDecoder()
-    let   buffer  = ''
-
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n')
-      buffer = lines.pop() || ''
-
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue
-        const raw = line.slice(6).trim()
-        if (raw === '[DONE]') break
-
-        let evt: any
-        try { evt = JSON.parse(raw) } catch { continue }
-
-        // ── Text token ──
-        if (evt.token !== undefined) {
-          if (inToolCard) {
-            // Close open tool card before printing text
-            process.stdout.write(`\n${C.dim}  └─────────────────────────────${C.reset}\n\n${C.orange}Aiden${C.reset} `)
-            inToolCard = false
+      openResponseBox()
+      for (const ch of reply) {
+        if (ch === '\n') {
+          process.stdout.write('\n' + boxLeft() + '  ')
+          linePos = 0
+        } else {
+          if (linePos >= AVAIL()) {
+            process.stdout.write('\n' + boxLeft() + '  ')
+            linePos = 0
           }
-          process.stdout.write(evt.token)
-          fullReply += evt.token
-          if (evt.provider) provider = evt.provider
-        }
-
-        // ── Stream complete ──
-        if (evt.done === true) {
-          if (evt.provider) provider = evt.provider
-          break
-        }
-
-        // ── Thinking ──
-        if (evt.thinking) {
-          const msg = evt.thinking.message || evt.thinking.stage || 'Thinking…'
-          process.stdout.write(`\n${C.dim}  ~ ${msg}${C.reset}`)
-        }
-
-        // ── Activity / tool execution ──
-        if (evt.activity) {
-          const act = evt.activity
-          if (!act.done) {
-            // Open tool card
-            if (!inToolCard) {
-              process.stdout.write(`\n${C.cyan}  ┌─ > ${act.agent || ''} ${C.reset}`)
-              process.stdout.write(`\n${C.cyan}  │${C.reset} ${C.dim}${act.message || ''}${C.reset}`)
-              inToolCard = true
-            } else {
-              process.stdout.write(`\n${C.cyan}  │${C.reset} ${C.dim}${act.message || ''}${C.reset}`)
-            }
-          } else {
-            if (inToolCard) {
-              process.stdout.write(`\n${C.dim}  └─────────────────────────────${C.reset}`)
-              inToolCard = false
-            }
-          }
-        }
-
-        // ── Callback-forwarded events ──
-        if (evt.event === 'thinking_start' || evt.event === 'memory_read' || evt.event === 'planning_start') {
-          const msg = evt.message || evt.data?.message || 'Thinking…'
-          process.stdout.write(`\n${C.dim}  ~ ${msg}${C.reset}`)
-        }
-
-        if (evt.event === 'tool_start') {
-          const tool = evt.tool || evt.data?.tool || '?'
-          if (!inToolCard) {
-            process.stdout.write(`\n${C.cyan}  ┌─ ▸ ${tool}${C.reset}`)
-            process.stdout.write(`\n${C.cyan}  │${C.reset} ${C.dim}running…${C.reset}`)
-            inToolCard = true
-          }
-        }
-
-        if (evt.event === 'tool_end') {
-          if (inToolCard) {
-            process.stdout.write(`\n${C.dim}  └─────────────────────────────${C.reset}`)
-            inToolCard = false
-          }
-        }
-
-        // ── Delegation ──
-        if (evt.delegation || (evt.from && evt.to)) {
-          const from = evt.from || evt.delegation?.from || '?'
-          const to   = evt.to   || evt.delegation?.to   || '?'
-          const task = (evt.task || evt.delegation?.task || '').substring(0, 60)
-          process.stdout.write(`\n${C.dim}  ${from} → ${to}: ${task}${C.reset}`)
+          process.stdout.write(ch)
+          linePos++
         }
       }
+      fullReply = reply
+      if (data.provider) provider = data.provider as string
+      closeResponseBox()
     }
 
-    // Close any unclosed tool card
-    if (inToolCard) {
-      process.stdout.write(`\n${C.dim}  └─────────────────────────────${C.reset}`)
-    }
-    } // end if (isSSE)
+    // ── SSE streaming ──
+    if (isSSE) {
+      const reader  = (res.body as any).getReader()
+      const decoder = new TextDecoder()
+      let   buffer  = ''
 
-    // ── Finalise ──
+      while (!streamDone) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          const raw = line.slice(6).trim()
+          if (raw === '[DONE]') { streamDone = true; break }
+
+          let evt: any
+          try { evt = JSON.parse(raw) } catch { continue }
+
+          // ── Thinking indicator ──
+          if (!boxOpen && (evt.thinking || evt.event === 'thinking_start' || evt.event === 'planning_start' || evt.event === 'memory_read')) {
+            const phaseNames = ['planning', 'reasoning', 'executing', 'searching']
+            const msg = evt.thinking?.message || evt.message || evt.data?.message || phaseNames[thinkPhase % phaseNames.length]
+            thinkPhase++
+            process.stdout.write(`  ${T.dim}${SPIN[thinkPhase % SPIN.length]} ${msg}...${T.reset}\n`)
+          }
+
+          // ── Tool start ──
+          if (evt.event === 'tool_start' && !boxOpen && state.detailLevel !== 'off') {
+            const tool = evt.tool || evt.data?.tool || '?'
+            toolTimers[tool] = Date.now()
+            process.stdout.write(`  ${T.accent}▸${T.reset} ${tool}  ${T.dim}running...${T.reset}`)
+          }
+
+          // ── Tool end ──
+          if (evt.event === 'tool_end' && !boxOpen && state.detailLevel !== 'off') {
+            const tool    = evt.tool || evt.data?.tool || '?'
+            const elapsed = toolTimers[tool] ? fmtMs(Date.now() - toolTimers[tool]) : '?'
+            process.stdout.write(`\r  ${T.accent}▸${T.reset} ${tool}  ${T.dim}done (${elapsed})${T.reset}\x1b[K\n`)
+            delete toolTimers[tool]
+          }
+
+          // ── Activity events ──
+          if (evt.activity && !boxOpen && state.detailLevel !== 'off') {
+            const act = evt.activity
+            if (!act.done) {
+              process.stdout.write(`  ${T.accent}▸${T.reset} ${act.agent || ''}  ${T.dim}${act.message || 'running...'}${T.reset}`)
+            } else {
+              process.stdout.write('\r\x1b[K')
+            }
+          }
+
+          // ── Delegation ──
+          if ((evt.delegation || (evt.from && evt.to)) && !boxOpen && state.detailLevel === 'verbose') {
+            const from = evt.from || evt.delegation?.from || '?'
+            const to   = evt.to   || evt.delegation?.to   || '?'
+            const task = (evt.task || evt.delegation?.task || '').substring(0, 60)
+            process.stdout.write(`  ${T.dim}${from} → ${to}: ${task}${T.reset}\n`)
+          }
+
+          // ── Text token ──
+          if (evt.token !== undefined) {
+            writeToken(evt.token)
+            fullReply += evt.token
+            if (evt.provider) provider = evt.provider
+          }
+
+          // ── Done ──
+          if (evt.done === true) {
+            if (evt.provider) provider = evt.provider
+            streamDone = true
+            break
+          }
+        }
+      }
+
+      closeResponseBox()
+    }
+
+    // ── Finalise state ──
     state.lastTurnMs = Date.now() - startedAt
     if (provider) state.lastProvider = provider
     state.turnCount++
 
-    // Estimate context usage (rough: chars / 8000 chars per 2k tokens ~= %)
-    const totalChars = state.history.reduce((n, h) => n + h.content.length, 0)
-    state.ctxPercent = Math.min(99, Math.round(totalChars / 160_000 * 100))
+    const totChars   = state.history.reduce((n, h) => n + h.content.length, 0) + message.length + fullReply.length
+    state.ctxPercent = Math.min(99, Math.round(totChars / 160_000 * 100))
 
     if (fullReply.trim()) {
       state.history.push({ role: 'user',      content: message   })
@@ -291,454 +454,745 @@ async function streamChat(message: string): Promise<void> {
     }
 
     // ── Status bar ──
-    const secs     = (state.lastTurnMs / 1000).toFixed(1)
-    const ctxStr   = `ctx ${state.ctxPercent}%`
-    const turnStr  = `turn ${state.turnCount}`
-    const timeStr  = `${secs}s`
+    const ctxC = ctxColor(state.ctxPercent)
     process.stdout.write(
-      `\n\n${C.dim}  ${state.lastProvider}  |  ${ctxStr}  |  ${turnStr}  |  ${timeStr}${C.reset}\n\n`
+      `\n  ${T.dim}${state.lastProvider} · ${T.reset}` +
+      `${ctxC}ctx ${state.ctxPercent}%${T.reset}` +
+      `${T.dim} · turn ${state.turnCount} · ${fmtMs(state.lastTurnMs)}${T.reset}\n\n`
     )
 
   } catch (err: any) {
+    stopSpinner()
     if (err?.name === 'AbortError') {
-      process.stdout.write(`\n${C.yellow}  [x] Interrupted${C.reset}\n\n`)
+      process.stdout.write(`\n  ${T.warning}Interrupted.${T.reset}\n\n`)
     } else {
-      process.stdout.write(`\n${C.red}  ✗ ${err?.message || err}${C.reset}\n`)
-      process.stdout.write(`${C.dim}  Is Aiden running? Start the desktop app first.${C.reset}\n\n`)
+      process.stdout.write(`\n  ${T.error}✗ ${err?.message || err}${T.reset}\n`)
+      process.stdout.write(`  ${T.dim}Is Aiden running? Start the desktop app first.${T.reset}\n\n`)
     }
   } finally {
+    stopSpinner()
     state.streaming = false
     state.abortCtrl = null
   }
 }
 
-// ── Commands ────────────────────────────────────────────────────────────────────
+// ── Commands ──────────────────────────────────────────────────────────────────────
 
 const COMMANDS = [
-  '/help', '/new', '/reset', '/clear', '/history', '/stop', '/export',
-  '/status', '/tools', '/providers', '/models', '/model', '/memory', '/goals',
-  '/skills', '/recipes', '/sessions', '/budget', '/workspace',
-  '/security', '/debug', '/provider', '/quit', '/exit',
+  '/new', '/reset', '/clear', '/history', '/stop',
+  '/export', '/fork', '/checkpoint', '/help',
+  '/status', '/tools', '/providers', '/models', '/model',
+  '/memory', '/goals', '/skills', '/recipes', '/sessions',
+  '/analytics', '/budget', '/workspace',
+  '/quick', '/compact', '/async', '/security', '/debug', '/config',
+  '/theme', '/persona', '/detail', '/depth', '/provider',
+  '/quit', '/exit', '/q',
 ]
+
+function getPrompt(): string {
+  return `  ${T.dim}›${T.reset} `
+}
 
 async function handleCommand(cmd: string, rl: readline.Interface): Promise<boolean> {
   const parts   = cmd.trim().split(/\s+/)
   const command = parts[0].toLowerCase()
 
-  // ── /help ──────────────────────────────────────────────────
+  // ── /help ─────────────────────────────────────────────────────────────────────
   if (command === '/help') {
+    const P = T.primary, D = T.dim, R = T.reset, B = T.bold
     console.log(`
-${C.bold}Session${C.reset}
-  /new          Start a new session (clears history)
-  /reset        Same as /new
-  /clear        Clear the screen
-  /history      Show conversation history
-  /stop         Interrupt current generation
-  /export       Export conversation to JSON
+${B}  Session${R}
+  ${D}${hr()}${R}
+  ${P}/new  /reset${R}         Start fresh session
+  ${P}/clear${R}               Clear screen
+  ${P}/history${R}             Conversation history
+  ${P}/stop${R}                Interrupt execution
+  ${P}/export${R} md|json      Export conversation
+  ${P}/fork${R} <name>         Fork current session
+  ${P}/checkpoint${R}          Save state snapshot
 
-${C.bold}Info${C.reset}
-  /status       Health check + uptime
-  /tools        List available tools
-  /providers    Show provider status
-  /models       Show active models
-  /memory       Memory stats
-  /goals        Active goals
-  /skills       Loaded skills
-  /recipes      Saved recipes
-  /sessions     All sessions
-  /budget       Token usage estimate
-  /workspace    Workspace info
+${B}  Info${R}
+  ${D}${hr()}${R}
+  ${P}/status${R}              Health + uptime
+  ${P}/tools${R}               All registered tools
+  ${P}/providers${R}           Provider chain + rate limits
+  ${P}/models${R}              Model assignments
+  ${P}/memory${R}              Memory stats
+  ${P}/goals${R}               Active goals
+  ${P}/skills${R}              Loaded skills
+  ${P}/recipes${R}             YAML recipes
+  ${P}/sessions${R}            Recent sessions
+  ${P}/analytics${R}           Usage over time
+  ${P}/budget${R}              Token cost estimate
+  ${P}/workspace${R}           Current workspace
 
-${C.bold}Config${C.reset}
-  /provider <n> Switch provider by name (e.g. /provider groq-1)
-  /security     AgentShield security scan
-  /debug        Show debug logs
+${B}  Config${R}
+  ${D}${hr()}${R}
+  ${P}/model${R} <name>        Switch model
+  ${P}/provider${R} <name>     Switch provider
+  ${P}/theme${R} <name>        Change theme (default mono slate ember)
+  ${P}/persona${R} <name>      Change persona (default concise technical)
+  ${P}/detail${R}              Cycle detail level (off → tools → verbose)
+  ${P}/depth${R}               Cycle reasoning depth (low → medium → high)
+  ${P}/config${R}              Show current configuration
 
-${C.bold}Other${C.reset}
-  /quit  /exit  Quit
+${B}  Power${R}
+  ${D}${hr()}${R}
+  ${P}/quick${R} <q>           Quick side question (no history, no tools)
+  ${P}/compact${R}             Manual context compression
+  ${P}/async${R} <task>        Run task in background
+  ${P}/security${R}            AgentShield scan
+  ${P}/debug${R}               Recent logs
+
+${B}  Exit${R}
+  ${D}${hr()}${R}
+  ${P}/quit  /exit  /q${R}
 `)
     return true
   }
 
-  // ── /new / /reset ─────────────────────────────────────────
+  // ── /new / /reset ──────────────────────────────────────────────────────────────
   if (command === '/new' || command === '/reset') {
-    state.history   = []
-    state.turnCount = 0
+    state.history    = []
+    state.turnCount  = 0
     state.ctxPercent = 0
-    console.log(`${C.green}  ✓ New session started${C.reset}\n`)
+    console.log(`  ${T.success}✓ New session started.${T.reset}\n`)
     return true
   }
 
-  // ── /clear ────────────────────────────────────────────────
+  // ── /clear ─────────────────────────────────────────────────────────────────────
   if (command === '/clear') {
     console.clear()
     await printBanner()
     return true
   }
 
-  // ── /history ──────────────────────────────────────────────
+  // ── /history ───────────────────────────────────────────────────────────────────
   if (command === '/history') {
-    if (state.history.length === 0) {
-      console.log(`${C.dim}  No history yet.${C.reset}\n`)
-      return true
-    }
+    if (state.history.length === 0) { console.log(`  ${T.dim}No history.${T.reset}\n`); return true }
+    console.log()
     for (const h of state.history) {
-      const label = h.role === 'user'
-        ? `${C.dim}you${C.reset}`
-        : `${C.orange}Aiden${C.reset}`
+      const label   = h.role === 'user' ? `${T.dim}you${T.reset}` : `${T.primary}Aiden${T.reset}`
       const preview = h.content.substring(0, 120).replace(/\n/g, ' ')
-      console.log(`  ${label}  ${C.dim}${preview}${C.reset}`)
+      console.log(`  ${label}  ${T.dim}${preview}${T.reset}`)
     }
     console.log()
     return true
   }
 
-  // ── /stop ─────────────────────────────────────────────────
+  // ── /stop ──────────────────────────────────────────────────────────────────────
   if (command === '/stop') {
     if (state.abortCtrl) {
       state.abortCtrl.abort()
-      console.log(`${C.yellow}  ⊘ Stop signal sent${C.reset}\n`)
+      console.log(`  ${T.warning}Interrupted.${T.reset}\n`)
     } else {
-      // Try server-side stop too
       await apiPost('/api/stop')
-      console.log(`${C.dim}  No active generation${C.reset}\n`)
+      console.log(`  ${T.dim}No active generation.${T.reset}\n`)
     }
     return true
   }
 
-  // ── /export ───────────────────────────────────────────────
+  // ── /export md|json ────────────────────────────────────────────────────────────
   if (command === '/export') {
-    const data  = await apiFetch<any>('/api/export/conversation?format=json', null)
-    const count = data?.messageCount || data?.messages?.length || state.history.length
-    console.log(`${C.dim}  Exported ${count} messages${C.reset}\n`)
+    const fmt = (parts[1] || 'json').toLowerCase()
+    const ts  = Date.now()
+    if (fmt === 'md' || fmt === 'markdown') {
+      let md = `# Aiden Session\n\nSession: ${SESSION_ID}\nExported: ${new Date().toISOString()}\n\n---\n\n`
+      for (const h of state.history) {
+        md += h.role === 'user' ? `**You**\n\n${h.content}\n\n` : `**Aiden**\n\n${h.content}\n\n---\n\n`
+      }
+      const fname = `aiden-${ts}.md`
+      fs.writeFileSync(fname, md)
+      console.log(`  ${T.success}✓ Exported to ${fname}${T.reset}\n`)
+    } else {
+      const fname = `aiden-${ts}.json`
+      fs.writeFileSync(fname, JSON.stringify({ session: SESSION_ID, exported: new Date().toISOString(), history: state.history }, null, 2))
+      console.log(`  ${T.success}✓ Exported to ${fname}${T.reset}\n`)
+    }
     return true
   }
 
-  // ── /status ───────────────────────────────────────────────
+  // ── /fork <name> ───────────────────────────────────────────────────────────────
+  if (command === '/fork') {
+    const name = parts.slice(1).join(' ') || `fork-${Date.now()}`
+    const res  = await apiPost('/api/sessions/fork', { name, sessionId: SESSION_ID })
+    if (res) {
+      console.log(`  ${T.success}✓ Forked as "${name}"${T.reset}\n`)
+    } else {
+      const fname = `aiden-fork-${name.replace(/\s+/g, '-')}-${Date.now()}.json`
+      fs.writeFileSync(fname, JSON.stringify({ name, parent: SESSION_ID, history: state.history, created: new Date().toISOString() }, null, 2))
+      console.log(`  ${T.success}✓ Fork saved: ${fname}${T.reset}\n`)
+    }
+    return true
+  }
+
+  // ── /checkpoint ────────────────────────────────────────────────────────────────
+  if (command === '/checkpoint') {
+    const fname = `aiden-checkpoint-${Date.now()}.json`
+    fs.writeFileSync(fname, JSON.stringify({ sessionId: SESSION_ID, history: state.history, turnCount: state.turnCount, timestamp: new Date().toISOString() }, null, 2))
+    console.log(`  ${T.success}✓ Checkpoint saved: ${fname}${T.reset}\n`)
+    return true
+  }
+
+  // ── /status ────────────────────────────────────────────────────────────────────
   if (command === '/status') {
-    const h = await apiFetch<any>('/api/debug/health', {})
-    const upMin   = Math.floor((h.uptime  || 0) / 60)
-    const ramMB   = Math.round((h.memory?.heapUsed || 0) / 1024 / 1024)
-    const ollama  = h.ollama  || 'unknown'
-    const sessions= h.workspace?.sessions || 0
-    const mems    = h.workspace?.memories || 0
-    console.log(`
-${C.green}  ✓ Aiden Online${C.reset}
-  Uptime   ${upMin}m
-  RAM      ${ramMB} MB
-  Ollama   ${ollama}
-  Sessions ${sessions}
-  Memories ${mems}
-`)
+    const h     = await apiFetch<any>('/api/debug/health', {})
+    const ok    = h.status === 'ok'
+    const upMin = Math.floor((h.uptime || 0) / 60)
+    const ramMB = Math.round((h.memory?.heapUsed || 0) / 1024 / 1024)
+    console.log()
+    console.log(`  ${ok ? T.success + '✓' : T.error + '✗'}${T.reset} Aiden ${ok ? 'Online' : 'Offline'}`)
+    console.log(`  ${T.dim}${hr()}${T.reset}`)
+    console.log(`  ${'Uptime'.padEnd(14)}${upMin}m`)
+    console.log(`  ${'RAM'.padEnd(14)}${ramMB} MB`)
+    console.log(`  ${'Ollama'.padEnd(14)}${h.ollama || 'unknown'}`)
+    console.log(`  ${'Sessions'.padEnd(14)}${h.workspace?.sessions || 0}`)
+    console.log(`  ${'Memories'.padEnd(14)}${h.workspace?.memories || 0}`)
+    console.log()
     return true
   }
 
-  // ── /tools ────────────────────────────────────────────────
+  // ── /tools ─────────────────────────────────────────────────────────────────────
   if (command === '/tools') {
     const tools = await apiFetch<any[]>('/api/tools', [])
-    console.log(`\n${C.bold}  Tools (${tools.length}):${C.reset}`)
+    console.log(`\n  ${T.bold}Tools (${tools.length})${T.reset}`)
+    console.log(`  ${T.dim}${hr()}${T.reset}`)
     for (const t of tools) {
-      console.log(`  ${C.cyan}▸${C.reset} ${t.name}  ${C.dim}${(t.description || '').substring(0, 60)}${C.reset}`)
+      console.log(`  ${T.accent}▸${T.reset} ${(t.name || '').padEnd(26)}${T.dim}${(t.description || '').substring(0, 52)}${T.reset}`)
     }
     console.log()
     return true
   }
 
-  // ── /providers ────────────────────────────────────────────
+  // ── /providers ─────────────────────────────────────────────────────────────────
   if (command === '/providers') {
     const data = await apiFetch<any>('/api/providers', { apis: [], routing: {} })
     const apis  = Array.isArray(data.apis) ? data.apis : []
-    console.log(`\n${C.bold}  Providers:${C.reset}`)
+    console.log(`\n  ${T.bold}Providers${T.reset}`)
+    console.log(`  ${T.dim}${hr()}${T.reset}`)
     for (const a of apis) {
-      const dot  = a.enabled && a.hasKey ? C.green + '●' : C.dim + '○'
-      const rl   = a.rateLimited ? ` ${C.yellow}[rate-limited]${C.reset}` : ''
-      const uses = a.usageCount != null ? ` ${C.dim}(${a.usageCount} calls)${C.reset}` : ''
-      console.log(`  ${dot}${C.reset} ${a.name}  ${C.dim}${a.model || ''}${C.reset}${rl}${uses}`)
+      const dot = a.enabled && a.hasKey ? `${T.success}●` : `${T.dim}○`
+      const rl  = a.rateLimited ? ` ${T.warning}[rate-limited]${T.reset}` : ''
+      console.log(`  ${dot}${T.reset} ${(a.name || '').padEnd(18)}${T.dim}${a.model || ''}${T.reset}${rl}`)
     }
-    if (data.routing) {
-      console.log(`\n  ${C.dim}Routing: ${JSON.stringify(data.routing)}${C.reset}`)
+    if (data.routing?.mode) console.log(`\n  ${T.dim}Routing: ${data.routing.mode}${T.reset}`)
+    console.log()
+    return true
+  }
+
+  // ── /models  (or /model with no args) ─────────────────────────────────────────
+  if (command === '/models' || (command === '/model' && parts.length === 1)) {
+    const m   = await apiFetch<any>('/api/debug/models', {})
+    const cfg = loadCfg()
+    console.log()
+    console.log(`  ${T.bold}Models${T.reset}`)
+    console.log(`  ${T.dim}${hr()}${T.reset}`)
+    console.log(`  ${'Active'.padEnd(14)}${T.accent}${cfg?.model?.activeModel || m.activeModel || 'unknown'}${T.reset}`)
+    console.log(`  ${'Provider'.padEnd(14)}${cfg?.model?.active || m.activeProvider || 'unknown'}`)
+    console.log(`  ${'Cloud'.padEnd(14)}${T.dim}${(m.providers    || []).join(', ') || 'none'}${T.reset}`)
+    console.log(`  ${'Local'.padEnd(14)}${T.dim}${(m.ollamaModels || []).join(', ') || 'none'}${T.reset}`)
+    console.log()
+    return true
+  }
+
+  // ── /model <name> — switch ─────────────────────────────────────────────────────
+  if (command === '/model' && parts.length > 1) {
+    const modelName = parts.slice(1).join(' ')
+    const res = await apiPost('/api/models/active', { model: modelName })
+    if (res) {
+      state.lastModel = modelName
+      console.log(`  ${T.success}✓ Model: ${modelName}${T.reset}\n`)
+    } else {
+      const cfg = loadCfg()
+      if (!cfg.model) cfg.model = {}
+      cfg.model.activeModel = modelName
+      saveCfg(cfg)
+      state.lastModel = modelName
+      console.log(`  ${T.success}✓ Model: ${modelName} ${T.dim}(saved to config)${T.reset}\n`)
+    }
+    return true
+  }
+
+  // ── /memory ────────────────────────────────────────────────────────────────────
+  if (command === '/memory') {
+    const m     = await apiFetch<any>('/api/memories', {})
+    const total = Array.isArray(m) ? m.length : (m.total || m.count || 0)
+    const sem   = m.semantic ?? 0
+    const ent   = m.entities ?? 0
+    console.log()
+    console.log(`  ${T.bold}Memory${T.reset}`)
+    console.log(`  ${T.dim}${hr()}${T.reset}`)
+    console.log(`  ${'Total'.padEnd(16)}${num(total)}`)
+    if (sem || ent) {
+      console.log(`  ${'Semantic'.padEnd(16)}${num(sem)}`)
+      console.log(`  ${'Entities'.padEnd(16)}${num(ent)}`)
     }
     console.log()
     return true
   }
 
-  // ── /models ───────────────────────────────────────────────
-  if (command === '/models' || command === '/model') {
-    const m = await apiFetch<any>('/api/debug/models', {})
-    console.log(`
-${C.bold}  Models:${C.reset}
-  Provider  ${m.activeProvider || m.activeModel || 'unknown'}
-  Cloud     ${(m.providers || []).join(', ') || 'none'}
-  Local     ${(m.ollamaModels || []).join(', ') || 'none'}
-`)
-    return true
-  }
-
-  // ── /memory ───────────────────────────────────────────────
-  if (command === '/memory') {
-    const m     = await apiFetch<any>('/api/memories', [])
-    const count = Array.isArray(m) ? m.length : (m.total || 0)
-    console.log(`  ${C.dim}Memories: ${count}${C.reset}\n`)
-    return true
-  }
-
-  // ── /goals ────────────────────────────────────────────────
+  // ── /goals ─────────────────────────────────────────────────────────────────────
   if (command === '/goals') {
     const g     = await apiFetch<any>('/api/goals', { goals: [] })
     const goals = Array.isArray(g) ? g : (g.goals || [])
     if (goals.length === 0) {
-      console.log(`  ${C.dim}No active goals${C.reset}\n`)
+      console.log(`  ${T.dim}No active goals.${T.reset}\n`)
     } else {
-      console.log(`\n${C.bold}  Goals:${C.reset}`)
+      console.log(`\n  ${T.bold}Goals${T.reset}`)
+      console.log(`  ${T.dim}${hr()}${T.reset}`)
       for (const goal of goals) {
-        const dot = goal.status === 'active' ? `${C.green}*` : `${C.dim}-`
-        console.log(`  ${dot}${C.reset} ${goal.title}`)
+        const dot = goal.status === 'active' ? `${T.success}●` : `${T.dim}○`
+        console.log(`  ${dot}${T.reset} ${goal.title || goal.id}`)
       }
       console.log()
     }
     return true
   }
 
-  // ── /skills ───────────────────────────────────────────────
+  // ── /skills ────────────────────────────────────────────────────────────────────
   if (command === '/skills') {
     const skills = await apiFetch<any[]>('/api/skills', [])
-    console.log(`\n${C.bold}  Skills (${skills.length}):${C.reset}`)
+    console.log(`\n  ${T.bold}Skills (${skills.length})${T.reset}`)
+    console.log(`  ${T.dim}${hr()}${T.reset}`)
     for (const s of skills) {
-      const mark = s.enabled ? `${C.green}✓` : `${C.dim}✗`
-      console.log(`  ${mark}${C.reset} ${s.name}  ${C.dim}${s.source || ''}${C.reset}`)
+      const mark = s.enabled ? `${T.success}✓` : `${T.dim}✗`
+      console.log(`  ${mark}${T.reset} ${(s.name || '').padEnd(26)}${T.dim}${s.source || s.path || ''}${T.reset}`)
     }
     console.log()
     return true
   }
 
-  // ── /recipes ──────────────────────────────────────────────
+  // ── /recipes ───────────────────────────────────────────────────────────────────
   if (command === '/recipes') {
-    const r = await apiFetch<any>('/api/recipes', [])
+    const r       = await apiFetch<any>('/api/recipes', [])
     const recipes = Array.isArray(r) ? r : (r.recipes || [])
     if (recipes.length === 0) {
-      console.log(`  ${C.dim}No recipes found${C.reset}\n`)
+      console.log(`  ${T.dim}No recipes.${T.reset}\n`)
     } else {
-      console.log(`\n${C.bold}  Recipes:${C.reset}`)
+      console.log(`\n  ${T.bold}Recipes${T.reset}`)
+      console.log(`  ${T.dim}${hr()}${T.reset}`)
       for (const rec of recipes) {
-        console.log(`  ${C.cyan}▸${C.reset} ${rec.name || rec.id}  ${C.dim}${(rec.description || '').substring(0, 60)}${C.reset}`)
+        console.log(`  ${T.accent}▸${T.reset} ${rec.name || rec.id}  ${T.dim}${(rec.description || '').substring(0, 60)}${T.reset}`)
       }
       console.log()
     }
     return true
   }
 
-  // ── /sessions ─────────────────────────────────────────────
+  // ── /sessions ──────────────────────────────────────────────────────────────────
   if (command === '/sessions') {
     const sessions = await apiFetch<any[]>('/api/sessions', [])
-    console.log(`\n${C.bold}  Sessions (${sessions.length}):${C.reset}`)
+    console.log(`\n  ${T.bold}Sessions (${sessions.length})${T.reset}`)
+    console.log(`  ${T.dim}${hr()}${T.reset}`)
     for (const s of sessions.slice(0, 10)) {
       const ts  = s.timestamp ? new Date(s.timestamp).toLocaleString() : '—'
-      const pre = (s.preview || s.title || '').substring(0, 50)
-      console.log(`  ${C.dim}${ts}${C.reset}  ${pre}`)
+      const pre = (s.preview || s.title || s.id || '').substring(0, 50)
+      console.log(`  ${T.dim}${ts}${T.reset}  ${pre}`)
     }
-    if (sessions.length > 10) {
-      console.log(`  ${C.dim}… and ${sessions.length - 10} more${C.reset}`)
-    }
+    if (sessions.length > 10) console.log(`  ${T.dim}…and ${sessions.length - 10} more${T.reset}`)
     console.log()
     return true
   }
 
-  // ── /budget ───────────────────────────────────────────────
-  if (command === '/budget') {
-    const totalChars = state.history.reduce((n, h) => n + h.content.length, 0)
-    const approxTok  = Math.round(totalChars / 4)
-    const ctx        = state.ctxPercent
-    console.log(`
-  ${C.bold}Token Budget (estimate):${C.reset}
-  Context used   ~${approxTok.toLocaleString()} tokens  (${ctx}%)
-  Turn count     ${state.turnCount}
-  Session ID     ${SESSION_ID.substring(0, 16)}…
-`)
+  // ── /analytics ─────────────────────────────────────────────────────────────────
+  if (command === '/analytics') {
+    const [usage, sessions, mem] = await Promise.all([
+      apiFetch<any>('/api/usage',     {}),
+      apiFetch<any[]>('/api/sessions', []),
+      apiFetch<any>('/api/memories',  {}),
+    ])
+
+    const totalSessions = sessions.length       || usage.sessions      || 0
+    const totalMessages = usage.messages        || usage.totalMessages  || 0
+    const toolCalls     = usage.toolCalls       || 0
+    const userMsgs      = usage.userMessages    || Math.round(totalMessages / 2) || 0
+    const inTok         = usage.inputTokens     || 0
+    const outTok        = usage.outputTokens    || 0
+    const totTok        = inTok + outTok        || usage.totalTokens   || 0
+    const cost          = usage.cost            || usage.totalCost     || (totTok / 1_000_000 * 0.10)
+    const activeTime    = usage.activeTimeMs    ? fmtDuration(usage.activeTimeMs)  : '—'
+    const avgSession    = usage.avgSessionMs    ? fmtDuration(usage.avgSessionMs)  : '—'
+    const models: any[] = usage.models          || usage.modelBreakdown || []
+    const tools: any[]  = usage.tools           || usage.topTools       || []
+    const activity: any = usage.activity        || usage.daily          || {}
+
+    const LINE = `  ${T.dim}${hr()}${T.reset}`
+
+    console.log()
+    console.log(`  ${T.dim}┌${'─'.repeat(cols() - 3)}${T.reset}`)
+    console.log(`  ${T.bold}  Aiden Analytics · Last 30 days${T.reset}`)
+    console.log(`  ${T.dim}└${'─'.repeat(cols() - 3)}${T.reset}`)
+    console.log()
+    console.log(`  ${T.bold}Overview${T.reset}`)
+    console.log(LINE)
+
+    const row = (a: string, av: string, b: string, bv: string): void => {
+      console.log(`  ${a.padEnd(18)}${av.padEnd(16)}${b.padEnd(18)}${bv}`)
+    }
+    row('Sessions',      String(totalSessions), 'Messages',      String(totalMessages))
+    row('Tool calls',    String(toolCalls),      'User msgs',     String(userMsgs))
+    row('Input tokens',  num(inTok),             'Output tokens', num(outTok))
+    row('Total tokens',  num(totTok),            'Est. cost',     `$${typeof cost === 'number' ? cost.toFixed(2) : cost}`)
+    row('Active time',   activeTime,             'Avg session',   avgSession)
+
+    if (models.length > 0) {
+      console.log()
+      console.log(`  ${T.bold}Models Used${T.reset}`)
+      console.log(LINE)
+      console.log(`  ${'Model'.padEnd(28)}${'Sessions'.padEnd(12)}${'Tokens'.padEnd(14)}Cost`)
+      for (const m of models) {
+        const mname = (m.model || m.name || '').padEnd(28)
+        const msess = String(m.sessions || 0).padEnd(12)
+        const mtok  = num(m.tokens || 0).padEnd(14)
+        const mcost = `$${(m.cost || 0).toFixed(2)}`
+        console.log(`  ${T.dim}${mname}${msess}${mtok}${mcost}${T.reset}`)
+      }
+    }
+
+    if (tools.length > 0) {
+      console.log()
+      console.log(`  ${T.bold}Top Tools${T.reset}`)
+      console.log(LINE)
+      console.log(`  ${'Tool'.padEnd(24)}${'Calls'.padEnd(10)}%`)
+      for (const t of tools.slice(0, 10)) {
+        const pct  = toolCalls > 0 ? Math.round((t.calls || 0) / toolCalls * 100) : (t.pct || 0)
+        const tname = (t.name || t.tool || '').padEnd(24)
+        const tcalls = String(t.calls || 0).padEnd(10)
+        console.log(`  ${T.dim}${tname}${tcalls}${pct}%${T.reset}`)
+      }
+    }
+
+    // Activity bar chart
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+    const dayData: Record<string, number> = {}
+    if (typeof activity === 'object' && !Array.isArray(activity)) {
+      for (const [k, v] of Object.entries(activity)) {
+        dayData[k] = Number(v) || 0
+      }
+    }
+
+    if (Object.keys(dayData).length > 0) {
+      console.log()
+      console.log(`  ${T.bold}Activity${T.reset}`)
+      console.log(LINE)
+      const maxVal = Math.max(...days.map(d => dayData[d.toLowerCase()] || dayData[d] || 0), 1)
+      for (const day of days) {
+        const val  = dayData[day.toLowerCase()] || dayData[day] || 0
+        const bars = Math.round((val / maxVal) * 10)
+        const bar  = '▮'.repeat(bars)
+        console.log(`  ${T.dim}${day}  ${T.reset}${T.accent}${bar.padEnd(10)}${T.reset}  ${T.dim}${val}${T.reset}`)
+      }
+    }
+
+    if (mem && typeof mem === 'object') {
+      const total = Array.isArray(mem) ? mem.length : (mem.total || 0)
+      if (total > 0) console.log(`\n  ${T.dim}Memory: ${num(total)} total · ${num(mem.semantic || 0)} semantic · ${num(mem.entities || 0)} entities${T.reset}`)
+    }
+
+    console.log()
     return true
   }
 
-  // ── /workspace ────────────────────────────────────────────
+  // ── /budget ────────────────────────────────────────────────────────────────────
+  if (command === '/budget') {
+    const totChars  = state.history.reduce((n, h) => n + h.content.length, 0)
+    const approxTok = Math.round(totChars / 4)
+    console.log()
+    console.log(`  ${T.bold}Token Budget (session estimate)${T.reset}`)
+    console.log(`  ${T.dim}${hr()}${T.reset}`)
+    console.log(`  ${'Context used'.padEnd(18)}~${num(approxTok)} tokens  (${state.ctxPercent}%)`)
+    console.log(`  ${'Turns'.padEnd(18)}${state.turnCount}`)
+    console.log(`  ${'Session'.padEnd(18)}${T.dim}${SESSION_ID}${T.reset}`)
+    console.log()
+    return true
+  }
+
+  // ── /workspace ─────────────────────────────────────────────────────────────────
   if (command === '/workspace') {
-    const ws = await apiFetch<any>('/api/workspaces', {})
+    const ws   = await apiFetch<any>('/api/workspaces', {})
     const list = Array.isArray(ws) ? ws : (ws.workspaces || [])
     if (list.length === 0) {
-      console.log(`  ${C.dim}No workspaces${C.reset}\n`)
+      console.log(`  ${T.dim}No workspaces.${T.reset}\n`)
     } else {
-      console.log(`\n${C.bold}  Workspaces:${C.reset}`)
-      for (const w of list) {
-        console.log(`  ${C.cyan}▸${C.reset} ${w.name || w.id}`)
+      console.log(`\n  ${T.bold}Workspaces${T.reset}`)
+      console.log(`  ${T.dim}${hr()}${T.reset}`)
+      for (const w2 of list) {
+        const active = w2.active ? ` ${T.primary}[active]${T.reset}` : ''
+        console.log(`  ${T.accent}▸${T.reset} ${w2.name || w2.id}${active}  ${T.dim}${w2.path || ''}${T.reset}`)
       }
       console.log()
     }
     return true
   }
 
-  // ── /security ─────────────────────────────────────────────
+  // ── /quick <question> ─────────────────────────────────────────────────────────
+  if (command === '/quick') {
+    const question = parts.slice(1).join(' ')
+    if (!question) { console.log(`  ${T.dim}Usage: /quick <question>${T.reset}\n`); return true }
+    process.stdout.write(`  ${T.dim}◆${T.reset}  `)
+    try {
+      const res = await fetch(`${API_BASE}/api/chat`, {
+        method : 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
+        body   : JSON.stringify({ message: question, mode: 'auto', history: [] }),
+        signal : AbortSignal.timeout(30000),
+      })
+      if (!res.ok) { console.log(`\n  ${T.error}✗ ${res.status}${T.reset}\n`); return true }
+      const isSSE = (res.headers.get('content-type') || '').includes('text/event-stream')
+      if (!isSSE) {
+        const data = await res.json() as any
+        process.stdout.write((data.reply || data.message || data.content || '') + '\n\n')
+      } else {
+        const reader  = (res.body as any).getReader()
+        const decoder = new TextDecoder()
+        let   buf     = ''
+        let   done2   = false
+        while (!done2) {
+          const { done, value } = await reader.read()
+          if (done) break
+          buf += decoder.decode(value, { stream: true })
+          const lines = buf.split('\n'); buf = lines.pop() || ''
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue
+            const raw = line.slice(6).trim()
+            if (raw === '[DONE]') { done2 = true; break }
+            let evt: any; try { evt = JSON.parse(raw) } catch { continue }
+            if (evt.token) process.stdout.write(evt.token)
+            if (evt.done)  { done2 = true; break }
+          }
+        }
+        process.stdout.write('\n\n')
+      }
+    } catch (err: any) {
+      console.log(`\n  ${T.error}✗ ${err?.message}${T.reset}\n`)
+    }
+    return true
+  }
+
+  // ── /compact ───────────────────────────────────────────────────────────────────
+  if (command === '/compact') {
+    console.log(`  ${T.dim}Compressing context…${T.reset}`)
+    const res = await apiPost('/api/context/compact', { sessionId: SESSION_ID })
+    if (res) {
+      console.log(`  ${T.success}✓ Context compressed${T.reset}\n`)
+    } else if (state.history.length > 10) {
+      state.history = state.history.slice(-10)
+      console.log(`  ${T.success}✓ Trimmed to last 5 turns${T.reset}\n`)
+    } else {
+      console.log(`  ${T.dim}Nothing to compact.${T.reset}\n`)
+    }
+    return true
+  }
+
+  // ── /async <task> ──────────────────────────────────────────────────────────────
+  if (command === '/async') {
+    const task = parts.slice(1).join(' ')
+    if (!task) { console.log(`  ${T.dim}Usage: /async <task>${T.reset}\n`); return true }
+    const res = await apiPost('/api/tasks/async', { task, sessionId: SESSION_ID })
+    if (res?.taskId) {
+      console.log(`  ${T.success}✓ Task queued: ${res.taskId}${T.reset}\n`)
+    } else {
+      console.log(`  ${T.dim}Task submitted.${T.reset}\n`)
+    }
+    return true
+  }
+
+  // ── /security ──────────────────────────────────────────────────────────────────
   if (command === '/security') {
-    console.log(`${C.dim}  Running security scan…${C.reset}`)
-    const scan = await apiFetch<any>('/api/security/scan', {})
+    console.log(`  ${T.dim}Running security scan…${T.reset}`)
+    const scan    = await apiFetch<any>('/api/security/scan', {})
     const threats = scan.threats || scan.issues || []
     if (threats.length === 0) {
-      console.log(`  ${C.green}✓ No threats detected${C.reset}\n`)
+      console.log(`  ${T.success}✓ No threats detected${T.reset}\n`)
     } else {
-      console.log(`  ${C.red}[!] ${threats.length} issue(s) found:${C.reset}`)
-      for (const t of threats) {
-        console.log(`    ${C.yellow}•${C.reset} ${t.message || JSON.stringify(t)}`)
-      }
+      console.log(`  ${T.error}✗ ${threats.length} issue(s) found:${T.reset}`)
+      for (const t of threats) console.log(`    ${T.warning}◆${T.reset} ${t.message || JSON.stringify(t)}`)
       console.log()
     }
     return true
   }
 
-  // ── /debug ────────────────────────────────────────────────
+  // ── /debug ─────────────────────────────────────────────────────────────────────
   if (command === '/debug') {
-    const logs = await apiFetch<any>('/api/debug/logs', { logs: [] })
+    const logs  = await apiFetch<any>('/api/debug/logs', { logs: [] })
     const lines = Array.isArray(logs) ? logs : (logs.logs || [])
-    console.log(`\n${C.bold}  Debug logs (last 20):${C.reset}`)
-    for (const l of lines.slice(-20)) {
-      console.log(`  ${C.dim}${l}${C.reset}`)
-    }
+    console.log(`\n  ${T.bold}Debug logs (last 20)${T.reset}`)
+    console.log(`  ${T.dim}${hr()}${T.reset}`)
+    for (const l of lines.slice(-20)) console.log(`  ${T.dim}${l}${T.reset}`)
     console.log()
     return true
   }
 
-  // ── /provider <name> ──────────────────────────────────────
-  if (command === '/provider') {
-    const name = parts[1]
-    if (!name) {
-      console.log(`  ${C.dim}Usage: /provider <name>${C.reset}\n`)
+  // ── /config ────────────────────────────────────────────────────────────────────
+  if (command === '/config') {
+    const cfg = loadCfg()
+    const h   = await apiFetch<any>('/api/health', {})
+    console.log()
+    console.log(`  ${T.bold}Aiden Configuration${T.reset}`)
+    console.log(`  ${T.dim}${hr()}${T.reset}`)
+    console.log(`  ${'Model'.padEnd(16)}${T.accent}${cfg?.model?.activeModel || 'unknown'}${T.reset}`)
+    console.log(`  ${'Provider'.padEnd(16)}${cfg?.model?.active || 'unknown'}`)
+    console.log(`  ${'Workspace'.padEnd(16)}${T.dim}${cfg?.workspace?.path || process.cwd()}${T.reset}`)
+    console.log(`  ${'Theme'.padEnd(16)}${state.themeName}`)
+    console.log(`  ${'Persona'.padEnd(16)}${state.persona}`)
+    console.log(`  ${'Detail'.padEnd(16)}${state.detailLevel}`)
+    console.log(`  ${'Depth'.padEnd(16)}${state.depthLevel}`)
+    console.log(`  ${'Session'.padEnd(16)}${T.dim}${SESSION_ID}${T.reset}`)
+    console.log(`  ${'Started'.padEnd(16)}${T.dim}${new Date(SESSION_START).toLocaleString()}${T.reset}`)
+    console.log(`  ${'Config file'.padEnd(16)}${T.dim}${CONFIG_PATH}${T.reset}`)
+    if (h.version) console.log(`  ${'Version'.padEnd(16)}${h.version}`)
+    console.log()
+    return true
+  }
+
+  // ── /theme <name> ──────────────────────────────────────────────────────────────
+  if (command === '/theme') {
+    const name = (parts[1] || '') as ThemeName
+    if (!name || !THEMES[name]) {
+      console.log(`  ${T.dim}Usage: /theme <default|mono|slate|ember>${T.reset}\n`)
       return true
     }
-    try {
-      const res = await fetch(`${API_BASE}/api/providers/active`, {
-        method : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body   : JSON.stringify({ provider: name }),
-      })
-      if (res.ok) {
-        state.lastProvider = name
-        console.log(`  ${C.green}✓ Switched to ${name}${C.reset}\n`)
-      } else {
-        console.log(`  ${C.red}✗ Could not switch to ${name} (${res.status})${C.reset}\n`)
-      }
-    } catch {
-      console.log(`  ${C.red}✗ Request failed${C.reset}\n`)
+    applyTheme(name)
+    state.themeName = name
+    rl.setPrompt(getPrompt())
+    const cfg = loadCfg()
+    if (!cfg.cli) cfg.cli = {}
+    cfg.cli.theme = name
+    saveCfg(cfg)
+    console.log(`  ${T.success}✓ Theme: ${name}${T.reset}\n`)
+    return true
+  }
+
+  // ── /persona <name> ────────────────────────────────────────────────────────────
+  if (command === '/persona') {
+    const name = parts[1] || 'default'
+    state.persona = name
+    console.log(`  ${T.success}✓ Persona: ${name}${T.reset}\n`)
+    return true
+  }
+
+  // ── /detail ────────────────────────────────────────────────────────────────────
+  if (command === '/detail') {
+    const levels: Array<'off' | 'tools' | 'verbose'> = ['off', 'tools', 'verbose']
+    state.detailLevel = levels[(levels.indexOf(state.detailLevel) + 1) % levels.length]
+    console.log(`  ${T.success}✓ Detail: ${state.detailLevel}${T.reset}\n`)
+    return true
+  }
+
+  // ── /depth ─────────────────────────────────────────────────────────────────────
+  if (command === '/depth') {
+    const levels: Array<'low' | 'medium' | 'high'> = ['low', 'medium', 'high']
+    state.depthLevel = levels[(levels.indexOf(state.depthLevel) + 1) % levels.length]
+    console.log(`  ${T.success}✓ Depth: ${state.depthLevel}${T.reset}\n`)
+    return true
+  }
+
+  // ── /provider <name> ───────────────────────────────────────────────────────────
+  if (command === '/provider') {
+    const name = parts[1]
+    if (!name) { console.log(`  ${T.dim}Usage: /provider <name>${T.reset}\n`); return true }
+    const res = await apiPost('/api/providers/active', { provider: name })
+    if (res) {
+      state.lastProvider = name
+      console.log(`  ${T.success}✓ Provider: ${name}${T.reset}\n`)
+    } else {
+      console.log(`  ${T.error}✗ Could not switch to ${name}${T.reset}\n`)
     }
     return true
   }
 
-  // ── /quit / /exit ─────────────────────────────────────────
+  // ── /quit / /exit / /q ─────────────────────────────────────────────────────────
   if (command === '/quit' || command === '/exit' || command === '/q') {
-    console.log(`\n${C.dim}  Goodbye.${C.reset}\n`)
+    printSessionSummary()
     process.exit(0)
   }
 
-  // Unrecognised command
-  console.log(`  ${C.dim}Unknown command. /help for list.${C.reset}\n`)
+  console.log(`  ${T.dim}Unknown command. /help for list.${T.reset}\n`)
   return true
 }
 
-// ── Tab completer ───────────────────────────────────────────────────────────────
+// ── Tab completer ─────────────────────────────────────────────────────────────────
 
 function completer(line: string): [string[], string] {
-  if (line.startsWith('/')) {
-    const hits = COMMANDS.filter(c => c.startsWith(line))
-    return [hits.length ? hits : COMMANDS, line]
-  }
-  return [[], line]
+  if (!line.startsWith('/')) return [[], line]
+  const hits = COMMANDS.filter(c => c.startsWith(line))
+  return [hits.length ? hits : COMMANDS, line]
 }
 
-// ── Main ────────────────────────────────────────────────────────────────────────
+// ── Main ──────────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-  // Check server reachability
   const health = await apiFetch<any>('/api/health', null)
   if (!health || health.status !== 'ok') {
-    console.log(`\n${C.red}  ✗ Cannot connect to Aiden at ${API_BASE}${C.reset}`)
-    console.log(`${C.dim}  Start the Aiden desktop app first, or set AIDEN_API env var.${C.reset}\n`)
+    console.log(`\n  ${T.error}✗ Cannot connect to Aiden at ${API_BASE}${T.reset}`)
+    console.log(`  ${T.dim}Start the Aiden desktop app first, or set AIDEN_API env var.${T.reset}\n`)
     process.exit(1)
   }
 
   await printBanner()
 
   const rl = readline.createInterface({
-    input     : process.stdin,
-    output    : process.stdout,
-    prompt    : `${C.dim}you${C.reset} ${C.bold}›${C.reset} `,
+    input    : process.stdin,
+    output   : process.stdout,
+    prompt   : getPrompt(),
     completer,
-    terminal  : true,
+    terminal : true,
   })
 
   rl.prompt()
 
-  // ── Up/down arrow history ──
-  let histIdx = -1
+  let histIdx   = -1
+  let lastCtrlC = 0
 
   rl.on('keypress', (_ch: any, key: any) => {
     if (!key) return
-
     if (key.name === 'up') {
       if (histIdx < state.inputHistory.length - 1) {
         histIdx++
         const entry = state.inputHistory[state.inputHistory.length - 1 - histIdx] || ''
-        ;(rl as any).line = entry
+        ;(rl as any).line   = entry
         ;(rl as any).cursor = entry.length
         ;(rl as any)._refreshLine?.()
       }
-      return
-    }
-
-    if (key.name === 'down') {
+    } else if (key.name === 'down') {
       if (histIdx > 0) {
         histIdx--
         const entry = state.inputHistory[state.inputHistory.length - 1 - histIdx] || ''
-        ;(rl as any).line = entry
+        ;(rl as any).line   = entry
         ;(rl as any).cursor = entry.length
         ;(rl as any)._refreshLine?.()
       } else {
-        histIdx = -1
-        ;(rl as any).line = ''
+        histIdx             = -1
+        ;(rl as any).line   = ''
         ;(rl as any).cursor = 0
         ;(rl as any)._refreshLine?.()
       }
-      return
     }
   })
-
-  // ── Ctrl+C: interrupt / double-exit ──
-  let lastCtrlC = 0
 
   rl.on('SIGINT', async () => {
     if (state.streaming) {
-      // Interrupt generation
       state.abortCtrl?.abort()
       await apiPost('/api/stop')
-      process.stdout.write(`\n${C.yellow}  [x] Interrupted${C.reset}\n\n`)
+      process.stdout.write(`\n  ${T.warning}Interrupted.${T.reset}\n\n`)
       rl.prompt()
       return
     }
-
     const now = Date.now()
-    if (now - lastCtrlC < 1500) {
-      console.log(`\n${C.dim}  Goodbye.${C.reset}\n`)
+    if (now - lastCtrlC < 2000) {
+      printSessionSummary()
       process.exit(0)
     }
     lastCtrlC = now
-    process.stdout.write(`\n${C.dim}  Press Ctrl+C again to exit.${C.reset}\n`)
+    process.stdout.write(`\n  ${T.dim}Press Ctrl+C again to exit.${T.reset}\n`)
     rl.prompt()
   })
 
-  // ── Line handler ──
   rl.on('line', async (line: string) => {
     histIdx = -1
     const input = line.trim()
+    if (!input) { rl.prompt(); return }
 
-    if (!input) {
-      rl.prompt()
-      return
-    }
-
-    // Save to input history (avoid duplicates)
     if (state.inputHistory[state.inputHistory.length - 1] !== input) {
       state.inputHistory.push(input)
       if (state.inputHistory.length > 200) state.inputHistory.shift()
@@ -755,7 +1209,7 @@ async function main(): Promise<void> {
   })
 
   rl.on('close', () => {
-    console.log(`\n${C.dim}  Goodbye.${C.reset}\n`)
+    printSessionSummary()
     process.exit(0)
   })
 }
