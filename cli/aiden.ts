@@ -14,8 +14,9 @@ import path     from 'path'
 // ── Constants ────────────────────────────────────────────────────────────────────
 
 const API_BASE      = process.env.AIDEN_API || 'http://localhost:4200'
-const SESSION_ID    = `session_${Date.now()}`
+let   SESSION_ID    = `session_${Date.now()}`
 const SESSION_START = Date.now()
+let   RESUMED_FROM: string | null = null
 const CONFIG_PATH   = path.join(__dirname, '..', 'config', 'devos.config.json')
 const MAX_TURNS     = 15
 
@@ -251,7 +252,7 @@ function printSessionSummary(): void {
   console.log(`  ${'Cost'.padEnd(14)}~$${cost}`)
   console.log(`  ${'Session'.padEnd(14)}${T.dim}${SESSION_ID}${T.reset}`)
   console.log(div)
-  console.log(`  ${T.dim}Resume: npm run cli -- --continue${T.reset}`)
+  console.log(`  ${T.dim}Resume: npm run cli -- --resume ${SESSION_ID}${T.reset}`)
   console.log()
 }
 
@@ -1377,6 +1378,102 @@ function completer(line: string): [string[], string] {
   return [hits.length ? hits : COMMANDS, line]
 }
 
+// ── Session resume helpers ─────────────────────────────────────────────────────────
+
+async function loadSession(id: string): Promise<void> {
+  const session = await apiFetch<any>(`/api/sessions/${id}`, null)
+  if (!session || !Array.isArray(session.exchanges)) {
+    console.log(`\n  ${T.error}✗ Session "${id}" not found.${T.reset}`)
+    console.log(`  ${T.dim}Use --list to see available sessions.${T.reset}\n`)
+    process.exit(1)
+  }
+
+  // Reuse the old session ID so the server loads the right memory context
+  SESSION_ID   = session.id || id
+  RESUMED_FROM = SESSION_ID
+
+  // Populate local history so streamChat includes prior context in histPayload
+  for (const ex of session.exchanges as any[]) {
+    if (ex.userMessage?.trim()) state.history.push({ role: 'user',      content: ex.userMessage })
+    if (ex.aiReply?.trim())     state.history.push({ role: 'assistant', content: ex.aiReply     })
+  }
+  // Cap at 20 to avoid context bloat
+  if (state.history.length > 20) state.history = state.history.slice(-20)
+
+  // Print recap
+  const ago      = session.updatedAt ? fmtDuration(Date.now() - session.updatedAt) : 'unknown'
+  const msgCount = session.messageCount ?? (session.exchanges as any[]).length
+  const lastUser = (session.exchanges as any[]).filter((e: any) => e.userMessage?.trim()).slice(-1)[0]
+  const lastMsg  = lastUser?.userMessage || ''
+  const preview  = lastMsg
+    ? `"${lastMsg.slice(0, 55).replace(/\n/g, ' ')}${lastMsg.length > 55 ? '...' : ''}"`
+    : ''
+  const div = `  ${T.dim}${'─'.repeat(cols() - 4)}${T.reset}`
+
+  console.log()
+  console.log(`  ${T.accent}◆${T.reset} Resumed session`)
+  console.log(div)
+  console.log(`  ${'ID'.padEnd(12)}${T.dim}${SESSION_ID}${T.reset}`)
+  console.log(`  ${'Last active'.padEnd(12)}${T.dim}${ago} ago${T.reset}`)
+  console.log(`  ${'Messages'.padEnd(12)}${T.dim}${msgCount}${T.reset}`)
+  if (preview) console.log(`  ${'Last msg'.padEnd(12)}${T.dim}${preview}${T.reset}`)
+  console.log(div)
+  console.log()
+}
+
+async function resolveSessionArgs(): Promise<void> {
+  const args = process.argv.slice(2)
+
+  // ── --list / -l ──────────────────────────────────────────────────────────────
+  if (args.includes('--list') || args.includes('-l')) {
+    const sessions = await apiFetch<any[]>('/api/sessions', [])
+    if (!sessions || sessions.length === 0) {
+      console.log(`\n  ${T.dim}No sessions found.${T.reset}\n`)
+    } else {
+      console.log()
+      console.log(`  Recent Sessions`)
+      console.log(`  ${T.dim}${'─'.repeat(cols() - 4)}${T.reset}`)
+      for (const s of sessions.slice(0, 15)) {
+        const ago   = fmtDuration(Date.now() - s.timestamp)
+        const msgs  = `${s.messageCount} msg${s.messageCount !== 1 ? 's' : ''}`
+        const idStr = s.id.length > 22 ? `...${s.id.slice(-18)}` : s.id
+        const prev  = (s.preview || '').slice(0, 40)
+        console.log(`  ${T.accent}${idStr}${T.reset}  ${T.dim}${ago.padEnd(10)} · ${msgs.padEnd(8)}${T.reset}  ${prev}`)
+      }
+      console.log()
+      console.log(`  ${T.dim}Resume: npm run cli -- --resume <id>${T.reset}`)
+      console.log()
+    }
+    process.exit(0)
+  }
+
+  // ── --continue / -c ──────────────────────────────────────────────────────────
+  if (args.includes('--continue') || args.includes('-c')) {
+    const sessions = await apiFetch<any[]>('/api/sessions', [])
+    const last     = sessions?.[0]
+    if (!last) {
+      console.log(`\n  ${T.dim}No previous session found.${T.reset}\n`)
+      return
+    }
+    await loadSession(last.id)
+    return
+  }
+
+  // ── --resume <id> / -r <id> ───────────────────────────────────────────────────
+  const rIdx = Math.max(args.indexOf('--resume'), args.indexOf('-r'))
+  if (rIdx >= 0) {
+    const id = args[rIdx + 1]
+    if (!id || id.startsWith('-')) {
+      console.log(`\n  ${T.error}✗ --resume requires a session ID.${T.reset}`)
+      console.log(`  ${T.dim}Example: npm run cli -- --resume session_1744899123456${T.reset}`)
+      console.log(`  ${T.dim}List sessions: npm run cli -- --list${T.reset}\n`)
+      process.exit(1)
+    }
+    await loadSession(id)
+    return
+  }
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -1386,6 +1483,8 @@ async function main(): Promise<void> {
     console.log(`  ${T.dim}Start the Aiden desktop app first, or set AIDEN_API env var.${T.reset}\n`)
     process.exit(1)
   }
+
+  await resolveSessionArgs()
 
   await printBanner()
 

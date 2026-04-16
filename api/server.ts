@@ -2208,6 +2208,21 @@ export function createApiServer(): Express {
     } catch (err: any) { res.status(500).json({ error: err.message }) }
   })
 
+  // GET /api/sessions/:id — full session with exchange history (for CLI resume)
+  app.get('/api/sessions/:id', (req: Request, res: Response) => {
+    try {
+      const id      = String(req.params.id)
+      const session = conversationMemory.getSession(id)
+      if (!session) { res.status(404).json({ error: `Session "${id}" not found` }); return }
+      res.json({
+        id:           session.sessionId,
+        exchanges:    session.exchanges,
+        messageCount: session.exchanges.length,
+        updatedAt:    session.updatedAt,
+      })
+    } catch (err: any) { res.status(500).json({ error: err.message }) }
+  })
+
   // GET /api/sessions/:id/lineage — session lineage chain
   app.get('/api/sessions/:id/lineage', (req: Request, res: Response) => {
     try {

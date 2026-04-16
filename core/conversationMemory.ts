@@ -398,6 +398,11 @@ export class ConversationMemory {
 
   // ── Accessors ─────────────────────────────────────────────────
 
+  /** Return the full ConversationState for a given session ID, or null if unknown. */
+  getSession(sessionId: string): ConversationState | null {
+    return this.allSessions[sessionId] ?? null
+  }
+
   getRecentHistory(): Exchange[] {
     return this.state.exchanges.slice(-10)
   }
