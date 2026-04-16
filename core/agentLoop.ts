@@ -266,6 +266,7 @@ export interface ToolStep {
 
 export interface AgentPlan {
   goal:               string
+  goals?:             string[]   // multi-goal decomposition list (Phase 1)
   requires_execution: boolean
   plan:               ToolStep[]
   direct_response?:   string
@@ -833,6 +834,10 @@ export async function planWithLLM(
 
   const plannerPrompt = `You are DevOS Planner. Analyze the user request and output a JSON plan.
 
+GOAL DECOMPOSITION: Before writing your plan, count the distinct intents in the user message.
+If the message contains 2 or more distinct goals (e.g., "search X AND write a file", "do A then B", "1. … 2. …"), add a "goals" array to your JSON listing each goal as a short phrase (max 8 words each). Your plan MUST cover ALL listed goals — do not silently drop any.
+Single-goal messages: omit "goals" or leave it as an empty array.
+
 SYSTEM CONTEXT — use these exact values for all file paths:
 - Windows username: ${_sysUsername}
 - Home directory: ${_sysHomedir}
@@ -902,6 +907,7 @@ URL RULES:
 OUTPUT FORMAT (strict JSON only):
 {
   "goal": "exact user request",
+  "goals": ["goal 1 short phrase", "goal 2 short phrase"],
   "requires_execution": true,
   "reasoning": "one sentence why",
   "plan": [
@@ -911,6 +917,8 @@ OUTPUT FORMAT (strict JSON only):
 
 If requires_execution is false:
 { "goal": "...", "requires_execution": false, "reasoning": "...", "plan": [], "direct_response": "your answer here" }
+
+NOTE: "goals" is only required when 2+ distinct intents are present. Single-goal messages may omit it.
 
 THE 'respond' TOOL — use this for ALL conversational messages:
 - 'respond' is ALWAYS a valid plan. When no external tool is needed, plan a single respond step.
@@ -2239,6 +2247,7 @@ export async function respondWithResults(
   providerName:    string,
   onToken:         (token: string) => void,
   sessionId?:      string,
+  goals?:          string[],   // Phase 1: multi-goal numbered output
 ): Promise<void> {
 
   const date = new Date().toLocaleDateString('en-US', {
@@ -2281,6 +2290,12 @@ export async function respondWithResults(
 - DO NOT just summarize — ANALYZE and provide INSIGHTS`
     : ''
 
+  // Phase 1: multi-goal numbered output instruction
+  const _goalsToUse   = goals && goals.length >= 2 ? goals : (plan.goals && plan.goals.length >= 2 ? plan.goals : null)
+  const multiGoalInstruction = _goalsToUse
+    ? `\n\nMULTI-GOAL RESPONSE — the user had ${_goalsToUse.length} distinct goals:\n${_goalsToUse.map((g, i) => `${i + 1}. ${g}`).join('\n')}\nStructure your response with numbered sections (1., 2., …) that match each goal above. Do not skip any goal.`
+    : ''
+
   const executionSummary = results.length
     ? results.map((r, i) =>
         `Step ${i + 1} [${r.tool}]: ${r.success ? r.output.slice(0, 500) : 'FAILED — ' + r.error}`,
@@ -2299,7 +2314,7 @@ export async function respondWithResults(
     : ''
 
   const systemWithResults = toolResultsContext
-    ? `${capabilitiesSection}${responderSystem(userName, date)}${responseSkillContext}${knowledgeResponderSection}
+    ? `${capabilitiesSection}${responderSystem(userName, date)}${responseSkillContext}${knowledgeResponderSection}${multiGoalInstruction}
 
 YOU JUST RAN THESE TOOLS AND GOT THESE RESULTS:
 ${toolResultsContext}
@@ -2312,7 +2327,7 @@ CRITICAL RULES FOR YOUR RESPONSE:
 - If system_info returned hardware data, show the data
 - Be direct: show the actual output, then provide context if needed
 - If a tool failed, say it failed and why`
-    : `${capabilitiesSection}${responderSystem(userName, date)}${responseSkillContext}${knowledgeResponderSection}`
+    : `${capabilitiesSection}${responderSystem(userName, date)}${responseSkillContext}${knowledgeResponderSection}${multiGoalInstruction}`
 
   const userContent = executionSummary
     ? `User asked: "${originalMessage}"\n\nReal execution results:\n${executionSummary}\n\nRespond naturally based on these real results only. Show the actual output, not a description of it.${depthInstruction}${memSection}`

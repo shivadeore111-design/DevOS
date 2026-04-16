@@ -41,6 +41,7 @@ import { detectTimezone } from '../core/userProfile'
 import { executeTool, getActiveBrowserPage } from '../core/toolRegistry'
 import { getScreenSize, takeScreenshot as captureScreen } from '../core/computerControl'
 import { planWithLLM, executePlan, respondWithResults, callLLM, surfaceRelevantMemories, interruptCurrentCall, getBudgetState } from '../core/agentLoop'
+import { validateMultiGoalCoverage } from '../core/multiGoalValidator'
 import { TOOL_DESCRIPTIONS } from '../core/toolRegistry'
 import { runReActLoop, ReActStep }                                 from '../core/reactLoop'
 import { scheduler }                                              from '../core/scheduler'
@@ -1498,7 +1499,27 @@ export function createApiServer(): Express {
           fullReply += token
           send({ token, done: false, provider: apiName })
         },
+        sessionId as string | undefined,
+        plan.goals,
       )
+
+      // ── Phase 1: multi-goal coverage — second pass for missed goals ───
+      if (plan.goals && plan.goals.length >= 2 && fullReply) {
+        const goalCheck = validateMultiGoalCoverage(resolvedMessage, fullReply, plan.goals)
+        if (!goalCheck.covered && goalCheck.missed.length > 0) {
+          console.log(`[MultiGoal] Missed goals detected: ${goalCheck.missed.join(' | ')} — running second pass`)
+          send({ activity: { icon: '🔁', agent: 'Aiden', message: `Addressing missed goals: ${goalCheck.missed.join(', ')}`, style: 'act' }, done: false })
+          const missedPrompt = `Also specifically address these points that were not covered: ${goalCheck.missed.join('; ')}`
+          await respondWithResults(
+            missedPrompt, plan, [], history,
+            userName, rawKey, activeModel, providerName,
+            (token) => {
+              fullReply += token
+              send({ token, done: false, provider: apiName })
+            },
+          )
+        }
+      }
 
       streamEnded = true
       clearTimeout(timeout)
