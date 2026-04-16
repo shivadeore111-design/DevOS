@@ -3671,6 +3671,103 @@ export function createApiServer(): Express {
     }
   })
 
+  // POST /api/skills/install — install a skill stub into workspace/skills
+  app.post('/api/skills/install', (req: Request, res: Response) => {
+    try {
+      const { name } = req.body as { name?: string }
+      if (!name) { res.status(400).json({ error: 'name required' }); return }
+      const existing = skillLoader.loadAll()
+      if (existing.find(s => s.name === name)) {
+        res.json({ success: true, name, alreadyInstalled: true }); return
+      }
+      const destDir = path.join(WORKSPACE_ROOT, 'workspace', 'skills', name)
+      fs.mkdirSync(destDir, { recursive: true })
+      const stub = `---\nname: ${name}\ndescription: Installed skill — add instructions here\nversion: 1.0.0\ntags: []\n---\n\n# ${name}\n\nAdd skill instructions here.\n`
+      fs.writeFileSync(path.join(destDir, 'SKILL.md'), stub, 'utf-8')
+      skillLoader.refresh()
+      res.json({ success: true, name, path: destDir })
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
+  // GET /api/skills/stats — aggregate statistics
+  app.get('/api/skills/stats', (_req: Request, res: Response) => {
+    try {
+      const all      = skillLoader.loadAllRaw ? skillLoader.loadAllRaw() : skillLoader.loadAll()
+      const disabled = loadDisabledSkills()
+      const bySource: Record<string, number> = {}
+      for (const s of all) {
+        const src = deriveSkillSource(s.filePath)
+        bySource[src] = (bySource[src] ?? 0) + 1
+      }
+      const tagFreq: Record<string, number> = {}
+      for (const s of all) {
+        for (const t of s.tags) tagFreq[t] = (tagFreq[t] ?? 0) + 1
+      }
+      const topTags = Object.entries(tagFreq)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 8)
+        .map(([tag, count]) => ({ tag, count }))
+      res.json({
+        total:    all.length,
+        enabled:  all.length - disabled.size,
+        disabled: disabled.size,
+        bySource,
+        topTags,
+      })
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
+  // GET /api/skills/audit — blocked skills log + disabled list
+  app.get('/api/skills/audit', (_req: Request, res: Response) => {
+    try {
+      const BLOCKED_LOG_PATH = path.join(WORKSPACE_ROOT, 'workspace', 'blocked-skills.log')
+      let blocked: Array<{ ts: string; name: string; reason: string }> = []
+      try {
+        const raw = fs.readFileSync(BLOCKED_LOG_PATH, 'utf-8')
+        blocked = raw.trim().split('\n').filter(Boolean).map(line => {
+          const m = line.match(/^(.+?) \| BLOCKED: (.+?) \| (.+)$/)
+          return m ? { ts: m[1], name: m[2], reason: m[3] } : { ts: '', name: line, reason: '' }
+        })
+      } catch {}
+      const disabled = Array.from(loadDisabledSkills())
+      res.json({ blocked, disabled })
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
+  // GET /api/skills/export/:name — return raw skill file content
+  app.get('/api/skills/export/:name', (req: Request, res: Response) => {
+    try {
+      const name  = String(req.params.name)
+      const skill = skillLoader.loadAll().find(s => s.name === name)
+      if (!skill) { res.status(404).json({ error: 'Skill not found' }); return }
+      const content = fs.readFileSync(skill.filePath, 'utf-8')
+      res.json({ name, filePath: skill.filePath, content })
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
+  // POST /api/skills/import — write skill content into workspace/skills
+  app.post('/api/skills/import', (req: Request, res: Response) => {
+    try {
+      const { name, content } = req.body as { name?: string; content?: string }
+      if (!name || !content) { res.status(400).json({ error: 'name and content required' }); return }
+      const destDir = path.join(WORKSPACE_ROOT, 'workspace', 'skills', name)
+      fs.mkdirSync(destDir, { recursive: true })
+      fs.writeFileSync(path.join(destDir, 'SKILL.md'), content, 'utf-8')
+      skillLoader.refresh()
+      res.json({ success: true, name })
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
   // GET /api/tasks â€” list all tasks with status
   app.get('/api/tasks', (_req: Request, res: Response) => {
     const tasks = taskStateManager.listAll()

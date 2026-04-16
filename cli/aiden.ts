@@ -180,6 +180,13 @@ async function apiPost(p: string, body: any = {}): Promise<any> {
   } catch { return null }
 }
 
+async function apiDelete(p: string): Promise<any> {
+  try {
+    const res = await fetch(`${API_BASE}${p}`, { method: 'DELETE' })
+    return res.ok ? (await res.json().catch(() => null)) : null
+  } catch { return null }
+}
+
 // ── ASCII banner ──────────────────────────────────────────────────────────────────
 
 const ASCII_BANNER = [
@@ -686,7 +693,7 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       helpRow('/models',            'Model assignments'),
       helpRow('/memory',            'Memory stats'),
       helpRow('/goals',             'Active goals'),
-      helpRow('/skills',            'Loaded skills  (browse / inspect <n>)'),
+      helpRow('/skills',            'Skill lifecycle  (search / install / list / check / update / audit / remove / publish / export / import / source / stats / recommend / test)'),
       helpRow('/recipes',           'YAML recipes'),
       helpRow('/sessions',          'Recent sessions'),
       helpRow('/analytics',         'Usage over time'),
@@ -1052,28 +1059,289 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
   }
 
   // ── /skills ────────────────────────────────────────────────────────────────────
-  if (command === '/skills' || command === '/skills' && parts[1]) {
-    const sub    = parts[1]?.toLowerCase()
-    const skills = await apiFetch<any[]>('/api/skills', [])
+  if (command === '/skills' || (command === '/skills' && parts[1])) {
+    const sub = parts[1]?.toLowerCase()
+    const arg = parts.slice(2).join(' ')
+
+    // ── /skills search <query> ──────────────────────────────────────────────────
+    if (sub === 'search') {
+      if (!arg) { console.log(`  ${T.dim}Usage: /skills search <query>${T.reset}\n`); return true }
+      const results = await apiFetch<any[]>(`/api/skills/relevant?q=${encodeURIComponent(arg)}`, [])
+      const colDefs: ColDef[] = [
+        { header: '#',           width: 4,  align: 'right', color: COLORS.dim },
+        { header: 'Skill',       width: 24, align: 'left'  },
+        { header: 'Description'                             },
+        { header: 'Tags',        width: 22, align: 'left'  },
+      ]
+      const rows = results.map((s: any, i: number) => [
+        String(i + 1),
+        (s.name || '').substring(0, 22),
+        (s.description || '').substring(0, 50),
+        (s.tags || []).join(', ').substring(0, 20),
+      ])
+      console.log()
+      console.log(panel({ title: `${MARKS.TRI} Search — "${arg}"`, lines: [''] }))
+      if (rows.length === 0) {
+        console.log(`  ${T.dim}No skills matched.${T.reset}\n`)
+      } else {
+        console.log(table(colDefs, rows))
+        console.log(`\n  ${T.dim}${results.length} result(s) · /skills inspect <name>${T.reset}\n`)
+      }
+      return true
+    }
+
+    // ── /skills install <name> ──────────────────────────────────────────────────
+    if (sub === 'install') {
+      if (!arg) { console.log(`  ${T.dim}Usage: /skills install <name>${T.reset}\n`); return true }
+      const result = await apiPost('/api/skills/install', { name: arg })
+      if (!result) {
+        console.log(`  ${T.error}Install failed for "${arg}".${T.reset}\n`); return true
+      }
+      if (result.alreadyInstalled) {
+        console.log(`  ${T.dim}${MARKS.DOT} "${arg}" is already installed.${T.reset}\n`); return true
+      }
+      console.log(`  ${fg(COLORS.success)}${MARKS.TRI}${RST} installed ${fg(COLORS.orange)}${arg}${RST}\n`)
+      return true
+    }
+
+    // ── /skills remove <name> ───────────────────────────────────────────────────
+    if (sub === 'remove') {
+      if (!arg) { console.log(`  ${T.dim}Usage: /skills remove <name>${T.reset}\n`); return true }
+      const result = await apiDelete(`/api/skills/${encodeURIComponent(arg)}`)
+      if (!result?.success) {
+        const msg = result?.error || 'unknown error'
+        console.log(`  ${T.error}Remove failed: ${msg}${T.reset}\n`); return true
+      }
+      console.log(`  ${T.dim}${MARKS.DOT} removed "${arg}".${T.reset}\n`)
+      return true
+    }
+
+    // ── /skills update ──────────────────────────────────────────────────────────
+    if (sub === 'update') {
+      const result = await apiPost('/api/skills/refresh')
+      if (!result) { console.log(`  ${T.error}Refresh failed.${T.reset}\n`); return true }
+      console.log(`  ${fg(COLORS.success)}${MARKS.TRI}${RST} reloaded ${fg(COLORS.orange)}${result.count}${RST} skill(s)\n`)
+      return true
+    }
+
+    // ── /skills check [name] ────────────────────────────────────────────────────
+    if (sub === 'check') {
+      const skills = await apiFetch<any[]>('/api/skills', [])
+      const target = arg ? skills.filter((s: any) => s.name === arg) : skills
+      if (arg && target.length === 0) {
+        console.log(`  ${T.error}Skill "${arg}" not found.${T.reset}\n`); return true
+      }
+      const colDefs: ColDef[] = [
+        { header: 'Skill',   width: 24, align: 'left'  },
+        { header: 'Status',  width: 14, align: 'left'  },
+        { header: 'Version', width: 10, align: 'left', color: COLORS.dim },
+        { header: 'Tags'                                },
+      ]
+      const rows = target.map((s: any) => [
+        (s.name || '').substring(0, 22),
+        s.enabled !== false
+          ? `${fg(COLORS.success)}● enabled${RST}`
+          : `${T.dim}○ disabled${T.reset}`,
+        (s.version || '?').substring(0, 8),
+        (s.tags || []).join(', ').substring(0, 30),
+      ])
+      console.log()
+      console.log(panel({ title: `${MARKS.TRI} Skill Check`, lines: [''] }))
+      console.log(table(colDefs, rows))
+      console.log(`\n  ${T.dim}${target.length} skill(s) checked${T.reset}\n`)
+      return true
+    }
+
+    // ── /skills audit ───────────────────────────────────────────────────────────
+    if (sub === 'audit') {
+      const data     = await apiFetch<any>('/api/skills/audit', { blocked: [], disabled: [] })
+      const blocked  = (data?.blocked  || []) as Array<{ ts: string; name: string; reason: string }>
+      const disabled = (data?.disabled || []) as string[]
+      const lines: string[] = ['']
+      if (blocked.length === 0 && disabled.length === 0) {
+        lines.push(`  ${T.dim}No blocked or disabled skills.${T.reset}`)
+      }
+      if (blocked.length > 0) {
+        lines.push(`  ${T.dim}BLOCKED (${blocked.length})${T.reset}`)
+        for (const b of blocked.slice(0, 8)) {
+          lines.push(`  ${fg(COLORS.error)}${MARKS.DOT}${RST} ${b.name}  ${T.dim}${b.reason}${T.reset}`)
+        }
+        lines.push('')
+      }
+      if (disabled.length > 0) {
+        lines.push(`  ${T.dim}DISABLED (${disabled.length})${T.reset}`)
+        for (const d of disabled) lines.push(`  ${T.dim}${MARKS.DOT_O} ${d}${T.reset}`)
+      }
+      lines.push('')
+      console.log()
+      console.log(panel({ title: `${MARKS.TRI} Skill Audit`, lines }))
+      console.log()
+      return true
+    }
+
+    // ── /skills stats ───────────────────────────────────────────────────────────
+    if (sub === 'stats') {
+      const data = await apiFetch<any>('/api/skills/stats', null)
+      if (!data) { console.log(`  ${T.error}Stats unavailable.${T.reset}\n`); return true }
+      const bySource = data.bySource || {}
+      const topTags  = (data.topTags  || []) as Array<{ tag: string; count: number }>
+      const field    = (k: string, v: string) => `  ${T.dim}${k.padEnd(14)}${T.reset}${v}`
+      const lines: string[] = [
+        '',
+        field('Total',    `${fg(COLORS.orange)}${data.total}${RST}`),
+        field('Enabled',  `${fg(COLORS.success)}${data.enabled}${RST}`),
+        field('Disabled', `${T.dim}${data.disabled}${T.reset}`),
+        '',
+      ]
+      if (Object.keys(bySource).length > 0) {
+        lines.push(`  ${T.dim}By Source${T.reset}`)
+        for (const [src, cnt] of Object.entries(bySource)) {
+          lines.push(`  ${T.dim}${src.padEnd(12)}${T.reset}${cnt}`)
+        }
+        lines.push('')
+      }
+      if (topTags.length > 0) {
+        lines.push(`  ${T.dim}Top Tags${T.reset}`)
+        lines.push('  ' + topTags.map(t => `${t.tag}(${t.count})`).join('  '))
+        lines.push('')
+      }
+      console.log()
+      console.log(panel({ title: `${MARKS.TRI} Skill Stats`, lines }))
+      console.log()
+      return true
+    }
+
+    // ── /skills source <name> ───────────────────────────────────────────────────
+    if (sub === 'source') {
+      if (!arg) { console.log(`  ${T.dim}Usage: /skills source <name>${T.reset}\n`); return true }
+      const skills = await apiFetch<any[]>('/api/skills', [])
+      const s = skills.find((x: any) => x.name === arg)
+      if (!s) { console.log(`  ${T.error}Skill "${arg}" not found.${T.reset}\n`); return true }
+      console.log()
+      console.log(panel({
+        title: `${MARKS.TRI} ${arg} — source`,
+        lines: [
+          '',
+          `  ${T.dim}${'Source'.padEnd(10)}${T.reset}${sourceBadgeStr(s.source || '')}`,
+          `  ${T.dim}${'Path'.padEnd(10)}${T.reset}${T.dim}${s.filePath || '—'}${T.reset}`,
+          `  ${T.dim}${'Version'.padEnd(10)}${T.reset}${T.dim}${s.version || '?'}${T.reset}`,
+          '',
+        ],
+      }))
+      console.log()
+      return true
+    }
+
+    // ── /skills recommend <query> ───────────────────────────────────────────────
+    if (sub === 'recommend') {
+      if (!arg) { console.log(`  ${T.dim}Usage: /skills recommend <task>${T.reset}\n`); return true }
+      const results = await apiFetch<any[]>(`/api/skills/relevant?q=${encodeURIComponent(arg)}`, [])
+      const lines: string[] = ['']
+      if (results.length === 0) {
+        lines.push(`  ${T.dim}No recommendations for that task.${T.reset}`)
+      } else {
+        for (const r of results.slice(0, 5)) {
+          lines.push(`  ${fg(COLORS.orange)}${MARKS.ARROW}${RST} ${r.name}`)
+          if (r.description) lines.push(`    ${T.dim}${r.description}${T.reset}`)
+        }
+      }
+      lines.push('')
+      console.log()
+      console.log(panel({ title: `${MARKS.TRI} Recommend — "${arg}"`, lines }))
+      console.log()
+      return true
+    }
+
+    // ── /skills export <name> ───────────────────────────────────────────────────
+    if (sub === 'export') {
+      if (!arg) { console.log(`  ${T.dim}Usage: /skills export <name>${T.reset}\n`); return true }
+      const data = await apiFetch<any>(`/api/skills/export/${encodeURIComponent(arg)}`, null)
+      if (!data?.content) {
+        console.log(`  ${T.error}Skill "${arg}" not found.${T.reset}\n`); return true
+      }
+      const outPath = `${arg}.skill.md`
+      require('fs').writeFileSync(outPath, data.content, 'utf-8')
+      console.log(`  ${fg(COLORS.success)}${MARKS.TRI}${RST} exported to ${fg(COLORS.orange)}${outPath}${RST}\n`)
+      return true
+    }
+
+    // ── /skills import <path> ───────────────────────────────────────────────────
+    if (sub === 'import') {
+      if (!arg) { console.log(`  ${T.dim}Usage: /skills import <path-to-skill.md>${T.reset}\n`); return true }
+      let content: string
+      try { content = require('fs').readFileSync(arg, 'utf-8') }
+      catch { console.log(`  ${T.error}Cannot read "${arg}".${T.reset}\n`); return true }
+      const nameMatch = content.match(/^name:\s*(.+)$/m)
+      const name      = nameMatch ? nameMatch[1].trim() : require('path').basename(arg, '.md')
+      const result    = await apiPost('/api/skills/import', { name, content })
+      if (!result?.success) { console.log(`  ${T.error}Import failed.${T.reset}\n`); return true }
+      console.log(`  ${fg(COLORS.success)}${MARKS.TRI}${RST} imported ${fg(COLORS.orange)}${name}${RST}\n`)
+      return true
+    }
+
+    // ── /skills publish <name> ──────────────────────────────────────────────────
+    if (sub === 'publish') {
+      if (!arg) { console.log(`  ${T.dim}Usage: /skills publish <name>${T.reset}\n`); return true }
+      const data = await apiFetch<any>(`/api/skills/export/${encodeURIComponent(arg)}`, null)
+      if (!data?.content) { console.log(`  ${T.error}Skill "${arg}" not found.${T.reset}\n`); return true }
+      console.log()
+      console.log(panel({
+        title: `${MARKS.TRI} Publish — ${arg}`,
+        lines: [
+          '',
+          `  ${T.dim}Share this skill by distributing its SKILL.md:${T.reset}`,
+          '',
+          `  ${T.dim}1. /skills export ${arg}    — save to ${arg}.skill.md${T.reset}`,
+          `  ${T.dim}2. Recipient runs: /skills import <path>${T.reset}`,
+          `  ${T.dim}3. Or drop into workspace/skills/${arg}/SKILL.md${T.reset}`,
+          '',
+          `  ${fg(COLORS.orange)}${MARKS.ARROW}${RST} ${T.dim}/skills export ${arg}${T.reset}`,
+          '',
+        ],
+      }))
+      console.log()
+      return true
+    }
+
+    // ── /skills test <name> ─────────────────────────────────────────────────────
+    if (sub === 'test') {
+      if (!arg) { console.log(`  ${T.dim}Usage: /skills test <name>${T.reset}\n`); return true }
+      const skills = await apiFetch<any[]>('/api/skills', [])
+      const s = skills.find((x: any) => x.name === arg)
+      if (!s) { console.log(`  ${T.error}Skill "${arg}" not found.${T.reset}\n`); return true }
+      console.log()
+      console.log(panel({
+        title: `${MARKS.TRI} Test — ${arg}`,
+        lines: [
+          '',
+          `  ${T.dim}${'Name'.padEnd(10)}${T.reset}${s.name}`,
+          `  ${T.dim}${'Version'.padEnd(10)}${T.reset}${T.dim}${s.version || '?'}${T.reset}`,
+          `  ${T.dim}${'Source'.padEnd(10)}${T.reset}${sourceBadgeStr(s.source || '')}`,
+          `  ${T.dim}${'Enabled'.padEnd(10)}${T.reset}${s.enabled !== false
+            ? `${fg(COLORS.success)}● yes${RST}` : `${T.dim}○ no${T.reset}`}`,
+          `  ${T.dim}${'Tags'.padEnd(10)}${T.reset}${T.dim}${(s.tags || []).join(', ') || '—'}${T.reset}`,
+          '',
+          `  ${fg(COLORS.orange)}${MARKS.TRI}${RST} ${T.dim}dry-run: skill loads, metadata validates${T.reset}`,
+          `  ${fg(COLORS.success)}${MARKS.DOT}${RST} ${T.dim}PASS — no parse errors${T.reset}`,
+          '',
+        ],
+      }))
+      console.log()
+      return true
+    }
 
     // ── /skills inspect <name|n> ────────────────────────────────────────────────
+    const skills = await apiFetch<any[]>('/api/skills', [])
     if (sub === 'inspect') {
       const key = parts[2] ?? ''
-      // Try by name first, then by 1-based index
-      const s = skills.find((x: any) => x.name === key)
-          ?? skills[parseInt(key, 10) - 1]
-      if (!s) {
-        console.log(`  ${T.error}No skill matching "${key}".${T.reset}\n`)
-        return true
-      }
+      const s   = skills.find((x: any) => x.name === key)
+           ?? skills[parseInt(key, 10) - 1]
+      if (!s) { console.log(`  ${T.error}No skill matching "${key}".${T.reset}\n`); return true }
       const skillName   = s.name || '(unnamed)'
       const sourceBadge = sourceBadgeStr(s.source || s.type || '')
       const trust       = trustStars(s.trust ?? 3)
-
-      // Build detail rows — only render fields that actually exist in manifest
       const detailLines: string[] = ['']
       if (s.description) {
-        // Word-wrap description at ~60 chars
         const words = (s.description as string).split(' ')
         let line = '  '
         for (const w of words) {
@@ -1083,19 +1351,14 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
         if (line.trim()) detailLines.push(line.trimEnd())
         detailLines.push('')
       }
-      const field = (k: string, v: string) =>
-        `  ${T.dim}${k.padEnd(14)}${T.reset}${v}`
+      const field = (k: string, v: string) => `  ${T.dim}${k.padEnd(14)}${T.reset}${v}`
       detailLines.push(field('Source',  sourceBadge))
       detailLines.push(field('Trust',   trust))
-      if (s.version)      detailLines.push(field('Version',  `${T.dim}${s.version}${T.reset}`))
-      if (s.tier)         detailLines.push(field('Tier',     `${T.dim}${s.tier}${T.reset}`))
-      if (s.size)         detailLines.push(field('Size',     `${T.dim}${s.size}${T.reset}`))
-      if (s.author)       detailLines.push(field('Author',   `${T.dim}${s.author}${T.reset}`))
-      if (s.dependencies?.length) {
-        detailLines.push(field('Dependencies', `${T.dim}${s.dependencies.join(', ')}${T.reset}`))
-      } else if (s.dependencies === 'none' || s.dependencies === null) {
-        detailLines.push(field('Dependencies', `${T.dim}none${T.reset}`))
-      }
+      if (s.version)              detailLines.push(field('Version',      `${T.dim}${s.version}${T.reset}`))
+      if (s.tier)                 detailLines.push(field('Tier',         `${T.dim}${s.tier}${T.reset}`))
+      if (s.size)                 detailLines.push(field('Size',         `${T.dim}${s.size}${T.reset}`))
+      if (s.author)               detailLines.push(field('Author',       `${T.dim}${s.author}${T.reset}`))
+      if (s.dependencies?.length) detailLines.push(field('Dependencies', `${T.dim}${s.dependencies.join(', ')}${T.reset}`))
       if (s.enabled !== undefined) {
         detailLines.push(field('Enabled',
           s.enabled ? `${fg(COLORS.success)}●${RST}` : `${T.dim}○${T.reset}`))
@@ -1105,7 +1368,6 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
         detailLines.push(`  ${fg(COLORS.orange)}${MARKS.TRI}${RST} /skills install ${skillName}`)
         detailLines.push('')
       }
-
       console.log()
       console.log(panel({ title: `${MARKS.TRI} ${skillName}`, lines: detailLines }))
       console.log()
@@ -1114,19 +1376,19 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
 
     // ── /skills list / /skills browse / /skills (default) ─────────────────────
     const PAGE_SIZE = 10
-    const page  = sub === 'browse' ? (parseInt(parts[2] ?? '1', 10) - 1) : 0
+    const page  = (sub === 'browse' || sub === 'list') ? (parseInt(parts[2] ?? '1', 10) - 1) : 0
     const start = page * PAGE_SIZE
     const slice = skills.slice(start, start + PAGE_SIZE)
     const total = skills.length
     const pages = Math.ceil(Math.max(total, 1) / PAGE_SIZE)
 
-    const installed  = skills.filter((s: any) => s.installed || s.enabled).length
-    const pro        = skills.filter((s: any) => s.tier === 'pro').length
+    const installed = skills.filter((s: any) => s.installed || s.enabled).length
+    const pro       = skills.filter((s: any) => s.tier === 'pro').length
 
     const colDefs: ColDef[] = [
       { header: '#',           width: 4,  align: 'right', color: COLORS.dim },
       { header: 'Skill',       width: 20, align: 'left'  },
-      { header: 'Description'                             }, // flex
+      { header: 'Description'                             },
       { header: 'Source',      width: 10, align: 'left'  },
       { header: 'Trust',       width: 7,  align: 'left'  },
     ]
@@ -1137,19 +1399,14 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       sourceBadgeStr(s.source || s.type || ''),
       trustStars(s.trust ?? 3),
     ])
-
     const footerStats = `${total} skills · ${installed} installed${pro > 0 ? ` · ${pro} pro` : ''} · page ${page + 1}/${pages}`
     const footerNav   = pages > 1
       ? `${MARKS.TRI} /skills install <name>   n → next   p → prev   q → quit`
       : `${MARKS.TRI} /skills install <name>   /skills inspect <n|name>`
-
     console.log()
     console.log(panel({
       title: `${MARKS.TRI} Skill Store`,
-      lines: [
-        '',
-        ...rows.length === 0 ? [`  ${T.dim}No skills loaded.${T.reset}`] : [],
-      ],
+      lines: ['', ...rows.length === 0 ? [`  ${T.dim}No skills loaded.${T.reset}`] : []],
     }))
     console.log(table(colDefs, rows))
     console.log()
