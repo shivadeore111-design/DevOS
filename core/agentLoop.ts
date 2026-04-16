@@ -39,6 +39,7 @@ import { startWorkflow, addNode, updateNode, completeWorkflow } from './workflow
 import { MAX_PARALLEL, chunkSteps, hasParallelism } from './parallelExecutor'
 import { sanitizeMessages }  from './messageValidator'
 import { repairToolName }    from './toolNameRepair'
+import { SLASH_MIRROR_TOOL_NAMES } from './slashAsTool'
 import * as nodeFs             from 'fs'
 import * as nodePath           from 'path'
 import * as nodeOs             from 'os'
@@ -772,6 +773,7 @@ export async function planWithLLM(
     'watch_folder', 'watch_folder_list',
     'get_briefing',
     'respond',
+    ...SLASH_MIRROR_TOOL_NAMES,
   ]
 
   // Sprint 13: append discovered MCP tools
@@ -1297,6 +1299,7 @@ const VALID_TOOLS = [
   'clipboard_read', 'clipboard_write', 'window_list', 'window_focus',
   'app_launch', 'app_close',
   'watch_folder', 'watch_folder_list',
+  ...SLASH_MIRROR_TOOL_NAMES,
 ]
 
 interface ValidationResult {

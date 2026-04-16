@@ -92,6 +92,7 @@ import type { IncomingMessage as GatewayMessage } from '../core/gateway'
 import { sessionRouter } from '../core/sessionRouter'
 import { runSecurityScan } from '../core/agentShield'
 import { asyncTasks }     from '../core/asyncTasks'
+import { registerSlashMirrorTools } from '../core/slashAsTool'
 
 // —— Sprint 25: module-level WebSocket clients registry (shared between createApiServer routes and startApiServer WS setup)
 let wsBroadcastClients   = new Set<any>()
@@ -4323,6 +4324,11 @@ export function startApiServer(portArg?: number): Express {
 
   // Run crash recovery on startup â€” non-blocking, finds 'running' tasks from prior session
   recoverTasks().catch(e => console.error('[Startup] Recovery error:', e.message))
+
+  // Phase 3: register read-only slash commands as callable agent tools
+  try { registerSlashMirrorTools() } catch (e: any) {
+    console.error('[Startup] registerSlashMirrorTools failed:', e.message)
+  }
 
   // Load community plugins from workspace/plugins/
   pluginManager.loadAll().catch(e => console.error('[Plugins] Load failed:', e.message))
