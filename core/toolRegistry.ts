@@ -1871,17 +1871,18 @@ export function getToolTier(toolName: string): ToolTier {
 // tools relevant to the current task category.
 
 export type ToolCategory =
-  | 'core'    // respond, manage_goals, compact_context, run_agent
-  | 'web'     // web_search, deep_research, fetch_url/page, social_research
-  | 'files'   // file_read, file_write, file_list, watch_folder
-  | 'code'    // run_python, run_node, shell_exec, run_powershell, interpreters
-  | 'browser' // open_browser, browser_click/type/extract/screenshot, window ops
-  | 'screen'  // screenshot, mouse, keyboard, screen_read, vision_loop
-  | 'data'    // market data, stocks, company info, briefing, natural events
-  | 'system'  // notify, system_info, clipboard, app_launch/close, wait
-  | 'git'     // git_status, git_commit, git_push
-  | 'memory'  // (reserved for future memory/knowledge tools)
-  | 'media'   // (reserved for future voice/audio tools)
+  | 'core'         // respond, manage_goals, compact_context, run_agent
+  | 'web'          // web_search, deep_research, fetch_url/page, social_research
+  | 'files'        // file_read, file_write, file_list, watch_folder
+  | 'code'         // run_python, run_node, shell_exec, run_powershell, interpreters
+  | 'browser'      // open_browser, browser_click/type/extract/screenshot, window ops
+  | 'screen'       // screenshot, mouse, keyboard, screen_read, vision_loop
+  | 'data'         // market data, stocks, company info, briefing, natural events
+  | 'system'       // notify, system_info, clipboard, app_launch/close, wait
+  | 'git'          // git_status, git_commit, git_push
+  | 'memory'       // (reserved for future memory/knowledge tools)
+  | 'media'        // (reserved for future voice/audio tools)
+  | 'introspection' // status, analytics, spend, memory_show, lessons, skills_list, tools_list, whoami, channels_status, goals
 
 const TOOL_CATEGORIES: Record<string, ToolCategory[]> = {
   respond:                 ['core'],
@@ -1937,6 +1938,17 @@ const TOOL_CATEGORIES: Record<string, ToolCategory[]> = {
   get_calendar:            ['data', 'system'],
   read_email:              ['data', 'system'],
   send_email:              ['data', 'system'],
+  // slash-mirror introspection tools
+  status:                  ['introspection'],
+  analytics:               ['introspection'],
+  spend:                   ['introspection'],
+  memory_show:             ['introspection', 'memory'],
+  lessons:                 ['introspection', 'memory'],
+  skills_list:             ['introspection'],
+  tools_list:              ['introspection'],
+  whoami:                  ['introspection'],
+  channels_status:         ['introspection'],
+  goals:                   ['introspection', 'memory'],
 }
 
 export function detectToolCategories(message: string): ToolCategory[] {
@@ -1963,6 +1975,8 @@ export function detectToolCategories(message: string): ToolCategory[] {
     categories.add('git')
   if (/remember|memory|forget|knowledge|learn|recall/i.test(msg))
     categories.add('memory')
+  if (/status|uptime|analytics|how much.*spent|spending|cost|lessons|skills|what tools|tools (do you|available)|who am i|whoami|channels|providers|my goals|active goals/i.test(msg))
+    categories.add('introspection')
 
   return Array.from(categories)
 }
