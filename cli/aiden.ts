@@ -272,7 +272,7 @@ async function streamChat(message: string): Promise<void> {
 
   let globalFrame     = 0
   let lastRenderLines = 0
-  let spinMsg         = 'thinking'
+  let spinMsg         = 'understanding'
   let renderTimer: ReturnType<typeof setInterval> | null = null
   const pendingTools  = new Map<string, { startTime: number; frame: number }>()
 

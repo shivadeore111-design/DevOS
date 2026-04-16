@@ -606,16 +606,31 @@ export function createApiServer(): Express {
     const acceptHeader = req.headers['accept'] || ''
     const useJsonMode  = !acceptHeader.includes('text/event-stream')
 
+    // ── SSE: flush headers + emit "Understanding…" immediately ──────────────
+    // Eliminates the blank wait — the client receives its first event within
+    // ~50 ms of the request, well before any planning or tool execution starts.
+    if (!useJsonMode) {
+      res.setHeader('Content-Type',  'text/event-stream')
+      res.setHeader('Cache-Control', 'no-cache')
+      res.setHeader('Connection',    'keep-alive')
+      res.setHeader('Access-Control-Allow-Origin', '*')
+      res.flushHeaders()
+      res.write(`data: ${JSON.stringify({ thinking: { stage: 'understanding', message: 'Understanding...' } })}\n\n`)
+    }
+
     // ── Fast-reply helper: responds correctly in both SSE and JSON mode ──
     const fastReply = (text: string, extra?: object) => {
       if (useJsonMode) {
         res.json({ message: text, response: text, ...extra })
       } else {
-        res.setHeader('Content-Type',  'text/event-stream')
-        res.setHeader('Cache-Control', 'no-cache')
-        res.setHeader('Connection',    'keep-alive')
-        res.setHeader('Access-Control-Allow-Origin', '*')
-        res.flushHeaders()
+        // Headers already sent — skip re-setting them
+        if (!res.headersSent) {
+          res.setHeader('Content-Type',  'text/event-stream')
+          res.setHeader('Cache-Control', 'no-cache')
+          res.setHeader('Connection',    'keep-alive')
+          res.setHeader('Access-Control-Allow-Origin', '*')
+          res.flushHeaders()
+        }
         res.write(`data: ${JSON.stringify({ token: text, done: false, provider: 'fast-path' })}\n\n`)
         res.write(`data: ${JSON.stringify({ done: true, provider: 'fast-path' })}\n\n`)
         res.end()
@@ -1149,12 +1164,7 @@ export function createApiServer(): Express {
     }
 
     // â”€â”€ SSE streaming mode (browser clients) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    res.setHeader('Content-Type',  'text/event-stream')
-    res.setHeader('Cache-Control', 'no-cache')
-    res.setHeader('Connection',    'keep-alive')
-    res.setHeader('Access-Control-Allow-Origin', '*')
-    res.flushHeaders()
-
+    // (Headers already flushed + "Understanding…" event sent at request entry.)
     const send = (data: object) => {
       try { res.write(`data: ${JSON.stringify(data)}\n\n`) } catch (writeErr: any) {
         console.error('[Chat] SSE write failed:', writeErr.message)

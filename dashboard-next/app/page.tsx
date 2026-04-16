@@ -5011,7 +5011,7 @@ export default function Home() {
     if (!overrideText) setInput('')
     if (!overrideText && inputRef.current) inputRef.current.style.height = 'auto'
     setIsStreaming(true)
-    setThinking({ stage: 'planning', message: 'Planning approach...' })
+    setThinking({ stage: 'understanding', message: 'Understanding...' })
 
     const thinkingId = `thinking_${Date.now()}`
     setMessages(m => [...m, { id: thinkingId, role: 'assistant', content: '', timestamp: Date.now(), isStreaming: true }])
