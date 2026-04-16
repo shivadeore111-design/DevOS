@@ -123,14 +123,17 @@ function fmtDuration(ms: number): string {
 
 function num(n: number): string { return n.toLocaleString() }
 
-/** Colored source badge for skill tables. */
+/** Colored source badge for skill tables.
+ *  Spec: aiden=orange  community=cyan  local/other=dim gray
+ */
 function sourceBadgeStr(source: string): string {
   const s = (source || '').toLowerCase()
-  if (s === 'builtin' || s === 'built-in')
-    return `${fg(COLORS.success)}${s || 'builtin'}${RST}`
-  if (s === 'npm')
-    return `${fg(COLORS.warning)}npm${RST}`
-  return `${fg(COLORS.orange)}${source || 'local'}${RST}`
+  if (s === 'aiden' || s === 'builtin' || s === 'built-in')
+    return `${fg(COLORS.orange)}${source || 'aiden'}${RST}`
+  if (s === 'community')
+    return `${fg(COLORS.cyan)}community${RST}`
+  // local, npm, unknown → dim gray
+  return `${T.dim}${source || 'local'}${T.reset}`
 }
 
 /** Trust stars: ★★★☆☆ (score clamped to 0-5). */
@@ -634,7 +637,7 @@ async function streamChat(message: string): Promise<void> {
 const COMMANDS = [
   '/new', '/reset', '/clear', '/history', '/stop',
   '/export', '/fork', '/checkpoint', '/help',
-  '/status', '/tools', '/providers', '/models', '/model', '/primary',
+  '/status', '/tools', '/kit', '/providers', '/models', '/model', '/primary',
   '/memory', '/goals', '/skills', '/recipes', '/sessions',
   '/analytics', '/budget', '/workspace',
   '/quick', '/compact', '/async', '/security', '/debug', '/config',
@@ -677,7 +680,8 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       helpRow('/checkpoint',        'Save state snapshot'),
       helpSection('Info'),
       helpRow('/status',            'Health + uptime'),
-      helpRow('/tools',             'All registered tools'),
+      helpRow('/tools',             'All registered tools  (grouped by category)'),
+      helpRow('/kit',               'Toolkit categories — enable / disable'),
       helpRow('/providers',         'Provider chain + rate limits'),
       helpRow('/models',            'Model assignments'),
       helpRow('/memory',            'Memory stats'),
@@ -826,19 +830,128 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
   // ── /tools ─────────────────────────────────────────────────────────────────────
   if (command === '/tools') {
     const tools = await apiFetch<any[]>('/api/tools', [])
-    const colDefs: ColDef[] = [
-      { header: '#',    width: 4,  align: 'right', color: COLORS.dim },
-      { header: 'Name', width: 26, align: 'left'  },
-      { header: 'Description'                      }, // flex
-    ]
-    const rows = tools.map((t: any, i: number) => [
-      String(i + 1),
-      t.name        || '',
-      (t.description || '').substring(0, 80),
-    ])
+
+    // Category → icon map (spec-defined)
+    const CAT_ICONS: Record<string, string> = {
+      browser:      '◈',
+      file:         '▤',
+      terminal:     '▣',
+      web:          '◉',
+      memory:       '⬢',
+      delegation:   '◆',
+      code:         '⬡',
+      windows:      '▲',
+      mcp:          '◎',
+      voice:        '◐',
+      schedule:     '⬟',
+      vision:       '◪',
+      'slash-mirror': '△',
+      core:         '▸',
+    }
+
+    // Group by category (falling back to source, then 'other')
+    const groups = new Map<string, any[]>()
+    for (const t of tools) {
+      const cat = (t.category || t.source || 'other').toLowerCase()
+      if (!groups.has(cat)) groups.set(cat, [])
+      groups.get(cat)!.push(t)
+    }
+
+    // Build panel body lines
+    const bodyLines: string[] = ['']
+    for (const [cat, catTools] of groups) {
+      const icon   = CAT_ICONS[cat] || MARKS.DOT
+      const header =
+        `  ${fg(COLORS.orange)}${icon}${RST} ${T.bold}${cat}${T.reset}` +
+        `  ${T.dim}${catTools.length} tool${catTools.length !== 1 ? 's' : ''}${T.reset}`
+      bodyLines.push(header)
+      for (const t of catTools) {
+        const name = (t.name || '').padEnd(22)
+        const desc = (t.description || '').substring(0, 46)
+        bodyLines.push(`    ${T.dim}${MARKS.ARROW}${T.reset} ${name}${T.dim}${desc}${T.reset}`)
+      }
+      bodyLines.push('')
+    }
+
+    const catCount = groups.size
+    bodyLines.push(
+      `  ${T.dim}${tools.length} tools · ${catCount} categor${catCount !== 1 ? 'ies' : 'y'}${T.reset}`,
+    )
+    bodyLines.push(
+      `  ${T.dim}/tools enable <cat>  │  /tools disable <cat>${T.reset}`,
+    )
+
     console.log()
+    console.log(panel({ title: `${MARKS.TRI} Tools`, lines: bodyLines }))
+    console.log()
+    return true
+  }
+
+  // ── /kit ───────────────────────────────────────────────────────────────────────
+  if (command === '/kit') {
+    // Fetch tools and toolsets; fall back gracefully if toolsets endpoint absent
+    const [tools, kitData] = await Promise.all([
+      apiFetch<any[]>('/api/tools',    []),
+      apiFetch<any>  ('/api/toolsets', null),
+    ])
+
+    // Build category summary from live tool list
+    const catMap = new Map<string, { count: number; active: boolean }>()
+    for (const t of tools) {
+      const cat = (t.category || t.source || 'other').toLowerCase()
+      const cur = catMap.get(cat)
+      if (cur) { cur.count++ } else { catMap.set(cat, { count: 1, active: true }) }
+    }
+
+    // Merge with declared toolsets if available
+    const declared: any[] = Array.isArray(kitData)
+      ? kitData
+      : Array.isArray(kitData?.toolsets)
+        ? kitData.toolsets
+        : []
+
+    const CAT_ICONS: Record<string, string> = {
+      browser: '◈', file: '▤', terminal: '▣', web: '◉',
+      memory: '⬢', delegation: '◆', code: '⬡', windows: '▲',
+      mcp: '◎', voice: '◐', schedule: '⬟', vision: '◪',
+      'slash-mirror': '△', core: '▸',
+    }
+
+    const colDefs: ColDef[] = [
+      { header: 'Kit',    width: 18, align: 'left' },
+      { header: 'Tools',  width: 6,  align: 'right', color: COLORS.dim },
+      { header: 'Status', width: 8,  align: 'left' },
+      { header: 'Description' }, // flex
+    ]
+
+    // Merge declared + inferred
+    const allCats = new Set<string>([
+      ...catMap.keys(),
+      ...declared.map((d: any) => (d.id || d.name || '').toLowerCase()),
+    ])
+
+    const rows: string[][] = []
+    for (const cat of allCats) {
+      const dec     = declared.find((d: any) => (d.id || d.name || '').toLowerCase() === cat)
+      const inferred = catMap.get(cat)
+      const count   = dec?.toolCount ?? inferred?.count ?? 0
+      const active  = dec?.enabled   ?? inferred?.active ?? true
+      const icon    = CAT_ICONS[cat] || MARKS.DOT
+      const status  = active
+        ? `${fg(COLORS.success)}[active]${RST}`
+        : `${T.dim}[off]${T.reset}`
+      const desc    = (dec?.description || '').substring(0, 40)
+      const label   = `${fg(COLORS.orange)}${icon}${RST} ${cat}`
+      rows.push([label, String(count), status, desc])
+    }
+
+    console.log()
+    console.log(panel({
+      title: `${MARKS.TRI} Kit`,
+      lines: ['', ...['Kit categories — toggle with /kit enable <name>'].map(l => `  ${T.dim}${l}${T.reset}`), ''],
+    }))
     console.log(table(colDefs, rows))
-    console.log(`\n  ${T.dim}${tools.length} tools registered${T.reset}\n`)
+    console.log(`\n  ${T.dim}${tools.length} tools · ${allCats.size} categories${T.reset}\n`)
     return true
   }
 

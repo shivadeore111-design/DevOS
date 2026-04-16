@@ -36,4 +36,7 @@ export const COLORS = {
   warning: '#FFC107',
   white:   '#FFFFFF',
   blue:    '#5B9CF6',
+  cyan:    '#4DD0E1',
+  gold:    '#FFB800',
+  red:     '#FF4D4D',
 } as const

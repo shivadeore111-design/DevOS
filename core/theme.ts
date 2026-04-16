@@ -41,6 +41,9 @@ export const COLORS = {
   warning: '#FFC107',
   white:   '#FFFFFF',
   blue:    '#5B9CF6',
+  cyan:    '#4DD0E1',
+  gold:    '#FFB800',
+  red:     '#FF4D4D',
 } as const
 
 // ── ANSI primitives ───────────────────────────────────────────────────────────
@@ -88,6 +91,9 @@ export const paint = {
   bold:      (s: string) => `${BOLD}${s}${RST}`,
   white:     wrap(COLORS.white),
   blue:      wrap(COLORS.blue),
+  cyan:      wrap(COLORS.cyan),
+  gold:      wrap(COLORS.gold),
+  red:       wrap(COLORS.red),
   /** Inverse orange — orange background with dark text. */
   invOrange: (s: string) => `${bg(COLORS.orange)}${fg(COLORS.bgBase)}${s}${RST}`,
 }
