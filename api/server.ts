@@ -76,6 +76,7 @@ import { responseCache } from '../core/responseCache'
 import { scanAndRedact, containsSecret } from '../core/secretScanner'
 import { loadBriefingConfig, saveBriefingConfig, deliverBriefing } from '../core/morningBriefing'
 import { unifiedMemoryRecall, buildMemoryInjection } from '../core/memoryRecall'
+import { parseLessons, appendLesson, filterLessons } from '../core/lessonsBrowser'
 import { costTracker }   from '../core/costTracker'
 import { sessionMemory, getSessionLineage, loadSessionMetadata } from '../core/sessionMemory'
 import { memoryExtractor } from '../core/memoryExtractor'
@@ -3763,6 +3764,30 @@ export function createApiServer(): Express {
       fs.writeFileSync(path.join(destDir, 'SKILL.md'), content, 'utf-8')
       skillLoader.refresh()
       res.json({ success: true, name })
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
+  // GET /api/lessons — list all lesson rules (with optional ?q=&cat= filters)
+  app.get('/api/lessons', (req: Request, res: Response) => {
+    try {
+      const q   = (req.query.q   as string) || ''
+      const cat = (req.query.cat as string) || ''
+      const all = parseLessons()
+      res.json(filterLessons(all, q || undefined, cat || undefined))
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
+  // POST /api/lessons — append a new lesson rule
+  app.post('/api/lessons', (req: Request, res: Response) => {
+    try {
+      const { text } = req.body as { text?: string }
+      if (!text?.trim()) { res.status(400).json({ error: 'text required' }); return }
+      const lesson = appendLesson(text.trim())
+      res.json({ success: true, lesson })
     } catch (e: any) {
       res.status(500).json({ error: e.message })
     }

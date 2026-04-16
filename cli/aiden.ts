@@ -645,7 +645,7 @@ const COMMANDS = [
   '/new', '/reset', '/clear', '/history', '/stop',
   '/export', '/fork', '/checkpoint', '/help',
   '/status', '/tools', '/kit', '/providers', '/models', '/model', '/primary',
-  '/memory', '/goals', '/skills', '/recipes', '/sessions',
+  '/memory', '/goals', '/skills', '/lessons', '/teach', '/recipes', '/sessions',
   '/analytics', '/budget', '/workspace',
   '/quick', '/compact', '/async', '/security', '/debug', '/config',
   '/theme', '/persona', '/detail', '/depth', '/provider',
@@ -694,6 +694,8 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       helpRow('/memory',            'Memory stats'),
       helpRow('/goals',             'Active goals'),
       helpRow('/skills',            'Skill lifecycle  (search / install / list / check / update / audit / remove / publish / export / import / source / stats / recommend / test)'),
+      helpRow('/lessons',           'Browse permanent failure rules  (search / <category>)'),
+      helpRow('/teach',             'Add a manual rule to LESSONS.md'),
       helpRow('/recipes',           'YAML recipes'),
       helpRow('/sessions',          'Recent sessions'),
       helpRow('/analytics',         'Usage over time'),
@@ -1412,6 +1414,140 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
     console.log()
     console.log(`  ${T.dim}${footerStats}${T.reset}`)
     console.log(`  ${T.dim}${footerNav}${T.reset}`)
+    console.log()
+    return true
+  }
+
+  // ── /lessons ───────────────────────────────────────────────────────────────────
+  if (command === '/lessons') {
+    const sub = parts[1]?.toLowerCase()
+    const arg = parts.slice(2).join(' ')
+
+    // /lessons search <query>
+    if (sub === 'search') {
+      if (!arg) { console.log(`  ${T.dim}Usage: /lessons search <query>${T.reset}\n`); return true }
+      const results = await apiFetch<any[]>(`/api/lessons?q=${encodeURIComponent(arg)}`, [])
+      const colDefs: ColDef[] = [
+        { header: '#',    width: 4,  align: 'right', color: COLORS.dim },
+        { header: 'Cat',  width: 10, align: 'left',  color: COLORS.dim },
+        { header: 'Date', width: 12, align: 'left',  color: COLORS.dim },
+        { header: 'Rule'                              },
+      ]
+      const rows = results.map((l: any) => [
+        String(l.id),
+        l.category || '—',
+        l.date     || '—',
+        (l.text || '').substring(0, 70),
+      ])
+      console.log()
+      console.log(panel({ title: `${MARKS.TRI} Lessons — "${arg}"`, lines: [''] }))
+      if (rows.length === 0) {
+        console.log(`  ${T.dim}No lessons matched.${T.reset}\n`)
+      } else {
+        console.log(table(colDefs, rows))
+        console.log(`\n  ${T.dim}${results.length} result(s)${T.reset}\n`)
+      }
+      return true
+    }
+
+    // /lessons <category>  (e.g. /lessons web, /lessons planning)
+    const KNOWN_CATS = ['web','shell','files','planning','provider','memory','skills','errors','general']
+    if (sub && KNOWN_CATS.includes(sub)) {
+      const results = await apiFetch<any[]>(`/api/lessons?cat=${encodeURIComponent(sub)}`, [])
+      const colDefs: ColDef[] = [
+        { header: '#',    width: 4,  align: 'right', color: COLORS.dim },
+        { header: 'Date', width: 12, align: 'left',  color: COLORS.dim },
+        { header: 'Rule'                              },
+      ]
+      const rows = results.map((l: any) => [
+        String(l.id), l.date || '—', (l.text || '').substring(0, 72),
+      ])
+      console.log()
+      console.log(panel({ title: `${MARKS.TRI} Lessons — ${sub}`, lines: [''] }))
+      if (rows.length === 0) {
+        console.log(`  ${T.dim}No lessons in this category.${T.reset}\n`)
+      } else {
+        console.log(table(colDefs, rows))
+        console.log(`\n  ${T.dim}${results.length} rule(s)${T.reset}\n`)
+      }
+      return true
+    }
+
+    // /lessons (default — browse all)
+    const lessons = await apiFetch<any[]>('/api/lessons', [])
+    const PAGE_SIZE = 12
+    const page  = sub ? Math.max(parseInt(sub, 10) - 1, 0) : 0
+    const start = page * PAGE_SIZE
+    const slice = lessons.slice(start, start + PAGE_SIZE)
+    const total = lessons.length
+    const pages = Math.ceil(Math.max(total, 1) / PAGE_SIZE)
+
+    // Build category summary
+    const cats: Record<string, number> = {}
+    for (const l of lessons) cats[l.category] = (cats[l.category] ?? 0) + 1
+    const catSummary = Object.entries(cats).map(([c, n]) => `${c}(${n})`).join('  ')
+
+    const colDefs: ColDef[] = [
+      { header: '#',    width: 4,  align: 'right', color: COLORS.dim },
+      { header: 'Cat',  width: 10, align: 'left',  color: COLORS.dim },
+      { header: 'Date', width: 12, align: 'left',  color: COLORS.dim },
+      { header: 'Rule'                              },
+    ]
+    const rows = slice.map((l: any) => [
+      String(l.id),
+      l.category || '—',
+      l.date     || '—',
+      (l.text || '').substring(0, 64),
+    ])
+    console.log()
+    console.log(panel({
+      title: `${MARKS.TRI} Lessons`,
+      lines: ['', `  ${T.dim}${catSummary || 'no categories'}${T.reset}`, ''],
+    }))
+    if (rows.length === 0) {
+      console.log(`  ${T.dim}No lessons recorded yet. Use /teach to add one.${T.reset}\n`)
+    } else {
+      console.log(table(colDefs, rows))
+      console.log(`\n  ${T.dim}${total} rules · page ${page + 1}/${pages}  · /lessons search <q>  · /teach <rule>${T.reset}\n`)
+    }
+    return true
+  }
+
+  // ── /teach ─────────────────────────────────────────────────────────────────────
+  if (command === '/teach') {
+    const rule = parts.slice(1).join(' ').trim()
+    if (!rule) {
+      console.log()
+      console.log(panel({
+        title: `${MARKS.TRI} /teach`,
+        lines: [
+          '',
+          `  ${T.dim}Add a permanent rule to LESSONS.md.${T.reset}`,
+          '',
+          `  ${T.dim}Usage:  /teach <rule text>${T.reset}`,
+          `  ${T.dim}Example: /teach If rate limit hit, wait 60s before retry${T.reset}`,
+          '',
+        ],
+      }))
+      console.log()
+      return true
+    }
+    const result = await apiPost('/api/lessons', { text: rule })
+    if (!result?.success) {
+      console.log(`  ${T.error}Failed to save lesson.${T.reset}\n`); return true
+    }
+    const l = result.lesson
+    console.log()
+    console.log(panel({
+      title: `${MARKS.TRI} Lesson #${l?.id ?? '?'} saved`,
+      lines: [
+        '',
+        `  ${fg(COLORS.orange)}${MARKS.ARROW}${RST} ${l?.text || rule}`,
+        '',
+        `  ${T.dim}category: ${l?.category || 'general'} · date: ${l?.date || '—'}${T.reset}`,
+        '',
+      ],
+    }))
     console.log()
     return true
   }
