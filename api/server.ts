@@ -776,6 +776,37 @@ export function createApiServer(): Express {
       fastReply(`${now.toDateString()}. Year: ${now.getFullYear()}. Time: ${now.toLocaleTimeString()}.`, { success: true, provider: 'system_clock' }); return
     }
 
+    // ── System / session status fast-path — no LLM needed ───────
+    const STATUS_PATS = [
+      /\b(session|system|current)\s+status\b/i,
+      /\b(show|what.{0,8}(is|are))\s+(my\s+)?(session|system|process)\s+status\b/i,
+      /\bhow\s+(is\s+)?the\s+(system|server)\s+(doing|running)\b/i,
+      /\b(uptime|ram usage|memory usage|heap)\b/i,
+    ]
+    if (STATUS_PATS.some(p => p.test(message))) {
+      try {
+        const { getExternalToolsMeta } = require('../core/toolRegistry') as typeof import('../core/toolRegistry')
+        const meta = getExternalToolsMeta()
+        // Call the status slash-mirror tool directly if it is registered
+        if (meta['status']) {
+          const result = await (require('../core/toolRegistry') as any).TOOLS_EXEC?.('status', {})
+            .catch(() => null)
+          if (result?.output) { fastReply(result.output); return }
+        }
+        // Fallback: build status inline
+        const uptimeSec = Math.floor(process.uptime())
+        const ramMB     = Math.round(process.memoryUsage().heapUsed / 1024 / 1024)
+        fastReply(
+          `SYSTEM STATUS\n` +
+          `Uptime   ${Math.floor(uptimeSec / 60)}m ${uptimeSec % 60}s\n` +
+          `RAM      ${ramMB} MB heap used\n` +
+          `Platform ${process.platform} ${process.arch}\n` +
+          `Node     ${process.version}\n` +
+          `PID      ${process.pid}`
+        ); return
+      } catch { /* fall through to planner */ }
+    }
+
     // ── Goal management fast-path ── intercepts before planner so “Product Hunt goal” won't open browser ──
     const goalCreatePats = [
       /^(create|add|set|new)\s+(a\s+)?goal[\s:]+(.+)/i,
