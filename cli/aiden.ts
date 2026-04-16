@@ -17,6 +17,7 @@ const API_BASE      = process.env.AIDEN_API || 'http://localhost:4200'
 const SESSION_ID    = `session_${Date.now()}`
 const SESSION_START = Date.now()
 const CONFIG_PATH   = path.join(__dirname, '..', 'config', 'devos.config.json')
+const MAX_TURNS     = 15
 
 // ── Theme ─────────────────────────────────────────────────────────────────────────
 
@@ -121,38 +122,23 @@ function ctxColor(pct: number): string {
   return T.error
 }
 
-// ── Spinner ───────────────────────────────────────────────────────────────────────
-
-const SPIN = ['◐', '◓', '◑', '◒']
-let spinIdx   = 0
-let spinTimer : ReturnType<typeof setInterval> | null = null
-let spinMsg   = ''
-
-function startSpinner(msg: string): void {
-  spinMsg = msg
-  spinIdx = 0
-  process.stdout.write(`  ${T.dim}${SPIN[0]} ${msg}...${T.reset}`)
-  spinTimer = setInterval(() => {
-    spinIdx = (spinIdx + 1) % SPIN.length
-    process.stdout.write(`\r  ${T.dim}${SPIN[spinIdx]} ${spinMsg}...${T.reset}`)
-  }, 200)
+function ctxBar(pct: number): string {
+  const filled = Math.round(pct / 10)
+  const bar    = '▰'.repeat(filled) + '▱'.repeat(10 - filled)
+  return `[${bar}] ${pct}%`
 }
 
-function stopSpinner(): void {
-  if (spinTimer) {
-    clearInterval(spinTimer)
-    spinTimer = null
-    process.stdout.write('\r\x1b[K')
-  }
-}
+// ── Spinner frames ────────────────────────────────────────────────────────────────
+
+const SPINNER_FRAMES = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏']
 
 // ── API helpers ───────────────────────────────────────────────────────────────────
 
-async function apiFetch<T>(p: string, fallback: T): Promise<T> {
+async function apiFetch<R>(p: string, fallback: R): Promise<R> {
   try {
     const res = await fetch(`${API_BASE}${p}`, { signal: AbortSignal.timeout(4000) })
     if (!res.ok) return fallback
-    return await res.json() as T
+    return await res.json() as R
   } catch { return fallback }
 }
 
@@ -167,32 +153,23 @@ async function apiPost(p: string, body: any = {}): Promise<any> {
   } catch { return null }
 }
 
-// ── Response box ──────────────────────────────────────────────────────────────────
-
-function boxTop(title = 'Aiden'): string {
-  const w    = cols()
-  const rest = Math.max(0, w - title.length - 4)
-  return `${T.dim}┌─${T.reset}${T.primary}${T.bold} ${title} ${T.reset}${T.dim}${'─'.repeat(rest)}${T.reset}`
-}
-
-function boxBottom(): string {
-  return `${T.dim}└${'─'.repeat(cols() - 1)}${T.reset}`
-}
-
-function boxLeft(): string {
-  return `${T.dim}│${T.reset}`
-}
-
 // ── ASCII banner ──────────────────────────────────────────────────────────────────
 
 const ASCII_BANNER = [
-  '▄▄▄       ██▓▓█████▄ ▓█████  ███▄    █ ',
-  '▒████▄    ▓██▒▒██▀ ██▌▓█   ▀  ██ ▀█   █',
-  '▒██  ▀█▄  ▒██▒░██   █▌▒███   ▓██  ▀█ ██▒',
-  '░██▄▄▄▄██ ░██░░▓█▄   ▌▒▓█  ▄ ▓██▒  ▐▌██▒',
-  '▓█   ▓██▒░██░░▒████▓ ░▒████▒▒██░   ▓██░',
-  '▒▒   ▓▒█░░▓   ▒▒▓  ▒ ░░ ▒░ ░░ ▒░   ▒ ▒ ',
-  ' ▒   ▒▒ ░ ▒ ░ ░ ▒  ▒  ░ ░  ░░ ░░   ░ ▒░',
+  '█████╗ ██╗██████╗ ███████╗███╗   ██╗',
+  '██╔══██╗██║██╔══██╗██╔════╝████╗  ██║',
+  '███████║██║██║  ██║█████╗  ██╔██╗ ██║',
+  '██╔══██║██║██║  ██║██╔══╝  ██║╚██╗██║',
+  '██║  ██║██║██████╔╝███████╗██║ ╚████║',
+  '╚═╝  ╚═╝╚═╝╚═════╝ ╚══════╝╚═╝  ╚═══╝',
+]
+
+const TAGLINES = [
+  'Your personal AI OS.',
+  'Runs on your machine.',
+  'Zero telemetry.',
+  'The brain in your terminal.',
+  'Built in India. Runs anywhere.',
 ]
 
 async function printBanner(): Promise<void> {
@@ -216,6 +193,7 @@ async function printBanner(): Promise<void> {
   const toolCount = Array.isArray(toolsData) ? toolsData.length : 0
   const memSem    = memData?.semantic ?? (Array.isArray(memData) ? memData.length : memData?.total ?? 0)
   const memEnt    = memData?.entities ?? 0
+  const tagline   = TAGLINES[Math.floor(Math.random() * TAGLINES.length)]
 
   if (active.length > 0) {
     state.lastProvider = provName
@@ -227,7 +205,7 @@ async function printBanner(): Promise<void> {
     console.log(`  ${T.primary}${line}${T.reset}`)
   }
   console.log()
-  console.log(`  ${T.primary}●${T.reset} Aiden v${version} — Personal AI OS`)
+  console.log(`  ${T.dim}${tagline}${T.reset}`)
   console.log(`  ${T.dim}${hr()}${T.reset}`)
   console.log(`  ${'Provider'.padEnd(12)}${T.accent}${provName}${T.reset} ${T.dim}(${modelName})${T.reset}`)
   if (memSem || memEnt) {
@@ -241,6 +219,20 @@ async function printBanner(): Promise<void> {
   console.log()
 }
 
+// ── Goal complete card ────────────────────────────────────────────────────────────
+
+function showGoalComplete(name: string): void {
+  const orange  = '\x1b[38;5;208m'
+  const w       = cols() - 6
+  const side    = Math.floor((w - name.length - 16) / 2)
+  const dashes  = '─'.repeat(Math.max(4, side))
+  console.log()
+  console.log(`  ${orange}◆ ${dashes} ◆${T.reset}`)
+  console.log(`  ${orange}Goal complete: ${name}${T.reset}`)
+  console.log(`  ${orange}◆ ${dashes} ◆${T.reset}`)
+  console.log()
+}
+
 // ── Session summary ───────────────────────────────────────────────────────────────
 
 function printSessionSummary(): void {
@@ -249,46 +241,121 @@ function printSessionSummary(): void {
   const totChars  = state.history.reduce((n, h) => n + h.content.length, 0)
   const approxTok = Math.round(totChars / 4)
   const cost      = (approxTok / 1_000_000 * 0.10).toFixed(4)
+  const div       = `  ${T.dim}${'─'.repeat(cols() - 4)}${T.reset}`
   console.log()
-  console.log(`  ${T.dim}Session ended${T.reset}`)
-  console.log(`  ${T.dim}${hr()}${T.reset}`)
+  console.log(`  Session ended`)
+  console.log(div)
   console.log(`  ${'Duration'.padEnd(14)}${fmtDuration(ms)}`)
   console.log(`  ${'Messages'.padEnd(14)}${state.history.length} (${userMsgs} user, ${state.turnCount} turns)`)
   console.log(`  ${'Tokens'.padEnd(14)}~${num(approxTok)}`)
   console.log(`  ${'Cost'.padEnd(14)}~$${cost}`)
   console.log(`  ${'Session'.padEnd(14)}${T.dim}${SESSION_ID}${T.reset}`)
-  console.log(`  ${T.dim}${hr()}${T.reset}`)
+  console.log(div)
+  console.log(`  ${T.dim}Resume: npm run cli -- --continue${T.reset}`)
   console.log()
 }
 
 // ── Stream chat ───────────────────────────────────────────────────────────────────
 
 async function streamChat(message: string): Promise<void> {
-  state.streaming = true
-  state.abortCtrl = new AbortController()
-  const startedAt = Date.now()
-  let fullReply   = ''
-  let provider    = ''
-  let boxOpen     = false
-  let linePos     = 0
-  let streamDone  = false
-  const toolTimers: Record<string, number> = {}
-  let thinkPhase  = 0
+  state.streaming    = true
+  state.abortCtrl    = new AbortController()
+  const startedAt    = Date.now()
+  const prevProvider = state.lastProvider
+  let fullReply      = ''
+  let provider       = ''
+  let boxOpen        = false
+  let linePos        = 0
+  let streamDone     = false
+
+  // ── Render area (ephemeral spinner + animated tool cards) ─────────────────────
+
+  let globalFrame     = 0
+  let lastRenderLines = 0
+  let spinMsg         = 'thinking'
+  let renderTimer: ReturnType<typeof setInterval> | null = null
+  const pendingTools  = new Map<string, { startTime: number; frame: number }>()
+
+  function clearRenderArea(): void {
+    if (lastRenderLines <= 0) return
+    if (lastRenderLines > 1) process.stdout.write(`\x1b[${lastRenderLines - 1}A\r`)
+    else process.stdout.write('\r')
+    for (let i = 0; i < lastRenderLines; i++) {
+      process.stdout.write('\x1b[2K')
+      if (i < lastRenderLines - 1) process.stdout.write('\n')
+    }
+    if (lastRenderLines > 1) process.stdout.write(`\x1b[${lastRenderLines - 1}A\r`)
+    else process.stdout.write('\r')
+    lastRenderLines = 0
+  }
+
+  function renderActivity(): void {
+    clearRenderArea()
+    const lines: string[] = []
+    for (const [name, tool] of pendingTools) {
+      const frame = SPINNER_FRAMES[tool.frame % SPINNER_FRAMES.length]
+      tool.frame++
+      lines.push(`  ${T.accent}▸${T.reset} ${name}  ${T.dim}${frame}${T.reset}\x1b[K`)
+    }
+    const gFrame = SPINNER_FRAMES[globalFrame % SPINNER_FRAMES.length]
+    globalFrame++
+    lines.push(`  ${T.dim}${gFrame} ${spinMsg}...\x1b[K${T.reset}`)
+    for (let i = 0; i < lines.length; i++) {
+      process.stdout.write(lines[i])
+      if (i < lines.length - 1) process.stdout.write('\n')
+    }
+    lastRenderLines = lines.length
+  }
+
+  function startActivityRender(): void {
+    if (renderTimer) return
+    renderActivity()
+    renderTimer = setInterval(renderActivity, 100)
+  }
+
+  function stopActivityRender(): void {
+    if (renderTimer) { clearInterval(renderTimer); renderTimer = null }
+    clearRenderArea()
+    pendingTools.clear()
+    lastRenderLines = 0
+  }
+
+  function onToolStart(name: string): void {
+    pendingTools.set(name, { startTime: Date.now(), frame: 0 })
+    // Next renderActivity tick will pick up the new entry automatically
+  }
+
+  function onToolEnd(name: string, success: boolean): void {
+    const tool = pendingTools.get(name)
+    if (!tool) return
+    const elapsed = fmtMs(Date.now() - tool.startTime)
+    if (renderTimer) { clearInterval(renderTimer); renderTimer = null }
+    clearRenderArea()
+    const mark = success ? `${T.success}✓` : `${T.error}✗`
+    process.stdout.write(`  ${T.accent}▸${T.reset} ${name}  ${mark} ${T.dim}${elapsed}${T.reset}\n`)
+    pendingTools.delete(name)
+    lastRenderLines = 0
+    if (!boxOpen) {
+      renderActivity()
+      renderTimer = setInterval(renderActivity, 100)
+    }
+  }
+
+  // ── Flat response panel ───────────────────────────────────────────────────────
 
   const AVAIL = (): number => cols() - 5
 
   function openResponseBox(): void {
-    process.stdout.write('\n' + boxTop() + '\n')
-    process.stdout.write(boxLeft() + '\n')
-    process.stdout.write(boxLeft() + '  ')
+    process.stdout.write(`\n  ${T.primary}${T.bold}Aiden${T.reset}\n`)
+    process.stdout.write(`  ${T.dim}${'─'.repeat(cols() - 4)}${T.reset}\n`)
+    process.stdout.write('  ')
     boxOpen = true
     linePos = 0
   }
 
   function closeResponseBox(): void {
     if (!boxOpen) return
-    process.stdout.write('\n' + boxLeft() + '\n')
-    process.stdout.write(boxBottom() + '\n')
+    process.stdout.write(`\n  ${T.dim}${'─'.repeat(cols() - 4)}${T.reset}\n`)
     boxOpen = false
   }
 
@@ -296,11 +363,11 @@ async function streamChat(message: string): Promise<void> {
     if (!boxOpen) openResponseBox()
     for (const ch of token) {
       if (ch === '\n') {
-        process.stdout.write('\n' + boxLeft() + '  ')
+        process.stdout.write('\n  ')
         linePos = 0
       } else {
         if (linePos >= AVAIL()) {
-          process.stdout.write('\n' + boxLeft() + '  ')
+          process.stdout.write('\n  ')
           linePos = 0
         }
         process.stdout.write(ch)
@@ -312,7 +379,7 @@ async function streamChat(message: string): Promise<void> {
   const histPayload = state.history.slice(-20).map(h => ({ role: h.role, content: h.content }))
 
   try {
-    startSpinner('planning')
+    startActivityRender()
 
     const res = await fetch(`${API_BASE}/api/chat`, {
       method : 'POST',
@@ -321,9 +388,8 @@ async function streamChat(message: string): Promise<void> {
       signal : state.abortCtrl.signal,
     })
 
-    stopSpinner()
-
     if (!res.ok) {
+      stopActivityRender()
       let errText = res.statusText
       try {
         const errBody = await res.json() as any
@@ -335,18 +401,19 @@ async function streamChat(message: string): Promise<void> {
 
     const isSSE = (res.headers.get('content-type') || '').includes('text/event-stream')
 
-    // ── JSON fast-path (non-SSE response) ──
+    // ── JSON fast-path (non-SSE response) ──────────────────────────────────────
     if (!isSSE) {
+      stopActivityRender()
       const data  = await res.json() as any
       const reply = (data.reply || data.message || data.content || data.response || '') as string
       openResponseBox()
       for (const ch of reply) {
         if (ch === '\n') {
-          process.stdout.write('\n' + boxLeft() + '  ')
+          process.stdout.write('\n  ')
           linePos = 0
         } else {
           if (linePos >= AVAIL()) {
-            process.stdout.write('\n' + boxLeft() + '  ')
+            process.stdout.write('\n  ')
             linePos = 0
           }
           process.stdout.write(ch)
@@ -358,7 +425,7 @@ async function streamChat(message: string): Promise<void> {
       closeResponseBox()
     }
 
-    // ── SSE streaming ──
+    // ── SSE streaming ───────────────────────────────────────────────────────────
     if (isSSE) {
       const reader  = (res.body as any).getReader()
       const decoder = new TextDecoder()
@@ -380,49 +447,76 @@ async function streamChat(message: string): Promise<void> {
           let evt: any
           try { evt = JSON.parse(raw) } catch { continue }
 
-          // ── Thinking indicator ──
+          // ── Thinking phase — update spinner message ──
           if (!boxOpen && (evt.thinking || evt.event === 'thinking_start' || evt.event === 'planning_start' || evt.event === 'memory_read')) {
-            const phaseNames = ['planning', 'reasoning', 'executing', 'searching']
-            const msg = evt.thinking?.message || evt.message || evt.data?.message || phaseNames[thinkPhase % phaseNames.length]
-            thinkPhase++
-            process.stdout.write(`  ${T.dim}${SPIN[thinkPhase % SPIN.length]} ${msg}...${T.reset}\n`)
+            const msg = evt.thinking?.message || evt.message || evt.data?.message
+            if (msg) spinMsg = (msg as string).replace(/\.+$/, '').trim().toLowerCase()
           }
 
           // ── Tool start ──
           if (evt.event === 'tool_start' && !boxOpen && state.detailLevel !== 'off') {
             const tool = evt.tool || evt.data?.tool || '?'
-            toolTimers[tool] = Date.now()
-            process.stdout.write(`  ${T.accent}▸${T.reset} ${tool}  ${T.dim}running...${T.reset}`)
+            onToolStart(tool)
           }
 
           // ── Tool end ──
           if (evt.event === 'tool_end' && !boxOpen && state.detailLevel !== 'off') {
             const tool    = evt.tool || evt.data?.tool || '?'
-            const elapsed = toolTimers[tool] ? fmtMs(Date.now() - toolTimers[tool]) : '?'
-            process.stdout.write(`\r  ${T.accent}▸${T.reset} ${tool}  ${T.dim}done (${elapsed})${T.reset}\x1b[K\n`)
-            delete toolTimers[tool]
+            const success = evt.success !== false
+            onToolEnd(tool, success)
           }
 
-          // ── Activity events ──
-          if (evt.activity && !boxOpen && state.detailLevel !== 'off') {
+          // ── Activity events (verbose) ──
+          if (evt.activity && !boxOpen && state.detailLevel === 'verbose') {
             const act = evt.activity
             if (!act.done) {
-              process.stdout.write(`  ${T.accent}▸${T.reset} ${act.agent || ''}  ${T.dim}${act.message || 'running...'}${T.reset}`)
-            } else {
-              process.stdout.write('\r\x1b[K')
+              if (renderTimer) { clearInterval(renderTimer); renderTimer = null }
+              clearRenderArea()
+              process.stdout.write(`  ${T.accent}▸${T.reset} ${act.agent || ''}  ${T.dim}${act.message || 'running...'}${T.reset}\n`)
+              lastRenderLines = 0
+              renderActivity()
+              renderTimer = setInterval(renderActivity, 100)
             }
           }
 
-          // ── Delegation ──
+          // ── Delegation (verbose) ──
           if ((evt.delegation || (evt.from && evt.to)) && !boxOpen && state.detailLevel === 'verbose') {
             const from = evt.from || evt.delegation?.from || '?'
             const to   = evt.to   || evt.delegation?.to   || '?'
             const task = (evt.task || evt.delegation?.task || '').substring(0, 60)
+            if (renderTimer) { clearInterval(renderTimer); renderTimer = null }
+            clearRenderArea()
             process.stdout.write(`  ${T.dim}${from} → ${to}: ${task}${T.reset}\n`)
+            lastRenderLines = 0
+            renderActivity()
+            renderTimer = setInterval(renderActivity, 100)
           }
 
-          // ── Text token ──
+          // ── Goal complete ──
+          if (evt.event === 'goal_complete' || evt.goalComplete) {
+            const name = evt.goal || evt.goalComplete?.name || evt.name || 'goal'
+            if (!boxOpen) stopActivityRender()
+            showGoalComplete(name)
+          }
+
+          // ── Async task complete ──
+          if (evt.event === 'async_complete' || evt.asyncComplete) {
+            const taskId  = evt.taskId || evt.asyncComplete?.taskId || '?'
+            const elapsed = evt.elapsed ? fmtDuration(evt.elapsed) : ''
+            const suffix  = elapsed ? ` (${elapsed})` : ''
+            if (!boxOpen) {
+              if (renderTimer) { clearInterval(renderTimer); renderTimer = null }
+              clearRenderArea()
+              process.stdout.write(`\n  ${T.accent}◆${T.reset} async #${taskId} complete${suffix} ${T.dim}· /async view ${taskId}${T.reset}\n\n`)
+              lastRenderLines = 0
+              renderActivity()
+              renderTimer = setInterval(renderActivity, 100)
+            }
+          }
+
+          // ── Text token — stop spinner, open response panel ──
           if (evt.token !== undefined) {
+            if (!boxOpen) stopActivityRender()
             writeToken(evt.token)
             fullReply += evt.token
             if (evt.provider) provider = evt.provider
@@ -437,6 +531,7 @@ async function streamChat(message: string): Promise<void> {
         }
       }
 
+      if (!boxOpen) stopActivityRender()
       closeResponseBox()
     }
 
@@ -453,16 +548,21 @@ async function streamChat(message: string): Promise<void> {
       state.history.push({ role: 'assistant', content: fullReply })
     }
 
+    // ── Provider switch indicator ──
+    if (provider && provider !== prevProvider && prevProvider !== 'aiden') {
+      process.stdout.write(`  ${T.dim}${prevProvider} ──→ ${provider}${T.reset}\n`)
+    }
+
     // ── Status bar ──
     const ctxC = ctxColor(state.ctxPercent)
     process.stdout.write(
-      `\n  ${T.dim}${state.lastProvider} · ${T.reset}` +
-      `${ctxC}ctx ${state.ctxPercent}%${T.reset}` +
-      `${T.dim} · turn ${state.turnCount} · ${fmtMs(state.lastTurnMs)}${T.reset}\n\n`
+      `  ${T.dim}${state.lastProvider} · ${T.reset}` +
+      `${ctxC}ctx ${ctxBar(state.ctxPercent)}${T.reset}` +
+      `${T.dim} · turn ${state.turnCount}/${MAX_TURNS} · ${fmtMs(state.lastTurnMs)}${T.reset}\n\n`
     )
 
   } catch (err: any) {
-    stopSpinner()
+    stopActivityRender()
     if (err?.name === 'AbortError') {
       process.stdout.write(`\n  ${T.warning}Interrupted.${T.reset}\n\n`)
     } else {
@@ -470,7 +570,7 @@ async function streamChat(message: string): Promise<void> {
       process.stdout.write(`  ${T.dim}Is Aiden running? Start the desktop app first.${T.reset}\n\n`)
     }
   } finally {
-    stopSpinner()
+    stopActivityRender()
     state.streaming = false
     state.abortCtrl = null
   }
@@ -640,6 +740,7 @@ ${B}  Exit${R}
     const ok    = h.status === 'ok'
     const upMin = Math.floor((h.uptime || 0) / 60)
     const ramMB = Math.round((h.memory?.heapUsed || 0) / 1024 / 1024)
+    const ctxC  = ctxColor(state.ctxPercent)
     console.log()
     console.log(`  ${ok ? T.success + '✓' : T.error + '✗'}${T.reset} Aiden ${ok ? 'Online' : 'Offline'}`)
     console.log(`  ${T.dim}${hr()}${T.reset}`)
@@ -648,6 +749,8 @@ ${B}  Exit${R}
     console.log(`  ${'Ollama'.padEnd(14)}${h.ollama || 'unknown'}`)
     console.log(`  ${'Sessions'.padEnd(14)}${h.workspace?.sessions || 0}`)
     console.log(`  ${'Memories'.padEnd(14)}${h.workspace?.memories || 0}`)
+    console.log(`  ${'Context'.padEnd(14)}${ctxC}${ctxBar(state.ctxPercent)}${T.reset}`)
+    console.log(`  ${'Turns'.padEnd(14)}${state.turnCount}/${MAX_TURNS}`)
     console.log()
     return true
   }
@@ -815,13 +918,13 @@ ${B}  Exit${R}
     const models: any[] = usage.models          || usage.modelBreakdown || []
     const tools: any[]  = usage.tools           || usage.topTools       || []
     const activity: any = usage.activity        || usage.daily          || {}
+    const ctxC          = ctxColor(state.ctxPercent)
 
     const LINE = `  ${T.dim}${hr()}${T.reset}`
 
     console.log()
-    console.log(`  ${T.dim}┌${'─'.repeat(cols() - 3)}${T.reset}`)
-    console.log(`  ${T.bold}  Aiden Analytics · Last 30 days${T.reset}`)
-    console.log(`  ${T.dim}└${'─'.repeat(cols() - 3)}${T.reset}`)
+    console.log(`  ${T.bold}Aiden Analytics · Last 30 days${T.reset}`)
+    console.log(LINE)
     console.log()
     console.log(`  ${T.bold}Overview${T.reset}`)
     console.log(LINE)
@@ -834,6 +937,12 @@ ${B}  Exit${R}
     row('Input tokens',  num(inTok),             'Output tokens', num(outTok))
     row('Total tokens',  num(totTok),            'Est. cost',     `$${typeof cost === 'number' ? cost.toFixed(2) : cost}`)
     row('Active time',   activeTime,             'Avg session',   avgSession)
+
+    console.log()
+    console.log(`  ${T.bold}This Session${T.reset}`)
+    console.log(LINE)
+    console.log(`  ${'Context'.padEnd(18)}${ctxC}${ctxBar(state.ctxPercent)}${T.reset}`)
+    console.log(`  ${'Turns'.padEnd(18)}${state.turnCount}/${MAX_TURNS}`)
 
     if (models.length > 0) {
       console.log()
@@ -855,8 +964,8 @@ ${B}  Exit${R}
       console.log(LINE)
       console.log(`  ${'Tool'.padEnd(24)}${'Calls'.padEnd(10)}%`)
       for (const t of tools.slice(0, 10)) {
-        const pct  = toolCalls > 0 ? Math.round((t.calls || 0) / toolCalls * 100) : (t.pct || 0)
-        const tname = (t.name || t.tool || '').padEnd(24)
+        const pct    = toolCalls > 0 ? Math.round((t.calls || 0) / toolCalls * 100) : (t.pct || 0)
+        const tname  = (t.name || t.tool || '').padEnd(24)
         const tcalls = String(t.calls || 0).padEnd(10)
         console.log(`  ${T.dim}${tname}${tcalls}${pct}%${T.reset}`)
       }
@@ -897,11 +1006,13 @@ ${B}  Exit${R}
   if (command === '/budget') {
     const totChars  = state.history.reduce((n, h) => n + h.content.length, 0)
     const approxTok = Math.round(totChars / 4)
+    const ctxC      = ctxColor(state.ctxPercent)
     console.log()
     console.log(`  ${T.bold}Token Budget (session estimate)${T.reset}`)
     console.log(`  ${T.dim}${hr()}${T.reset}`)
-    console.log(`  ${'Context used'.padEnd(18)}~${num(approxTok)} tokens  (${state.ctxPercent}%)`)
-    console.log(`  ${'Turns'.padEnd(18)}${state.turnCount}`)
+    console.log(`  ${'Context used'.padEnd(18)}~${num(approxTok)} tokens`)
+    console.log(`  ${'Context bar'.padEnd(18)}${ctxC}${ctxBar(state.ctxPercent)}${T.reset}`)
+    console.log(`  ${'Turns'.padEnd(18)}${state.turnCount}/${MAX_TURNS}`)
     console.log(`  ${'Session'.padEnd(18)}${T.dim}${SESSION_ID}${T.reset}`)
     console.log()
     return true
@@ -989,11 +1100,14 @@ ${B}  Exit${R}
     const task = parts.slice(1).join(' ')
     if (!task) { console.log(`  ${T.dim}Usage: /async <task>${T.reset}\n`); return true }
     const res = await apiPost('/api/tasks/async', { task, sessionId: SESSION_ID })
-    if (res?.taskId) {
-      console.log(`  ${T.success}✓ Task queued: ${res.taskId}${T.reset}\n`)
-    } else {
-      console.log(`  ${T.dim}Task submitted.${T.reset}\n`)
-    }
+    const taskId = res?.taskId || res?.id || String(Date.now()).slice(-4)
+    const divW   = cols() - 4
+    console.log()
+    console.log(`  ${T.dim}${'─'.repeat(divW)}${T.reset}`)
+    console.log(`  ${T.accent}◆${T.reset} async #${taskId}  ${T.dim}${task.substring(0, divW - String(taskId).length - 16)}${T.reset}`)
+    console.log(`  ${T.dim}${'─'.repeat(divW)}${T.reset}`)
+    console.log(`  ${T.dim}Running in background · /async view ${taskId}${T.reset}`)
+    console.log()
     return true
   }
 
