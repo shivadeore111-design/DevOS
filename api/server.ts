@@ -4695,6 +4695,7 @@ async function fetchProviderResponse(
       openai:     'https://api.openai.com/v1/chat/completions',
       nvidia:     'https://integrate.api.nvidia.com/v1/chat/completions',
       github:     'https://models.inference.ai.azure.com/chat/completions',
+      boa:        'https://api.bayofassets.com/v1/chat/completions',
     }
     const endpoint = COMPAT_ENDPOINTS[providerType] ?? COMPAT_ENDPOINTS['groq']
     const resp = await fetch(endpoint, {
@@ -4988,6 +4989,7 @@ ${cognitionHint}${firstMessageContext}${memoryContext}${greetingPreamble}${sessi
         openrouter: 'https://openrouter.ai/api/v1/chat/completions',
         cerebras:   'https://api.cerebras.ai/v1/chat/completions',
         openai:     'https://api.openai.com/v1/chat/completions',
+        boa:        'https://api.bayofassets.com/v1/chat/completions',
       }
       const endpoint = ENDPOINTS[providerType] ?? ENDPOINTS['groq']
       const resp = await fetch(endpoint, {
@@ -5040,6 +5042,7 @@ ${cognitionHint}${firstMessageContext}${memoryContext}${greetingPreamble}${sessi
             openrouter: 'https://openrouter.ai/api/v1/chat/completions',
             cerebras:   'https://api.cerebras.ai/v1/chat/completions',
             openai:     'https://api.openai.com/v1/chat/completions',
+            boa:        'https://api.bayofassets.com/v1/chat/completions',
           }
           const fbEndpoint = ENDPOINTS[cloudTier.providerName] ?? ENDPOINTS['groq']
           const fbHeaders: Record<string, string> = {
