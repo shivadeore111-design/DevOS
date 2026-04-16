@@ -93,6 +93,7 @@ import { sessionRouter } from '../core/sessionRouter'
 import { runSecurityScan } from '../core/agentShield'
 import { asyncTasks }     from '../core/asyncTasks'
 import { registerSlashMirrorTools } from '../core/slashAsTool'
+import { buildGreetingPreamble }    from '../core/memoryPreamble'
 
 // —— Sprint 25: module-level WebSocket clients registry (shared between createApiServer routes and startApiServer WS setup)
 let wsBroadcastClients   = new Set<any>()
@@ -4674,6 +4675,16 @@ async function streamChat(
     }
   } catch {}
 
+  // Phase 4: greeting fast-path memory surface — fill the gap when semantic
+  // recall returns nothing (e.g. "hi", "good morning" have no query signal).
+  let greetingPreamble = ''
+  if (!memoryContext || memoryContext.trim().length === 0) {
+    try {
+      const preamble = await buildGreetingPreamble()
+      if (preamble) greetingPreamble = `\n\n${preamble}`
+    } catch {}
+  }
+
   // Sprint 30: inject last session context on first message
   let sessionContext = ''
   if (isFirstMessage && sessionId) {
@@ -4738,7 +4749,7 @@ IDENTITY — you are NOT a static pre-trained model. You have active living syst
 - Growth Engine: tracks failures, learns from them, improves over time
 - XP & Leveling: gains experience, streaks, and levels up
 When asked about capabilities or learning, be accurate. NEVER say you are just a pre-trained model that cannot learn.
-${cognitionHint}${firstMessageContext}${memoryContext}${sessionContext}${memoryIndex}${standingOrders}`
+${cognitionHint}${firstMessageContext}${memoryContext}${greetingPreamble}${sessionContext}${memoryIndex}${standingOrders}`
 
   // ── AUDIT 1: System Prompt debug ─────────────────────────────
   console.log('[DEBUG] === FULL SYSTEM PROMPT ===')
