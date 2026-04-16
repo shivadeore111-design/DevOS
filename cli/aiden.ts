@@ -102,6 +102,9 @@ const state = {
   themeName   : 'default' as ThemeName,
   privateMode : false,
   focusMode   : false,
+  yoloMode    : false,
+  attachments : [] as string[],
+  sessionName : '',
 }
 
 // ── Terminal helpers ──────────────────────────────────────────────────────────────
@@ -651,6 +654,7 @@ const COMMANDS = [
   '/rewind', '/pin',
   '/diff', '/trust', '/timeline',
   '/garden', '/decision',
+  '/log', '/save', '/rerun', '/name', '/stack', '/halt', '/yolo', '/attach', '/changelog',
   '/recipes', '/sessions',
   '/analytics', '/budget', '/workspace',
   '/quick', '/compact', '/async', '/security', '/debug', '/config',
@@ -712,6 +716,16 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       helpRow('/timeline',          'Session history tree'),
       helpRow('/garden',            'Memory layer explorer  (semantic / entities / learning / facts / hot / cold)'),
       helpRow('/decision',          'Per-turn reasoning trace  (last / clear)'),
+      helpSection('Hermes'),
+      helpRow('/log [N] [level]',   'Recent log buffer entries'),
+      helpRow('/save [file]',       'Save conversation to workspace/exports/'),
+      helpRow('/rerun',             'Re-send the last user message'),
+      helpRow('/name <label>',      'Give the current session a name'),
+      helpRow('/stack',             'Active plan steps + async tasks'),
+      helpRow('/halt',              'Hard-stop all execution + LLM calls'),
+      helpRow('/yolo',              'Toggle auto-approve all tool calls'),
+      helpRow('/attach <path>',     'Attach file as context for next message'),
+      helpRow('/changelog [N]',     'Recent git commits / workspace changes'),
       helpRow('/recipes',           'YAML recipes'),
       helpRow('/sessions',          'Recent sessions'),
       helpRow('/analytics',         'Usage over time'),
@@ -2162,6 +2176,218 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
     return true
   }
 
+  // ── /log ─────────────────────────────────────────────────────────────────────
+  if (command === '/log') {
+    interface LogEntry { timestamp: string; level: string; source: string; message: string }
+    // parse args: /log [N] [level]
+    let n     = 30
+    let lvl   = ''
+    for (const arg of parts.slice(1)) {
+      const num = parseInt(arg, 10)
+      if (!isNaN(num)) n = Math.min(num, 200)
+      else lvl = arg.toLowerCase()
+    }
+    const entries = await apiFetch<LogEntry[]>(`/api/debug/logs?n=${n}`, [])
+    const filtered = lvl
+      ? entries.filter(e => e.level === lvl || e.source.toLowerCase().includes(lvl))
+      : entries
+    const LEVEL_C: Record<string, string> = {
+      error: fg(COLORS.red),
+      warn:  fg(COLORS.warning),
+      info:  fg(COLORS.white),
+      debug: T.dim,
+    }
+    console.log()
+    if (filtered.length === 0) {
+      console.log(`  ${T.dim}No log entries${lvl ? ` matching "${lvl}"` : ''}.${T.reset}\n`)
+      return true
+    }
+    const lines = filtered.slice(-n).map(e => {
+      const lc  = LEVEL_C[e.level] ?? T.dim
+      const ts  = e.timestamp.slice(11, 19)
+      return `  ${T.dim}${ts}${T.reset} ${lc}${e.level.padEnd(5)}${RST} ${fg(COLORS.cyan)}${e.source.padEnd(10)}${RST} ${e.message.substring(0, 100)}`
+    })
+    console.log(panel({
+      title: `${MARKS.TRI} /log  (${filtered.length} entries${lvl ? ` · ${lvl}` : ''})`,
+      lines: ['', ...lines, ''],
+    }))
+    console.log()
+    return true
+  }
+
+  // ── /save ─────────────────────────────────────────────────────────────────────
+  if (command === '/save') {
+    const filename = parts[1]
+      ? parts.slice(1).join('_').replace(/[^a-zA-Z0-9._-]/g, '_')
+      : `session_${SESSION_ID.slice(0, 12)}_${new Date().toISOString().slice(0, 10)}.md`
+    const exportsDir = path.join(__dirname, '..', 'workspace', 'exports')
+    try {
+      fs.mkdirSync(exportsDir, { recursive: true })
+      const outPath = path.join(exportsDir, filename.endsWith('.md') ? filename : filename + '.md')
+      const label   = state.sessionName ? `**Session:** ${state.sessionName}\n` : ''
+      const header  = `# Aiden Conversation Export\n${label}**ID:** ${SESSION_ID}\n**Date:** ${new Date().toISOString().slice(0, 10)}\n\n---\n\n`
+      const body    = state.history.map(h =>
+        `**${h.role === 'user' ? 'You' : 'Aiden'}:** ${h.content}\n`
+      ).join('\n')
+      fs.writeFileSync(outPath, header + body, 'utf-8')
+      console.log(`  ${fg(COLORS.success)}✓${RST}  Saved to ${T.dim}workspace/exports/${path.basename(outPath)}${T.reset}\n`)
+    } catch (e: any) {
+      console.log(`  ${T.error}Save failed: ${e.message}${T.reset}\n`)
+    }
+    return true
+  }
+
+  // ── /rerun ────────────────────────────────────────────────────────────────────
+  if (command === '/rerun') {
+    const lastUser = [...state.history].reverse().find(h => h.role === 'user')
+    if (!lastUser) {
+      console.log(`  ${T.dim}Nothing to rerun — no previous user message.${T.reset}\n`)
+      return true
+    }
+    console.log(`  ${T.dim}Rerunning: ${lastUser.content.substring(0, 80)}…${T.reset}\n`)
+    await streamChat(lastUser.content)
+    return true
+  }
+
+  // ── /name ─────────────────────────────────────────────────────────────────────
+  if (command === '/name') {
+    const label = parts.slice(1).join(' ').trim()
+    if (!label) {
+      const current = state.sessionName || T.dim + '(unnamed)' + T.reset
+      console.log(`  ${T.dim}Current name:${T.reset} ${current}\n  ${T.dim}Usage: /name <label>${T.reset}\n`)
+      return true
+    }
+    const r = await apiPost(`/api/sessions/${SESSION_ID}/name`, { name: label })
+    if (r?.ok) {
+      state.sessionName = label
+      console.log(`  ${fg(COLORS.success)}✓${RST}  Session named: ${fg(COLORS.orange)}${label}${RST}\n`)
+    } else {
+      // Store locally even if server is unavailable
+      state.sessionName = label
+      console.log(`  ${fg(COLORS.gold)}~${RST}  Stored locally: ${fg(COLORS.orange)}${label}${RST}\n`)
+    }
+    return true
+  }
+
+  // ── /stack ────────────────────────────────────────────────────────────────────
+  if (command === '/stack') {
+    interface AsyncTask { id: string; prompt: string; status: string; createdAt?: number }
+    const tasks = await apiFetch<AsyncTask[]>('/api/async', [])
+    console.log()
+    if (!tasks || tasks.length === 0) {
+      console.log(panel({
+        title: `${MARKS.TRI} /stack — idle`,
+        lines: ['', `  ${T.dim}No active async tasks.${T.reset}`, ''],
+      }))
+      console.log()
+      return true
+    }
+    const STATUS_C: Record<string, string> = {
+      running:  fg(COLORS.orange),
+      done:     fg(COLORS.success),
+      error:    fg(COLORS.red),
+      pending:  T.dim,
+    }
+    const rows = tasks.map(t => {
+      const sc    = STATUS_C[t.status] ?? T.dim
+      const label = (t.prompt || '').substring(0, 55)
+      const age   = t.createdAt ? `${Math.round((Date.now() - t.createdAt) / 1000)}s` : '—'
+      return `  ${sc}${t.status.padEnd(10)}${RST}${T.dim}${t.id.slice(0, 8)}${T.reset}  ${label}  ${T.dim}${age}${T.reset}`
+    })
+    console.log(panel({
+      title: `${MARKS.TRI} /stack  (${tasks.length} task${tasks.length !== 1 ? 's' : ''})`,
+      lines: ['', ...rows, ''],
+    }))
+    console.log()
+    return true
+  }
+
+  // ── /halt ─────────────────────────────────────────────────────────────────────
+  if (command === '/halt') {
+    if (state.streaming) {
+      state.abortCtrl?.abort()
+      state.streaming = false
+    }
+    await apiPost('/api/stop', {})
+    console.log(`  ${fg(COLORS.red)}⏹${RST}  All execution halted.\n`)
+    return true
+  }
+
+  // ── /yolo ─────────────────────────────────────────────────────────────────────
+  if (command === '/yolo') {
+    state.yoloMode = !state.yoloMode
+    const icon  = state.yoloMode ? fg(COLORS.gold) + '⚡' + RST : fg(COLORS.success) + '✓' + RST
+    const label = state.yoloMode
+      ? `${fg(COLORS.gold)}YOLO mode ON${RST}  — all tool calls auto-approved`
+      : `${fg(COLORS.success)}YOLO mode OFF${RST} — tool trust levels restored`
+    console.log(`  ${icon}  ${label}\n`)
+    return true
+  }
+
+  // ── /attach ───────────────────────────────────────────────────────────────────
+  if (command === '/attach') {
+    const sub = parts[1]?.toLowerCase()
+
+    // /attach clear — remove all pending attachments
+    if (sub === 'clear' || sub === 'none') {
+      state.attachments = []
+      console.log(`  ${fg(COLORS.success)}✓${RST}  Attachments cleared.\n`)
+      return true
+    }
+
+    // /attach list — show pending attachments
+    if (sub === 'list' || !parts[1]) {
+      if (state.attachments.length === 0) {
+        console.log(`  ${T.dim}No pending attachments. Use /attach <path>${T.reset}\n`)
+      } else {
+        const rows = state.attachments.map(p => `  ${fg(COLORS.orange)}${MARKS.ARROW}${RST} ${p}`)
+        console.log(panel({
+          title: `${MARKS.TRI} /attach  (${state.attachments.length} pending)`,
+          lines: ['', ...rows, '', `  ${T.dim}/attach clear to remove all${T.reset}`, ''],
+        }))
+        console.log()
+      }
+      return true
+    }
+
+    // /attach <path> — add file
+    const filePath = parts.slice(1).join(' ')
+    const resolved = path.isAbsolute(filePath) ? filePath : path.join(process.cwd(), filePath)
+    if (!fs.existsSync(resolved)) {
+      console.log(`  ${T.error}File not found: ${resolved}${T.reset}\n`); return true
+    }
+    state.attachments.push(resolved)
+    const stat = fs.statSync(resolved)
+    const kb   = Math.round(stat.size / 1024)
+    console.log(`  ${fg(COLORS.success)}✓${RST}  Attached ${T.dim}${path.basename(resolved)}${T.reset} ${T.dim}(${kb}KB · ${state.attachments.length} pending)${T.reset}\n`)
+    return true
+  }
+
+  // ── /changelog ────────────────────────────────────────────────────────────────
+  if (command === '/changelog') {
+    const n = parseInt(parts[1] ?? '', 10) || 20
+    interface ChangelogEntry { hash: string; msg: string; date: string }
+    const data = await apiFetch<{ entries: ChangelogEntry[] }>(`/api/changelog?n=${n}`, { entries: [] })
+    const entries = data.entries ?? []
+    console.log()
+    if (entries.length === 0) {
+      console.log(panel({
+        title: `${MARKS.TRI} /changelog — none`,
+        lines: ['', `  ${T.dim}No commits found.${T.reset}`, ''],
+      }))
+    } else {
+      const rows = entries.map(e =>
+        `  ${fg(COLORS.gold)}${e.hash.padEnd(9)}${RST}${T.dim}${e.date}${T.reset}  ${e.msg.substring(0, 70)}`
+      )
+      console.log(panel({
+        title: `${MARKS.TRI} /changelog  (${entries.length} entries)`,
+        lines: ['', ...rows, ''],
+      }))
+    }
+    console.log()
+    return true
+  }
+
   // ── /recipes ───────────────────────────────────────────────────────────────────
   if (command === '/recipes') {
     const r       = await apiFetch<any>('/api/recipes', [])
@@ -2891,7 +3117,25 @@ async function main(): Promise<void> {
       return
     }
 
-    await streamChat(input)
+    // Prepend any pending attachments as context
+    let finalMsg = input
+    if (state.attachments.length > 0) {
+      const parts: string[] = []
+      for (const p of state.attachments) {
+        try {
+          const content = fs.readFileSync(p, 'utf-8').slice(0, 8000)
+          parts.push(`<attachment path="${p}">\n${content}\n</attachment>`)
+        } catch {
+          parts.push(`<attachment path="${p}" error="could not read" />`)
+        }
+      }
+      parts.push(input)
+      finalMsg = parts.join('\n\n')
+      state.attachments = []
+      console.log(`  ${T.dim}Attached ${parts.length - 1} file(s) — cleared after send.${T.reset}`)
+    }
+
+    await streamChat(finalMsg)
     rl.prompt()
   })
 

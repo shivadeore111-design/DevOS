@@ -2367,6 +2367,58 @@ export function createApiServer(): Express {
     } catch (err: any) { res.status(500).json({ error: err.message }) }
   })
 
+  // POST /api/sessions/:id/name — assign a human-readable name to a session
+  app.post('/api/sessions/:id/name', (req: Request, res: Response) => {
+    try {
+      const id    = String(req.params.id)
+      const name  = String((req.body as any)?.name ?? '').slice(0, 80)
+      if (!name) { res.status(400).json({ error: 'name required' }); return }
+      const namesPath = path.join(WORKSPACE_ROOT, 'workspace', 'session-names.json')
+      let names: Record<string, string> = {}
+      try { names = JSON.parse(fs.readFileSync(namesPath, 'utf-8')) } catch {}
+      names[id] = name
+      fs.mkdirSync(path.dirname(namesPath), { recursive: true })
+      fs.writeFileSync(namesPath, JSON.stringify(names, null, 2) + '\n')
+      res.json({ ok: true, id, name })
+    } catch (err: any) { res.status(500).json({ error: err.message }) }
+  })
+
+  // GET /api/changelog?n=20 — recent git commits or workspace file changes
+  app.get('/api/changelog', (req: Request, res: Response) => {
+    try {
+      const { execSync } = require('child_process') as typeof import('child_process')
+      const n = Math.min(parseInt(String(req.query.n ?? '20'), 10), 100)
+      let entries: Array<{ hash: string; msg: string; date: string }> = []
+      try {
+        const out = execSync(`git log --oneline --pretty=format:"%h|%s|%ci" -${n}`, {
+          cwd:      WORKSPACE_ROOT,
+          timeout:  5000,
+          encoding: 'utf-8',
+        }) as string
+        entries = out.split('\n').filter(Boolean).map(l => {
+          const [hash, msg, date] = l.split('|')
+          return { hash: hash ?? '', msg: msg ?? '', date: (date ?? '').slice(0, 10) }
+        })
+      } catch {
+        // fallback: recent workspace files
+        const wsDir = path.join(WORKSPACE_ROOT, 'workspace')
+        if (fs.existsSync(wsDir)) {
+          const now = Date.now()
+          entries = fs.readdirSync(wsDir, { withFileTypes: true })
+            .filter(e => e.isFile())
+            .map(e => {
+              const fp  = path.join(wsDir, e.name)
+              const mts = new Date(fs.statSync(fp).mtime).toISOString().slice(0, 10)
+              return { hash: '—', msg: e.name, date: mts }
+            })
+            .sort((a, b) => b.date.localeCompare(a.date))
+            .slice(0, n)
+        }
+      }
+      res.json({ entries })
+    } catch (e: any) { res.status(500).json({ error: e.message }) }
+  })
+
   // GET /api/sessions/:id/lineage — session lineage chain
   app.get('/api/sessions/:id/lineage', (req: Request, res: Response) => {
     try {
