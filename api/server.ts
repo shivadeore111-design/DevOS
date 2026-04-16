@@ -1912,12 +1912,13 @@ export function createApiServer(): Express {
 
   // POST /api/config/primary — set primary provider (by name or provider slug)
   app.post('/api/config/primary', (req: Request, res: Response) => {
-    const { name } = req.body as { name?: string }
-    if (!name) { res.status(400).json({ error: 'name required' }); return }
+    const body = req.body as { name?: string; provider?: string }
+    const pin  = body.name || body.provider   // accept either field
+    if (!pin) { res.status(400).json({ error: 'name or provider required' }); return }
     const config = loadConfig()
-    config.primaryProvider = name
+    config.primaryProvider = pin
     saveConfig(config)
-    res.json({ success: true, primaryProvider: name })
+    res.json({ success: true, primaryProvider: pin })
   })
 
   // DELETE /api/config/primary — clear primary provider pin (restore default ordering)
