@@ -645,7 +645,9 @@ const COMMANDS = [
   '/new', '/reset', '/clear', '/history', '/stop',
   '/export', '/fork', '/checkpoint', '/help',
   '/status', '/tools', '/kit', '/providers', '/models', '/model', '/primary',
-  '/memory', '/goals', '/skills', '/lessons', '/teach', '/recipes', '/sessions',
+  '/memory', '/goals', '/skills', '/lessons', '/teach',
+  '/rewind', '/pin',
+  '/recipes', '/sessions',
   '/analytics', '/budget', '/workspace',
   '/quick', '/compact', '/async', '/security', '/debug', '/config',
   '/theme', '/persona', '/detail', '/depth', '/provider',
@@ -696,6 +698,8 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       helpRow('/skills',            'Skill lifecycle  (search / install / list / check / update / audit / remove / publish / export / import / source / stats / recommend / test)'),
       helpRow('/lessons',           'Browse permanent failure rules  (search / <category>)'),
       helpRow('/teach',             'Add a manual rule to LESSONS.md'),
+      helpRow('/rewind',            'Time-travel undo  (mark / undo / <n>)'),
+      helpRow('/pin',               'Protect exchange from compaction  (list / unpin <idx>)'),
       helpRow('/recipes',           'YAML recipes'),
       helpRow('/sessions',          'Recent sessions'),
       helpRow('/analytics',         'Usage over time'),
@@ -1415,6 +1419,118 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
     console.log(`  ${T.dim}${footerStats}${T.reset}`)
     console.log(`  ${T.dim}${footerNav}${T.reset}`)
     console.log()
+    return true
+  }
+
+  // ── /rewind ────────────────────────────────────────────────────────────────────
+  if (command === '/rewind') {
+    const sub = parts[1]?.toLowerCase()
+    const arg = parts[2] ?? ''
+
+    // /rewind mark [label] — create undo point
+    if (sub === 'mark') {
+      const label = parts.slice(2).join(' ') || undefined
+      const result = await apiPost('/api/undo-points', { label })
+      if (!result?.success) { console.log(`  ${T.error}Failed to create undo point.${T.reset}\n`); return true }
+      console.log(`  ${fg(COLORS.success)}${MARKS.TRI}${RST} undo point #${result.id} — ${T.dim}${result.label}${T.reset}\n`)
+      return true
+    }
+
+    // /rewind undo — pop last exchange
+    if (sub === 'undo') {
+      const result = await apiPost('/api/conversation/pop')
+      if (!result?.success) { console.log(`  ${T.error}Pop failed.${T.reset}\n`); return true }
+      console.log(`  ${T.dim}${MARKS.DOT} last turn removed from context.${T.reset}\n`)
+      return true
+    }
+
+    // /rewind <n> — restore to undo point N
+    if (sub && /^\d+$/.test(sub)) {
+      const result = await apiPost(`/api/undo-points/${sub}/restore`)
+      if (!result?.success) { console.log(`  ${T.error}Restore failed.${T.reset}\n`); return true }
+      console.log(`  ${fg(COLORS.success)}${MARKS.TRI}${RST} restored to ${T.dim}${result.label}${T.reset}\n`)
+      return true
+    }
+
+    // /rewind (default) — list undo points
+    const pts = await apiFetch<any[]>('/api/undo-points', [])
+    if (pts.length === 0) {
+      console.log()
+      console.log(panel({
+        title: `${MARKS.TRI} Rewind`,
+        lines: [
+          '',
+          `  ${T.dim}No undo points yet.${T.reset}`,
+          `  ${T.dim}Use /rewind mark [label] to create one.${T.reset}`,
+          '',
+        ],
+      }))
+      console.log()
+      return true
+    }
+    const colDefs: ColDef[] = [
+      { header: '#',     width: 4,  align: 'right', color: COLORS.dim },
+      { header: 'Label', width: 28, align: 'left'  },
+      { header: 'Turns', width: 6,  align: 'right', color: COLORS.dim },
+      { header: 'Time'                              },
+    ]
+    const rows = pts.map(p => [
+      String(p.id),
+      (p.label || '').substring(0, 26),
+      String(p.turns ?? '?'),
+      p.ts ? new Date(p.ts).toLocaleTimeString() : '—',
+    ])
+    console.log()
+    console.log(panel({ title: `${MARKS.TRI} Rewind`, lines: [''] }))
+    console.log(table(colDefs, rows))
+    console.log(`\n  ${T.dim}/rewind <n> to restore · /rewind mark [label] · /rewind undo${T.reset}\n`)
+    return true
+  }
+
+  // ── /pin ────────────────────────────────────────────────────────────────────────
+  if (command === '/pin') {
+    const sub = parts[1]?.toLowerCase()
+    const arg = parts.slice(2).join(' ')
+
+    // /pin list — show pinned
+    if (sub === 'list') {
+      const pins = await apiFetch<any[]>('/api/pinned', [])
+      if (pins.length === 0) {
+        console.log(`  ${T.dim}No pinned exchanges.${T.reset}\n`); return true
+      }
+      const colDefs: ColDef[] = [
+        { header: 'Idx',   width: 6,  align: 'right', color: COLORS.dim },
+        { header: 'Label', width: 28, align: 'left'  },
+        { header: 'Pinned'                            },
+      ]
+      const rows = pins.map(p => [
+        String(p.idx),
+        (p.label || '').substring(0, 26),
+        p.ts ? new Date(p.ts).toLocaleString() : '—',
+      ])
+      console.log()
+      console.log(panel({ title: `${MARKS.TRI} Pinned Exchanges`, lines: [''] }))
+      console.log(table(colDefs, rows))
+      console.log(`\n  ${T.dim}${pins.length} pinned · /pin unpin <idx>${T.reset}\n`)
+      return true
+    }
+
+    // /pin unpin <idx> — remove pin
+    if (sub === 'unpin') {
+      const idx = parseInt(parts[2] ?? '', 10)
+      if (isNaN(idx)) { console.log(`  ${T.dim}Usage: /pin unpin <idx>${T.reset}\n`); return true }
+      const result = await apiDelete(`/api/pinned/${idx}`)
+      if (!result?.success) { console.log(`  ${T.error}Unpin failed.${T.reset}\n`); return true }
+      console.log(`  ${T.dim}${MARKS.DOT} exchange ${idx} unpinned.${T.reset}\n`)
+      return true
+    }
+
+    // /pin [label] — pin last exchange
+    const label  = parts.slice(1).join(' ') || undefined
+    const result = await apiPost('/api/pinned', { idx: -1, label })
+    if (!result?.success) { console.log(`  ${T.error}Pin failed.${T.reset}\n`); return true }
+    const p = result.pin
+    console.log(`  ${fg(COLORS.orange)}${MARKS.DIAMOND}${RST} pinned — ${T.dim}${p?.label || 'last exchange'}${T.reset}\n`)
     return true
   }
 

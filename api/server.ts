@@ -3793,6 +3793,122 @@ export function createApiServer(): Express {
     }
   })
 
+  // ── Undo points (rewind) ──────────────────────────────────────────────────────
+  const UNDO_PATH   = path.join(WORKSPACE_ROOT, 'workspace', 'undo-points.json')
+  const PINNED_PATH = path.join(WORKSPACE_ROOT, 'workspace', 'pinned-exchanges.json')
+  const CONV_PATH   = path.join(WORKSPACE_ROOT, 'workspace', 'conversation.json')
+
+  function loadUndoPoints(): any[] {
+    try { return JSON.parse(fs.readFileSync(UNDO_PATH, 'utf-8')) as any[] } catch { return [] }
+  }
+  function saveUndoPoints(pts: any[]): void {
+    fs.mkdirSync(path.dirname(UNDO_PATH), { recursive: true })
+    fs.writeFileSync(UNDO_PATH, JSON.stringify(pts.slice(-20), null, 2), 'utf-8') // keep last 20
+  }
+  function loadConversation(): any {
+    try { return JSON.parse(fs.readFileSync(CONV_PATH, 'utf-8')) } catch { return {} }
+  }
+  function loadPinned(): Array<{ idx: number; label: string; ts: number }> {
+    try { return JSON.parse(fs.readFileSync(PINNED_PATH, 'utf-8')) } catch { return [] }
+  }
+  function savePinned(pins: Array<{ idx: number; label: string; ts: number }>): void {
+    fs.mkdirSync(path.dirname(PINNED_PATH), { recursive: true })
+    fs.writeFileSync(PINNED_PATH, JSON.stringify(pins, null, 2), 'utf-8')
+  }
+
+  // POST /api/undo-points — snapshot current conversation
+  app.post('/api/undo-points', (req: Request, res: Response) => {
+    try {
+      const { label } = (req.body || {}) as { label?: string }
+      const conv = loadConversation()
+      const pts  = loadUndoPoints()
+      const pt   = {
+        id:        pts.length + 1,
+        label:     label || `Undo point ${pts.length + 1}`,
+        ts:        Date.now(),
+        snapshot:  conv,
+      }
+      pts.push(pt)
+      saveUndoPoints(pts)
+      res.json({ success: true, id: pt.id, label: pt.label })
+    } catch (e: any) { res.status(500).json({ error: e.message }) }
+  })
+
+  // GET /api/undo-points — list undo points (without snapshot payload)
+  app.get('/api/undo-points', (_req: Request, res: Response) => {
+    try {
+      const pts = loadUndoPoints().map(p => ({
+        id:    p.id,
+        label: p.label,
+        ts:    p.ts,
+        // Rough exchange count from snapshot
+        turns: (() => {
+          try {
+            const sessions = p.snapshot?.sessions || p.snapshot?.allSessions || {}
+            return Object.values(sessions).reduce((acc: number, s: any) =>
+              acc + (s.exchanges?.length ?? 0), 0)
+          } catch { return 0 }
+        })(),
+      }))
+      res.json(pts)
+    } catch (e: any) { res.status(500).json({ error: e.message }) }
+  })
+
+  // POST /api/undo-points/:id/restore — restore conversation to snapshot
+  app.post('/api/undo-points/:id/restore', (req: Request, res: Response) => {
+    try {
+      const id  = parseInt(String(req.params.id), 10)
+      const pts = loadUndoPoints()
+      const pt  = pts.find(p => p.id === id)
+      if (!pt) { res.status(404).json({ error: 'Undo point not found' }); return }
+      fs.writeFileSync(CONV_PATH, JSON.stringify(pt.snapshot, null, 2), 'utf-8')
+      conversationMemory['load']?.()
+      res.json({ success: true, id, label: pt.label })
+    } catch (e: any) { res.status(500).json({ error: e.message }) }
+  })
+
+  // POST /api/conversation/pop — remove last exchange (undo one turn)
+  app.post('/api/conversation/pop', (_req: Request, res: Response) => {
+    try {
+      const conv = loadConversation()
+      const sessions = conv?.sessions || conv?.allSessions || {}
+      for (const key of Object.keys(sessions)) {
+        const exs = sessions[key]?.exchanges
+        if (Array.isArray(exs) && exs.length > 0) exs.pop()
+      }
+      fs.writeFileSync(CONV_PATH, JSON.stringify(conv, null, 2), 'utf-8')
+      res.json({ success: true })
+    } catch (e: any) { res.status(500).json({ error: e.message }) }
+  })
+
+  // GET /api/pinned — list pinned exchanges
+  app.get('/api/pinned', (_req: Request, res: Response) => {
+    try { res.json(loadPinned()) }
+    catch (e: any) { res.status(500).json({ error: e.message }) }
+  })
+
+  // POST /api/pinned — pin an exchange
+  app.post('/api/pinned', (req: Request, res: Response) => {
+    try {
+      const { idx, label } = (req.body || {}) as { idx?: number; label?: string }
+      const pins = loadPinned()
+      const entry = { idx: idx ?? -1, label: label || `Pin ${pins.length + 1}`, ts: Date.now() }
+      pins.push(entry)
+      savePinned(pins)
+      res.json({ success: true, pin: entry })
+    } catch (e: any) { res.status(500).json({ error: e.message }) }
+  })
+
+  // DELETE /api/pinned/:idx — unpin
+  app.delete('/api/pinned/:idx', (req: Request, res: Response) => {
+    try {
+      const idx  = parseInt(String(req.params.idx), 10)
+      const pins = loadPinned().filter(p => p.idx !== idx)
+      savePinned(pins)
+      res.json({ success: true })
+    } catch (e: any) { res.status(500).json({ error: e.message }) }
+  })
+
   // GET /api/tasks â€” list all tasks with status
   app.get('/api/tasks', (_req: Request, res: Response) => {
     const tasks = taskStateManager.listAll()
