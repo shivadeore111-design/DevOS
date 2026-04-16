@@ -663,6 +663,141 @@ const COMMANDS = [
   '/quit', '/exit', '/q',
 ]
 
+// ── Command detail registry ───────────────────────────────────────────────────
+
+interface CmdDetail {
+  desc:        string
+  usage?:      string
+  subs?:       string[]   // subcommands
+  examples?:   string[]
+  section?:    string
+}
+
+const COMMAND_DETAIL: Record<string, CmdDetail> = {
+  '/new':        { section: 'Session',   desc: 'Start a fresh session (clears local history).',                usage: '/new' },
+  '/reset':      { section: 'Session',   desc: 'Alias for /new.',                                             usage: '/reset' },
+  '/clear':      { section: 'Session',   desc: 'Clear the terminal screen.',                                  usage: '/clear' },
+  '/history':    { section: 'Session',   desc: 'Show conversation history for this session.',                 usage: '/history' },
+  '/stop':       { section: 'Session',   desc: 'Interrupt an in-flight LLM call.',                           usage: '/stop' },
+  '/export':     { section: 'Session',   desc: 'Export conversation as Markdown or JSON.',                   usage: '/export md|json' },
+  '/fork':       { section: 'Session',   desc: 'Branch current session under a new name.',                   usage: '/fork <name>' },
+  '/checkpoint': { section: 'Session',   desc: 'Save a state snapshot.',                                     usage: '/checkpoint' },
+  '/status':     { section: 'Info',      desc: 'Show server health, uptime, RAM.',                           usage: '/status' },
+  '/tools':      { section: 'Info',      desc: 'All registered tools grouped by category.',                  usage: '/tools' },
+  '/kit':        { section: 'Info',      desc: 'Toolkit categories — enable or disable tool groups.',        usage: '/kit' },
+  '/providers':  { section: 'Info',      desc: 'Provider chain with rate-limit status.',                     usage: '/providers' },
+  '/models':     { section: 'Info',      desc: 'Model assignments for each task type.',                      usage: '/models' },
+  '/memory':     { section: 'Info',      desc: 'Conversation memory stats.',                                 usage: '/memory' },
+  '/goals':      { section: 'Info',      desc: 'Active goals queue.',                                        usage: '/goals' },
+  '/skills':     { section: 'Info',      desc: 'Skill lifecycle manager.',
+    subs:    ['search <q>', 'install <name>', 'list', 'check', 'update <name>', 'audit', 'remove <name>', 'publish <name>', 'export <name>', 'import <name>', 'source <name>', 'stats', 'recommend', 'test <name>'],
+    examples: ['/skills list', '/skills search http', '/skills install my-skill', '/skills stats'],
+  },
+  '/lessons':    { section: 'Info',      desc: 'Browse permanent failure rules stored in LESSONS.md.',
+    subs:     ['search <q>', 'web|shell|files|planning|provider|memory|skills|errors|general'],
+    examples: ['/lessons', '/lessons search rate limit', '/lessons errors'],
+  },
+  '/teach':      { section: 'Info',      desc: 'Append a manual rule to LESSONS.md.',
+    usage:    '/teach <rule text>',
+    examples: ['/teach If rate limit hit, wait 60s before retry'],
+  },
+  '/focus':      { section: 'Info',      desc: 'Toggle zen mode — suppress tool traces and status output.',  usage: '/focus' },
+  '/explore':    { section: 'Info',      desc: 'Capability browser.',
+    subs:     ['tools', 'skills', 'providers'],
+    examples: ['/explore tools', '/explore skills'],
+  },
+  '/pulse':      { section: 'Info',      desc: 'Live system dashboard — uptime, RAM, providers, async tasks.', usage: '/pulse' },
+  '/rewind':     { section: 'Info',      desc: 'Time-travel undo — mark a restore point, then jump back.',
+    subs:     ['mark [label]', 'undo', '<n>'],
+    examples: ['/rewind mark safe', '/rewind undo', '/rewind 2'],
+  },
+  '/pin':        { section: 'Info',      desc: 'Pin an exchange so it is never compacted.',
+    subs:     ['[label]', 'list', 'unpin <idx>'],
+    examples: ['/pin important fact', '/pin list', '/pin unpin 0'],
+  },
+  '/diff':       { section: 'Info',      desc: 'Filesystem changes since last commit (git status).',         usage: '/diff' },
+  '/trust':      { section: 'Info',      desc: 'Per-tool approval levels.',
+    subs:     ['list', 'set <tool> <0|1|2|3>', 'reset <tool>'],
+    examples: ['/trust list', '/trust set web_search 2', '/trust reset web_search'],
+  },
+  '/timeline':   { section: 'Info',      desc: 'ASCII tree of all sessions with branching and message counts.', usage: '/timeline' },
+  '/garden':     { section: 'Info',      desc: 'Memory layer explorer — all 9 memory stores at a glance.',
+    subs:     ['semantic', 'entities', 'learning', 'facts'],
+    examples: ['/garden', '/garden semantic', '/garden entities'],
+  },
+  '/decision':   { section: 'Info',      desc: 'Per-turn reasoning trace from the decision log.',
+    subs:     ['[N]', 'last', 'clear'],
+    examples: ['/decision', '/decision 50', '/decision last', '/decision clear'],
+  },
+  '/log':        { section: 'Hermes',    desc: 'Show recent log buffer entries.',
+    usage:    '/log [N] [level]',
+    examples: ['/log', '/log 50', '/log 20 error'],
+  },
+  '/save':       { section: 'Hermes',    desc: 'Save conversation to workspace/exports/ as Markdown.',
+    usage:    '/save [filename]',
+    examples: ['/save', '/save my-session'],
+  },
+  '/rerun':      { section: 'Hermes',    desc: 'Re-send the last user message.',                             usage: '/rerun' },
+  '/name':       { section: 'Hermes',    desc: 'Give the current session a human-readable name.',
+    usage:    '/name <label>',
+    examples: ['/name debugging-auth-bug', '/name'],
+  },
+  '/stack':      { section: 'Hermes',    desc: 'Show active async task stack.',                              usage: '/stack' },
+  '/halt':       { section: 'Hermes',    desc: 'Hard-stop all execution and LLM calls immediately.',         usage: '/halt' },
+  '/yolo':       { section: 'Hermes',    desc: 'Toggle YOLO mode — auto-approve all tool calls.',           usage: '/yolo' },
+  '/attach':     { section: 'Hermes',    desc: 'Queue a file as context prepended to the next message.',
+    subs:     ['<path>', 'list', 'clear'],
+    examples: ['/attach ./notes.txt', '/attach list', '/attach clear'],
+  },
+  '/changelog':  { section: 'Hermes',    desc: 'Show recent git commits or workspace file changes.',
+    usage:    '/changelog [N]',
+    examples: ['/changelog', '/changelog 50'],
+  },
+  '/sessions':   { section: 'Info',      desc: 'List recent sessions.',                                      usage: '/sessions' },
+  '/analytics':  { section: 'Info',      desc: 'Token usage analytics over time.',                          usage: '/analytics' },
+  '/budget':     { section: 'Info',      desc: 'Estimated token cost for this session.',                    usage: '/budget' },
+  '/workspace':  { section: 'Info',      desc: 'Show current workspace path and contents.',                 usage: '/workspace' },
+  '/model':      { section: 'Config',    desc: 'Switch the active LLM model.',                              usage: '/model <name>' },
+  '/provider':   { section: 'Config',    desc: 'Manage providers.',
+    subs:     ['<name>', 'add <name>', 'remove <name>', 'test'],
+    examples: ['/provider openai', '/provider add groq', '/provider test'],
+  },
+  '/primary':    { section: 'Config',    desc: 'Pin a provider to front of the chain.',                     usage: '/primary <name>|reset' },
+  '/theme':      { section: 'Config',    desc: 'Change color theme.',
+    usage:    '/theme <name>',
+    examples: ['/theme default', '/theme mono', '/theme slate', '/theme ember'],
+  },
+  '/persona':    { section: 'Config',    desc: 'Switch response persona.',
+    usage:    '/persona <name>',
+    examples: ['/persona default', '/persona concise', '/persona technical'],
+  },
+  '/detail':     { section: 'Config',    desc: 'Cycle tool-trace detail level: off → tools → verbose.',     usage: '/detail' },
+  '/depth':      { section: 'Config',    desc: 'Cycle reasoning depth: low → medium → high.',               usage: '/depth' },
+  '/config':     { section: 'Config',    desc: 'Show current configuration snapshot.',                      usage: '/config' },
+  '/quick':      { section: 'Power',     desc: 'Quick side question — no history, no tools.',               usage: '/quick <question>' },
+  '/compact':    { section: 'Power',     desc: 'Manual context compression.',                               usage: '/compact' },
+  '/async':      { section: 'Power',     desc: 'Run a task in the background.',                             usage: '/async <task>' },
+  '/security':   { section: 'Power',     desc: 'Run AgentShield security scan.',                            usage: '/security' },
+  '/debug':      { section: 'Power',     desc: 'Recent server log entries.',                                usage: '/debug' },
+  '/private':    { section: 'Power',     desc: 'Toggle private mode — suppresses memory writes.',           usage: '/private' },
+  '/help':       { section: 'Meta',      desc: 'Show this help overview, or search commands.',
+    subs:     ['search <q>', '<command>'],
+    examples: ['/help', '/help search memory', '/help /skills'],
+  },
+  '/quit':       { section: 'Exit',      desc: 'Exit Aiden.',                                               usage: '/quit' },
+  '/exit':       { section: 'Exit',      desc: 'Alias for /quit.',                                          usage: '/exit' },
+  '/q':          { section: 'Exit',      desc: 'Alias for /quit.',                                          usage: '/q' },
+}
+
+/** Fuzzy-match: all chars of `needle` appear in order in `haystack`. */
+function fuzzyCmd(needle: string, haystack: string): boolean {
+  const n = needle.toLowerCase()
+  const h = haystack.toLowerCase()
+  let i = 0
+  for (const c of h) { if (c === n[i]) i++; if (i === n.length) return true }
+  return false
+}
+
 function getPrompt(): string {
   const privTag = state.privateMode ? ` ${T.warning}[private]${T.reset}` : ''
   return `  ${fg(COLORS.orange)}${MARKS.TRI}${RST}${privTag} `
@@ -684,6 +819,66 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
     }
     function helpSection(title: string): string {
       return `\n  ${B}${MARKS.TRI} ${title}${R}\n  ${D}${hr()}${R}`
+    }
+
+    // ── /help search <q> ───────────────────────────────────────────────────────
+    const sub = parts[1]?.toLowerCase()
+    if (sub === 'search' || (sub && !sub.startsWith('/'))) {
+      const q = (sub === 'search' ? parts.slice(2) : parts.slice(1)).join(' ').toLowerCase()
+      if (!q) {
+        console.log(`  ${D}Usage: /help search <query>${R}\n`); return true
+      }
+      const matches = Object.entries(COMMAND_DETAIL).filter(([cmd, d]) => {
+        return cmd.includes(q) ||
+          d.desc.toLowerCase().includes(q) ||
+          (d.subs ?? []).some(s => s.toLowerCase().includes(q)) ||
+          (d.section ?? '').toLowerCase().includes(q)
+      })
+      console.log()
+      if (matches.length === 0) {
+        console.log(`  ${D}No commands matching "${q}".${R}\n`); return true
+      }
+      const rows = matches.map(([cmd, d]) => helpRow(cmd, d.desc))
+      console.log(panel({
+        title: `${MARKS.TRI} /help search "${q}"  (${matches.length} result${matches.length !== 1 ? 's' : ''})`,
+        lines: ['', ...rows, ''],
+        accent: COLORS.orange,
+      }))
+      console.log()
+      return true
+    }
+
+    // ── /help <command> ────────────────────────────────────────────────────────
+    if (sub?.startsWith('/')) {
+      const d = COMMAND_DETAIL[sub]
+      if (!d) {
+        console.log(`  ${D}Unknown command: ${sub}  (try /help search <keyword>)${R}\n`); return true
+      }
+      const lines: string[] = [
+        '',
+        `  ${B}${sub}${R}  ${D}(${d.section ?? ''})${R}`,
+        `  ${d.desc}`,
+        '',
+      ]
+      if (d.usage) {
+        lines.push(`  ${D}Usage:${R}`)
+        lines.push(`    ${O}${d.usage}${RST}`)
+        lines.push('')
+      }
+      if (d.subs && d.subs.length > 0) {
+        lines.push(`  ${D}Subcommands:${R}`)
+        for (const s of d.subs) lines.push(`    ${O}${sub} ${s}${RST}`)
+        lines.push('')
+      }
+      if (d.examples && d.examples.length > 0) {
+        lines.push(`  ${D}Examples:${R}`)
+        for (const ex of d.examples) lines.push(`    ${D}${ex}${R}`)
+        lines.push('')
+      }
+      console.log()
+      console.log(panel({ title: `${MARKS.TRI} /help ${sub}`, lines, accent: COLORS.orange }))
+      console.log()
+      return true
     }
 
     const lines: string[] = [
@@ -749,6 +944,8 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       helpRow('/private',           'Toggle private mode  (suppresses memory writes)'),
       helpSection('Exit'),
       helpRow('/quit  /exit  /q',   ''),
+      '',
+      `  ${T.dim}/help search <q>  ·  /help <command> for detail${T.reset}`,
       '',
     ]
 
@@ -2926,12 +3123,17 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
   return true
 }
 
-// ── Tab completer ─────────────────────────────────────────────────────────────────
+// ── Tab completer (prefix-first, fuzzy fallback) ──────────────────────────────────
 
 function completer(line: string): [string[], string] {
   if (!line.startsWith('/')) return [[], line]
-  const hits = COMMANDS.filter(c => c.startsWith(line))
-  return [hits.length ? hits : COMMANDS, line]
+  // 1. Exact prefix matches
+  const prefix = COMMANDS.filter(c => c.startsWith(line))
+  if (prefix.length > 0) return [prefix, line]
+  // 2. Fuzzy: all characters of `line` appear in order in the command
+  const needle = line.slice(1)   // strip leading /
+  const fuzzy  = COMMANDS.filter(c => fuzzyCmd(needle, c.slice(1)))
+  return [fuzzy.length ? fuzzy : [], line]
 }
 
 // ── Session resume helpers ─────────────────────────────────────────────────────────
