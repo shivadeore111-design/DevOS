@@ -3518,6 +3518,85 @@ export function createApiServer(): Express {
     } catch (e: any) { res.status(500).json({ error: e.message }) }
   })
 
+  // ── /api/diff — workspace git status / recently modified files ──────────────
+  app.get('/api/diff', (_req: Request, res: Response) => {
+    try {
+      const { execSync } = require('child_process') as typeof import('child_process')
+      let lines: Array<{ status: string; file: string; staged: boolean }> = []
+      try {
+        const out = execSync('git status --short', {
+          cwd:      WORKSPACE_ROOT,
+          timeout:  5000,
+          encoding: 'utf-8',
+        }) as string
+        lines = out.split('\n').filter(Boolean).map(l => {
+          const xy     = l.slice(0, 2)
+          const file   = l.slice(3).trim()
+          const staged = xy[0] !== ' ' && xy[0] !== '?'
+          const status = xy.trim() || '??'
+          return { status, file, staged }
+        })
+      } catch {
+        // Not a git repo — fall back to recently modified workspace files
+        const wsDir = path.join(WORKSPACE_ROOT, 'workspace')
+        if (fs.existsSync(wsDir)) {
+          const now     = Date.now()
+          const entries = fs.readdirSync(wsDir, { withFileTypes: true })
+          lines = entries
+            .filter(e => e.isFile())
+            .map(e => {
+              const fp   = path.join(wsDir, e.name)
+              const ageM = Math.round((now - fs.statSync(fp).mtimeMs) / 60000)
+              return { status: `${ageM}m ago`, file: `workspace/${e.name}`, staged: false }
+            })
+            .sort((a, b) => a.status.localeCompare(b.status))
+            .slice(0, 30)
+        }
+      }
+      res.json({ lines, ts: Date.now() })
+    } catch (e: any) { res.status(500).json({ error: e.message }) }
+  })
+
+  // ── /api/tool-trust — per-tool approval levels ────────────────────────────────
+  const TOOL_TRUST_PATH = path.join(WORKSPACE_ROOT, 'workspace', 'tool-trust.json')
+
+  function loadToolTrust(): Record<string, number> {
+    try { return JSON.parse(fs.readFileSync(TOOL_TRUST_PATH, 'utf-8')) } catch { return {} }
+  }
+
+  function saveToolTrust(data: Record<string, number>): void {
+    try {
+      fs.mkdirSync(path.dirname(TOOL_TRUST_PATH), { recursive: true })
+      fs.writeFileSync(TOOL_TRUST_PATH, JSON.stringify(data, null, 2) + '\n')
+    } catch {}
+  }
+
+  // GET /api/tool-trust
+  app.get('/api/tool-trust', (_req: Request, res: Response) => {
+    res.json(loadToolTrust())
+  })
+
+  // POST /api/tool-trust  { name: string, level: 0|1|2|3 }
+  app.post('/api/tool-trust', (req: Request, res: Response) => {
+    const { name, level } = req.body as { name?: string; level?: number }
+    if (!name || level === undefined) {
+      res.status(400).json({ error: 'name and level required' }); return
+    }
+    const trust = loadToolTrust()
+    trust[String(name)] = Number(level)
+    saveToolTrust(trust)
+    res.json({ ok: true, name, level: trust[String(name)] })
+  })
+
+  // DELETE /api/tool-trust/:name
+  app.delete('/api/tool-trust/:name', (req: Request, res: Response) => {
+    const name  = String(req.params.name)
+    const trust = loadToolTrust()
+    delete trust[name]
+    saveToolTrust(trust)
+    res.json({ ok: true, name })
+  })
+
   // â”€â”€ Computer-use routes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // POST /api/automate, POST /api/automate/stop,
   // GET  /api/automate/log, GET /api/automate/session

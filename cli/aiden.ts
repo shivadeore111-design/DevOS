@@ -649,6 +649,7 @@ const COMMANDS = [
   '/memory', '/goals', '/skills', '/lessons', '/teach',
   '/focus', '/explore', '/pulse',
   '/rewind', '/pin',
+  '/diff', '/trust', '/timeline',
   '/recipes', '/sessions',
   '/analytics', '/budget', '/workspace',
   '/quick', '/compact', '/async', '/security', '/debug', '/config',
@@ -705,6 +706,9 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       helpRow('/pulse',             'Live system dashboard — uptime, RAM, providers, async tasks'),
       helpRow('/rewind',            'Time-travel undo  (mark / undo / <n>)'),
       helpRow('/pin',               'Protect exchange from compaction  (list / unpin <idx>)'),
+      helpRow('/diff',              'Filesystem changes since last commit  (git status)'),
+      helpRow('/trust',             'Per-tool approval levels  (list / set <tool> <0-3> / reset <tool>)'),
+      helpRow('/timeline',          'Session history tree'),
       helpRow('/recipes',           'YAML recipes'),
       helpRow('/sessions',          'Recent sessions'),
       helpRow('/analytics',         'Usage over time'),
@@ -1794,6 +1798,187 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
         `  ${T.dim}category: ${l?.category || 'general'} · date: ${l?.date || '—'}${T.reset}`,
         '',
       ],
+    }))
+    console.log()
+    return true
+  }
+
+  // ── /diff ─────────────────────────────────────────────────────────────────────
+  if (command === '/diff') {
+    const data = await apiFetch<{ lines: Array<{ status: string; file: string; staged: boolean }> }>(
+      '/api/diff', { lines: [] }
+    )
+    const lines = data.lines ?? []
+    console.log()
+    if (lines.length === 0) {
+      console.log(panel({
+        title: `${MARKS.TRI} /diff — no changes`,
+        lines: ['', `  ${T.dim}Working tree is clean.${T.reset}`, ''],
+      }))
+    } else {
+      const TRUST_COLORS: Record<string, string> = {
+        M:  fg(COLORS.warning),
+        A:  fg(COLORS.success),
+        D:  fg(COLORS.red),
+        '??': fg(COLORS.cyan),
+        R:  fg(COLORS.blue),
+      }
+      const rows = lines.map(l => {
+        const sc   = TRUST_COLORS[l.status[0]] ?? T.dim
+        const stag = l.staged ? fg(COLORS.success) + '●' + RST : T.dim + '○' + T.reset
+        return `  ${stag} ${sc}${l.status.padEnd(3)}${RST} ${l.file}`
+      })
+      console.log(panel({
+        title: `${MARKS.TRI} /diff  (${lines.length} ${lines.length === 1 ? 'file' : 'files'})`,
+        lines: ['', ...rows, '', `  ${T.dim}● staged  ○ unstaged${T.reset}`, ''],
+      }))
+    }
+    console.log()
+    return true
+  }
+
+  // ── /trust ────────────────────────────────────────────────────────────────────
+  if (command === '/trust') {
+    const sub = parts[1]?.toLowerCase()
+
+    const LEVEL_LABELS: Record<number, string> = {
+      0: 'block',
+      1: 'ask',
+      2: 'auto',
+      3: 'auto+log',
+    }
+    const LEVEL_COLORS: Record<number, string> = {
+      0: fg(COLORS.red),
+      1: fg(COLORS.warning),
+      2: fg(COLORS.success),
+      3: fg(COLORS.cyan),
+    }
+
+    // /trust set <tool> <0-3>
+    if (sub === 'set') {
+      const toolName = parts[2]
+      const level    = parseInt(parts[3] ?? '', 10)
+      if (!toolName || isNaN(level) || level < 0 || level > 3) {
+        console.log(`  ${T.dim}Usage: /trust set <tool> <0|1|2|3>  (0=block 1=ask 2=auto 3=auto+log)${T.reset}\n`)
+        return true
+      }
+      const r = await apiPost('/api/tool-trust', { name: toolName, level })
+      if (r?.ok) {
+        const lc = LEVEL_COLORS[level] ?? T.dim
+        console.log(`  ${fg(COLORS.success)}✓${RST}  ${toolName}  →  ${lc}${LEVEL_LABELS[level] ?? level}${RST}\n`)
+      } else {
+        console.log(`  ${T.error}Failed to update trust.${T.reset}\n`)
+      }
+      return true
+    }
+
+    // /trust reset <tool>
+    if (sub === 'reset') {
+      const toolName = parts[2]
+      if (!toolName) {
+        console.log(`  ${T.dim}Usage: /trust reset <tool>${T.reset}\n`); return true
+      }
+      const r = await apiDelete(`/api/tool-trust/${encodeURIComponent(toolName)}`)
+      if (r?.ok) {
+        console.log(`  ${fg(COLORS.success)}✓${RST}  ${toolName} trust reset to default\n`)
+      } else {
+        console.log(`  ${T.error}Failed to reset trust.${T.reset}\n`)
+      }
+      return true
+    }
+
+    // /trust list (default)
+    const trust = await apiFetch<Record<string, number>>('/api/tool-trust', {})
+    const entries = Object.entries(trust)
+    console.log()
+    if (entries.length === 0) {
+      console.log(panel({
+        title: `${MARKS.TRI} /trust — no overrides`,
+        lines: [
+          '',
+          `  ${T.dim}All tools use default trust (ask).${T.reset}`,
+          `  ${T.dim}Use /trust set <tool> <0-3> to configure.${T.reset}`,
+          '',
+          `  ${T.dim}Levels:  0=block  1=ask  2=auto  3=auto+log${T.reset}`,
+          '',
+        ],
+      }))
+    } else {
+      const rows = entries.map(([name, level]) => {
+        const lc  = LEVEL_COLORS[level] ?? T.dim
+        const lbl = LEVEL_LABELS[level] ?? String(level)
+        return `  ${fg(COLORS.orange)}${MARKS.ARROW}${RST} ${name.padEnd(28)}${lc}${lbl}${RST}`
+      })
+      console.log(panel({
+        title: `${MARKS.TRI} /trust  (${entries.length} override${entries.length !== 1 ? 's' : ''})`,
+        lines: ['', ...rows, '', `  ${T.dim}/trust set <tool> <0-3>  ·  /trust reset <tool>${T.reset}`, ''],
+      }))
+    }
+    console.log()
+    return true
+  }
+
+  // ── /timeline ─────────────────────────────────────────────────────────────────
+  if (command === '/timeline') {
+    interface SessionSummary {
+      id:           string
+      messageCount: number
+      updatedAt?:   number
+      createdAt?:   number
+      parentId?:    string
+      name?:        string
+    }
+    const sessions = await apiFetch<SessionSummary[]>('/api/sessions', [])
+    console.log()
+    if (!sessions || sessions.length === 0) {
+      console.log(panel({
+        title: `${MARKS.TRI} /timeline — no sessions`,
+        lines: ['', `  ${T.dim}No sessions recorded.${T.reset}`, ''],
+      }))
+      console.log()
+      return true
+    }
+
+    // Build tree from parentId
+    const byId: Record<string, SessionSummary> = {}
+    for (const s of sessions) byId[s.id] = s
+    const roots: SessionSummary[] = []
+    const children: Record<string, SessionSummary[]> = {}
+    for (const s of sessions) {
+      if (s.parentId && byId[s.parentId]) {
+        ;(children[s.parentId] ??= []).push(s)
+      } else {
+        roots.push(s)
+      }
+    }
+
+    const treeLines: string[] = []
+    function renderNode(s: SessionSummary, prefix: string, isLast: boolean): void {
+      const connector = isLast ? '└─' : '├─'
+      const age       = s.updatedAt
+        ? `${Math.round((Date.now() - s.updatedAt) / 60000)}m ago`
+        : '—'
+      const label     = s.name ? `${s.name} · ` : ''
+      const isCurrent = s.id === SESSION_ID
+      const idStr     = s.id.substring(0, 16)
+      const hl        = isCurrent ? fg(COLORS.orange) : ''
+      const hl2       = isCurrent ? ` ${fg(COLORS.gold)}← current${RST}` : ''
+      treeLines.push(
+        `  ${T.dim}${prefix}${connector}${RST} ${hl}${label}${idStr}${RST}  ` +
+        `${T.dim}${s.messageCount ?? 0} msgs · ${age}${T.reset}${hl2}`
+      )
+      const kids = children[s.id] ?? []
+      kids.forEach((k, i) => {
+        const newPfx = prefix + (isLast ? '   ' : '│  ')
+        renderNode(k, newPfx, i === kids.length - 1)
+      })
+    }
+
+    roots.forEach((r, i) => renderNode(r, '', i === roots.length - 1))
+
+    console.log(panel({
+      title: `${MARKS.TRI} /timeline  (${sessions.length} session${sessions.length !== 1 ? 's' : ''})`,
+      lines: ['', ...treeLines, '', `  ${T.dim}/sessions for details  ·  /fork <name> to branch${T.reset}`, ''],
     }))
     console.log()
     return true
