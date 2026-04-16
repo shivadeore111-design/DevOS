@@ -1056,28 +1056,58 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
     const sub    = parts[1]?.toLowerCase()
     const skills = await apiFetch<any[]>('/api/skills', [])
 
-    // ── /skills inspect <n> ────────────────────────────────────────────────────
+    // ── /skills inspect <name|n> ────────────────────────────────────────────────
     if (sub === 'inspect') {
-      const idx = parseInt(parts[2] ?? '1', 10) - 1
-      const s   = skills[idx]
+      const key = parts[2] ?? ''
+      // Try by name first, then by 1-based index
+      const s = skills.find((x: any) => x.name === key)
+          ?? skills[parseInt(key, 10) - 1]
       if (!s) {
-        console.log(`  ${T.error}No skill at index ${idx + 1}.${T.reset}\n`)
+        console.log(`  ${T.error}No skill matching "${key}".${T.reset}\n`)
         return true
       }
+      const skillName   = s.name || '(unnamed)'
       const sourceBadge = sourceBadgeStr(s.source || s.type || '')
       const trust       = trustStars(s.trust ?? 3)
-      const detailLines = [
-        `  ${T.bold}${s.name || '(unnamed)'}${T.reset}`,
-        `  ${T.dim}${s.description || 'No description.'}${T.reset}`,
-        '',
-        `  Source   ${sourceBadge}`,
-        `  Trust    ${trust}`,
-        `  Enabled  ${s.enabled ? T.success + '●' + T.reset : T.error + '○' + T.reset}`,
-        s.path ? `  Path     ${T.dim}${s.path}${T.reset}` : '',
-        s.version ? `  Version  ${T.dim}v${s.version}${T.reset}` : '',
-      ].filter(l => l !== undefined)
+
+      // Build detail rows — only render fields that actually exist in manifest
+      const detailLines: string[] = ['']
+      if (s.description) {
+        // Word-wrap description at ~60 chars
+        const words = (s.description as string).split(' ')
+        let line = '  '
+        for (const w of words) {
+          if (line.length + w.length > 64) { detailLines.push(line.trimEnd()); line = '  ' }
+          line += w + ' '
+        }
+        if (line.trim()) detailLines.push(line.trimEnd())
+        detailLines.push('')
+      }
+      const field = (k: string, v: string) =>
+        `  ${T.dim}${k.padEnd(14)}${T.reset}${v}`
+      detailLines.push(field('Source',  sourceBadge))
+      detailLines.push(field('Trust',   trust))
+      if (s.version)      detailLines.push(field('Version',  `${T.dim}${s.version}${T.reset}`))
+      if (s.tier)         detailLines.push(field('Tier',     `${T.dim}${s.tier}${T.reset}`))
+      if (s.size)         detailLines.push(field('Size',     `${T.dim}${s.size}${T.reset}`))
+      if (s.author)       detailLines.push(field('Author',   `${T.dim}${s.author}${T.reset}`))
+      if (s.dependencies?.length) {
+        detailLines.push(field('Dependencies', `${T.dim}${s.dependencies.join(', ')}${T.reset}`))
+      } else if (s.dependencies === 'none' || s.dependencies === null) {
+        detailLines.push(field('Dependencies', `${T.dim}none${T.reset}`))
+      }
+      if (s.enabled !== undefined) {
+        detailLines.push(field('Enabled',
+          s.enabled ? `${fg(COLORS.success)}●${RST}` : `${T.dim}○${T.reset}`))
+      }
+      detailLines.push('')
+      if (!s.installed) {
+        detailLines.push(`  ${fg(COLORS.orange)}${MARKS.TRI}${RST} /skills install ${skillName}`)
+        detailLines.push('')
+      }
+
       console.log()
-      console.log(panel({ title: `${MARKS.TRI} Skill Detail`, lines: detailLines, accent: COLORS.orange }))
+      console.log(panel({ title: `${MARKS.TRI} ${skillName}`, lines: detailLines }))
       console.log()
       return true
     }
@@ -1087,6 +1117,11 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
     const page  = sub === 'browse' ? (parseInt(parts[2] ?? '1', 10) - 1) : 0
     const start = page * PAGE_SIZE
     const slice = skills.slice(start, start + PAGE_SIZE)
+    const total = skills.length
+    const pages = Math.ceil(Math.max(total, 1) / PAGE_SIZE)
+
+    const installed  = skills.filter((s: any) => s.installed || s.enabled).length
+    const pro        = skills.filter((s: any) => s.tier === 'pro').length
 
     const colDefs: ColDef[] = [
       { header: '#',           width: 4,  align: 'right', color: COLORS.dim },
@@ -1098,21 +1133,28 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
     const rows = slice.map((s: any, i: number) => [
       String(start + i + 1),
       (s.name || '').substring(0, 20),
-      (s.description || '').substring(0, 60),
+      (s.description || '').substring(0, 55),
       sourceBadgeStr(s.source || s.type || ''),
       trustStars(s.trust ?? 3),
     ])
 
-    console.log()
-    console.log(table(colDefs, rows))
+    const footerStats = `${total} skills · ${installed} installed${pro > 0 ? ` · ${pro} pro` : ''} · page ${page + 1}/${pages}`
+    const footerNav   = pages > 1
+      ? `${MARKS.TRI} /skills install <name>   n → next   p → prev   q → quit`
+      : `${MARKS.TRI} /skills install <name>   /skills inspect <n|name>`
 
-    const total = skills.length
-    const pages = Math.ceil(total / PAGE_SIZE)
-    if (pages > 1) {
-      console.log(`\n  ${T.dim}Page ${page + 1}/${pages} · /skills browse <page> · /skills inspect <n>${T.reset}`)
-    } else {
-      console.log(`\n  ${T.dim}${total} skills loaded · /skills inspect <n> for detail${T.reset}`)
-    }
+    console.log()
+    console.log(panel({
+      title: `${MARKS.TRI} Skill Store`,
+      lines: [
+        '',
+        ...rows.length === 0 ? [`  ${T.dim}No skills loaded.${T.reset}`] : [],
+      ],
+    }))
+    console.log(table(colDefs, rows))
+    console.log()
+    console.log(`  ${T.dim}${footerStats}${T.reset}`)
+    console.log(`  ${T.dim}${footerNav}${T.reset}`)
     console.log()
     return true
   }
