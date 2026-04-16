@@ -31,6 +31,7 @@ export type CallbackEvent =
   | 'stream_done'      // Full response complete; data: { provider }
   | 'error'            // Non-fatal error surfaced; data: { message, code? }
   | 'budget_update'    // Token/cost budget snapshot; data: { budget }
+  | 'async_complete'   // Background async task finished; data: { taskId, status, elapsed, preview }
 
 // ── Payload ───────────────────────────────────────────────────────────────────
 

@@ -90,6 +90,7 @@ import { gateway } from '../core/gateway'
 import type { IncomingMessage as GatewayMessage } from '../core/gateway'
 import { sessionRouter } from '../core/sessionRouter'
 import { runSecurityScan } from '../core/agentShield'
+import { asyncTasks }     from '../core/asyncTasks'
 
 // —— Sprint 25: module-level WebSocket clients registry (shared between createApiServer routes and startApiServer WS setup)
 let wsBroadcastClients   = new Set<any>()
@@ -3524,6 +3525,47 @@ export function createApiServer(): Express {
 
     recoverTasks().catch(() => {})
     res.json({ success: true, message: `Retrying task ${req.params.id}` })
+  })
+
+  // ── Async background tasks (/api/async) ──────────────────────────────────────
+
+  // POST /api/async  OR  POST /api/tasks/async — spawn a new background task
+  const spawnAsyncTask = (req: Request, res: Response) => {
+    const prompt = String(req.body?.prompt || req.body?.task || '').trim()
+    if (!prompt) { res.status(400).json({ error: 'prompt is required' }); return }
+    const task = asyncTasks.spawn(prompt)
+    res.json({ id: task.id, taskId: task.id, status: task.status, startedAt: task.startedAt })
+  }
+  app.post('/api/async',        spawnAsyncTask)
+  app.post('/api/tasks/async',  spawnAsyncTask)
+
+  // GET /api/async — list all async tasks (newest first)
+  app.get('/api/async', (_req: Request, res: Response) => {
+    res.json(asyncTasks.list().map(t => ({
+      id:          t.id,
+      prompt:      t.prompt.slice(0, 100),
+      status:      t.status,
+      startedAt:   t.startedAt,
+      completedAt: t.completedAt,
+      elapsed:     t.completedAt ? t.completedAt - t.startedAt : Date.now() - t.startedAt,
+      preview:     (t.result || t.error || '').slice(0, 200),
+    })))
+  })
+
+  // GET /api/async/:id — get a single async task with full result
+  app.get('/api/async/:id', (req: Request, res: Response) => {
+    const task = asyncTasks.get(String(req.params.id))
+    if (!task) { res.status(404).json({ error: 'Task not found' }); return }
+    res.json({
+      id:          task.id,
+      prompt:      task.prompt,
+      status:      task.status,
+      startedAt:   task.startedAt,
+      completedAt: task.completedAt,
+      elapsed:     task.completedAt ? task.completedAt - task.startedAt : Date.now() - task.startedAt,
+      result:      task.result,
+      error:       task.error,
+    })
   })
 
   // GET /api/memory â€” return current conversation facts and recent history

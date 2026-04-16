@@ -1106,13 +1106,77 @@ ${B}  Exit${R}
     return true
   }
 
-  // ── /async <task> ──────────────────────────────────────────────────────────────
+  // ── /async [list | view <id> | <task prompt>] ─────────────────────────────────
   if (command === '/async') {
+    const sub  = parts[1]
+    const divW = cols() - 4
+
+    // /async list — show all background tasks
+    if (sub === 'list') {
+      const tasks = await apiFetch<any[]>('/api/async', {})
+      if (!tasks || tasks.length === 0) {
+        console.log(`  ${T.dim}No async tasks yet.${T.reset}\n`)
+      } else {
+        console.log()
+        for (const t of tasks) {
+          const dot = t.status === 'complete' ? `${T.success}●${T.reset}` :
+                      t.status === 'failed'   ? `${T.error}●${T.reset}`   :
+                                                `${T.accent}◌${T.reset}`
+          const elapsed = t.elapsed ? ` ${T.dim}(${fmtDuration(t.elapsed)})${T.reset}` : ''
+          console.log(`  ${dot} ${t.id}${elapsed}  ${T.dim}${(t.prompt || '').slice(0, 50)}${T.reset}`)
+        }
+        console.log()
+      }
+      return true
+    }
+
+    // /async view <id> — fetch and display full result
+    if (sub === 'view') {
+      const taskId = parts[2]
+      if (!taskId) { console.log(`  ${T.dim}Usage: /async view <id>${T.reset}\n`); return true }
+      const t = await apiFetch<any>(`/api/async/${taskId}`, {})
+      if (!t || t.error === 'Task not found') {
+        console.log(`  ${T.error}✗ Task not found: ${taskId}${T.reset}\n`); return true
+      }
+      const elapsed  = t.elapsed ? ` (${fmtDuration(t.elapsed)})` : ''
+      const statusDot = t.status === 'complete' ? `${T.success}●${T.reset}` :
+                        t.status === 'failed'   ? `${T.error}●${T.reset}`   :
+                                                  `${T.accent}◌${T.reset}`
+      console.log()
+      console.log(`  ${T.dim}${'─'.repeat(divW)}${T.reset}`)
+      console.log(`  ${statusDot} async ${taskId}${T.dim}${elapsed}${T.reset}`)
+      console.log(`  ${T.dim}${'─'.repeat(divW)}${T.reset}`)
+      if (t.status === 'running') {
+        console.log(`  ${T.dim}Still running…${T.reset}`)
+      } else if (t.status === 'failed') {
+        console.log(`  ${T.error}✗ ${t.error || 'Unknown error'}${T.reset}`)
+      } else {
+        const reply = (t.result || '').trim()
+        process.stdout.write('  ')
+        let linePos = 0
+        const avail = cols() - 5
+        for (const ch of reply) {
+          if (ch === '\n') { process.stdout.write('\n  '); linePos = 0 }
+          else {
+            if (linePos >= avail) { process.stdout.write('\n  '); linePos = 0 }
+            process.stdout.write(ch); linePos++
+          }
+        }
+        process.stdout.write('\n')
+      }
+      console.log(`  ${T.dim}${'─'.repeat(divW)}${T.reset}`)
+      console.log()
+      return true
+    }
+
+    // /async <task prompt> — spawn a new background task
     const task = parts.slice(1).join(' ')
-    if (!task) { console.log(`  ${T.dim}Usage: /async <task>${T.reset}\n`); return true }
-    const res = await apiPost('/api/tasks/async', { task, sessionId: SESSION_ID })
+    if (!task) {
+      console.log(`  ${T.dim}Usage: /async <task>  |  /async list  |  /async view <id>${T.reset}\n`)
+      return true
+    }
+    const res    = await apiPost('/api/async', { prompt: task })
     const taskId = res?.taskId || res?.id || String(Date.now()).slice(-4)
-    const divW   = cols() - 4
     console.log()
     console.log(`  ${T.dim}${'─'.repeat(divW)}${T.reset}`)
     console.log(`  ${T.accent}◆${T.reset} async #${taskId}  ${T.dim}${task.substring(0, divW - String(taskId).length - 16)}${T.reset}`)

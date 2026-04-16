@@ -5155,6 +5155,45 @@ export default function Home() {
               // Update header model badge to show the provider that actually responded
               if (provider) setActiveModel(provider)
             }
+
+            // ── Async task complete — browser notification + in-chat card ──────
+            if (data.event === 'async_complete') {
+              const taskId = data.taskId || '?'
+              const preview = (data.preview || '').slice(0, 120)
+              const elapsed = data.elapsed
+                ? (() => {
+                    const s = Math.floor(data.elapsed / 1000)
+                    const m = Math.floor(s / 60)
+                    return m > 0 ? `${m}m ${s % 60}s` : `${s}s`
+                  })()
+                : ''
+              // In-chat notification message
+              const notifContent = `**⬡ Async task complete${elapsed ? ` (${elapsed})` : ''}**\n${preview}${preview.length >= 120 ? '…' : ''}\n\n*View full result: \`GET /api/async/${taskId}\`*`
+              setMessages(prev => [...prev, {
+                id:        `async_notif_${taskId}`,
+                role:      'assistant' as const,
+                content:   notifContent,
+                timestamp: Date.now(),
+              }])
+              // Browser notification (if permission granted)
+              if (typeof window !== 'undefined' && 'Notification' in window) {
+                if (Notification.permission === 'granted') {
+                  new Notification('Aiden — async task complete', {
+                    body: preview || 'Task finished.',
+                    icon: '/favicon.ico',
+                  })
+                } else if (Notification.permission !== 'denied') {
+                  Notification.requestPermission().then(p => {
+                    if (p === 'granted') {
+                      new Notification('Aiden — async task complete', {
+                        body: preview || 'Task finished.',
+                        icon: '/favicon.ico',
+                      })
+                    }
+                  })
+                }
+              }
+            }
           } catch {}
         }
       }
