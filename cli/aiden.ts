@@ -94,6 +94,7 @@ const state = {
   depthLevel  : 'medium' as 'low' | 'medium' | 'high',
   persona     : 'default',
   themeName   : 'default' as ThemeName,
+  privateMode : false,
 }
 
 // ── Terminal helpers ──────────────────────────────────────────────────────────────
@@ -587,11 +588,13 @@ const COMMANDS = [
   '/analytics', '/budget', '/workspace',
   '/quick', '/compact', '/async', '/security', '/debug', '/config',
   '/theme', '/persona', '/detail', '/depth', '/provider',
+  '/private',
   '/quit', '/exit', '/q',
 ]
 
 function getPrompt(): string {
-  return `  ${T.dim}›${T.reset} `
+  const privTag = state.privateMode ? ` ${T.warning}[private]${T.reset}` : ''
+  return `  ${T.dim}›${T.reset}${privTag} `
 }
 
 async function handleCommand(cmd: string, rl: readline.Interface): Promise<boolean> {
@@ -644,6 +647,7 @@ ${B}  Power${R}
   ${P}/async${R} <task>        Run task in background
   ${P}/security${R}            AgentShield scan
   ${P}/debug${R}               Recent logs
+  ${P}/private${R}             Toggle private mode (suppresses all memory writes)
 
 ${B}  Exit${R}
   ${D}${hr()}${R}
@@ -1114,7 +1118,7 @@ ${B}  Exit${R}
 
     // /async list — show all background tasks
     if (sub === 'list') {
-      const tasks = await apiFetch<any[]>('/api/async', {})
+      const tasks = await apiFetch<any[]>('/api/async', [])
       if (!tasks || tasks.length === 0) {
         console.log(`  ${T.dim}No async tasks yet.${T.reset}\n`)
       } else {
@@ -1210,6 +1214,23 @@ ${B}  Exit${R}
     console.log(`  ${T.dim}${hr()}${T.reset}`)
     for (const l of lines.slice(-20)) console.log(`  ${T.dim}${l}${T.reset}`)
     console.log()
+    return true
+  }
+
+  // ── /private ───────────────────────────────────────────────────────────────────
+  if (command === '/private') {
+    try {
+      const result = await apiPost('/api/private', { sessionId: SESSION_ID })
+      state.privateMode = result.private === true
+      if (state.privateMode) {
+        console.log(`\n  ${T.warning}🔒 Private mode ON${T.reset} — memory writes suppressed for this session.\n`)
+      } else {
+        console.log(`\n  ${T.success}🔓 Private mode OFF${T.reset} — memory writes resumed.\n`)
+      }
+      rl.setPrompt(getPrompt())
+    } catch {
+      console.log(`  ${T.error}Could not toggle private mode — server unavailable.${T.reset}\n`)
+    }
     return true
   }
 

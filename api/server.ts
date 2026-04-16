@@ -94,6 +94,7 @@ import { runSecurityScan } from '../core/agentShield'
 import { asyncTasks }     from '../core/asyncTasks'
 import { registerSlashMirrorTools } from '../core/slashAsTool'
 import { buildGreetingPreamble }    from '../core/memoryPreamble'
+import { isCurrentTurnPrivate, clearTurnPrivate, toggleSessionPrivate, isSessionPrivate } from '../core/privateMode'
 
 // —— Sprint 25: module-level WebSocket clients registry (shared between createApiServer routes and startApiServer WS setup)
 let wsBroadcastClients   = new Set<any>()
@@ -1285,7 +1286,10 @@ export function createApiServer(): Express {
         incrementUsage(apiName)
         send({ done: true, provider: apiName })
         res.end()
-        memoryLayers.write(`User: ${resolvedMessage}`, ['chat'])
+        if (!isCurrentTurnPrivate(sessionId || 'default')) {
+          memoryLayers.write(`User: ${resolvedMessage}`, ['chat'])
+        }
+        clearTurnPrivate(sessionId || 'default')
         return
       }
 
@@ -1360,18 +1364,22 @@ export function createApiServer(): Express {
           }
         }
 
-        conversationMemory.updateFromExecution(mqAllToolsUsed, mqAllFilesCreated, mqAllSearchQueries)
-        conversationMemory.addAssistantMessage(mqFullReply, { toolsUsed: mqAllToolsUsed, filesCreated: mqAllFilesCreated, searchQueries: mqAllSearchQueries })
-        userCognitionProfile.observe(resolvedMessage, mqFullReply)
-        setTimeout(() => {
-          sessionMemory.addExchange(sessionId || 'default', resolvedMessage, mqFullReply, mqAllFilesCreated)
-          memoryExtractor.extractFromSession(sessionId || 'default').catch(() => {})
-          refreshIdentity()
-        }, 100)
+        const _mqSid = sessionId || 'default'
+        if (!isCurrentTurnPrivate(_mqSid)) {
+          conversationMemory.updateFromExecution(mqAllToolsUsed, mqAllFilesCreated, mqAllSearchQueries)
+          conversationMemory.addAssistantMessage(mqFullReply, { toolsUsed: mqAllToolsUsed, filesCreated: mqAllFilesCreated, searchQueries: mqAllSearchQueries })
+          userCognitionProfile.observe(resolvedMessage, mqFullReply)
+          setTimeout(() => {
+            sessionMemory.addExchange(_mqSid, resolvedMessage, mqFullReply, mqAllFilesCreated)
+            memoryExtractor.extractFromSession(_mqSid).catch(() => {})
+            refreshIdentity()
+          }, 100)
+          memoryLayers.write(`User: ${resolvedMessage}`, ['chat'])
+        }
+        clearTurnPrivate(_mqSid)
         incrementUsage(apiName)
         send({ done: true, provider: apiName })
         res.end()
-        memoryLayers.write(`User: ${resolvedMessage}`, ['chat'])
         return  // skip single-question flow
       }
 
@@ -1542,22 +1550,26 @@ export function createApiServer(): Express {
         .filter(r => (r.tool === 'web_search' || r.tool === 'deep_research') && r.input?.query)
         .map(r => r.input.query as string)
 
-      conversationMemory.updateFromExecution(toolsUsed, filesCreated, searchQueries, plan.planId)
-      conversationMemory.addAssistantMessage(fullReply, { toolsUsed, filesCreated, searchQueries, planId: plan.planId })
-      userCognitionProfile.observe(resolvedMessage, fullReply)
+      const _mainSid = sessionId || 'default'
+      if (!isCurrentTurnPrivate(_mainSid)) {
+        conversationMemory.updateFromExecution(toolsUsed, filesCreated, searchQueries, plan.planId)
+        conversationMemory.addAssistantMessage(fullReply, { toolsUsed, filesCreated, searchQueries, planId: plan.planId })
+        userCognitionProfile.observe(resolvedMessage, fullReply)
 
-      // Sprint 30: session memory + identity refresh (non-blocking)
-      setTimeout(() => {
-        sessionMemory.addExchange(sessionId || 'default', resolvedMessage, fullReply, filesCreated)
-        memoryExtractor.extractFromSession(sessionId || 'default').catch(() => {})
-        refreshIdentity()
-      }, 100)
+        // Sprint 30: session memory + identity refresh (non-blocking)
+        setTimeout(() => {
+          sessionMemory.addExchange(_mainSid, resolvedMessage, fullReply, filesCreated)
+          memoryExtractor.extractFromSession(_mainSid).catch(() => {})
+          refreshIdentity()
+        }, 100)
+
+        memoryLayers.write(`User: ${resolvedMessage}`, ['chat'])
+      }
+      clearTurnPrivate(_mainSid)
 
       incrementUsage(apiName)
       send({ done: true, provider: apiName })
       callbacks.emit('stream_done', sid, { provider: apiName }).catch(() => {})
-      res.end()
-      memoryLayers.write(`User: ${resolvedMessage}`, ['chat'])
 
     } catch (err: any) {
       handleChatError(err, apiName, send)
@@ -3376,6 +3388,20 @@ export function createApiServer(): Express {
     interruptCurrentCall()
     console.log('[Server] /api/stop — execution interrupted')
     res.json({ ok: true })
+  })
+
+  // POST /api/private — toggle per-session private mode (suppresses memory writes)
+  app.post('/api/private', (req: Request, res: Response) => {
+    const sid = String((req.body as any)?.sessionId || 'default')
+    const nowPrivate = toggleSessionPrivate(sid)
+    console.log(`[Private] Session ${sid} private mode: ${nowPrivate ? 'ON' : 'OFF'}`)
+    res.json({ private: nowPrivate, sessionId: sid })
+  })
+
+  // GET /api/private — check private mode status for a session
+  app.get('/api/private', (req: Request, res: Response) => {
+    const sid = String((req.query as any)?.sessionId || 'default')
+    res.json({ private: isSessionPrivate(sid), sessionId: sid })
   })
 
   // GET /api/plan/:id â€” get plan status
