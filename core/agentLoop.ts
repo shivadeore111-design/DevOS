@@ -40,6 +40,7 @@ import { MAX_PARALLEL, chunkSteps, hasParallelism } from './parallelExecutor'
 import { sanitizeMessages }  from './messageValidator'
 import { repairToolName }    from './toolNameRepair'
 import { SLASH_MIRROR_TOOL_NAMES } from './slashAsTool'
+import { repairPlanResponse }      from './planResponseRepair'
 import * as nodeFs             from 'fs'
 import * as nodePath           from 'path'
 import * as nodeOs             from 'os'
@@ -1078,6 +1079,14 @@ Output ONLY valid JSON, nothing else:`
       } else {
         const jsonMatch = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').match(/\{[\s\S]*\}/)
         if (!jsonMatch) {
+          // Phase 1 — repair: try to salvage plain-text / fenced responses before retrying
+          const repair = repairPlanResponse(raw)
+          if (repair.plan) {
+            console.log(`[Planner] Repaired non-JSON response — treating as ${repair.directAnswer ? 'direct answer' : 'recovered plan'}`)
+            parsed = repair.plan
+            try { incrementUsage(curApiName) } catch {}
+            break
+          }
           console.warn(`[Planner] No JSON attempt ${attempt + 1}: ${raw.slice(0, 100)}`)
         } else {
           parsed = JSON.parse(jsonMatch[0])
@@ -1151,6 +1160,13 @@ Output ONLY valid JSON, nothing else:`
         if (jsonMatch) {
           parsed = JSON.parse(jsonMatch[0])
           console.log('[Planner] Ollama fallback succeeded')
+        } else {
+          // Repair fallback — Ollama often returns plain text for trivial questions
+          const repair = repairPlanResponse(raw)
+          if (repair.plan) {
+            parsed = repair.plan
+            console.log(`[Planner] Ollama fallback repaired — ${repair.directAnswer ? 'direct answer' : 'recovered plan'}`)
+          }
         }
       }
     } catch (e: any) {
