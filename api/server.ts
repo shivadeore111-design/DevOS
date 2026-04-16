@@ -94,6 +94,7 @@ import { runSecurityScan } from '../core/agentShield'
 import { asyncTasks }     from '../core/asyncTasks'
 import { registerSlashMirrorTools } from '../core/slashAsTool'
 import { buildGreetingPreamble }    from '../core/memoryPreamble'
+import { matchFastPath }            from '../core/fastPathExpansion'
 import { isCurrentTurnPrivate, clearTurnPrivate, toggleSessionPrivate, isSessionPrivate } from '../core/privateMode'
 
 // —— Sprint 25: module-level WebSocket clients registry (shared between createApiServer routes and startApiServer WS setup)
@@ -1115,6 +1116,18 @@ export function createApiServer(): Express {
           const quickReply = await callLLM(resolvedMessage, rawKey, activeModel, providerName)
           conversationMemory.addAssistantMessage(quickReply)
           res.json({ response: quickReply, message: quickReply, provider: apiName2 }); return
+        }
+
+        // Fast-path: skip planner for conversational / knowledge-only messages
+        if (matchFastPath(resolvedMessage)) {
+          await streamChat(resolvedMessage, history, userName, provider, activeModel, apiName, (data: object) => {
+            const d = data as any
+            if (d.token) jsonTokens.push(d.token)
+          }, sessionId)
+          fullReply = jsonTokens.join('').trim()
+          incrementUsage(apiName)
+          conversationMemory.addAssistantMessage(fullReply)
+          res.json({ message: fullReply, provider: apiName }); return
         }
 
         const memoryContext    = conversationMemory.buildContext()

@@ -372,17 +372,11 @@ export function getModelForTask(
 ): { apiKey: string; model: string; providerName: string; apiName: string } {
 
   // ── Complexity gate — responder only ─────────────────────────
-  // Simple queries go to local Ollama (zero cost).
-  // Complex or tool-using queries proceed to cloud chain below.
+  // Ollama is used ONLY when all cloud providers are rate-limited (true fallback).
+  // Simple queries still get cloud speed (Groq is fast); Ollama is last resort.
   if (task === 'responder' && message) {
     const complexity = assessComplexity(message)
-    if (complexity < 0.35) {
-      const model = getOllamaModelForTask('responder')
-      console.log(`[Router] Routing "${message.substring(0, 30)}..." → ollama:${model}, complexity: ${complexity.toFixed(2)} (simple)`)
-      return { apiKey: '', model, providerName: 'ollama', apiName: 'ollama' }
-    } else {
-      console.log(`[Router] Complexity: ${complexity.toFixed(2)} (complex) — "${message.substring(0, 40)}" → cloud`)
-    }
+    console.log(`[Router] Complexity: ${complexity.toFixed(2)} — "${message.substring(0, 40)}"`)
   }
 
   autoResetExpiredLimits()
