@@ -225,8 +225,9 @@ export class SkillLoader {
     try {
       const match = raw.match(/^---\s*([\s\S]*?)\s*---\s*([\s\S]*)$/)
 
+      const normalizedPath = filePath.replace(/\\/g, '/')
       const origin: 'aiden' | 'community' | 'local' =
-        filePath.includes(path.sep + 'workspace' + path.sep) ? 'local' : 'aiden'
+        normalizedPath.includes('/workspace/') ? 'local' : 'aiden'
 
       if (!match) {
         // No frontmatter — use directory name as skill name
