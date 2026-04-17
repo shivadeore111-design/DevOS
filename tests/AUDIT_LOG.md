@@ -2272,3 +2272,20 @@
 | 11 | p22: scoop manifest has checkver and bin fields | ✓ | 1 | ok |
 
 2026-04-17T11:19:11.008Z — 11/11 passed
+
+## prompt_23 — Repo split prep
+
+| # | label | pass | ms | status |
+|---|-------|------|----|--------|
+| 1 | p23: CONTRIBUTING.md exists at repo root | ✓ | 0 | ok |
+| 2 | p23: SKILL_TEMPLATE.md has all required sections | ✓ | 1 | ok |
+| 3 | p23: .github/CLA.md exists | ✓ | 0 | ok |
+| 4 | p23: .github/cla-bot-config.yml exists | ✓ | 0 | ok |
+| 5 | p23: every SKILL.md has license field in frontmatter | ✓ | 11 | ok |
+| 6 | p23: all SKILL.md license fields are Apache-2.0 | ✓ | 10 | ok |
+| 7 | p23: packaging/skills-repo-manifest.md exists | ✓ | 0 | ok |
+| 8 | p23: SKILL_TEMPLATE.md frontmatter has name/description/license/origin | ✓ | 0 | ok |
+| 9 | p23: CONTRIBUTING.md references Apache-2.0 and CLA | ✓ | 1 | ok |
+| 10 | p23: all SKILL.md origin values are aiden/community/local (or absent) | ✓ | 10 | ok |
+
+2026-04-17T11:26:37.109Z — 10/10 passed

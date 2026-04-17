@@ -63,7 +63,7 @@
     "test:chat": "npx ts-node tests/e2e/masterTestSuite.ts --part3",
     "test:reliability": "npx ts-node tests/reliability-sprint.ts",
     "test:full": "npx ts-node tests/full-suite.ts",
-    "test:audit": "npx ts-node tests/prompt_11.ts && npx ts-node tests/prompt_12.ts && npx ts-node tests/prompt_13.ts && npx ts-node tests/prompt_r1.ts && npx ts-node tests/prompt_15.ts && npx ts-node tests/prompt_15_1.ts && npx ts-node tests/prompt_14.ts && npx ts-node tests/prompt_r2.ts && npx ts-node tests/prompt_r3.ts && npx ts-node tests/prompt_16.ts && npx ts-node tests/prompt_17.ts && npx ts-node tests/prompt_18.ts && npx ts-node tests/prompt_19.ts && npx ts-node tests/prompt_20.ts && npx ts-node tests/prompt_21.ts && npx ts-node tests/prompt_22.ts",
+    "test:audit": "npx ts-node tests/prompt_11.ts && npx ts-node tests/prompt_12.ts && npx ts-node tests/prompt_13.ts && npx ts-node tests/prompt_r1.ts && npx ts-node tests/prompt_15.ts && npx ts-node tests/prompt_15_1.ts && npx ts-node tests/prompt_14.ts && npx ts-node tests/prompt_r2.ts && npx ts-node tests/prompt_r3.ts && npx ts-node tests/prompt_16.ts && npx ts-node tests/prompt_17.ts && npx ts-node tests/prompt_18.ts && npx ts-node tests/prompt_19.ts && npx ts-node tests/prompt_20.ts && npx ts-node tests/prompt_21.ts && npx ts-node tests/prompt_22.ts && npx ts-node tests/prompt_23.ts",
     "cli": "npx ts-node cli/aiden.ts",
     "livepulse": "powershell -ExecutionPolicy Bypass -File scripts\\livepulse.ps1",
     "obfuscate": "javascript-obfuscator dist/ --output dist/ --compact true --string-array true --rotate-string-array true --string-array-threshold 0.75",
