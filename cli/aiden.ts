@@ -669,6 +669,7 @@ const COMMANDS = [
   '/cmd',
   '/ps',
   '/wsl',
+  '/refresh',
   '/quit', '/exit', '/q',
 ]
 
@@ -822,6 +823,7 @@ const COMMAND_DETAIL: Record<string, CmdDetail> = {
     examples: ['/wsl uname -a', '/wsl ls -la /mnt/c/Users'],
     usage:    '/wsl <command> [--distro=<name>]',
   },
+  '/refresh':    { section: 'Power',     desc: 'Check for Aiden updates and reload config.',                usage: '/refresh' },
   '/security':   { section: 'Power',     desc: 'Run AgentShield security scan.',                            usage: '/security' },
   '/debug':      { section: 'Power',     desc: 'Recent server log entries.',                                usage: '/debug' },
   '/private':    { section: 'Power',     desc: 'Toggle private mode — suppresses memory writes.',           usage: '/private' },
@@ -991,6 +993,7 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       helpRow('/cmd <command>',     'Run a Windows cmd.exe command'),
       helpRow('/ps <command>',      'Run a PowerShell command directly'),
       helpRow('/wsl <command>',     'Run a bash command inside WSL'),
+      helpRow('/refresh',            'Check for updates + reload config'),
       helpSection('Exit'),
       helpRow('/quit  /exit  /q',   ''),
       '',
@@ -3729,6 +3732,34 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       }))
     } catch (e: any) {
       console.log(`\n  ${T.error}✗ wsl failed: ${e?.message}${T.reset}\n`)
+    }
+    return true
+  }
+
+  // ── /refresh ────────────────────────────────────────────────────────────────
+  if (command === '/refresh') {
+    const pkgVersion = (() => {
+      try { return (require('../package.json') as { version: string }).version } catch { return '3.5.0' }
+    })()
+    console.log(`\n  ${T.dim}Checking for updates...${T.reset}`)
+    try {
+      const info = await checkForUpdate(pkgVersion)
+      if (!info) {
+        console.log(`  ${T.dim}Update check unavailable (offline or rate-limited).${T.reset}\n`)
+      } else if (info.updateAvailable) {
+        console.log(`  ${T.accent}↑ Update available: v${info.latestVersion}${T.reset}`)
+        console.log(`  ${T.dim}${info.releaseUrl}${T.reset}`)
+        console.log(`  ${T.dim}Download in progress via auto-updater...${T.reset}`)
+        // In Electron renderer context: window.aidenUpdater.checkNow()
+        // In packaged app the background autoUpdater (main process) handles download.
+        if (typeof (globalThis as any).aidenUpdater?.checkNow === 'function') {
+          await (globalThis as any).aidenUpdater.checkNow()
+        }
+      } else {
+        console.log(`  ${T.ok}✓ Already on latest version (v${pkgVersion}).${T.reset}`)
+      }
+    } catch (e: any) {
+      console.log(`  ${T.error}✗ Update check failed: ${e?.message}${T.reset}`)
     }
     return true
   }

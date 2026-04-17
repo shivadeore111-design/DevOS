@@ -27,4 +27,8 @@ contextBridge.exposeInMainWorld('aidenUpdater', {
   downloadUpdate: () => ipcRenderer.send('download-update'),
   installUpdate:  () => ipcRenderer.send('install-update'),
   checkUpdate:    () => ipcRenderer.send('check-update'),
+
+  // Spec-compliant aliases (used by /refresh command and dashboard)
+  installNow: () => ipcRenderer.invoke('install-update-now'),
+  checkNow:   () => ipcRenderer.invoke('check-for-update'),
 })

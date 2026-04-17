@@ -269,7 +269,7 @@ function loadDashboard () {
 
 // ── electron-updater setup ────────────────────────────────────
 function setupAutoUpdater () {
-  autoUpdater.autoDownload        = false  // let user decide
+  autoUpdater.autoDownload        = true   // download in background silently
   autoUpdater.autoInstallOnAppQuit = true
 
   autoUpdater.on('update-available', (info) => {
@@ -332,10 +332,24 @@ function setupAutoUpdater () {
     autoUpdater.checkForUpdates().catch(err => log(`[Update] Check error: ${err.message}`))
   })
 
-  // Auto-check 30s after launch
+  // IPC handle aliases for prompt-spec-compliant API (alongside ipcMain.on handlers above)
+  ipcMain.handle('install-update-now', () => {
+    log('[Update] install-update-now invoked')
+    autoUpdater.quitAndInstall(false, true)
+  })
+  ipcMain.handle('check-for-update', () => {
+    log('[Update] check-for-update invoked')
+    return autoUpdater.checkForUpdates().catch(err => {
+      log(`[Update] Check error: ${err.message}`)
+      return null
+    })
+  })
+
+  // Auto-check 30s after launch — use checkForUpdatesAndNotify for native OS notification
   setTimeout(() => {
+    if (!app.isPackaged) return
     log('[Update] Checking for updates...')
-    autoUpdater.checkForUpdates().catch(err => log(`[Update] Check failed: ${err.message}`))
+    autoUpdater.checkForUpdatesAndNotify().catch(err => log(`[Update] Check failed: ${err.message}`))
   }, 30000)
 }
 
