@@ -683,6 +683,9 @@ const COMMANDS = [
   '/voice',
   '/speak',
   '/listen',
+  '/todo',
+  '/cron',
+  '/vision',
   '/quit', '/exit', '/q',
 ]
 
@@ -855,6 +858,20 @@ const COMMAND_DETAIL: Record<string, CmdDetail> = {
   '/listen':     { section: 'Voice',     desc: 'Record microphone input, transcribe via STT, and send as message.',
     usage:    '/listen [seconds]',
     examples: ['/listen', '/listen 10'],
+  },
+  '/todo':       { section: 'Power',     desc: 'Manage a per-session task list. Survives the conversation, resets on restart.',
+    subs:    ['add <text>', 'done <id>', 'remove <id>', 'list [all|pending|done]', 'clear'],
+    usage:   '/todo [add <text>|done <id>|remove <id>|list [filter]|clear]',
+    examples: ['/todo add Write unit tests', '/todo done 1', '/todo list pending', '/todo clear'],
+  },
+  '/cron':       { section: 'Power',     desc: 'Schedule recurring shell commands. Persists across sessions.',
+    subs:    ['add <schedule> <command>', 'list', 'pause <id>', 'resume <id>', 'delete <id>', 'run <id>'],
+    usage:   '/cron [add <schedule> -- <command>|list|pause <id>|resume <id>|delete <id>|run <id>]',
+    examples: ['/cron add every 5 minutes -- echo heartbeat', '/cron list', '/cron pause 1', '/cron run 2'],
+  },
+  '/vision':     { section: 'Power',     desc: 'Analyze an image with AI vision (Anthropic → OpenAI → Ollama llava).',
+    usage:   '/vision <path|url> [prompt]',
+    examples: ['/vision screenshot.png', '/vision /tmp/photo.jpg What text is visible?', '/vision https://example.com/img.png'],
   },
   '/security':   { section: 'Power',     desc: 'Run AgentShield security scan.',                            usage: '/security' },
   '/debug':      { section: 'Power',     desc: 'Recent server log entries.',                                usage: '/debug' },
@@ -1034,6 +1051,9 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       helpRow('/voice [on|off]',     'Toggle voice mode — TTS reads AI replies aloud'),
       helpRow('/speak <text>',       'Speak text immediately via TTS'),
       helpRow('/listen [secs]',      'Record mic → STT → send as message'),
+      helpRow('/todo <op>',          'Per-session task list  (add / done / remove / list / clear)'),
+      helpRow('/cron <op>',          'Schedule recurring commands  (add / list / pause / resume / delete / run)'),
+      helpRow('/vision <img>',       'Analyze image with AI vision (file path or URL)'),
       helpSection('Exit'),
       helpRow('/quit  /exit  /q',   ''),
       '',
@@ -3937,6 +3957,117 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
     return true
   }
 
+  // ── /todo ─────────────────────────────────────────────────────────────────
+  if (command === '/todo') {
+    const { executeTool } = await import('../core/toolRegistry')
+    const sub = args[0]?.toLowerCase() ?? 'list'
+
+    if (sub === 'add') {
+      const text = args.slice(1).join(' ')
+      if (!text) { console.log(`  ${T.error}✗ Usage: /todo add <text>${T.reset}\n`); return true }
+      const r = await executeTool('todo', { op: 'add', text })
+      console.log(`  ${r.success ? T.ok : T.error}${r.output || r.error}${T.reset}\n`)
+    } else if (sub === 'done' || sub === 'complete') {
+      const id = args[1] ?? ''
+      if (!id) { console.log(`  ${T.error}✗ Usage: /todo done <id>${T.reset}\n`); return true }
+      const r = await executeTool('todo', { op: 'complete', id })
+      console.log(`  ${r.success ? T.ok : T.error}${r.output || r.error}${T.reset}\n`)
+    } else if (sub === 'remove' || sub === 'delete') {
+      const id = args[1] ?? ''
+      if (!id) { console.log(`  ${T.error}✗ Usage: /todo remove <id>${T.reset}\n`); return true }
+      const r = await executeTool('todo', { op: 'remove', id })
+      console.log(`  ${r.success ? T.ok : T.error}${r.output || r.error}${T.reset}\n`)
+    } else if (sub === 'clear') {
+      const r = await executeTool('todo', { op: 'clear' })
+      console.log(`  ${T.ok}${r.output}${T.reset}\n`)
+    } else {
+      // list (default) — sub may be a filter
+      const filter = ['pending', 'done'].includes(sub) ? sub : 'all'
+      const r = await executeTool('todo', { op: 'list', filter })
+      console.log(`\n  ${T.accent}Todo list${T.reset}`)
+      console.log(`  ${T.dim}${'─'.repeat(40)}${T.reset}`)
+      for (const line of (r.output || 'No items.').split('\n')) {
+        console.log(`  ${T.dim}${line}${T.reset}`)
+      }
+      console.log()
+    }
+    return true
+  }
+
+  // ── /cron ─────────────────────────────────────────────────────────────────
+  if (command === '/cron') {
+    const { executeTool } = await import('../core/toolRegistry')
+    const sub = args[0]?.toLowerCase() ?? 'list'
+
+    if (sub === 'add') {
+      // /cron add every 5 minutes -- echo heartbeat
+      const rawRest = args.slice(1).join(' ')
+      const sepIdx  = rawRest.indexOf(' -- ')
+      if (sepIdx === -1) {
+        console.log(`  ${T.error}✗ Usage: /cron add <schedule> -- <command>${T.reset}\n`)
+        console.log(`  ${T.dim}Example: /cron add every 5 minutes -- echo heartbeat${T.reset}\n`)
+        return true
+      }
+      const schedule = rawRest.slice(0, sepIdx).trim()
+      const action   = rawRest.slice(sepIdx + 4).trim()
+      const r = await executeTool('cronjob', { op: 'create', description: action, schedule, action })
+      console.log(`  ${r.success ? T.ok : T.error}${r.output || r.error}${T.reset}\n`)
+    } else if (sub === 'list') {
+      const r = await executeTool('cronjob', { op: 'list' })
+      console.log(`\n  ${T.accent}Cron jobs${T.reset}`)
+      console.log(`  ${T.dim}${'─'.repeat(50)}${T.reset}`)
+      for (const line of (r.output || 'No cron jobs.').split('\n')) {
+        console.log(`  ${T.dim}${line}${T.reset}`)
+      }
+      console.log()
+    } else if (sub === 'pause') {
+      const id = args[1] ?? ''
+      if (!id) { console.log(`  ${T.error}✗ Usage: /cron pause <id>${T.reset}\n`); return true }
+      const r = await executeTool('cronjob', { op: 'pause', id })
+      console.log(`  ${r.success ? T.ok : T.error}${r.output || r.error}${T.reset}\n`)
+    } else if (sub === 'resume') {
+      const id = args[1] ?? ''
+      if (!id) { console.log(`  ${T.error}✗ Usage: /cron resume <id>${T.reset}\n`); return true }
+      const r = await executeTool('cronjob', { op: 'resume', id })
+      console.log(`  ${r.success ? T.ok : T.error}${r.output || r.error}${T.reset}\n`)
+    } else if (sub === 'delete' || sub === 'remove') {
+      const id = args[1] ?? ''
+      if (!id) { console.log(`  ${T.error}✗ Usage: /cron delete <id>${T.reset}\n`); return true }
+      const r = await executeTool('cronjob', { op: 'delete', id })
+      console.log(`  ${r.success ? T.ok : T.error}${r.output || r.error}${T.reset}\n`)
+    } else if (sub === 'run' || sub === 'trigger') {
+      const id = args[1] ?? ''
+      if (!id) { console.log(`  ${T.error}✗ Usage: /cron run <id>${T.reset}\n`); return true }
+      const r = await executeTool('cronjob', { op: 'trigger', id })
+      console.log(`  ${r.success ? T.ok : T.error}${r.output || r.error}${T.reset}\n`)
+    } else {
+      console.log(`  ${T.dim}Subcommands: add | list | pause | resume | delete | run${T.reset}\n`)
+    }
+    return true
+  }
+
+  // ── /vision ───────────────────────────────────────────────────────────────
+  if (command === '/vision') {
+    if (!args[0]) {
+      console.log(`  ${T.error}✗ Usage: /vision <path|url> [prompt]${T.reset}\n`)
+      return true
+    }
+    const imageSource = args[0]
+    const prompt      = args.slice(1).join(' ') || 'Describe this image in detail.'
+    const { executeTool } = await import('../core/toolRegistry')
+    console.log(`\n  ${T.dim}Analyzing image...${T.reset}`)
+    const r = await executeTool('vision_analyze', { image: imageSource, prompt }, 0, 45_000)
+    if (!r.success) {
+      console.log(`  ${T.error}✗ ${r.error || r.output}${T.reset}\n`)
+    } else {
+      console.log()
+      const lines = r.output.split('\n')
+      for (const line of lines) console.log(`  ${line}`)
+      console.log()
+    }
+    return true
+  }
+
   console.log(`  ${T.dim}Unknown command. /help for list.${T.reset}\n`)
   return true
 }
@@ -4073,6 +4204,35 @@ async function main(): Promise<void> {
   })
 
   rl.prompt()
+
+  // ── Register clarify bus handler ─────────────────────────────────────────
+  // When the agent calls the `clarify` tool mid-task, this intercepts the
+  // question, renders it to the terminal, and waits for user input.
+  ;(async () => {
+    const { registerClarifyHandler, answer: clarifyAnswer } = await import('../core/clarifyBus')
+    registerClarifyHandler(req => {
+      process.stdout.write('\n')
+      console.log(`  ${T.accent}? Clarify:${T.reset} ${req.question}`)
+      if (req.options?.length) {
+        req.options.forEach((opt, i) => {
+          console.log(`  ${T.dim}  [${i + 1}] ${opt}${T.reset}`)
+        })
+        const hint = req.allowFreeText ? '  (type a number or your own answer)' : '  (type a number)'
+        console.log(`  ${T.dim}${hint}${T.reset}`)
+      }
+      rl.question(`  ${T.accent}›${T.reset} `, (input: string) => {
+        const trimmed = input.trim()
+        let resolved  = trimmed
+        // If options were shown and user typed a number, map to the option text
+        if (req.options?.length && /^\d+$/.test(trimmed)) {
+          const idx = parseInt(trimmed, 10) - 1
+          if (idx >= 0 && idx < req.options.length) resolved = req.options[idx]
+        }
+        clarifyAnswer(req.id, resolved || req.options?.[0] || '')
+        rl.prompt()
+      })
+    })
+  })()
 
   let histIdx   = -1
   let lastCtrlC = 0

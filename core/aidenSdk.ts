@@ -102,6 +102,30 @@ const TOOL_SDK_MAP: Array<{
   { toolName: 'get_calendar',     namespace: 'data',    method: 'calendar',     description: 'Calendar events',               signature: '(daysAhead?: number) => Promise<any[]>'                   },
   { toolName: 'read_email',       namespace: 'data',    method: 'email',        description: 'Read recent emails',             signature: '(limit?: number) => Promise<any[]>'                      },
 
+  // voice
+  { toolName: 'voice_transcribe', namespace: 'voice',   method: 'transcribe',   description: 'Transcribe audio file to text',  signature: '(audioFilePath: string, language?: string) => Promise<{text:string,provider:string,durationMs:number}>' },
+  { toolName: 'voice_synthesize', namespace: 'voice',   method: 'synthesize',   description: 'Speak text via TTS engine',      signature: '(text: string, voice?: string) => Promise<{provider:string,durationMs:number}>'                         },
+  { toolName: 'voice_record',     namespace: 'voice',   method: 'record',       description: 'Record audio from microphone',   signature: '(durationSeconds?: number, outputPath?: string) => Promise<string>'                                     },
+  { toolName: 'voice_play',       namespace: 'voice',   method: 'play',         description: 'Play an audio file',             signature: '(audioSource: string) => Promise<void>'                                                                  },
+
+  // todo
+  { toolName: 'todo',             namespace: 'todo',    method: 'add',          description: 'Add a todo item',                signature: '(text: string, priority?: string) => Promise<string>'    },
+  { toolName: 'todo',             namespace: 'todo',    method: 'complete',     description: 'Mark a todo item done',          signature: '(id: string) => Promise<string>'                         },
+  { toolName: 'todo',             namespace: 'todo',    method: 'remove',       description: 'Remove a todo item',             signature: '(id: string) => Promise<string>'                         },
+  { toolName: 'todo',             namespace: 'todo',    method: 'list',         description: 'List todo items',                signature: '(filter?: string) => Promise<string>'                    },
+  { toolName: 'todo',             namespace: 'todo',    method: 'clear',        description: 'Clear all todos',                signature: '() => Promise<string>'                                   },
+
+  // cron
+  { toolName: 'cronjob',          namespace: 'cron',    method: 'create',       description: 'Create a scheduled job',         signature: '(description: string, schedule: string, action: string) => Promise<string>' },
+  { toolName: 'cronjob',          namespace: 'cron',    method: 'list',         description: 'List all cron jobs',             signature: '() => Promise<string>'                                   },
+  { toolName: 'cronjob',          namespace: 'cron',    method: 'pause',        description: 'Pause a cron job',               signature: '(id: string) => Promise<string>'                         },
+  { toolName: 'cronjob',          namespace: 'cron',    method: 'resume',       description: 'Resume a paused cron job',       signature: '(id: string) => Promise<string>'                         },
+  { toolName: 'cronjob',          namespace: 'cron',    method: 'delete',       description: 'Delete a cron job',              signature: '(id: string) => Promise<string>'                         },
+  { toolName: 'cronjob',          namespace: 'cron',    method: 'trigger',      description: 'Immediately run a cron job',     signature: '(id: string) => Promise<string>'                         },
+
+  // vision
+  { toolName: 'vision_analyze',   namespace: 'vision',  method: 'analyze',      description: 'Analyze an image with AI',       signature: '(imageSource: string, prompt?: string) => Promise<string>' },
+
   // top-level
   { toolName: 'run_agent',        namespace: '',        method: 'runAgent',     description: 'Spawn a sub-agent',              signature: '(task: string) => Promise<string>'                       },
 ]
@@ -215,6 +239,30 @@ export function buildSdkRuntime(
       calendar: makeMethod('get_calendar',      (daysAhead = 7)             => ({ days_ahead: daysAhead })),
       email:    makeMethod('read_email',        (limit = 10)                => ({ limit })),
     },
+    // voice
+    voice: {
+      transcribe: async (audioFilePath: string, language?: string) => {
+        onToolCall('voice_transcribe', { audioFilePath, language })
+        const { transcribe } = await import('./voice/stt')
+        return transcribe({ audioFilePath, language })
+      },
+      synthesize: async (text: string, voice?: string) => {
+        onToolCall('voice_synthesize', { text, voice })
+        const { synthesize } = await import('./voice/tts')
+        return synthesize({ text, voice })
+      },
+      record: async (durationSeconds?: number, outputPath?: string) => {
+        onToolCall('voice_record', { durationSeconds, outputPath })
+        const { recordAudio } = await import('./voice/audio')
+        return recordAudio(durationSeconds, outputPath)
+      },
+      play: async (audioSource: string) => {
+        onToolCall('voice_play', { audioSource })
+        const { playAudio } = await import('./voice/audio')
+        return playAudio(audioSource)
+      },
+    },
+
     // MCP namespace — direct access to connected MCP servers
     mcp: {
       /** List names of all connected MCP servers. */
@@ -226,6 +274,38 @@ export function buildSdkRuntime(
         onToolCall(`mcp:${toolName}`, args)
         return callMcpTool(toolName, args)
       },
+    },
+
+    // todo
+    todo: {
+      add:      makeMethod('todo', (text: string, priority?: string) => ({ op: 'add',      text, priority: priority ?? 'normal' })),
+      complete: makeMethod('todo', (id: string)                      => ({ op: 'complete', id })),
+      remove:   makeMethod('todo', (id: string)                      => ({ op: 'remove',   id })),
+      list:     makeMethod('todo', (filter?: string)                 => ({ op: 'list',     filter: filter ?? 'all' })),
+      clear:    makeMethod('todo', ()                                => ({ op: 'clear' })),
+    },
+
+    // cron
+    cron: {
+      create:  makeMethod('cronjob', (description: string, schedule: string, action: string) => ({ op: 'create', description, schedule, action })),
+      list:    makeMethod('cronjob', ()                                                        => ({ op: 'list' })),
+      pause:   makeMethod('cronjob', (id: string)                                              => ({ op: 'pause',   id })),
+      resume:  makeMethod('cronjob', (id: string)                                              => ({ op: 'resume',  id })),
+      delete:  makeMethod('cronjob', (id: string)                                              => ({ op: 'delete',  id })),
+      trigger: makeMethod('cronjob', (id: string)                                              => ({ op: 'trigger', id })),
+    },
+
+    // vision
+    vision: {
+      analyze: makeMethod('vision_analyze', (imageSource: string, prompt?: string) => ({ image: imageSource, prompt })),
+    },
+
+    // Top-level clarify — ask the user a question mid-task
+    clarify: async (question: string, options?: string[], allowFreeText = true) => {
+      onToolCall('clarify', { question, options, allow_free_text: allowFreeText })
+      const result = await executeTool('clarify', { question, options, allow_free_text: allowFreeText }, 0, 300_000)
+      if (!result.success) throw new Error(`clarify failed: ${result.error ?? result.output}`)
+      return result.output
     },
 
     // Top-level convenience

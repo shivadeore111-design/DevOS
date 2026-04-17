@@ -195,6 +195,110 @@ export interface AidenData {
   email(limit?: number): Promise<any[]>
 }
 
+// ── aiden.voice ──────────────────────────────────────────────────────────────
+
+export interface SttResult {
+  text:        string
+  provider:    string
+  durationMs:  number
+  confidence?: number
+  error?:      string
+}
+
+export interface TtsResult {
+  provider:   string
+  durationMs: number
+  error?:     string
+}
+
+export interface AidenVoice {
+  /**
+   * Transcribe an audio file to text.
+   * Tries Groq Whisper → OpenAI Whisper → local Whisper.cpp in order.
+   * Returns SttResult — check result.error on failure.
+   */
+  transcribe(audioFilePath: string, language?: string): Promise<SttResult>
+
+  /**
+   * Synthesize text to speech and play it.
+   * Tries Edge TTS → ElevenLabs → Windows SAPI in order.
+   * Returns TtsResult — check result.error on failure.
+   */
+  synthesize(text: string, voice?: string): Promise<TtsResult>
+
+  /**
+   * Record audio from the default microphone.
+   * @param durationSeconds  Recording length in seconds (default 5).
+   * @param outputPath       Save path for the .wav file (optional).
+   * @returns                Path to the recorded audio file.
+   */
+  record(durationSeconds?: number, outputPath?: string): Promise<string>
+
+  /**
+   * Play an audio file (wav / mp3 / ogg).
+   * Accepts a file path string or raw audio Buffer.
+   */
+  play(audioSource: string): Promise<void>
+}
+
+// ── aiden.todo ───────────────────────────────────────────────────────────────
+
+export interface AidenTodo {
+  /** Add a new todo item. Returns a confirmation string with the assigned id. */
+  add(text: string, priority?: 'low' | 'normal' | 'high'): Promise<string>
+
+  /** Mark a todo item as done by its id. */
+  complete(id: string): Promise<string>
+
+  /** Remove a todo item by its id. */
+  remove(id: string): Promise<string>
+
+  /** List todo items. Filter: 'all' | 'pending' | 'done'. */
+  list(filter?: 'all' | 'pending' | 'done'): Promise<string>
+
+  /** Clear all todo items. Returns a count string. */
+  clear(): Promise<string>
+}
+
+// ── aiden.cron ───────────────────────────────────────────────────────────────
+
+export interface AidenCron {
+  /**
+   * Create a scheduled job.
+   * @param description  Human-readable name.
+   * @param schedule     Natural language: "every 5 minutes", "hourly", "daily".
+   * @param action       Shell command to execute on each tick.
+   */
+  create(description: string, schedule: string, action: string): Promise<string>
+
+  /** List all cron jobs with status, schedule, and run count. */
+  list(): Promise<string>
+
+  /** Pause a running job (stops timer until resumed). */
+  pause(id: string): Promise<string>
+
+  /** Resume a paused job. */
+  resume(id: string): Promise<string>
+
+  /** Permanently delete a cron job. */
+  delete(id: string): Promise<string>
+
+  /** Immediately execute a cron job outside its schedule. */
+  trigger(id: string): Promise<string>
+}
+
+// ── aiden.vision ─────────────────────────────────────────────────────────────
+
+export interface AidenVisionAnalyze {
+  /**
+   * Analyze an image using AI vision.
+   * Accepts a local file path or an HTTP(S) URL.
+   * Routes to Anthropic → OpenAI → Ollama llava in order.
+   * Returns a description string prefixed with provider and timing.
+   */
+  analyze(imageSource: string, prompt?: string): Promise<string>
+}
+
 // ── aiden.mcp ────────────────────────────────────────────────────────────────
 
 export interface McpToolInfo {
@@ -229,6 +333,17 @@ export interface AidenSDK {
   git:     AidenGit
   data:    AidenData
   mcp:     AidenMcp
+  voice:   AidenVoice
+  todo:    AidenTodo
+  cron:    AidenCron
+  vision:  AidenVisionAnalyze
+
+  /**
+   * Ask the user a clarification question mid-task.
+   * In TUI mode shows the question and waits for input.
+   * In headless mode returns the first option (or empty string) immediately.
+   */
+  clarify(question: string, options?: string[], allowFreeText?: boolean): Promise<string>
 
   /** Spawn a sub-agent to complete a task. Returns result string. */
   runAgent(task: string): Promise<string>
