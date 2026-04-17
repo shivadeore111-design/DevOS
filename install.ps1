@@ -16,17 +16,20 @@ $ErrorActionPreference = "Stop"
 
 # ── Banner ────────────────────────────────────────────────────────────────────
 Write-Host ""
-Write-Host "    ___  ___ ___  ___ _  _" -ForegroundColor Yellow
-Write-Host "   / __|   _|_ _|/ _ | \| |" -ForegroundColor Yellow
-Write-Host "   \__ \ |_  | || (_) | .' |" -ForegroundColor Yellow
-Write-Host "   |___/___|___|\___/|_|\_|" -ForegroundColor Yellow
+Write-Host "     █████╗ ██╗██████╗ ███████╗███╗   ██╗" -ForegroundColor Yellow
+Write-Host "    ██╔══██╗██║██╔══██╗██╔════╝████╗  ██║" -ForegroundColor Yellow
+Write-Host "    ███████║██║██║  ██║█████╗  ██╔██╗ ██║" -ForegroundColor Yellow
+Write-Host "    ██╔══██║██║██║  ██║██╔══╝  ██║╚██╗██║" -ForegroundColor Yellow
+Write-Host "    ██║  ██║██║██████╔╝███████╗██║ ╚████║" -ForegroundColor Yellow
+Write-Host "    ╚═╝  ╚═╝╚═╝╚═════╝ ╚══════╝╚═╝  ╚═══╝" -ForegroundColor Yellow
 Write-Host ""
-Write-Host "  Local-first Windows AI OS" -ForegroundColor DarkGray
-Write-Host "  aiden.taracod.com" -ForegroundColor DarkGray
+Write-Host "    Local-first Windows AI OS" -ForegroundColor DarkGray
+Write-Host "    aiden.taracod.com" -ForegroundColor DarkGray
 Write-Host ""
 
-$Repo    = "taracodlabs/aiden-releases"
-$TempDir = "$env:TEMP\aiden-install"
+$Repo       = "taracodlabs/aiden-releases"
+$TempDir    = "$env:TEMP\aiden-install"
+$InstallDir = "$env:LOCALAPPDATA\Programs\Aiden"
 
 # ── [1/4] Fetch release metadata ──────────────────────────────────────────────
 Write-Host "  [1/4] " -ForegroundColor Yellow -NoNewline
@@ -97,60 +100,107 @@ Write-Host "    This is normal for newer releases."
 Write-Host "    The Aiden installer is code-signed."
 Write-Host ""
 
-# ── [3/4] Run installer ───────────────────────────────────────────────────────
+# ── [3/4] Run installer with spinner ─────────────────────────────────────────
 Write-Host "  [3/4] " -ForegroundColor Yellow -NoNewline
-Write-Host "Running installer..."
+Write-Host "Installing (this takes 30-60 seconds)..." -NoNewline
 
-$Process = Start-Process `
-  -FilePath $InstallerPath `
-  -ArgumentList "/S" `
-  -PassThru `
-  -Wait
+$proc = Start-Process -FilePath $InstallerPath -ArgumentList "/S" -PassThru
+$spin = @('|', '/', '-', '\')
+$i    = 0
+while (-not $proc.HasExited) {
+  Write-Host "`r  [3/4] " -ForegroundColor Yellow -NoNewline
+  Write-Host "Installing... $($spin[$i % 4])  " -NoNewline
+  Start-Sleep -Milliseconds 200
+  $i++
+}
+Write-Host "`r  [3/4] " -ForegroundColor Yellow -NoNewline
+Write-Host "Installed                         "
 
-if ($Process.ExitCode -ne 0) {
+if ($proc.ExitCode -ne 0) {
   Write-Host ""
-  Write-Host "  [FAIL] Installer exited with code $($Process.ExitCode)." -ForegroundColor Red
+  Write-Host "  [FAIL] Installer exited with code $($proc.ExitCode)." -ForegroundColor Red
   Write-Host ""
   Write-Host "  Check the detailed log at: $env:TEMP\aiden-install\install.log"
   exit 1
 }
-Write-Host "         Installer finished" -ForegroundColor Green
 Write-Host ""
 
 # ── [4/4] Verify PATH ─────────────────────────────────────────────────────────
 Write-Host "  [4/4] " -ForegroundColor Yellow -NoNewline
 Write-Host "Verifying installation..."
 
-# Refresh PATH from registry so we see the new entry without reopening terminal
 $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "User") + ";" +
             [System.Environment]::GetEnvironmentVariable("PATH", "Machine")
 
-$AidenCmd    = Get-Command aiden -ErrorAction SilentlyContinue
-$InstallPath = "$env:LOCALAPPDATA\Programs\Aiden"
+$AidenCmd = Get-Command aiden -ErrorAction SilentlyContinue
 
 Write-Host ""
-Write-Host "  ================================================"
 if ($AidenCmd) {
-  Write-Host "  SUCCESS  Aiden $Version installed" -ForegroundColor Green
+  Write-Host "  ================================================" -ForegroundColor Green
+  Write-Host "  SUCCESS  " -ForegroundColor Green -NoNewline
+  Write-Host "Aiden $Version installed"
+  Write-Host "  ================================================" -ForegroundColor Green
   Write-Host ""
-  Write-Host "  Location : $InstallPath"
+  Write-Host "    Location: $InstallDir"
   Write-Host ""
-  Write-Host "  Next steps:"
-  Write-Host "    1. Open a NEW terminal  (PATH changes need a new session)"
-  Write-Host "    2. Type:  aiden"
-  Write-Host "    3. First-run setup begins automatically"
+  Write-Host "  How would you like to start Aiden?" -ForegroundColor Yellow
   Write-Host ""
-  Write-Host "  Docs    :  https://aiden.taracod.com"
-  Write-Host "  Issues  :  github.com/taracodlabs/aiden-releases/issues"
+  Write-Host "    [1] " -ForegroundColor Yellow -NoNewline
+  Write-Host "Desktop app  (Electron UI with dashboard)"
+  Write-Host "    [2] " -ForegroundColor Yellow -NoNewline
+  Write-Host "Terminal     (CLI right here in this terminal)"
+  Write-Host "    [3] " -ForegroundColor Yellow -NoNewline
+  Write-Host "Later        (I'll start it myself)"
+  Write-Host ""
+  $choice = Read-Host "  Enter choice (1/2/3)"
+
+  switch ($choice) {
+    '1' {
+      Write-Host ""
+      Write-Host "  Launching Aiden desktop..." -ForegroundColor Green
+      $exePath = Join-Path $InstallDir "Aiden.exe"
+      if (Test-Path $exePath) {
+        Start-Process $exePath
+      } else {
+        Write-Host "  Could not find Aiden.exe at $exePath" -ForegroundColor Red
+        Write-Host "  Try launching from the Start Menu." -ForegroundColor DarkGray
+      }
+    }
+    '2' {
+      Write-Host ""
+      Write-Host "  Starting Aiden terminal..." -ForegroundColor Green
+      $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH","User") + ";" +
+                  [System.Environment]::GetEnvironmentVariable("PATH","Machine")
+      $aidenExe = Get-Command aiden -ErrorAction SilentlyContinue
+      if ($aidenExe) {
+        & aiden
+      } else {
+        Write-Host "  'aiden' not found on PATH yet." -ForegroundColor Red
+        Write-Host "  Open a NEW terminal and type: aiden" -ForegroundColor DarkGray
+      }
+    }
+    default {
+      Write-Host ""
+      Write-Host "  Ready when you are." -ForegroundColor DarkGray
+      Write-Host "  Open a new terminal and type: " -NoNewline
+      Write-Host "aiden" -ForegroundColor Yellow
+      Write-Host ""
+      Write-Host "  Docs:   https://aiden.taracod.com" -ForegroundColor DarkGray
+      Write-Host "  Issues: github.com/taracodlabs/aiden-releases/issues" -ForegroundColor DarkGray
+      Write-Host ""
+    }
+  }
 } else {
-  Write-Host "  INSTALLED  Aiden $Version installed" -ForegroundColor Yellow
+  Write-Host "  ================================================"
+  Write-Host "  INSTALLED  " -ForegroundColor Yellow -NoNewline
+  Write-Host "Aiden $Version installed"
+  Write-Host "  ================================================"
   Write-Host ""
   Write-Host "  Note: 'aiden' is not on PATH in this session yet." -ForegroundColor Yellow
   Write-Host "  This is normal -- open a NEW terminal and type: aiden"
   Write-Host "  If still not found after 30 seconds, log out and back in."
+  Write-Host ""
 }
-Write-Host "  ================================================"
-Write-Host ""
 
 # ── Cleanup ───────────────────────────────────────────────────────────────────
 Remove-Item $TempDir -Recurse -Force -ErrorAction SilentlyContinue
