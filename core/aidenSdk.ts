@@ -22,6 +22,7 @@
 //   aiden.*         → top-level: run_agent, respond
 
 import { executeTool, TOOLS } from './toolRegistry'
+import { listMcpServers, listMcpTools, callMcpTool } from './mcpClient'
 
 // ── SDK namespace map ─────────────────────────────────────────────────────────
 
@@ -58,6 +59,9 @@ const TOOL_SDK_MAP: Array<{
   { toolName: 'run_python',       namespace: 'shell',   method: 'python',       description: 'Execute Python code',            signature: '(script: string) => Promise<string>'                     },
   { toolName: 'run_node',         namespace: 'shell',   method: 'node',         description: 'Execute Node.js code',           signature: '(script: string) => Promise<string>'                     },
   { toolName: 'run_powershell',   namespace: 'shell',   method: 'powershell',   description: 'Execute PowerShell',             signature: '(script: string) => Promise<string>'                     },
+  { toolName: 'cmd',              namespace: 'shell',   method: 'cmd',          description: 'Run cmd.exe command',            signature: '(command: string, options?: any) => Promise<{stdout:string,stderr:string,exitCode:number}>' },
+  { toolName: 'ps',               namespace: 'shell',   method: 'ps',           description: 'Run PowerShell directly',        signature: '(command: string, options?: any) => Promise<{stdout:string,stderr:string,exitCode:number}>' },
+  { toolName: 'wsl',              namespace: 'shell',   method: 'wsl',          description: 'Run bash command in WSL',        signature: '(command: string, options?: any) => Promise<{stdout:string,stderr:string,exitCode:number}>' },
 
   // browser
   { toolName: 'open_browser',     namespace: 'browser', method: 'open',         description: 'Open a URL in the browser',      signature: '(url: string) => Promise<void>'                          },
@@ -164,6 +168,9 @@ export function buildSdkRuntime(
       python:    makeMethod('run_python',      (s: string)               => ({ script: s })),
       node:      makeMethod('run_node',        (s: string)               => ({ script: s })),
       powershell: makeMethod('run_powershell', (s: string)               => ({ script: s })),
+      cmd:       makeMethod('cmd',             (cmd: string, opts?: any) => ({ command: cmd, ...opts })),
+      ps:        makeMethod('ps',              (cmd: string, opts?: any) => ({ command: cmd, ...opts })),
+      wsl:       makeMethod('wsl',             (cmd: string, opts?: any) => ({ command: cmd, ...opts })),
     },
     browser: {
       open:       makeMethod('open_browser',       (u: string)             => ({ url: u })),
@@ -208,6 +215,19 @@ export function buildSdkRuntime(
       calendar: makeMethod('get_calendar',      (daysAhead = 7)             => ({ days_ahead: daysAhead })),
       email:    makeMethod('read_email',        (limit = 10)                => ({ limit })),
     },
+    // MCP namespace — direct access to connected MCP servers
+    mcp: {
+      /** List names of all connected MCP servers. */
+      list:  () => listMcpServers(),
+      /** List all MCP tools (across all servers). */
+      tools: () => listMcpTools(),
+      /** Call an MCP tool by 'server:toolName' and args object. */
+      call:  (toolName: string, args: Record<string, any> = {}) => {
+        onToolCall(`mcp:${toolName}`, args)
+        return callMcpTool(toolName, args)
+      },
+    },
+
     // Top-level convenience
     runAgent:  makeMethod('run_agent', (task: string) => ({ task })),
   }

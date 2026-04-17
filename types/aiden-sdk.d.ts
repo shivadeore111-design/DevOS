@@ -76,6 +76,15 @@ export interface AidenShell {
 
   /** Execute PowerShell script. */
   powershell(script: string): Promise<string>
+
+  /** Run a Windows cmd.exe command. Returns stdout, stderr, exitCode. */
+  cmd(command: string, options?: Record<string, any>): Promise<ShellResult>
+
+  /** Run a PowerShell command directly (no temp file). Returns stdout, stderr, exitCode. */
+  ps(command: string, options?: Record<string, any>): Promise<ShellResult>
+
+  /** Run a bash command inside WSL. Auto-translates C:\\ paths to /mnt/c/. Returns stdout, stderr, exitCode. */
+  wsl(command: string, options?: Record<string, any>): Promise<ShellResult>
 }
 
 // ── aiden.browser ─────────────────────────────────────────────────────────────
@@ -186,6 +195,27 @@ export interface AidenData {
   email(limit?: number): Promise<any[]>
 }
 
+// ── aiden.mcp ────────────────────────────────────────────────────────────────
+
+export interface McpToolInfo {
+  name:         string   // prefixed: 'server:tool'
+  description:  string
+  inputSchema:  any
+  serverName:   string
+  originalName: string
+}
+
+export interface AidenMcp {
+  /** List names of all connected MCP servers. */
+  list(): string[]
+
+  /** List all available MCP tools across all connected servers. */
+  tools(): McpToolInfo[]
+
+  /** Call an MCP tool by 'server:toolName'. Returns the raw MCP result. */
+  call(toolName: string, args?: Record<string, any>): Promise<any>
+}
+
 // ── Top-level aiden object ────────────────────────────────────────────────────
 
 export interface AidenSDK {
@@ -198,6 +228,7 @@ export interface AidenSDK {
   system:  AidenSystem
   git:     AidenGit
   data:    AidenData
+  mcp:     AidenMcp
 
   /** Spawn a sub-agent to complete a task. Returns result string. */
   runAgent(task: string): Promise<string>
