@@ -98,6 +98,10 @@ import { buildGreetingPreamble }    from '../core/memoryPreamble'
 import { matchFastPath }            from '../core/fastPathExpansion'
 import { setupHttpKeepalive }       from '../core/httpKeepalive'
 import { isCurrentTurnPrivate, clearTurnPrivate, toggleSessionPrivate, isSessionPrivate } from '../core/privateMode'
+import { channelManager } from '../core/channels/manager'
+import { DiscordAdapter } from '../core/channels/discord'
+import { SlackAdapter }   from '../core/channels/slack'
+import { WebhookAdapter } from '../core/channels/webhook'
 
 // —— Sprint 25: module-level WebSocket clients registry (shared between createApiServer routes and startApiServer WS setup)
 let wsBroadcastClients   = new Set<any>()
@@ -4481,6 +4485,11 @@ export function createApiServer(): Express {
     }
   })
 
+  // GET /api/channels/status — channel adapter health
+  app.get('/api/channels/status', (_req: Request, res: Response) => {
+    res.json(channelManager.getStatus())
+  })
+
   // GET /api/security/scan — run AgentShield security scan
   app.get('/api/security/scan', async (_req: Request, res: Response) => {
     try {
@@ -5189,6 +5198,14 @@ export function startApiServer(portArg?: number): Express {
   } catch (e: any) {
     console.error('[Telegram] Failed to start bot:', e.message)
   }
+
+  // ── Channel adapters (Discord, Slack, Webhook) ────────────────
+  channelManager.register(new DiscordAdapter())
+  channelManager.register(new SlackAdapter())
+  channelManager.register(new WebhookAdapter(app))
+  channelManager.startAll().catch((e: Error) =>
+    console.error('[ChannelManager] Startup error:', e.message),
+  )
 
   return app
 }

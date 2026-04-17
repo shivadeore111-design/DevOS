@@ -670,6 +670,7 @@ const COMMANDS = [
   '/ps',
   '/wsl',
   '/refresh',
+  '/channels',
   '/quit', '/exit', '/q',
 ]
 
@@ -824,6 +825,11 @@ const COMMAND_DETAIL: Record<string, CmdDetail> = {
     usage:    '/wsl <command> [--distro=<name>]',
   },
   '/refresh':    { section: 'Power',     desc: 'Check for Aiden updates and reload config.',                usage: '/refresh' },
+  '/channels':   { section: 'Power',     desc: 'Show all channel adapters and their status.',
+    subs:    ['restart <name>', 'test <name>'],
+    usage:   '/channels [restart <name>|test <name>]',
+    examples: ['/channels', '/channels restart discord', '/channels test slack'],
+  },
   '/security':   { section: 'Power',     desc: 'Run AgentShield security scan.',                            usage: '/security' },
   '/debug':      { section: 'Power',     desc: 'Recent server log entries.',                                usage: '/debug' },
   '/private':    { section: 'Power',     desc: 'Toggle private mode — suppresses memory writes.',           usage: '/private' },
@@ -994,6 +1000,7 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       helpRow('/ps <command>',      'Run a PowerShell command directly'),
       helpRow('/wsl <command>',     'Run a bash command inside WSL'),
       helpRow('/refresh',            'Check for updates + reload config'),
+      helpRow('/channels',           'Channel adapter status (Discord, Slack, Webhook)'),
       helpSection('Exit'),
       helpRow('/quit  /exit  /q',   ''),
       '',
@@ -3761,6 +3768,53 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
     } catch (e: any) {
       console.log(`  ${T.error}✗ Update check failed: ${e?.message}${T.reset}`)
     }
+    return true
+  }
+
+  // ── /channels ────────────────────────────────────────────────────────────────
+  if (command === '/channels') {
+    const [sub, name] = args
+
+    if (sub === 'restart' && name) {
+      console.log(`\n  ${T.dim}Restarting channel: ${name}...${T.reset}`)
+      const result = await apiFetch<any>(`/api/channels/restart/${name}`, null)
+      if (result) {
+        const icon = result.status === 'started' ? T.ok : result.status === 'disabled' ? T.dim : T.error
+        console.log(`  ${icon}${result.name}: ${result.status}${T.reset}\n`)
+      } else {
+        console.log(`  ${T.error}✗ Server offline or channel not found.${T.reset}\n`)
+      }
+      return true
+    }
+
+    if (sub === 'test' && name) {
+      console.log(`\n  ${T.dim}Sending test message to channel: ${name}...${T.reset}`)
+      const result = await apiFetch<any>(`/api/channels/test/${name}`, null)
+      if (result?.ok) {
+        console.log(`  ${T.ok}✓ Test message delivered via ${name}.${T.reset}\n`)
+      } else {
+        console.log(`  ${T.error}✗ Test failed — ${result?.error ?? 'server offline'}.${T.reset}\n`)
+      }
+      return true
+    }
+
+    // Default: show status panel
+    const statuses = await apiFetch<Array<{ name: string; healthy: boolean; lastActivity?: number }>>('/api/channels/status', null)
+    if (!statuses) {
+      console.log(`\n  ${T.dim}Server offline — cannot fetch channel status.${T.reset}\n`)
+      return true
+    }
+
+    const lines: string[] = statuses.map(ch => {
+      const icon    = ch.healthy ? `${T.ok}●${T.reset}` : `${T.dim}○${T.reset}`
+      const label   = ch.healthy ? `${T.ok}connected${T.reset}` : `${T.dim}disabled${T.reset}`
+      const ago     = ch.lastActivity
+        ? `  ${T.dim}last active ${Math.round((Date.now() - ch.lastActivity) / 1000)}s ago${T.reset}`
+        : ''
+      return `  ${icon}  ${ch.name.padEnd(10)}${label}${ago}`
+    })
+    if (lines.length === 0) lines.push(`  ${T.dim}No channel adapters registered.${T.reset}`)
+    console.log(panel({ title: `${MARKS.TRI} Channels`, lines }))
     return true
   }
 
