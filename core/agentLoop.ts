@@ -15,7 +15,8 @@ import { planTool }                        from './planTool'
 import type { Phase }                      from './planTool'
 import { WorkspaceMemory }                 from './workspaceMemory'
 import { taskStateManager, TaskState }     from './taskState'
-import { skillLoader }                     from './skillLoader'
+import { skillLoader, isSimpleMessage, needsMemory } from './skillLoader'
+import { entityGraph }                      from './entityGraph'
 import { learningMemory }                  from './learningMemory'
 import { conversationMemory }             from './conversationMemory'
 import { getNextAvailableAPI, markRateLimited, markHealthy, incrementUsage, getModelForTask, getOllamaModelForTask, enterDegradedMode } from '../providers/router'
@@ -825,15 +826,18 @@ export async function planWithLLM(
     ? `\n\nPERMANENT FAILURE RULES (learned from past task failures — follow strictly):\n${lessonsContent.split('\n').filter(l => /^\d+\./.test(l.trim())).map(l => `  ${l.trim()}`).join('\n')}\n`
     : ''
 
-  // Sprint 21: unified memory recall — inject relevant memories into planner
+  // Sprint 21: unified memory recall — only when message references past context
+  // Gate prevents unnecessary hybrid-search I/O on routine messages
   let memoryRecallSection = ''
-  try {
-    const recalled       = await unifiedMemoryRecall(message, 3)
-    const memoryInjected = buildMemoryInjection(recalled)
-    if (memoryInjected) {
-      memoryRecallSection = memoryInjected
-    }
-  } catch {}
+  if (needsMemory(message)) {
+    try {
+      const recalled       = await unifiedMemoryRecall(message, 5)
+      const memoryInjected = buildMemoryInjection(recalled)
+      if (memoryInjected) {
+        memoryRecallSection = memoryInjected
+      }
+    } catch {}
+  }
 
   // Resolve the actual Windows username and home directory at runtime
   const _sysUsername = process.env.USERNAME || process.env.USER || nodeOs.userInfo().username || 'User'
@@ -2318,11 +2322,15 @@ export async function respondWithResults(
     ? `\nSkill guidance for this response:\n${responseSkills.map(s => `- ${s.name}: ${s.description}`).join('\n')}\n`
     : ''
 
-  // Build loaded-skills addendum (personality core is in AIDEN_RESPONDER_SYSTEM)
-  const loadedSkills = skillLoader.loadAll()
-  const capabilitiesSection = loadedSkills.length > 0
-    ? `Loaded skills for this task: ${loadedSkills.map(s => `${s.name} (${s.description})`).join(', ')}\n\n`
-    : ''
+  // Selective skill injection — simple messages (< 15 words, no tool keywords) get no skills;
+  // complex messages get only the relevant subset (already filtered by findRelevant above).
+  // Replaces the old loadAll() dump that injected all ~96 skills into every prompt.
+  const capabilitiesSection = isSimpleMessage(originalMessage)
+    ? ''
+    : (responseSkills.length > 0
+        ? `Relevant skills for this task: ${responseSkills.map(s => `${s.name} (${s.description})`).join(', ')}\n\n`
+        : ''
+      )
 
 
   // Knowledge context — relevant chunks from user's uploaded files
@@ -2360,10 +2368,17 @@ export async function respondWithResults(
       ).join('\n\n')
     : ''
 
-  // Inject conversation memory so responder can answer questions about past work
-  const memCtx    = conversationMemory.buildContext()
+  // Inject conversation memory only when the message references past context
+  // (reduces prompt size for routine messages — "hi", "thanks", etc.)
+  const memCtx    = needsMemory(originalMessage) ? conversationMemory.buildContext() : ''
   const memSection = memCtx
     ? `\nCONVERSATION HISTORY:\n${memCtx}\n\nIf the user asks what we worked on, what was researched, or references previous work — answer from this history.\n`
+    : ''
+
+  // Entity graph — 1-line summary only (never dump full graph into prompt)
+  const entityStats   = entityGraph.getStats()
+  const entitySummary = entityStats.nodes > 0
+    ? `You know ${entityStats.nodes} entities across your work.\n\n`
     : ''
 
   // Build a tool-results context block for the system prompt
@@ -2372,7 +2387,7 @@ export async function respondWithResults(
     : ''
 
   const systemWithResults = toolResultsContext
-    ? `${capabilitiesSection}${responderSystem(userName, date)}${responseSkillContext}${knowledgeResponderSection}${multiGoalInstruction}
+    ? `${capabilitiesSection}${entitySummary}${responderSystem(userName, date)}${responseSkillContext}${knowledgeResponderSection}${multiGoalInstruction}
 
 YOU JUST RAN THESE TOOLS AND GOT THESE RESULTS:
 ${toolResultsContext}
@@ -2385,7 +2400,7 @@ CRITICAL RULES FOR YOUR RESPONSE:
 - If system_info returned hardware data, show the data
 - Be direct: show the actual output, then provide context if needed
 - If a tool failed, say it failed and why`
-    : `${capabilitiesSection}${responderSystem(userName, date)}${responseSkillContext}${knowledgeResponderSection}${multiGoalInstruction}`
+    : `${capabilitiesSection}${entitySummary}${responderSystem(userName, date)}${responseSkillContext}${knowledgeResponderSection}${multiGoalInstruction}`
 
   const userContent = executionSummary
     ? `User asked: "${originalMessage}"\n\nReal execution results:\n${executionSummary}\n\nRespond naturally based on these real results only. Show the actual output, not a description of it.${depthInstruction}${memSection}`

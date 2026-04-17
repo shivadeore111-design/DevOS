@@ -96,8 +96,8 @@ test('cleanup: skillTeacher.ts has header, origin:local, and size validation', (
     'buildFallbackSkill must include origin: local in frontmatter'
   )
   assert(
-    content.includes('byteLen < 50') || content.includes('byteLen < 50'),
-    'must reject content < 50 bytes'
+    content.includes('byteLen < 200'),
+    'must reject content < 200 bytes (raised from 50 in prompt_timer hardening)'
   )
   assert(
     content.includes('byteLen > 10240') || content.includes('> 10240'),

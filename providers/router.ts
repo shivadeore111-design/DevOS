@@ -227,6 +227,19 @@ export function markRateLimited(apiName: string): void {
       ? { ...api, rateLimited: true, rateLimitedAt: Date.now(), rateLimitWindow: backoffMs }
       : api
   )
+
+  // Auto-unpin: if the pinned primary provider accumulates 3+ consecutive failures, clear the pin
+  // so the router can fall back to the next healthy provider automatically.
+  const AUTO_UNPIN_THRESHOLD = 3
+  if (failures >= AUTO_UNPIN_THRESHOLD && config.primaryProvider) {
+    const pinnedName     = config.primaryProvider
+    const pinnedProvider = entry?.provider ?? ''
+    if (apiName === pinnedName || pinnedProvider === pinnedName) {
+      delete config.primaryProvider
+      console.log(`[Router] Auto-unpinned "${pinnedName}" after ${failures} consecutive failures`)
+    }
+  }
+
   saveConfig(config)
   console.log(`[Router] ${apiName} rate limited (failure #${failures}) — retry in ${Math.round(backoffMs / 1000)}s`)
 }
