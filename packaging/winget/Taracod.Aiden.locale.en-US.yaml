@@ -1,0 +1,27 @@
+PackageIdentifier: Taracod.Aiden
+PackageVersion: 3.5.0
+PackageLocale: en-US
+Publisher: Taracod
+PublisherUrl: https://taracod.com
+PublisherSupportUrl: https://aiden.taracod.com
+PackageName: Aiden
+PackageUrl: https://aiden.taracod.com
+License: Proprietary
+LicenseUrl: https://github.com/taracodlabs/aiden-releases/blob/main/LICENSE
+ShortDescription: Your personal AI. Runs on your machine. Remembers everything.
+Description: >-
+  Aiden is a local-first AI operating system that runs entirely on your machine
+  via Ollama — no cloud required, no data leaving your hardware. It ships as a
+  signed Windows installer with auto-updates, a full terminal UI, and a web
+  dashboard. Supports 60+ CLI commands, voice mode, subagent delegation, and more.
+Moniker: aiden
+Tags:
+  - ai
+  - llm
+  - local-ai
+  - ollama
+  - agent
+  - personal-ai
+  - privacy
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0
