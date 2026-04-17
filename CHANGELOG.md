@@ -1,3 +1,154 @@
+## v3.6.0 — 2026-04-18
+
+**The Scale release.** Aiden is now feature-competitive with leading AI agents:
+9 communication channels, 52 shipping skills across 12 categories, voice as a
+first-class tool namespace, 4 new core tools, Windows shell wedges, a native MCP
+client, and a frictionless one-liner install — all local, private, and free to
+self-host.
+
+### Headlines
+
+- **Voice as first-class tools** — `voice.speak`, `voice.transcribe`,
+  `voice.clone`, `voice.design` wired as agent tools; VoxCPM2 voice synthesis
+  and cloning; full waterfall fallback chain
+- **4 new core tools** — `clarify` (multi-choice mid-task clarification), `todo`
+  (per-session task lists + `/todo` CLI), `cronjob` (scheduled tasks + `/cron`
+  CLI), `vision_analyze` (image analysis via provider vision APIs)
+- **5 new channel adapters** — WhatsApp, Signal, SMS/Twilio, iMessage, Email →
+  9 total communication surfaces
+- **32 new skills** across 6 categories (productivity, developer workflow,
+  research, creative, media/gaming, agent bridge) → **52 shipping skills total**
+- **One-liner install** — `iwr https://aiden.taracod.com/install.ps1 -useb | iex`;
+  single-word `aiden` launcher on PATH; winget + scoop manifests ready
+- **Windows shell wedges** — `/cmd`, `/ps`, `/wsl` as first-class tools and
+  agent tools
+- **Native MCP client** — register, manage, and invoke MCP servers + `/mcp` CLI
+- **Electron auto-updates** — silent background download + restart prompt;
+  `/refresh` force-check command
+- **Community contribution ready** — 56 SKILL.md files licensed Apache-2.0;
+  CONTRIBUTING.md, CLA, skill template, and migration manifest all prepared for
+  aiden-skills public repo launch
+- **Self-testing harness** — 148/148 passing across 17 suites (13 new suites
+  added this sprint)
+
+### New features
+
+**Voice Tools (VoxCPM2)**
+- `voice.speak(text, opts?)` — TTS with provider waterfall (VoxCPM2 → ElevenLabs
+  → Edge TTS → Windows SAPI) as agent tool (`feat(prompt-21)`)
+- `voice.transcribe(audioPath)` — STT via Groq → OpenAI → local Whisper.cpp
+  as agent tool (`feat(prompt-21)`)
+- `voice.clone(sourceAudio, text)` — voice cloning via VoxCPM2 fine-tuning
+  (`feat(prompt-21)`)
+- `voice.design(prompt)` — generative voice design from text description
+  (`feat(prompt-21)`)
+- `/voice on|off|status` CLI; `VOXCPM_SETUP.md` setup guide (`docs(prompt-21)`)
+
+**New Core Tools**
+- `clarify` — structured mid-task clarification: agent presents N choices, waits
+  for user selection, resumes (`feat(tools)`)
+- `todo` — per-session task list: add, check, list, clear — agent tool + `/todo`
+  CLI (`feat(tools)`)
+- `cronjob` — first-class scheduled tasks: create, list, pause, delete — agent
+  tool + `/cron` CLI (`feat(tools)`)
+- `vision_analyze` — image analysis via GPT-4o Vision, Claude Vision, Gemini
+  Vision (`feat(tools)`)
+- Aiden SDK extended: `aiden.clarify`, `aiden.todo`, `aiden.cron`,
+  `aiden.vision` namespaces (`feat(sdk)`)
+
+**Skills — Wave 2 (32 new skills)**
+
+*Productivity (7):* Obsidian vault search/write, Notion database CRUD, Google
+Workspace (Docs/Sheets/Gmail), Linear issue tracker, OCR + document parsing,
+Nano PDF reader, Excalidraw diagram generation
+
+*Developer Workflow (8):* Jupyter notebook execution, Docker container
+management, GitHub auth/issues/PRs/repo management, AI-assisted debugging,
+TDD workflow automation
+
+*Research (4):* arXiv paper search, YouTube content analysis, blog watcher,
+research paper writing assistant
+
+*Creative (4):* Architecture diagrams (C4/Mermaid), ASCII art generator, Stable
+Diffusion image generation, p5.js creative coding
+
+*Media / Gaming / Social / Smart-Home (6):* GIF search (Tenor), song recognition
+(SongSee), Minecraft server management, Pokémon automation, OpenHUE smart
+lighting, X (Twitter) posting
+
+*Agent Bridge (3):* Claude Code integration, OpenAI Codex bridge, OpenCode
+bridge — delegate sub-tasks to other coding agents
+
+**Channel Adapters — Wave 2 (5 new)**
+- **WhatsApp** — web client bridge + optional Business API; allowlist +
+  inbound/outbound (`feat(channels)`)
+- **Signal** — signal-cli REST bridge; relay + allowlist (`feat(channels)`)
+- **SMS/Twilio** — inbound webhook + outbound API; 160-char chunking +
+  allowlist (`feat(channels)`)
+- **iMessage** — BlueBubbles REST bridge; WebSocket inbound + allowlist
+  (`feat(channels)`)
+- **Email** — IMAP polling + SMTP replies; loop prevention + sender allowlist
+  (`feat(channels)`)
+- `ChannelManager` extended to 9 adapters; `ChannelStatus` shape expanded
+  (`feat(channels)`)
+
+**Install Experience**
+- Single-word `aiden` launcher — shim for CMD + Bash; no `npx` required
+  (`feat(install)`)
+- PowerShell one-liner — downloads and runs installer in one command
+  (`feat(install)`)
+- `/install.ps1` route added to Cloudflare Worker (`feat(install)`)
+- winget manifest — `Taracod.Aiden` package; installer + locale manifests;
+  submission-ready (`feat(packaging)`)
+- Scoop manifest — `taracod` bucket + `aiden.json`; bucket instructions
+  (`feat(packaging)`)
+- README expanded with all 4 install paths (`docs`)
+
+**Windows Shell Wedges**
+- `/cmd`, `/ps` (PowerShell), `/wsl` — CLI commands + agent tools
+  (`feat(shell)`)
+- `aiden.shell` SDK namespace with wedge-specific methods (`feat(sdk)`)
+
+**Native MCP Client**
+- Register and manage MCP servers via `~/.aiden/mcp.json` (`feat(mcp)`)
+- `/mcp list|add|remove|call` CLI (`feat(mcp)`)
+- MCP tools injected into agent registry at session start (`feat(mcp)`)
+- `aiden.mcp` SDK namespace for programmatic server calls (`feat(sdk)`)
+
+**Electron Auto-Updates**
+- Background download on startup; prompts to restart when ready (`feat(update)`)
+- `/refresh` — force-check for updates (`feat(update)`)
+- IPC wiring between main and renderer for update state (`feat(update)`)
+
+**Community Skills Foundation**
+- Apache-2.0 applied to all 56 SKILL.md files (52 shipping + 4 infrastructure)
+  (`chore(skills)`)
+- `CONTRIBUTING.md` — guide for `aiden-skills` community repo (`docs`)
+- `SKILL_TEMPLATE.md` — canonical template for skill authors (`feat(skills)`)
+- CLA text + PR bot config prep (`chore`)
+- `skills-manifest.json` — repo migration map (`docs`)
+
+### Fixes
+
+- `fix(skills)` — remove hardcoded Tenor API key from `gif-search/SKILL.md`;
+  replaced with `$env:TENOR_API_KEY` / `os.environ.get("TENOR_API_KEY")`
+- `fix(test)` — prompt_17 voice test aligns with public SDK (`voice.speak` not
+  internal `synthesize`)
+- `fix(skills)` — cleanup 17 blocked + 9 duplicate skills; harden skill
+  auto-generation pipeline
+
+### Internal
+
+- **Testing:** 13 new audit suites added (`prompt_14` through `prompt_23`,
+  `prompt_r2`, `prompt_r3`); 148/148 total passing across 17 suites
+- **Docs:** `VOXCPM_SETUP.md`, `GATE_v3.6.0.md` launch gate report,
+  skills migration manifest
+- **Chore:** Version bumped to 3.6.0 across `package.json`, `cli/aiden.ts`,
+  `README.md`, `packaging/`, `cloudflare-worker/landing.js`; `.wrangler/`
+  added to `.gitignore`
+
+---
+
 ## v3.5.0 — 2026-04-18
 
 **The ▲IDEN release.** Aiden matures from v3.1.0's foundation into a full-featured AI OS with 60+ new commands, a complete visual rebrand, a mature architecture competitive with the best agents on the market, and a self-testing reliability harness.
