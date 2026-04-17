@@ -106,6 +106,7 @@ const state = {
   attachments : [] as string[],
   sessionName : '',
   redoStack   : [] as HistoryEntry[][],
+  voiceMode   : false,
 }
 
 // ── Terminal helpers ──────────────────────────────────────────────────────────────
@@ -612,6 +613,14 @@ async function streamChat(message: string): Promise<void> {
       state.history.push({ role: 'assistant', content: fullReply })
     }
 
+    // ── Voice mode: speak AI reply ──
+    if (state.voiceMode && fullReply.trim()) {
+      const { synthesize } = await import('../core/voice/tts')
+      synthesize({ text: fullReply }).catch((e: Error) =>
+        console.warn(`  ${T.dim}[TTS] ${e.message}${T.reset}`),
+      )
+    }
+
     // ── Provider switch indicator ──
     if (provider && provider !== prevProvider && prevProvider !== 'aiden') {
       process.stdout.write(`  ${T.dim}${prevProvider} ──→ ${provider}${T.reset}\n`)
@@ -671,6 +680,9 @@ const COMMANDS = [
   '/wsl',
   '/refresh',
   '/channels',
+  '/voice',
+  '/speak',
+  '/listen',
   '/quit', '/exit', '/q',
 ]
 
@@ -791,6 +803,7 @@ const COMMAND_DETAIL: Record<string, CmdDetail> = {
   '/run':        { section: 'Power',     desc: 'Execute JS in the Aiden VM sandbox with full SDK access.',
     subs:     ['<file.js>', '- [desc]', 'examples', 'help', 'help <ns>'],
     examples: ['/run scripts/port_checker.js', '/run -', '/run examples', '/run help', '/run help web'],
+    usage:    '/run <file.js> | - | examples | help [ns]',
   },
   '/spawn':      { section: 'Power',     desc: 'Delegate a sub-task to an isolated subagent.',
     subs:     ['<task>', 'list', 'kill <id>'],
@@ -829,6 +842,19 @@ const COMMAND_DETAIL: Record<string, CmdDetail> = {
     subs:    ['restart <name>', 'test <name>'],
     usage:   '/channels [restart <name>|test <name>]',
     examples: ['/channels', '/channels restart discord', '/channels test slack'],
+  },
+  '/voice':      { section: 'Voice',     desc: 'Toggle voice mode — TTS reads every AI reply aloud.',
+    subs:    ['on', 'off', 'status', 'providers'],
+    usage:   '/voice [on|off|status|providers]',
+    examples: ['/voice', '/voice on', '/voice off', '/voice providers'],
+  },
+  '/speak':      { section: 'Voice',     desc: 'Speak text immediately using the TTS engine.',
+    usage:    '/speak <text>',
+    examples: ['/speak Hello, how can I help you today?'],
+  },
+  '/listen':     { section: 'Voice',     desc: 'Record microphone input, transcribe via STT, and send as message.',
+    usage:    '/listen [seconds]',
+    examples: ['/listen', '/listen 10'],
   },
   '/security':   { section: 'Power',     desc: 'Run AgentShield security scan.',                            usage: '/security' },
   '/debug':      { section: 'Power',     desc: 'Recent server log entries.',                                usage: '/debug' },
@@ -989,6 +1015,10 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       helpRow('/depth',             'Cycle reasoning depth  (low → med → high)'),
       helpRow('/config',            'Show current configuration'),
       helpSection('Power'),
+      helpRow('/run <code|file>',   'Execute JS in sandbox with injected aiden SDK'),
+      helpRow('/spawn <task>',      'Isolated subagent with inherited provider chain'),
+      helpRow('/swarm <task>',      'Parallel subagents — vote / merge / best strategy'),
+      helpRow('/search <query>',    'Hybrid BM25 + semantic session + memory search'),
       helpRow('/quick <q>',         'Quick side question  (no history, no tools)'),
       helpRow('/compact',           'Manual context compression'),
       helpRow('/async <task>',      'Run task in background'),
@@ -1001,6 +1031,9 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       helpRow('/wsl <command>',     'Run a bash command inside WSL'),
       helpRow('/refresh',            'Check for updates + reload config'),
       helpRow('/channels',           'Channel adapter status (Discord, Slack, Webhook)'),
+      helpRow('/voice [on|off]',     'Toggle voice mode — TTS reads AI replies aloud'),
+      helpRow('/speak <text>',       'Speak text immediately via TTS'),
+      helpRow('/listen [secs]',      'Record mic → STT → send as message'),
       helpSection('Exit'),
       helpRow('/quit  /exit  /q',   ''),
       '',
@@ -3815,6 +3848,92 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
     })
     if (lines.length === 0) lines.push(`  ${T.dim}No channel adapters registered.${T.reset}`)
     console.log(panel({ title: `${MARKS.TRI} Channels`, lines }))
+    return true
+  }
+
+  // ── /voice ────────────────────────────────────────────────────────────────
+  if (command === '/voice') {
+    const sub = args[0]?.toLowerCase()
+    const { getTtsProviders } = await import('../core/voice/tts')
+
+    if (sub === 'on') {
+      state.voiceMode = true
+      console.log(`\n  ${T.ok}● Voice mode ON${T.reset} — AI replies will be spoken aloud.\n`)
+      return true
+    }
+    if (sub === 'off') {
+      state.voiceMode = false
+      console.log(`\n  ${T.dim}○ Voice mode OFF${T.reset}\n`)
+      return true
+    }
+    if (sub === 'providers') {
+      const providers = getTtsProviders()
+      console.log()
+      for (const p of providers) {
+        const icon  = p.available ? `${T.ok}●${T.reset}` : `${T.dim}○${T.reset}`
+        const label = p.available ? `${T.ok}available${T.reset}` : `${T.dim}unavailable${T.reset}`
+        console.log(`  ${icon}  ${p.name.padEnd(12)}${label}`)
+      }
+      console.log()
+      return true
+    }
+
+    // Default: toggle
+    state.voiceMode = !state.voiceMode
+    const onOff = state.voiceMode ? `${T.ok}ON${T.reset}` : `${T.dim}OFF${T.reset}`
+    console.log(`\n  ${state.voiceMode ? T.ok + '●' : T.dim + '○'}${T.reset} Voice mode ${onOff}\n`)
+    return true
+  }
+
+  // ── /speak ────────────────────────────────────────────────────────────────
+  if (command === '/speak') {
+    const text = args.join(' ').trim()
+    if (!text) {
+      console.log(`\n  ${T.dim}Usage: /speak <text>${T.reset}\n`)
+      return true
+    }
+    const { synthesize } = await import('../core/voice/tts')
+    console.log(`\n  ${T.dim}Speaking...${T.reset}`)
+    const result = await synthesize({ text })
+    if (result.error) {
+      console.log(`  ${T.error}✗ TTS failed: ${result.error}${T.reset}\n`)
+    } else {
+      console.log(`  ${T.ok}✓ Spoken via ${result.provider} (${result.durationMs}ms)${T.reset}\n`)
+    }
+    return true
+  }
+
+  // ── /listen ───────────────────────────────────────────────────────────────
+  if (command === '/listen') {
+    const seconds = parseInt(args[0] ?? '5', 10)
+    const duration = isNaN(seconds) || seconds < 1 ? 5 : Math.min(seconds, 60)
+    const { recordAudio }  = await import('../core/voice/audio')
+    const { transcribe }   = await import('../core/voice/stt')
+
+    console.log(`\n  ${T.dim}🎤 Recording for ${duration}s... (speak now)${T.reset}`)
+    let audioPath = ''
+    try {
+      audioPath = await recordAudio(duration)
+    } catch (e: any) {
+      console.log(`  ${T.error}✗ Recording failed: ${e.message}${T.reset}\n`)
+      return true
+    }
+
+    console.log(`  ${T.dim}Transcribing...${T.reset}`)
+    const result = await transcribe({ audioFilePath: audioPath })
+    try { require('fs').unlinkSync(audioPath) } catch { /* ignore */ }
+
+    if (!result.text) {
+      const reason = result.error ?? 'No speech detected'
+      console.log(`  ${T.error}✗ Transcription failed: ${reason}${T.reset}\n`)
+      return true
+    }
+
+    console.log(`  ${T.ok}✓ Heard:${T.reset} ${result.text}`)
+    console.log(`  ${T.dim}Provider: ${result.provider} | ${result.durationMs}ms${T.reset}\n`)
+
+    // Submit the transcribed text as a chat message
+    await streamChat(result.text)
     return true
   }
 
