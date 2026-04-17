@@ -4,6 +4,7 @@ description: Structured pipeline for writing ML and AI research papers — from 
 category: research
 version: 1.0.0
 origin: aiden
+license: Apache-2.0
 tags: research, paper, writing, latex, ml, ai, academic, arxiv, publication, citation
 ---
 

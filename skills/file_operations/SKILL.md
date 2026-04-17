@@ -3,6 +3,7 @@ name: file_operations
 description: File creation and management on Windows
 version: 1.0.0
 tags: file, write, read, save, document, report
+license: Apache-2.0
 ---
 
 # File Operations

@@ -4,6 +4,7 @@ description: Diagnose Windows network issues — ping, traceroute, DNS lookup, p
 category: windows
 version: 1.0.0
 tags: network, diagnostics, ping, dns, traceroute, port, connectivity, powershell, netstat
+license: Apache-2.0
 ---
 
 # Network Diagnostics

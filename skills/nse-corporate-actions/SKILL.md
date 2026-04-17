@@ -4,6 +4,7 @@ description: Fetch NSE corporate actions — dividends, bonus issues, stock spli
 category: india
 version: 1.0.0
 tags: nse, corporate-actions, dividend, bonus, split, rights, buyback, india, equity
+license: Apache-2.0
 ---
 
 # NSE Corporate Actions

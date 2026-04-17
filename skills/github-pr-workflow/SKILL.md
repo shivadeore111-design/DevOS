@@ -4,6 +4,7 @@ description: Full pull request lifecycle — create, review, merge, and manage P
 category: developer
 version: 1.0.0
 origin: aiden
+license: Apache-2.0
 tags: github, pull-request, pr, review, merge, gh-cli, code-review, workflow, branch, diff
 ---
 

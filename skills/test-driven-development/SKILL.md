@@ -4,6 +4,7 @@ description: Write software using the RED-GREEN-REFACTOR cycle for reliable, wel
 category: developer
 version: 1.0.0
 origin: aiden
+license: Apache-2.0
 tags: tdd, testing, red-green-refactor, unit-tests, pytest, jest, vitest, quality, development
 ---
 

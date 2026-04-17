@@ -4,6 +4,7 @@ description: Search and fetch GIFs from Tenor using the public API with curl or 
 category: media
 version: 1.0.0
 origin: aiden
+license: Apache-2.0
 tags: gif, tenor, giphy, search, media, animation, image, reaction, fun
 ---
 

@@ -4,6 +4,7 @@ description: Set up GitHub authentication via gh CLI, SSH keys, and HTTPS person
 category: developer
 version: 1.0.0
 origin: aiden
+license: Apache-2.0
 tags: github, auth, ssh, pat, token, credentials, gh-cli, authentication, git, https
 ---
 

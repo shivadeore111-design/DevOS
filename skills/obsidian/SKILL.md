@@ -4,6 +4,7 @@ description: Read, search, and create notes in Obsidian vaults using file system
 category: productivity
 version: 1.0.0
 origin: aiden
+license: Apache-2.0
 tags: obsidian, notes, vault, markdown, knowledge-base, zettelkasten, wiki, pkm
 ---
 

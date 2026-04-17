@@ -4,6 +4,7 @@ description: Read, create, and update Notion pages and databases via the Notion 
 category: productivity
 version: 1.0.0
 origin: aiden
+license: Apache-2.0
 tags: notion, notes, database, pages, workspace, api, knowledge-base, tasks
 ---
 

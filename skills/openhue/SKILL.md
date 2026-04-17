@@ -4,6 +4,7 @@ description: Control Philips Hue smart lights using the OpenHue CLI and local Hu
 category: smart-home
 version: 1.0.0
 origin: aiden
+license: Apache-2.0
 tags: hue, philips, smart-home, lights, openhue, cli, iot, automation, rgb, brightness
 ---
 

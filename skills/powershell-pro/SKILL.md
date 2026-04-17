@@ -4,6 +4,7 @@ description: Expert PowerShell operations — process management, services, WMI 
 category: windows
 version: 1.0.0
 tags: powershell, process, wmi, service, automation, scripting, windows, rest
+license: Apache-2.0
 ---
 
 # PowerShell Pro

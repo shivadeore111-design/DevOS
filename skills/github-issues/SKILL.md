@@ -4,6 +4,7 @@ description: Create, list, view, and manage GitHub issues using the gh CLI
 category: developer
 version: 1.0.0
 origin: aiden
+license: Apache-2.0
 tags: github, issues, bug-tracker, gh-cli, labels, milestones, comments, triage, project-management
 ---
 

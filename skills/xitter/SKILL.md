@@ -4,6 +4,7 @@ description: Post, read, and search X (Twitter) content using x-cli or the X API
 category: social
 version: 1.0.0
 origin: aiden
+license: Apache-2.0
 tags: twitter, x, social-media, tweet, post, search, api, x-cli, timeline, mentions
 ---
 

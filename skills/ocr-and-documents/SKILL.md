@@ -4,6 +4,7 @@ description: Extract text from PDFs, images, scans, and Word documents using Pyt
 category: productivity
 version: 1.0.0
 origin: aiden
+license: Apache-2.0
 tags: ocr, pdf, image, text-extraction, documents, docx, scan, pymupdf, tesseract, pdf-parse
 ---
 

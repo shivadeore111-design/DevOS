@@ -4,6 +4,7 @@ description: Generate dark-themed system architecture and component diagrams as 
 category: creative
 version: 1.0.0
 origin: aiden
+license: Apache-2.0
 tags: architecture, diagram, svg, html, dark-theme, system-design, visualization, components, flowchart
 ---
 

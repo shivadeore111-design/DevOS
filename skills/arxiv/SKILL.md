@@ -4,6 +4,7 @@ description: Search, fetch, and download academic papers from arXiv using the pu
 category: research
 version: 1.0.0
 origin: aiden
+license: Apache-2.0
 tags: arxiv, research, papers, academic, ai, ml, science, pdf, preprint, citations
 ---
 

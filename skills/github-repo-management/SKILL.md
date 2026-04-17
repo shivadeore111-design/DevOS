@@ -4,6 +4,7 @@ description: Create, clone, fork, archive, and manage GitHub repositories using 
 category: developer
 version: 1.0.0
 origin: aiden
+license: Apache-2.0
 tags: github, repository, repo, clone, fork, branch, gh-cli, git, remote, management
 ---
 

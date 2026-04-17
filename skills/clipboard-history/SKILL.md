@@ -4,6 +4,7 @@ description: Read, write, and manage Windows clipboard content including text, H
 category: windows
 version: 1.0.0
 tags: clipboard, copy, paste, history, windows, powershell, text
+license: Apache-2.0
 ---
 
 # Clipboard History

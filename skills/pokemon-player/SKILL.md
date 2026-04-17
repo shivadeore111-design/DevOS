@@ -4,6 +4,7 @@ description: Run and automate Pokémon games using headless emulation, RAM state
 category: gaming
 version: 1.0.0
 origin: aiden
+license: Apache-2.0
 tags: pokemon, emulator, gameboy, automation, mgba, rom, ram, scripting, gaming, bot
 ---
 

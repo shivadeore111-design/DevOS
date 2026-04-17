@@ -4,6 +4,7 @@ description: Calculate Indian income tax, capital gains tax (STCG/LTCG), advance
 category: india
 version: 1.0.0
 tags: tax, india, income-tax, capital-gains, stcg, ltcg, itr, advance-tax, tds, fy2526
+license: Apache-2.0
 ---
 
 # Indian Tax Calculator

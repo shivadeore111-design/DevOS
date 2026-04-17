@@ -4,6 +4,7 @@ description: Four-phase root cause investigation process for diagnosing bugs, er
 category: developer
 version: 1.0.0
 origin: aiden
+license: Apache-2.0
 tags: debugging, root-cause, investigation, bug, error, diagnosis, troubleshooting, logs, testing
 ---
 

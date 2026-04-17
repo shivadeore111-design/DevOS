@@ -4,6 +4,7 @@ description: Manage Docker containers, images, volumes, and networks via the Doc
 category: developer
 version: 1.0.0
 origin: aiden
+license: Apache-2.0
 tags: docker, containers, images, volumes, networks, compose, dockerode, devops, deployment
 ---
 

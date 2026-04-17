@@ -4,6 +4,7 @@ description: Generate images using Stable Diffusion via HuggingFace Diffusers li
 category: creative
 version: 1.0.0
 origin: aiden
+license: Apache-2.0
 tags: stable-diffusion, image-generation, ai-art, diffusers, huggingface, text-to-image, sdxl, creative
 ---
 

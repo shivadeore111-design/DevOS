@@ -4,6 +4,7 @@ description: Scan NSE (National Stock Exchange India) for top gainers, losers, v
 category: india
 version: 1.0.0
 tags: nse, stock, india, scanner, gainers, losers, equity, market, screener
+license: Apache-2.0
 ---
 
 # NSE Scanner

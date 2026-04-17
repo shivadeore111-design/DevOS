@@ -4,6 +4,7 @@ description: Monitor RSS and Atom feeds for new posts from blogs, news sites, an
 category: research
 version: 1.0.0
 origin: aiden
+license: Apache-2.0
 tags: rss, atom, feed, blog, news, monitor, feedparser, podcast, updates, aggregation
 ---
 

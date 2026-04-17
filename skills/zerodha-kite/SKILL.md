@@ -4,6 +4,7 @@ description: Interact with Zerodha Kite Connect API — fetch holdings, position
 category: india
 version: 1.0.0
 tags: zerodha, kite, broker, india, trading, orders, holdings, positions, equity, portfolio
+license: Apache-2.0
 ---
 
 # Zerodha Kite

@@ -4,6 +4,7 @@ description: Execute code in a stateful Jupyter kernel session, maintaining vari
 category: developer
 version: 1.0.0
 origin: aiden
+license: Apache-2.0
 tags: jupyter, notebook, kernel, python, data-science, ipython, stateful, cells, pandas
 ---
 

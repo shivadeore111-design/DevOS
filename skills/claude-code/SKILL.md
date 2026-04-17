@@ -4,6 +4,7 @@ description: Delegate complex coding and file-editing tasks to Anthropic Claude 
 category: agent-bridge
 version: 1.0.0
 origin: aiden
+license: Apache-2.0
 tags: claude, anthropic, code, cli, agent-bridge, coding, delegation, agentic, pair-programming
 ---
 

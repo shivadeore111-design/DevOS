@@ -4,6 +4,7 @@ description: List, start, stop, restart, and configure Windows services via Powe
 category: windows
 version: 1.0.0
 tags: services, windows, powershell, daemon, startup, get-service, set-service
+license: Apache-2.0
 ---
 
 # Windows Services

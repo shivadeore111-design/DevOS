@@ -4,6 +4,7 @@ description: Create generative visual art and interactive sketches using p5.js, 
 category: creative
 version: 1.0.0
 origin: aiden
+license: Apache-2.0
 tags: p5js, generative-art, creative-coding, canvas, animation, visualization, javascript, interactive
 ---
 

@@ -4,6 +4,7 @@ description: Delegate coding tasks to OpenAI Codex CLI for automated code genera
 category: agent-bridge
 version: 1.0.0
 origin: aiden
+license: Apache-2.0
 tags: openai, codex, cli, code-generation, agent-bridge, gpt, automation, coding, delegation
 ---
 

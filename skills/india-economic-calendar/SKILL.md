@@ -4,6 +4,7 @@ description: Track upcoming Indian economic events — RBI policy dates, CPI/WPI
 category: india
 version: 1.0.0
 tags: india, rbi, economic, calendar, cpi, gdp, budget, expiry, monetary, policy
+license: Apache-2.0
 ---
 
 # India Economic Calendar

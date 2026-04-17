@@ -4,6 +4,7 @@ description: Fetch NSE delivery percentage data to identify stocks with high del
 category: india
 version: 1.0.0
 tags: nse, delivery, volume, equity, india, stock, delhivery, bulk, block
+license: Apache-2.0
 ---
 
 # NSE Delivery

@@ -4,6 +4,7 @@ description: Interact with Gmail, Google Calendar, Drive, Sheets, and Docs via t
 category: productivity
 version: 1.0.0
 origin: aiden
+license: Apache-2.0
 tags: google, gmail, calendar, drive, sheets, docs, workspace, api, oauth, email
 ---
 

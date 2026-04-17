@@ -4,6 +4,7 @@ description: Read, write, and query Windows Registry keys and values via PowerSh
 category: windows
 version: 1.0.0
 tags: registry, regedit, windows, powershell, hklm, hkcu, settings, config
+license: Apache-2.0
 ---
 
 # Windows Registry

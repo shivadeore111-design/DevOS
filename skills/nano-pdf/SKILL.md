@@ -4,6 +4,7 @@ description: Edit PDFs with natural-language instructions using the nano-pdf CLI
 category: productivity
 version: 1.0.0
 origin: aiden
+license: Apache-2.0
 tags: pdf, edit, merge, split, compress, redact, nano-pdf, cli, document, watermark
 ---
 

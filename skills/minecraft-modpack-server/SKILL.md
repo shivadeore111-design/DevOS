@@ -4,6 +4,7 @@ description: Set up and manage a modded Minecraft server using NeoForge or Forge
 category: gaming
 version: 1.0.0
 origin: aiden
+license: Apache-2.0
 tags: minecraft, neoforge, forge, modpack, server, java, gaming, mods, multiplayer
 ---
 

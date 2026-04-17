@@ -4,6 +4,7 @@ description: Fetch NSE options chain data, analyze OI buildup, PCR ratio, max pa
 category: india
 version: 1.0.0
 tags: nse, options, derivatives, oi, pcr, maxpain, nifty, banknifty, iv, chain
+license: Apache-2.0
 ---
 
 # NSE Options

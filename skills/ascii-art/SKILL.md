@@ -4,6 +4,7 @@ description: Generate ASCII art text banners, box art, and decorative text using
 category: creative
 version: 1.0.0
 origin: aiden
+license: Apache-2.0
 tags: ascii, art, banner, text, figlet, cowsay, terminal, decoration, cli, creative
 ---
 

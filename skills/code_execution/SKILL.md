@@ -3,6 +3,7 @@ name: code_execution
 description: Running scripts and code on Windows
 version: 1.0.0
 tags: code, script, python, node, run, execute, build
+license: Apache-2.0
 ---
 
 # Code Execution

@@ -3,6 +3,7 @@ name: financial_research
 description: Research stocks, companies, and market data using real-time financial APIs
 version: 1.0.0
 tags: finance, stocks, market, investment, NSE, BSE, equity, company
+license: Apache-2.0
 ---
 
 # Financial Research

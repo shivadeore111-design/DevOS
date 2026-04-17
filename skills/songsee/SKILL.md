@@ -4,6 +4,7 @@ description: Visualize audio files as mel spectrograms, chromagrams, and MFCC pl
 category: media
 version: 1.0.0
 origin: aiden
+license: Apache-2.0
 tags: audio, spectrogram, mel, chroma, mfcc, librosa, visualization, music, sound-analysis
 ---
 

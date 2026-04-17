@@ -4,6 +4,7 @@ description: Manage Linear issues, projects, and cycles via the Linear GraphQL A
 category: productivity
 version: 1.0.0
 origin: aiden
+license: Apache-2.0
 tags: linear, issues, project-management, graphql, engineering, sprint, cycle, team, tasks
 ---
 

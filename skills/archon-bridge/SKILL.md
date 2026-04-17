@@ -4,6 +4,7 @@ description: Bridge between Aiden and Indian broker platforms (Zerodha, Upstox, 
 category: india
 version: 1.0.0
 tags: archon, broker, portfolio, aggregation, zerodha, upstox, angel, india, trading, unified
+license: Apache-2.0
 ---
 
 # Archon Bridge

@@ -4,6 +4,7 @@ description: Read and manage Outlook calendar and inbox via PowerShell COM inter
 category: windows
 version: 1.0.0
 tags: outlook, calendar, email, inbox, meeting, schedule, microsoft
+license: Apache-2.0
 ---
 
 # Outlook Native

@@ -4,6 +4,7 @@ description: Create, list, enable, disable, and delete Windows Task Scheduler jo
 category: windows
 version: 1.0.0
 tags: taskscheduler, scheduled, task, automation, cron, windows, powershell, trigger
+license: Apache-2.0
 ---
 
 # Task Scheduler

@@ -3,6 +3,7 @@ name: web_research
 description: Deep web research with multi-source verification
 version: 1.0.0
 tags: web, research, search, analyze
+license: Apache-2.0
 ---
 
 # Web Research

@@ -4,6 +4,7 @@ description: Create hand-drawn style diagrams and sketches in Excalidraw JSON fo
 category: productivity
 version: 1.0.0
 origin: aiden
+license: Apache-2.0
 tags: excalidraw, diagram, architecture, flowchart, sketch, visualization, json, drawing, design
 ---
 

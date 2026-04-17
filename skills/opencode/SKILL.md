@@ -4,6 +4,7 @@ description: Delegate coding tasks to the OpenCode CLI — an open-source AI cod
 category: agent-bridge
 version: 1.0.0
 origin: aiden
+license: Apache-2.0
 tags: opencode, ai-coding, agent-bridge, open-source, multi-model, coding, delegation, claude, gpt
 ---
 

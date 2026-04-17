@@ -4,6 +4,7 @@ description: Interact with Upstox API v2 — fetch portfolio, live market data, 
 category: india
 version: 1.0.0
 tags: upstox, broker, india, trading, orders, portfolio, equity, fno, market
+license: Apache-2.0
 ---
 
 # Upstox

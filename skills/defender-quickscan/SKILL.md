@@ -4,6 +4,7 @@ description: Trigger Windows Defender scans, check threat history, update signat
 category: windows
 version: 1.0.0
 tags: defender, antivirus, security, scan, threat, malware, windows, powershell
+license: Apache-2.0
 ---
 
 # Defender Quick Scan

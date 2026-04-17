@@ -4,6 +4,7 @@ description: Fetch FII and DII daily buying/selling activity from NSE to gauge i
 category: india
 version: 1.0.0
 tags: fii, dii, institutional, flow, nse, india, equity, market, foreign
+license: Apache-2.0
 ---
 
 # NSE FII/DII Flow

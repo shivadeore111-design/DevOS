@@ -4,6 +4,7 @@ description: Extract transcripts, download audio/video, and analyze YouTube cont
 category: research
 version: 1.0.0
 origin: aiden
+license: Apache-2.0
 tags: youtube, transcript, video, audio, download, subtitles, yt-dlp, content, summary
 ---
 
