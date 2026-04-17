@@ -306,6 +306,8 @@ const TOOL_TIMEOUTS: Record<string, number> = {
   app_close:                     8000,
   watch_folder:                 10000,
   watch_folder_list:             5000,
+  clarify:                  300_000,   // up to 5 min for human response
+  vision_analyze:            45_000,
 }
 
 // ── NSE symbol normalizer ─────────────────────────────────────
@@ -1770,6 +1772,139 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
       return { success: false, output: '', error: e.message }
     }
   },
+
+  // ── clarify — ask the user a multi-choice or free-text question mid-task ──
+  clarify: async (p) => {
+    const question      = p.question || p.q || ''
+    const options       = Array.isArray(p.options) ? p.options as string[] : undefined
+    const allowFreeText = p.allow_free_text !== false
+    if (!question) return { success: false, output: '', error: 'No question provided' }
+    try {
+      const { ask } = await import('./clarifyBus')
+      const answer  = await ask(question, options, allowFreeText)
+      return { success: true, output: answer }
+    } catch (e: any) {
+      return { success: false, output: '', error: e.message }
+    }
+  },
+
+  // ── todo — per-session task list ──────────────────────────────────────────
+  todo: async (p) => {
+    const op = (p.op || p.operation || 'list').toLowerCase()
+    try {
+      const {
+        addTodo, completeTodo, removeTodo, clearTodos,
+        listTodos, formatTodoList,
+      } = await import('./todoManager')
+
+      if (op === 'add') {
+        const text = p.text || p.item || ''
+        if (!text) return { success: false, output: '', error: 'No text provided for add' }
+        const item = addTodo(text, p.priority ?? 'normal')
+        return { success: true, output: `Added [${item.id}]: ${item.text}` }
+      }
+      if (op === 'complete' || op === 'done') {
+        const id = String(p.id ?? '')
+        if (!id) return { success: false, output: '', error: 'No id provided' }
+        const item = completeTodo(id)
+        if (!item) return { success: false, output: '', error: `Todo ${id} not found` }
+        return { success: true, output: `Completed [${item.id}]: ${item.text}` }
+      }
+      if (op === 'remove' || op === 'delete') {
+        const id = String(p.id ?? '')
+        if (!id) return { success: false, output: '', error: 'No id provided' }
+        const ok = removeTodo(id)
+        return { success: ok, output: ok ? `Removed todo ${id}` : `Todo ${id} not found` }
+      }
+      if (op === 'clear') {
+        const n = clearTodos()
+        return { success: true, output: `Cleared ${n} todo(s)` }
+      }
+      // Default: list
+      const filter = (p.filter ?? 'all') as 'all' | 'pending' | 'done'
+      const items  = listTodos(filter)
+      return { success: true, output: formatTodoList(items) }
+    } catch (e: any) {
+      return { success: false, output: '', error: e.message }
+    }
+  },
+
+  // ── cronjob — scheduled task tool ────────────────────────────────────────
+  cronjob: async (p) => {
+    const op = (p.op || p.operation || 'list').toLowerCase()
+    try {
+      const {
+        createJob, listJobs, pauseJob, resumeJob,
+        deleteJob, triggerJob, getJob,
+      } = await import('./cronManager')
+
+      if (op === 'create') {
+        const description = p.description || p.name || ''
+        const schedule    = p.schedule    || ''
+        const action      = p.action      || p.command || ''
+        if (!schedule || !action) {
+          return { success: false, output: '', error: 'schedule and action are required' }
+        }
+        const job = createJob(description || action, schedule, action)
+        return { success: true, output: `Created job [${job.id}]: ${job.description} — ${job.schedule}` }
+      }
+      if (op === 'list') {
+        const jobs = listJobs()
+        if (!jobs.length) return { success: true, output: 'No cron jobs.' }
+        const lines = jobs.map(j => {
+          const status = j.enabled ? '▶' : '⏸'
+          return `[${j.id}] ${status} ${j.description} | ${j.schedule} | runs: ${j.runCount} | next: ${j.nextRun ?? 'n/a'}`
+        })
+        return { success: true, output: lines.join('\n') }
+      }
+      if (op === 'pause') {
+        const id  = String(p.id ?? '')
+        const ok  = pauseJob(id)
+        return { success: ok, output: ok ? `Paused job ${id}` : `Job ${id} not found` }
+      }
+      if (op === 'resume') {
+        const id  = String(p.id ?? '')
+        const ok  = resumeJob(id)
+        return { success: ok, output: ok ? `Resumed job ${id}` : `Job ${id} not found` }
+      }
+      if (op === 'delete' || op === 'remove') {
+        const id  = String(p.id ?? '')
+        const ok  = deleteJob(id)
+        return { success: ok, output: ok ? `Deleted job ${id}` : `Job ${id} not found` }
+      }
+      if (op === 'trigger' || op === 'run') {
+        const id  = String(p.id ?? '')
+        const ok  = await triggerJob(id)
+        return { success: ok, output: ok ? `Triggered job ${id}` : `Job ${id} not found` }
+      }
+      if (op === 'get') {
+        const id  = String(p.id ?? '')
+        const job = getJob(id)
+        if (!job) return { success: false, output: '', error: `Job ${id} not found` }
+        return { success: true, output: JSON.stringify(job, null, 2) }
+      }
+      return { success: false, output: '', error: `Unknown op: ${op}` }
+    } catch (e: any) {
+      return { success: false, output: '', error: e.message }
+    }
+  },
+
+  // ── vision_analyze — image analysis via provider vision APIs ─────────────
+  vision_analyze: async (p) => {
+    const imageSource = p.image || p.path || p.url || p.source || ''
+    const prompt      = p.prompt || p.question || 'Describe this image in detail.'
+    if (!imageSource) return { success: false, output: '', error: 'No image source provided (use image, path, or url)' }
+    try {
+      const { analyzeImage } = await import('./visionAnalyze')
+      const result = await analyzeImage(imageSource, prompt)
+      return {
+        success: true,
+        output:  `[${result.provider}/${result.modelUsed}] (${result.durationMs}ms)\n\n${result.description}`,
+      }
+    } catch (e: any) {
+      return { success: false, output: '', error: e.message }
+    }
+  },
 }
 
 // ── Plugin-registered tools ───────────────────────────────────
@@ -2071,19 +2206,20 @@ export function getToolTier(toolName: string): ToolTier {
 // tools relevant to the current task category.
 
 export type ToolCategory =
-  | 'core'         // respond, manage_goals, compact_context, run_agent
-  | 'web'          // web_search, deep_research, fetch_url/page, social_research
-  | 'files'        // file_read, file_write, file_list, watch_folder
-  | 'code'         // run_python, run_node, shell_exec, run_powershell, interpreters
-  | 'browser'      // open_browser, browser_click/type/extract/screenshot, window ops
-  | 'screen'       // screenshot, mouse, keyboard, screen_read, vision_loop
-  | 'data'         // market data, stocks, company info, briefing, natural events
-  | 'system'       // notify, system_info, clipboard, app_launch/close, wait
-  | 'git'          // git_status, git_commit, git_push
-  | 'memory'       // (reserved for future memory/knowledge tools)
-  | 'media'        // (reserved for future voice/audio tools)
+  | 'core'          // respond, manage_goals, compact_context, run_agent
+  | 'web'           // web_search, deep_research, fetch_url/page, social_research
+  | 'files'         // file_read, file_write, file_list, watch_folder
+  | 'code'          // run_python, run_node, shell_exec, run_powershell, interpreters
+  | 'browser'       // open_browser, browser_click/type/extract/screenshot, window ops
+  | 'screen'        // screenshot, mouse, keyboard, screen_read, vision_loop
+  | 'data'          // market data, stocks, company info, briefing, natural events
+  | 'system'        // notify, system_info, clipboard, app_launch/close, wait
+  | 'git'           // git_status, git_commit, git_push
+  | 'memory'        // (reserved for future memory/knowledge tools)
+  | 'media'         // (reserved for future voice/audio tools)
   | 'introspection' // status, analytics, spend, memory_show, lessons, skills_list, tools_list, whoami, channels_status, goals
-  | 'delegation'   // spawn, swarm — subagent orchestration
+  | 'delegation'    // spawn, swarm — subagent orchestration
+  | 'interaction'   // clarify, todo — user-facing interaction tools
 
 const TOOL_CATEGORIES: Record<string, ToolCategory[]> = {
   respond:                 ['core'],
@@ -2157,6 +2293,10 @@ const TOOL_CATEGORIES: Record<string, ToolCategory[]> = {
   spawn:                   ['delegation', 'core'],
   swarm:                   ['delegation', 'core'],
   search:                  ['memory', 'introspection'],
+  clarify:                 ['interaction', 'core'],
+  todo:                    ['interaction', 'core'],
+  cronjob:                 ['system', 'core'],
+  vision_analyze:          ['screen', 'data'],
 }
 
 export function detectToolCategories(message: string): ToolCategory[] {
@@ -2187,6 +2327,14 @@ export function detectToolCategories(message: string): ToolCategory[] {
     categories.add('introspection')
   if (/spawn|swarm|subagent|delegate|parallel agent|fork agent/i.test(msg))
     categories.add('delegation')
+  if (/todo|task list|add task|complete task|checklist|mark done/i.test(msg))
+    categories.add('interaction')
+  if (/clarify|ask me|which option|confirm|choose|multiple choice/i.test(msg))
+    categories.add('interaction')
+  if (/cron|schedule|every \d|daily|hourly|recurring|repeat|interval/i.test(msg))
+    categories.add('system')
+  if (/analyze image|vision|describe image|what.*image|image.*show|photo|screenshot.*describe/i.test(msg))
+    categories.add('screen')
 
   return Array.from(categories)
 }

@@ -774,6 +774,7 @@ export async function planWithLLM(
     'watch_folder', 'watch_folder_list',
     'get_briefing',
     'respond',
+    'clarify', 'todo', 'cronjob', 'vision_analyze',
     ...SLASH_MIRROR_TOOL_NAMES,
   ]
 
@@ -1338,6 +1339,7 @@ const VALID_TOOLS = [
   'clipboard_read', 'clipboard_write', 'window_list', 'window_focus',
   'app_launch', 'app_close',
   'watch_folder', 'watch_folder_list',
+  'clarify', 'todo', 'cronjob', 'vision_analyze',
   ...SLASH_MIRROR_TOOL_NAMES,
 ]
 
