@@ -2254,3 +2254,21 @@
 | 36 | p21: VOXCPM_SETUP.md mentions Apache 2.0 license | ✓ | 0 | ok |
 | 37 | p21: VOXCPM_SETUP.md has arXiv reference | ✓ | 0 | ok |
 | 38 | p21: VOXCPM_SETUP.md has USE_VOXCPM=1 opt-in instruction | ✓ | 0 | ok |
+
+## prompt_22 — Install experience
+
+| # | label | pass | ms | status |
+|---|-------|------|----|--------|
+| 1 | p22: bin/aiden.cmd exists | ✓ | 0 | ok |
+| 2 | p22: bin/aiden.cmd delegates to Aiden.exe | ✓ | 0 | ok |
+| 3 | p22: bin/aiden (bash) exists | ✓ | 1 | ok |
+| 4 | p22: bin/aiden checks WSL_DISTRO_NAME | ✓ | 0 | ok |
+| 5 | p22: build/installer.nsh exists | ✓ | 0 | ok |
+| 6 | p22: installer.nsh adds bin to HKCU PATH | ✓ | 0 | ok |
+| 7 | p22: install.ps1 contains iwr one-liner comment | ✓ | 0 | ok |
+| 8 | p22: install.ps1 fetches from taracodlabs/aiden-releases | ✓ | 0 | ok |
+| 9 | p22: landing.js has /install.ps1 route | ✓ | 1 | ok |
+| 10 | p22: winget manifests present with correct PackageIdentifier | ✓ | 0 | ok |
+| 11 | p22: scoop manifest has checkver and bin fields | ✓ | 1 | ok |
+
+2026-04-17T11:19:11.008Z — 11/11 passed
