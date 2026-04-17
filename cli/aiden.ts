@@ -665,6 +665,10 @@ const COMMANDS = [
   '/spawn',
   '/swarm',
   '/search',
+  '/mcp',
+  '/cmd',
+  '/ps',
+  '/wsl',
   '/quit', '/exit', '/q',
 ]
 
@@ -800,6 +804,23 @@ const COMMAND_DETAIL: Record<string, CmdDetail> = {
     subs:     ['<query>', '<query> --top=N'],
     examples: ['/search market research', '/search authentication bug --top=10'],
     usage:    '/search <query> [--top=N]',
+  },
+  '/mcp':        { section: 'Power',     desc: 'Manage MCP (Model Context Protocol) server connections.',
+    subs:     ['list', 'tools [server]', 'connect <name> <cmd>', 'disconnect <name>', 'call <server:tool> [json]'],
+    examples: ['/mcp list', '/mcp tools github', '/mcp call github:list_issues {}'],
+    usage:    '/mcp <subcommand> [args]',
+  },
+  '/cmd':        { section: 'Power',     desc: 'Run a Windows cmd.exe command and show stdout/exitCode.',
+    examples: ['/cmd dir', '/cmd ipconfig /all'],
+    usage:    '/cmd <command>',
+  },
+  '/ps':         { section: 'Power',     desc: 'Run a PowerShell command directly (no temp file).',
+    examples: ['/ps Get-Process | Select-Object -First 5', '/ps $PSVersionTable'],
+    usage:    '/ps <command>',
+  },
+  '/wsl':        { section: 'Power',     desc: 'Run a bash command inside WSL (auto-translates C:\\ paths to /mnt/c/).',
+    examples: ['/wsl uname -a', '/wsl ls -la /mnt/c/Users'],
+    usage:    '/wsl <command> [--distro=<name>]',
   },
   '/security':   { section: 'Power',     desc: 'Run AgentShield security scan.',                            usage: '/security' },
   '/debug':      { section: 'Power',     desc: 'Recent server log entries.',                                usage: '/debug' },
@@ -966,6 +987,10 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       helpRow('/security',          'AgentShield scan'),
       helpRow('/debug',             'Recent logs'),
       helpRow('/private',           'Toggle private mode  (suppresses memory writes)'),
+      helpRow('/mcp <sub>',         'MCP server management  (list / tools / connect / disconnect / call)'),
+      helpRow('/cmd <command>',     'Run a Windows cmd.exe command'),
+      helpRow('/ps <command>',      'Run a PowerShell command directly'),
+      helpRow('/wsl <command>',     'Run a bash command inside WSL'),
       helpSection('Exit'),
       helpRow('/quit  /exit  /q',   ''),
       '',
@@ -3531,6 +3556,179 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       console.log(panel({ title: `${MARKS.TRI} /search — ${query}`, lines, accent: COLORS.orange }))
     } catch (e: any) {
       console.log(`\n  ${T.error}✗ Search failed: ${e?.message}${R}\n`)
+    }
+    return true
+  }
+
+  // ── /mcp ─────────────────────────────────────────────────────────────────────
+  if (command === '/mcp') {
+    const O = fg(COLORS.orange)
+    const D = T.dim
+    const R = T.reset
+    const G = T.success
+    const sub = parts[1]?.toLowerCase()
+
+    try {
+      const mcp = await import('../core/mcpClient')
+
+      if (!sub || sub === 'list') {
+        const servers = mcp.listMcpServers()
+        if (servers.length === 0) {
+          console.log(panel({
+            title: `${MARKS.TRI} /mcp — no servers connected`,
+            lines: ['', `  ${D}Add servers to workspace/config/mcp.json and restart, or use:${R}`, `  ${O}/mcp connect <name> <command> [args...]${R}`, ''],
+            accent: COLORS.orange,
+          }))
+        } else {
+          const lines = ['', ...servers.map(s => `  ${G}●${R}  ${s}`), '']
+          console.log(panel({ title: `${MARKS.TRI} /mcp list  (${servers.length} connected)`, lines, accent: COLORS.orange }))
+        }
+        return true
+      }
+
+      if (sub === 'tools') {
+        const filterServer = parts[2]?.toLowerCase()
+        let tools = mcp.listMcpTools()
+        if (filterServer) tools = tools.filter(t => t.serverName.toLowerCase() === filterServer)
+        if (tools.length === 0) {
+          console.log(`\n  ${D}No MCP tools${filterServer ? ` for server "${filterServer}"` : ''}.${R}\n`)
+        } else {
+          const lines = ['', ...tools.map(t => `  ${O}${t.name}${R}  ${D}${t.description ?? ''}${R}`), '']
+          console.log(panel({ title: `${MARKS.TRI} /mcp tools  (${tools.length})`, lines, accent: COLORS.orange }))
+        }
+        return true
+      }
+
+      if (sub === 'connect') {
+        const name    = parts[2]
+        const cmdArg  = parts[3]
+        if (!name || !cmdArg) {
+          console.log(`\n  ${D}Usage: /mcp connect <name> <command> [args...]${R}\n`)
+          return true
+        }
+        const extraArgs = parts.slice(4)
+        await mcp.connectMcpServer({ name, transport: 'stdio', command: cmdArg, args: extraArgs })
+        console.log(`\n  ${G}✓${R} Connected MCP server "${name}"\n`)
+        return true
+      }
+
+      if (sub === 'disconnect') {
+        const name = parts[2]
+        if (!name) { console.log(`\n  ${D}Usage: /mcp disconnect <name>${R}\n`); return true }
+        await mcp.disconnectMcpServer(name)
+        console.log(`\n  ${G}✓${R} Disconnected "${name}"\n`)
+        return true
+      }
+
+      if (sub === 'call') {
+        const toolName = parts[2]
+        const jsonArg  = parts.slice(3).join(' ').trim()
+        if (!toolName) { console.log(`\n  ${D}Usage: /mcp call <server:tool> [json-args]${R}\n`); return true }
+        let args: any = {}
+        if (jsonArg) { try { args = JSON.parse(jsonArg) } catch { args = { input: jsonArg } } }
+        const result = await mcp.callMcpTool(toolName, args)
+        const out = typeof result === 'string' ? result
+          : result?.content?.map((c: any) => c.text ?? JSON.stringify(c)).join('\n')
+            ?? JSON.stringify(result, null, 2)
+        console.log(panel({
+          title: `${MARKS.TRI} /mcp call ${toolName}`,
+          lines: ['', ...out.split('\n').map((l: string) => `  ${l}`), ''],
+          accent: COLORS.orange,
+        }))
+        return true
+      }
+
+      console.log(`\n  ${D}Unknown /mcp subcommand. Try: list | tools | connect | disconnect | call${R}\n`)
+    } catch (e: any) {
+      console.log(`\n  ${T.error}✗ MCP error: ${e?.message}${T.reset}\n`)
+    }
+    return true
+  }
+
+  // ── /cmd ─────────────────────────────────────────────────────────────────────
+  if (command === '/cmd') {
+    const O = fg(COLORS.orange)
+    const D = T.dim
+    const R = T.reset
+    const shellCmd = parts.slice(1).join(' ').trim()
+    if (!shellCmd) {
+      console.log(`\n  ${D}Usage: /cmd <windows-command>   e.g. /cmd dir${R}\n`)
+      return true
+    }
+    try {
+      const { executeTool } = await import('../core/toolRegistry')
+      const result = await executeTool('cmd', { command: shellCmd }, 0, 30000)
+      const out    = result.output.slice(0, 2000)
+      const extra  = result.output.length > 2000 ? `\n  ${D}… (truncated — see workspace/logs for full output)${R}` : ''
+      const exitOk = (result as any).exitCode === 0 || result.success
+      const lines  = ['', ...out.split('\n').map(l => `  ${l}`), extra, '']
+      console.log(panel({
+        title: `${MARKS.TRI} /cmd  ${exitOk ? `${T.success}✓ exit 0` : `${T.error}✗ exit ${(result as any).exitCode ?? '?'}`}${R}`,
+        lines,
+        accent: exitOk ? COLORS.orange : COLORS.red ?? COLORS.orange,
+      }))
+    } catch (e: any) {
+      console.log(`\n  ${T.error}✗ cmd failed: ${e?.message}${T.reset}\n`)
+    }
+    return true
+  }
+
+  // ── /ps ──────────────────────────────────────────────────────────────────────
+  if (command === '/ps') {
+    const O = fg(COLORS.orange)
+    const D = T.dim
+    const R = T.reset
+    const psCmd = parts.slice(1).join(' ').trim()
+    if (!psCmd) {
+      console.log(`\n  ${D}Usage: /ps <powershell-command>   e.g. /ps Get-Process${R}\n`)
+      return true
+    }
+    try {
+      const { executeTool } = await import('../core/toolRegistry')
+      const result = await executeTool('ps', { command: psCmd }, 0, 30000)
+      const out    = result.output.slice(0, 2000)
+      const extra  = result.output.length > 2000 ? `\n  ${D}… (truncated — see workspace/logs for full output)${R}` : ''
+      const exitOk = result.success
+      const lines  = ['', ...out.split('\n').map(l => `  ${l}`), extra, '']
+      console.log(panel({
+        title: `${MARKS.TRI} /ps  ${exitOk ? `${T.success}✓` : `${T.error}✗`}${R}`,
+        lines,
+        accent: COLORS.orange,
+      }))
+    } catch (e: any) {
+      console.log(`\n  ${T.error}✗ ps failed: ${e?.message}${T.reset}\n`)
+    }
+    return true
+  }
+
+  // ── /wsl ─────────────────────────────────────────────────────────────────────
+  if (command === '/wsl') {
+    const O = fg(COLORS.orange)
+    const D = T.dim
+    const R = T.reset
+    const rawArgs   = parts.slice(1)
+    const distroIdx = rawArgs.findIndex(a => a.startsWith('--distro='))
+    const distro    = distroIdx !== -1 ? rawArgs[distroIdx].replace('--distro=', '') : ''
+    const cleanArgs = rawArgs.filter(a => !a.startsWith('--distro='))
+    const wslCmd    = cleanArgs.join(' ').trim()
+    if (!wslCmd) {
+      console.log(`\n  ${D}Usage: /wsl <bash-command> [--distro=<name>]   e.g. /wsl uname -a${R}\n`)
+      return true
+    }
+    try {
+      const { executeTool } = await import('../core/toolRegistry')
+      const result = await executeTool('wsl', { command: wslCmd, distro }, 0, 30000)
+      const out    = result.output.slice(0, 2000)
+      const extra  = result.output.length > 2000 ? `\n  ${D}… (truncated — see workspace/logs for full output)${R}` : ''
+      const exitOk = result.success
+      const lines  = ['', ...out.split('\n').map(l => `  ${l}`), extra, '']
+      console.log(panel({
+        title: `${MARKS.TRI} /wsl  ${exitOk ? `${T.success}✓` : `${T.error}✗`}${R}`,
+        lines,
+        accent: COLORS.orange,
+      }))
+    } catch (e: any) {
+      console.log(`\n  ${T.error}✗ wsl failed: ${e?.message}${T.reset}\n`)
     }
     return true
   }

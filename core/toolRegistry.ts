@@ -282,6 +282,9 @@ const TOOL_TIMEOUTS: Record<string, number> = {
   run_node:       60000,
   shell_exec:     30000,
   run_powershell: 30000,
+  cmd:            30000,
+  ps:             30000,
+  wsl:            30000,
   screenshot:     10000,
   vision_loop:   120000,
   open_browser:   15000,
@@ -459,6 +462,89 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
       return { success: true, output: (stdout || stderr || '').trim() }
     } catch (e: any) { return { success: false, output: '', error: e.message } }
     finally { try { fs.unlinkSync(tmpFile) } catch {} }
+  },
+
+  // ── cmd — Windows cmd.exe shell ────────────────────────────
+  cmd: async (p) => {
+    const command = p.command || p.cmd || ''
+    if (!command) return { success: false, output: '', error: 'No command provided' }
+    const gate = isCommandAllowed(command)
+    if (!gate.allowed) {
+      if (gate.needsApproval) {
+        console.warn(`[AllowList] cmd UNKNOWN — approval required: ${command.slice(0, 120)}`)
+        return { success: false, output: '', error: `CommandGate: This command requires explicit user approval before running: ${command.slice(0, 80)}` }
+      }
+      console.warn(`[Security] cmd DENIED: ${command.slice(0, 120)}`)
+      return { success: false, output: '', error: 'Blocked: this command pattern is not allowed. Dangerous operations require explicit user approval.' }
+    }
+    try {
+      const { stdout, stderr } = await execAsync(`cmd.exe /c ${command}`, {
+        timeout: 30000,
+        cwd:     process.cwd(),
+        env:     { ...process.env },
+      })
+      const out = (stdout || stderr || '').trim()
+      return { success: true, output: out || '(completed)', exitCode: 0 } as any
+    } catch (e: any) {
+      return { success: false, output: e.stdout || '', error: e.message, exitCode: e.code ?? 1 } as any
+    }
+  },
+
+  // ── ps — PowerShell (direct, no temp file) ──────────────────
+  ps: async (p) => {
+    const command = p.command || p.script || ''
+    if (!command) return { success: false, output: '', error: 'No command provided' }
+    const gate = isCommandAllowed(command)
+    if (!gate.allowed) {
+      if (gate.needsApproval) {
+        console.warn(`[AllowList] ps UNKNOWN — approval required: ${command.slice(0, 120)}`)
+        return { success: false, output: '', error: `CommandGate: This PowerShell command requires explicit user approval before running.` }
+      }
+      console.warn(`[Security] ps DENIED: ${command.slice(0, 120)}`)
+      return { success: false, output: '', error: 'Blocked: this command pattern is not allowed. Dangerous operations require explicit user approval.' }
+    }
+    try {
+      const { stdout, stderr } = await execAsync(
+        `powershell.exe -NoProfile -NonInteractive -Command "${command.replace(/"/g, '\\"')}"`,
+        { timeout: 30000, cwd: process.cwd() }
+      )
+      const out = (stdout || stderr || '').trim()
+      return { success: true, output: out || '(completed)', exitCode: 0 } as any
+    } catch (e: any) {
+      return { success: false, output: e.stdout || '', error: e.message, exitCode: e.code ?? 1 } as any
+    }
+  },
+
+  // ── wsl — Windows Subsystem for Linux ───────────────────────
+  wsl: async (p) => {
+    const command = p.command || p.cmd || ''
+    const distro  = p.distro || ''
+    if (!command) return { success: false, output: '', error: 'No command provided' }
+    const gate = isCommandAllowed(command)
+    if (!gate.allowed) {
+      if (gate.needsApproval) {
+        console.warn(`[AllowList] wsl UNKNOWN — approval required: ${command.slice(0, 120)}`)
+        return { success: false, output: '', error: `CommandGate: This WSL command requires explicit user approval before running.` }
+      }
+      console.warn(`[Security] wsl DENIED: ${command.slice(0, 120)}`)
+      return { success: false, output: '', error: 'Blocked: this command pattern is not allowed. Dangerous operations require explicit user approval.' }
+    }
+    // Translate Windows paths in the command: C:\foo\bar → /mnt/c/foo/bar
+    const translated = command.replace(/([A-Z]):\\([^\s"']*)/gi, (_m: string, drive: string, rest: string) =>
+      `/mnt/${drive.toLowerCase()}/${rest.replace(/\\/g, '/')}`
+    )
+    const distroFlag = distro ? `-d ${distro}` : ''
+    const wslCmd     = `wsl ${distroFlag} -- bash -c "${translated.replace(/"/g, '\\"')}"`
+    try {
+      const { stdout, stderr } = await execAsync(wslCmd, {
+        timeout: 30000,
+        cwd:     process.cwd(),
+      })
+      const out = (stdout || stderr || '').trim()
+      return { success: true, output: out || '(completed)', exitCode: 0 } as any
+    } catch (e: any) {
+      return { success: false, output: e.stdout || '', error: e.message, exitCode: e.code ?? 1 } as any
+    }
   },
 
   file_write: async (p) => {
@@ -1731,6 +1817,22 @@ async function runTool(tool: string, input: Record<string, any>): Promise<RawRes
       return { success: result.success, output: result.output }
     }
   }
+  // ── New-style colon-prefix MCP tool: 'github:list_issues' ────
+  if (tool.includes(':')) {
+    try {
+      const { callMcpTool } = await import('./mcpClient')
+      const result = await callMcpTool(tool, input)
+      return {
+        success: result.isError !== true,
+        output:  typeof result === 'string' ? result
+          : result.content?.map((c: any) => c.text ?? JSON.stringify(c)).join('\n')
+            ?? JSON.stringify(result),
+      }
+    } catch (e: any) {
+      return { success: false, output: '', error: `MCP tool "${tool}" failed: ${e.message}` }
+    }
+  }
+
   // Last resort: try shell_exec
   const cmd = input?.command || ''
   if (cmd) return TOOLS.shell_exec({ command: cmd })
@@ -1843,6 +1945,9 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   file_list:               'List files in a directory',
   shell_exec:              'Execute a shell/PowerShell command and return the output',
   run_powershell:          'Run a PowerShell command on Windows',
+  cmd:                     'Run a Windows cmd.exe command and return stdout/stderr/exitCode',
+  ps:                      'Run a PowerShell command directly (no temp file) and return stdout/stderr/exitCode',
+  wsl:                     'Run a bash command inside WSL (Windows Subsystem for Linux); auto-translates C:\\ paths to /mnt/c/',
   run_python:              'Execute a Python script and return stdout/stderr',
   run_node:                'Execute Node.js/JavaScript code and return the output',
   system_info:             'Get system hardware and OS information (CPU, RAM, disk, OS)',
@@ -1920,6 +2025,9 @@ const TOOL_TIERS: Record<string, ToolTier> = {
   file_list:               2,
   shell_exec:              2,
   run_powershell:          2,
+  cmd:                     2,
+  ps:                      2,
+  wsl:                     2,
   run_python:              2,
   run_node:                2,
   code_interpreter_python: 2,
@@ -1996,6 +2104,9 @@ const TOOL_CATEGORIES: Record<string, ToolCategory[]> = {
   run_node:                ['code'],
   shell_exec:              ['code', 'system'],
   run_powershell:          ['code', 'system'],
+  cmd:                     ['code', 'system'],
+  ps:                      ['code', 'system'],
+  wsl:                     ['code', 'system'],
   code_interpreter_python: ['code'],
   code_interpreter_node:   ['code'],
   open_browser:            ['browser'],
