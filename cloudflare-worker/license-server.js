@@ -182,7 +182,7 @@ async function sendDownloadEmail(env, email, token) {
     <a href="${url}"
       style="background:#f97316;color:#000;padding:14px 32px;
       border-radius:8px;text-decoration:none;font-weight:700;font-size:16px;">
-      Download Aiden v3.5.0
+      Download Aiden v3.6.0
     </a>
   </div>
   <p style="color:#64748b;font-size:12px;text-align:center;">
@@ -765,7 +765,7 @@ async function handleDownload(request, env) {
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Download Aiden v3.5.0</title>
+  <title>Download Aiden v3.6.0</title>
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23FF8C00'/><text x='50%25' y='55%25' dominant-baseline='middle' text-anchor='middle' font-family='monospace' font-weight='bold' font-size='16' fill='white'>A/</text></svg>">
 </head>
@@ -775,7 +775,7 @@ async function handleDownload(request, env) {
     margin:0 auto 16px;display:flex;align-items:center;justify-content:center;
     font-size:20px;font-weight:800;color:#000;font-family:monospace;">A/</div>
   <h1 style="color:#f1f5f9;font-size:28px;margin:0 0 8px;">
-    Download Aiden v3.5.0
+    Download Aiden v3.6.0
   </h1>
   <p style="color:#94a3b8;margin:0 0 32px;">
     Personal AI OS · 100% local · All features free
@@ -788,7 +788,7 @@ async function handleDownload(request, env) {
     </p>
     <ol style="color:#94a3b8;line-height:2.4;margin:0;
       padding-left:20px;font-size:14px;">
-      <li>Download <strong style="color:#e2e8f0;">Aiden-Setup-3.5.0.exe</strong></li>
+      <li>Download <strong style="color:#e2e8f0;">Aiden-Setup-3.6.0.exe</strong></li>
       <li>Run installer → follow wizard</li>
       <li>Launch Aiden from Desktop</li>
       <li>Enter this email when prompted:
@@ -830,11 +830,11 @@ async function handleDownload(request, env) {
     </div>
   </div>
 
-  <a href="https://github.com/taracodlabs/aiden-releases/releases/download/v3.5.0/Aiden-Setup-3.5.0.exe"
+  <a href="https://github.com/taracodlabs/aiden-releases/releases/download/v3.6.0/Aiden-Setup-3.6.0.exe"
     style="background:#f97316;color:#000;padding:16px 48px;
     border-radius:8px;text-decoration:none;font-weight:700;
     font-size:18px;display:inline-block;">
-    Download Aiden v3.5.0 (144 MB)
+    Download Aiden v3.6.0 (144 MB)
   </a>
 
   <p style="color:#475569;font-size:12px;margin-top:16px;">
@@ -937,7 +937,7 @@ export default {
 
     // Health
     if (method === 'GET' && pathname === '/health') {
-      return json({ status: 'ok', ts: Date.now(), version: '3.5.0' })
+      return json({ status: 'ok', ts: Date.now(), version: '3.6.0' })
     }
 
     // ── License system ──────────────────────────────────────

@@ -231,7 +231,7 @@ async function main(): Promise<void> {
           console.log(`[Capability] Tier: ${profile.tier} | RAM: ${profile.ramGB}GB | GPU: ${profile.gpuVRAM}GB VRAM | Local LLM: ${profile.localLLM}`)
         }).catch(() => { /* non-fatal */ })
 
-        const _ver = (() => { try { return require('./package.json').version } catch { return '3.5.0' } })()
+        const _ver = (() => { try { return require('./package.json').version } catch { return '3.6.0' } })()
         console.log('╔══════════════════════════════════════════════╗')
         console.log(`║  DevOS v${_ver} - Aiden - Your Personal AI OS  ║`)
         console.log('║  http://localhost:4200  ·  Zero telemetry    ║')

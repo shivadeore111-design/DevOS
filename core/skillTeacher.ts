@@ -30,7 +30,12 @@ export interface LearnedSkillMeta {
 
 const LEARNED_DIR       = path.join(process.cwd(), 'workspace', 'skills', 'learned')
 const APPROVED_DIR      = path.join(process.cwd(), 'workspace', 'skills', 'approved')
+const BUNDLED_SKILLS_DIR = path.join(process.cwd(), 'skills')
 const PROMOTE_THRESHOLD = 3   // successes needed to promote to approved/
+const SESSION_SKILL_LIMIT = 2  // max NEW skills generated per process session
+
+// ── Session-scoped new-skill counter (reset on process restart) ─
+let _sessionSkillsCreated = 0
 
 // ── LLM caller type — matches callLLM signature ───────────────
 
@@ -225,15 +230,19 @@ export class SkillTeacher {
       return
     }
 
-    // ── Deduplication — reject names already in approved/ ─────
-    const approvedNames = fs.existsSync(APPROVED_DIR)
-      ? fs.readdirSync(APPROVED_DIR).filter(d => {
-          try { return fs.statSync(path.join(APPROVED_DIR, d)).isDirectory() } catch { return false }
-        })
-      : []
-    if (approvedNames.includes(skillName)) {
-      console.log(`[SkillTeacher] Skipping duplicate (already approved): "${skillName}"`)
+    // ── Session rate limit — max SESSION_SKILL_LIMIT new skills ─
+    if (_sessionSkillsCreated >= SESSION_SKILL_LIMIT) {
+      console.log(`[SkillTeacher] Session limit reached (${SESSION_SKILL_LIMIT}), skipping: "${skillName}"`)
       return
+    }
+
+    // ── Deduplication — reject names already in bundled skills/, approved/, or learned/ ─
+    const dirsToDedup = [BUNDLED_SKILLS_DIR, APPROVED_DIR, LEARNED_DIR]
+    for (const dir of dirsToDedup) {
+      if (fs.existsSync(path.join(dir, skillName))) {
+        console.log(`[SkillTeacher] Skipping duplicate (exists in ${path.basename(dir)}/): "${skillName}"`)
+        return
+      }
     }
 
     // ── New skill — generate SKILL.md and write meta ──────────
@@ -247,12 +256,23 @@ export class SkillTeacher {
 
       // ── Size validation — reject suspiciously small or large content ──
       const byteLen = Buffer.byteLength(content, 'utf-8')
-      if (byteLen < 50) {
-        console.warn(`[SkillTeacher] Rejected "${skillName}": content too small (${byteLen} bytes)`)
+      if (byteLen < 200) {
+        console.warn(`[SkillTeacher] Rejected "${skillName}": content too small (${byteLen} bytes, min 200)`)
         return
       }
       if (byteLen > 10240) {
         console.warn(`[SkillTeacher] Rejected "${skillName}": content too large (${byteLen} bytes > 10KB)`)
+        return
+      }
+
+      // ── Structural validation — must have frontmatter + heading + body ──
+      const hasFrontmatter = (content.match(/---/g) || []).length >= 2
+      const hasNameField   = /^name:\s*\S/m.test(content)
+      const hasDescField   = /^description:\s*\S/m.test(content)
+      const hasHeading     = /^#\s+\S/m.test(content)
+      const hasBody        = content.split('\n').filter(l => l.trim().length > 0).length >= 8
+      if (!hasFrontmatter || !hasNameField || !hasDescField || !hasHeading || !hasBody) {
+        console.warn(`[SkillTeacher] Rejected "${skillName}": failed structural validation (frontmatter=${hasFrontmatter}, name=${hasNameField}, desc=${hasDescField}, heading=${hasHeading}, body=${hasBody})`)
         return
       }
 
@@ -273,7 +293,8 @@ export class SkillTeacher {
       }
 
       fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2))
-      console.log(`[SkillTeacher] Saved new skill: "${skillName}"`)
+      _sessionSkillsCreated++
+      console.log(`[SkillTeacher] Saved new skill: "${skillName}" (session total: ${_sessionSkillsCreated}/${SESSION_SKILL_LIMIT})`)
 
       // Invalidate skillLoader cache so new skill is picked up immediately
       try {

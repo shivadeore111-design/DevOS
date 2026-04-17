@@ -228,7 +228,8 @@ async function printBanner(): Promise<void> {
     apiFetch<any[]>('/api/tools',   []),
   ])
 
-  const version   = health.version || '3.6.0'
+  const { version: pkgVersion } = require('../package.json') as { version: string }
+  const version   = pkgVersion || health.version || '3.6.0'
   const cfg       = loadCfg()
   const apis      = Array.isArray(provData.apis) ? provData.apis : []
   const active    = apis.filter((a: any) => a.enabled && a.hasKey)
@@ -369,9 +370,10 @@ async function streamChat(message: string): Promise<void> {
       tool.frame++
       lines.push(`  ${T.accent}▸${T.reset} ${name}  ${T.dim}${frame}${T.reset}\x1b[K`)
     }
-    const gFrame = SPINNER_FRAMES[globalFrame % SPINNER_FRAMES.length]
+    const gFrame      = SPINNER_FRAMES[globalFrame % SPINNER_FRAMES.length]
     globalFrame++
-    lines.push(`  ${T.dim}${gFrame} ${spinMsg}...\x1b[K${T.reset}`)
+    const elapsedSec  = ((Date.now() - startedAt) / 1000).toFixed(1)
+    lines.push(`  ${T.dim}${gFrame} ${spinMsg}...  ${elapsedSec}s\x1b[K${T.reset}`)
     for (let i = 0; i < lines.length; i++) {
       process.stdout.write(lines[i])
       if (i < lines.length - 1) process.stdout.write('\n')
@@ -644,7 +646,7 @@ async function streamChat(message: string): Promise<void> {
       ctxUsed    : totChars,
       ctxMax     : 160_000,
       ctxPercent : state.ctxPercent,
-      elapsedMs  : Date.now() - SESSION_START,
+      elapsedMs  : Date.now() - startedAt,
       asyncCount : 0,
       privateMode: state.privateMode,
     }) + '\n\n')
