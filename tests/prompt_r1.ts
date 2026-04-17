@@ -3,7 +3,7 @@
 // Copyright (c) 2026 Shiva Deore. All rights reserved.
 // ============================================================
 
-// tests/prompt_r1.ts — 8 zero-cost audits for Prompt R1 (v3.5.0 release integrity).
+// tests/prompt_r1.ts — 8 zero-cost audits for Prompt R1 (v3.6.0 release integrity).
 // Run via:  npm run test:audit
 // No LLM. No side effects. Verifies release artifacts and source hygiene.
 
@@ -12,12 +12,12 @@ import fs   from 'fs'
 import { execSync } from 'child_process'
 import { test, assert, assertEquals, assertIncludes, assertExcludes, runAll, appendAuditLog } from './harness'
 
-// ── Test 1 — package.json version is 3.5.0 ───────────────────────────────────
-test('release: package.json version === "3.5.0"', () => {
+// ── Test 1 — package.json version is 3.6.0 ───────────────────────────────────
+test('release: package.json version === "3.6.0"', () => {
   const pkgPath = path.join(process.cwd(), 'package.json')
   assert(fs.existsSync(pkgPath), 'package.json must exist')
   const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'))
-  assertEquals(pkg.version, '3.5.0', `package.json version must be "3.5.0", got "${pkg.version}"`)
+  assertEquals(pkg.version, '3.6.0', `package.json version must be "3.6.0", got "${pkg.version}"`)
 })
 
 // ── Test 2 — CHANGELOG.md contains v3.5.0 header ─────────────────────────────

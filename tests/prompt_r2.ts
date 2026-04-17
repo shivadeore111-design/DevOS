@@ -4,7 +4,7 @@
 // ============================================================
 
 // tests/prompt_r2.ts — 8 zero-cost audits for Prompt R2
-// (Cloudflare Worker landing page updated to v3.5.0).
+// (Cloudflare Worker landing page updated to v3.6.0).
 // Run via:  npm run test:audit
 // No LLM. No network. No side effects.
 
@@ -24,41 +24,41 @@ test('r2: cloudflare-worker/landing.js exists and is non-trivial', () => {
 // ── Test 2 — no stale v3.3.1 version strings ────────────────────────────────
 test('r2: landing.js contains zero occurrences of 3.3.1', () => {
   const content = fs.readFileSync(LANDING, 'utf-8')
-  assertExcludes(content, '3.3.1', 'All 3.3.1 references must be updated to 3.5.0')
+  assertExcludes(content, '3.3.1', 'All 3.3.1 references must be updated to current version')
 })
 
-// ── Test 3 — nav badge shows v3.5.0 ──────────────────────────────────────────
-test('r2: nav badge contains v3.5.0', () => {
+// ── Test 3 — nav badge shows v3.6.0 ──────────────────────────────────────────
+test('r2: nav badge contains v3.6.0', () => {
   const content = fs.readFileSync(LANDING, 'utf-8')
   assert(
-    content.includes('v3.5.0') && content.includes('free to download'),
-    'Nav badge must read "v3.5.0 · free to download"',
+    content.includes('v3.6.0') && content.includes('free to download'),
+    'Nav badge must read "v3.6.0 · free to download"',
   )
 })
 
-// ── Test 4 — hero JUST UPDATED badge shows v3.5.0 ────────────────────────────
-test('r2: hero "JUST UPDATED" badge shows v3.5.0', () => {
+// ── Test 4 — hero JUST UPDATED badge shows v3.6.0 ────────────────────────────
+test('r2: hero "JUST UPDATED" badge shows v3.6.0', () => {
   const content = fs.readFileSync(LANDING, 'utf-8')
   assert(
-    content.includes('JUST UPDATED') && content.includes('v3.5.0'),
-    'Hero badge must read "JUST UPDATED — v3.5.0"',
+    content.includes('JUST UPDATED') && content.includes('v3.6.0'),
+    'Hero badge must read "JUST UPDATED — v3.6.0"',
   )
 })
 
-// ── Test 5 — download URL points to v3.5.0 release ───────────────────────────
-test('r2: download URL references v3.5.0/Aiden-Setup-3.5.0.exe', () => {
+// ── Test 5 — download URL points to v3.6.0 release ───────────────────────────
+test('r2: download URL references v3.6.0/Aiden-Setup-3.6.0.exe', () => {
   const content = fs.readFileSync(LANDING, 'utf-8')
   assertIncludes(
     content,
-    'download/v3.5.0/Aiden-Setup-3.5.0.exe',
-    'Download href must point to v3.5.0/Aiden-Setup-3.5.0.exe',
+    'download/v3.6.0/Aiden-Setup-3.6.0.exe',
+    'Download href must point to v3.6.0/Aiden-Setup-3.6.0.exe',
   )
 })
 
-// ── Test 6 — download section h2 shows v3.5.0 ────────────────────────────────
-test('r2: download section h2 reads "Download Aiden v3.5.0"', () => {
+// ── Test 6 — download section h2 shows v3.6.0 ────────────────────────────────
+test('r2: download section h2 reads "Download Aiden v3.6.0"', () => {
   const content = fs.readFileSync(LANDING, 'utf-8')
-  assertIncludes(content, 'Download Aiden v3.5.0', 'Download h2 must reference v3.5.0')
+  assertIncludes(content, 'Download Aiden v3.6.0', 'Download h2 must reference v3.6.0')
 })
 
 // ── Test 7 — Razorpay integration preserved (11 occurrences) ─────────────────
@@ -68,11 +68,11 @@ test('r2: Razorpay integration preserved (≥1 occurrence)', () => {
   assert(count >= 1, `Razorpay must still be present; found ${count} occurrences`)
 })
 
-// ── Test 8 — exactly 5 occurrences of 3.5.0 in landing.js ───────────────────
-test('r2: exactly 5 occurrences of "3.5.0" in landing.js', () => {
+// ── Test 8 — exactly 5 occurrences of 3.6.0 in landing.js ───────────────────
+test('r2: exactly 5 occurrences of "3.6.0" in landing.js', () => {
   const content = fs.readFileSync(LANDING, 'utf-8')
-  const count = (content.match(/3\.5\.0/g) || []).length
-  assert(count === 5, `Expected exactly 5 occurrences of 3.5.0, found ${count}`)
+  const count = (content.match(/3\.6\.0/g) || []).length
+  assert(count === 5, `Expected exactly 5 occurrences of 3.6.0, found ${count}`)
 })
 
 // ── Run ───────────────────────────────────────────────────────────────────────
