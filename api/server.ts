@@ -442,7 +442,8 @@ export function createApiServer(): Express {
 
   // GET /api/health â€” liveness probe (no auth required)
   app.get('/api/health', (_req: Request, res: Response) => {
-    res.json({ status: 'ok', version: '3.5.0', timestamp: new Date().toISOString() })
+    const { version } = require('../package.json') as { version: string }
+    res.json({ status: 'ok', version, timestamp: new Date().toISOString() })
   })
 
   // ── Update endpoints ─────────────────────────────────────────
@@ -454,7 +455,8 @@ export function createApiServer(): Express {
       const result = await checkForUpdate()
       res.json(result)
     } catch (e: any) {
-      res.json({ available: false, currentVersion: '3.5.0', error: e.message })
+      const { version: currentVersion } = require('../package.json') as { version: string }
+      res.json({ available: false, currentVersion, error: e.message })
     }
   })
 
@@ -600,6 +602,7 @@ export function createApiServer(): Express {
   // mode: 'auto' (default) | 'plan' (show plan only) | 'chat' (force chat, skip planner)
   // Supports both SSE streaming (Accept: text/event-stream) and JSON mode (Accept: application/json)
   app.post('/api/chat', async (req: Request, res: Response) => {
+    const _reqStart = Date.now()
     const { history = [], mode = 'auto', sessionId } = (req.body || {}) as {
       message?:   string
       history?:   { role: string; content: string }[]
@@ -1451,12 +1454,16 @@ export function createApiServer(): Express {
       send({ thinking: { stage: 'memory', message: 'Checking memory...' } })
       callbacks.emit('memory_read', sid, { stage: 'memory', message: 'Checking memory...' }).catch(() => {})
 
+      const _t0 = Date.now()
       const memoryContext    = conversationMemory.buildContext()
       const proactiveMemory  = await surfaceRelevantMemories(resolvedMessage)
       const fullMemoryCtx    = memoryContext + proactiveMemory
+      console.log(`[Timing] memory: ${Date.now() - _t0}ms`)
       send({ thinking: { stage: 'planning', message: 'Planning approach...' } })
       callbacks.emit('planning_start', sid, { message: 'Planning approach...' }).catch(() => {})
+      const _t1 = Date.now()
       const plan: AgentPlan = await planWithLLM(resolvedMessage, history, plannerKeySSE, plannerModelSSE, plannerProvSSE, fullMemoryCtx)
+      console.log(`[Timing] planWithLLM: ${Date.now() - _t1}ms`)
 
       // ── Phase 2: surface tool-name repair events to SSE clients ──
       if (plan.repairLog && plan.repairLog.length > 0) {
@@ -1529,6 +1536,7 @@ export function createApiServer(): Express {
       }
 
       // â”€â”€ STEP 2: EXECUTE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      const _t2 = Date.now()
       const results: StepResult[] = await executePlan(
         plan,
         (step: ToolStep, result: StepResult) => {
@@ -1566,6 +1574,7 @@ export function createApiServer(): Express {
       send({ activity: { icon: 'âœï¸', agent: 'Aiden', message: 'Writing response...', style: 'thinking' }, done: false })
 
       send({ thinking: { stage: 'reasoning', message: 'Thinking...' } })
+      const _t3 = Date.now()
       let streamEnded = false
       let fullReply   = ''
       const timeout = setTimeout(() => {
@@ -1582,6 +1591,7 @@ export function createApiServer(): Express {
         sessionId as string | undefined,
         plan.goals,
       )
+      console.log(`[Timing] respondWithResults: ${Date.now() - _t3}ms  |  total: ${Date.now() - _t0}ms`)
 
       // ── Phase 1: multi-goal coverage — second pass for missed goals ───
       if (plan.goals && plan.goals.length >= 2 && fullReply) {
@@ -1631,6 +1641,7 @@ export function createApiServer(): Express {
       clearTurnPrivate(_mainSid)
 
       incrementUsage(apiName)
+      console.log(`[Timing] total /api/chat: ${Date.now() - _reqStart}ms`)
       send({ done: true, provider: apiName })
       callbacks.emit('stream_done', sid, { provider: apiName }).catch(() => {})
 
@@ -5109,7 +5120,8 @@ export function startApiServer(portArg?: number): Express {
     console.log(`  session_stop:    ${getHookCount('session_stop')} handler(s)`)
     console.log(`  after_tool_call: ${getHookCount('after_tool_call')} handler(s)`)
 
-    console.log(`[API] DevOS v3.5.0 - Aiden running at http://${host}:${port}`)
+    const { version: _v } = require('../package.json') as { version: string }
+    console.log(`[API] DevOS v${_v} - Aiden running at http://${host}:${port}`)
     console.log(`[API] Health: http://${host}:${port}/api/health`)
     console.log(`[API] LivePulse WS: ws://${host}:${port}`)
   })

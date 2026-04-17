@@ -216,7 +216,7 @@ class McpManager {
       await this._rpcStdio(conn, 'initialize', {
         protocolVersion: '2024-11-05',
         capabilities:    {},
-        clientInfo:      { name: 'aiden', version: '3.5.0' },
+        clientInfo:      { name: 'aiden', version: (require('../package.json') as { version: string }).version },
       })
       // Discover tools
       const result = await this._rpcStdio(conn, 'tools/list', {})
@@ -280,7 +280,7 @@ class McpManager {
       await this._rpcHttp(config.url, 'initialize', {
         protocolVersion: '2024-11-05',
         capabilities:    {},
-        clientInfo:      { name: 'aiden', version: '3.5.0' },
+        clientInfo:      { name: 'aiden', version: (require('../package.json') as { version: string }).version },
       })
       // discover tools via "tools/list"
       const result = await this._rpcHttp(config.url, 'tools/list', {})

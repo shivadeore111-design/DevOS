@@ -3,17 +3,58 @@
 # Invokes the Windows-side Aiden.exe via WSL interop when running inside WSL,
 # or emits a helpful error if a native Linux binary is not available.
 
+AIDEN_WIN_PATH="${AIDEN_WIN_PATH:-/mnt/c/Users/$USER/AppData/Local/Programs/Aiden/Aiden.exe}"
+SUBCMD="${1:-}"
+
 if [[ -n "$WSL_DISTRO_NAME" ]]; then
-  # Running inside WSL — call the Windows binary via interop
-  AIDEN_WIN_PATH="${AIDEN_WIN_PATH:-/mnt/c/Users/$USER/AppData/Local/Programs/Aiden/Aiden.exe}"
-  if [[ -f "$AIDEN_WIN_PATH" ]]; then
-    "$AIDEN_WIN_PATH" "$@"
-  else
-    echo "Aiden not found at $AIDEN_WIN_PATH"
-    echo "Set AIDEN_WIN_PATH to your Aiden.exe install location, e.g.:"
-    echo "  export AIDEN_WIN_PATH=\"/mnt/c/Users/$USER/AppData/Local/Programs/Aiden/Aiden.exe\""
-    exit 1
-  fi
+  case "$SUBCMD" in
+    pc)
+      # Launch Aiden desktop (Electron GUI)
+      if [[ -f "$AIDEN_WIN_PATH" ]]; then
+        "$AIDEN_WIN_PATH" &
+      else
+        echo "Aiden not found at $AIDEN_WIN_PATH"
+        echo "Set AIDEN_WIN_PATH to your Aiden.exe install location."
+        exit 1
+      fi
+      ;;
+    tui)
+      # Launch Aiden terminal UI in the current terminal
+      INSTALL_DIR="$(dirname "$(dirname "$AIDEN_WIN_PATH")")"
+      CLI_BUNDLE="$INSTALL_DIR/resources/dist/cli.js"
+      if [[ -f "$CLI_BUNDLE" ]]; then
+        node "$CLI_BUNDLE"
+      elif command -v ts-node &>/dev/null; then
+        SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+        ts-node "$SCRIPT_DIR/../cli/aiden.ts"
+      else
+        echo "Aiden TUI requires the desktop app to be running first."
+        echo "Run: aiden pc   to launch the desktop app."
+        exit 1
+      fi
+      ;;
+    "")
+      echo ""
+      echo "  Aiden | Local-first Windows AI OS"
+      echo ""
+      echo "  Usage:"
+      echo "    aiden tui      Start the terminal (CLI) interface"
+      echo "    aiden pc       Launch the desktop app (Electron GUI)"
+      echo "    aiden          Show this help message"
+      echo ""
+      ;;
+    *)
+      # Unknown sub-command — pass through to Aiden.exe
+      if [[ -f "$AIDEN_WIN_PATH" ]]; then
+        "$AIDEN_WIN_PATH" "$@"
+      else
+        echo "Aiden not found at $AIDEN_WIN_PATH"
+        echo "Set AIDEN_WIN_PATH to your Aiden.exe install location, e.g.:"
+        echo "  export AIDEN_WIN_PATH=\"/mnt/c/Users/$USER/AppData/Local/Programs/Aiden/Aiden.exe\""
+        exit 1
+      fi
+      ;;
+  esac
 else
   echo "Native Linux Aiden is not yet available."
   echo "Install Aiden on Windows and run it from WSL, or check https://aiden.taracod.com for updates."
