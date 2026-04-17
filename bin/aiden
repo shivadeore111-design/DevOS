@@ -1,0 +1,21 @@
+#!/bin/bash
+# Aiden launcher — Bash / WSL entry point
+# Invokes the Windows-side Aiden.exe via WSL interop when running inside WSL,
+# or emits a helpful error if a native Linux binary is not available.
+
+if [[ -n "$WSL_DISTRO_NAME" ]]; then
+  # Running inside WSL — call the Windows binary via interop
+  AIDEN_WIN_PATH="${AIDEN_WIN_PATH:-/mnt/c/Program Files/Aiden/Aiden.exe}"
+  if [[ -f "$AIDEN_WIN_PATH" ]]; then
+    "$AIDEN_WIN_PATH" "$@"
+  else
+    echo "Aiden not found at $AIDEN_WIN_PATH"
+    echo "Set AIDEN_WIN_PATH to your Aiden.exe install location, e.g.:"
+    echo "  export AIDEN_WIN_PATH=\"/mnt/c/Users/$USER/AppData/Local/Programs/Aiden/Aiden.exe\""
+    exit 1
+  fi
+else
+  echo "Native Linux Aiden is not yet available."
+  echo "Install Aiden on Windows and run it from WSL, or check https://aiden.taracod.com for updates."
+  exit 1
+fi
