@@ -98,10 +98,15 @@ import { buildGreetingPreamble }    from '../core/memoryPreamble'
 import { matchFastPath }            from '../core/fastPathExpansion'
 import { setupHttpKeepalive }       from '../core/httpKeepalive'
 import { isCurrentTurnPrivate, clearTurnPrivate, toggleSessionPrivate, isSessionPrivate } from '../core/privateMode'
-import { channelManager } from '../core/channels/manager'
-import { DiscordAdapter } from '../core/channels/discord'
-import { SlackAdapter }   from '../core/channels/slack'
-import { WebhookAdapter } from '../core/channels/webhook'
+import { channelManager }    from '../core/channels/manager'
+import { DiscordAdapter }    from '../core/channels/discord'
+import { SlackAdapter }      from '../core/channels/slack'
+import { WebhookAdapter }    from '../core/channels/webhook'
+import { WhatsAppAdapter }   from '../core/channels/whatsapp'
+import { SignalAdapter }     from '../core/channels/signal'
+import { TwilioAdapter }     from '../core/channels/twilio'
+import { IMessageAdapter }   from '../core/channels/imessage'
+import { EmailAdapter }      from '../core/channels/email'
 
 // —— Sprint 25: module-level WebSocket clients registry (shared between createApiServer routes and startApiServer WS setup)
 let wsBroadcastClients   = new Set<any>()
@@ -5199,10 +5204,15 @@ export function startApiServer(portArg?: number): Express {
     console.error('[Telegram] Failed to start bot:', e.message)
   }
 
-  // ── Channel adapters (Discord, Slack, Webhook) ────────────────
+  // ── Channel adapters (all 9 channels) ───────────────────────────
   channelManager.register(new DiscordAdapter())
   channelManager.register(new SlackAdapter())
   channelManager.register(new WebhookAdapter(app))
+  channelManager.register(new WhatsAppAdapter())
+  channelManager.register(new SignalAdapter())
+  channelManager.register(new TwilioAdapter(app))
+  channelManager.register(new IMessageAdapter())
+  channelManager.register(new EmailAdapter())
   channelManager.startAll().catch((e: Error) =>
     console.error('[ChannelManager] Startup error:', e.message),
   )

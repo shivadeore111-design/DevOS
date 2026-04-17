@@ -30,9 +30,11 @@ export interface ChannelStartResult {
 }
 
 export interface ChannelStatus {
-  name:          string
-  healthy:       boolean
-  lastActivity?: number
+  name:                string
+  healthy:             boolean
+  lastActivity?:       number
+  lastMessageTimestamp?: number
+  configValid:         boolean
 }
 
 // ── ChannelManager ─────────────────────────────────────────
@@ -93,9 +95,11 @@ export class ChannelManager {
   /** Current health status for all registered adapters */
   getStatus(): ChannelStatus[] {
     return Array.from(this.adapters.values()).map(adapter => ({
-      name:         adapter.name,
-      healthy:      adapter.isHealthy(),
-      lastActivity: this.lastActivity.get(adapter.name),
+      name:                 adapter.name,
+      healthy:              adapter.isHealthy(),
+      lastActivity:         this.lastActivity.get(adapter.name),
+      lastMessageTimestamp: this.lastActivity.get(adapter.name),
+      configValid:          adapter.isHealthy(),
     }))
   }
 

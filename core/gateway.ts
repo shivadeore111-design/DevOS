@@ -18,6 +18,9 @@ export type ChannelType =
   | 'discord'
   | 'slack'
   | 'whatsapp'
+  | 'signal'
+  | 'sms'
+  | 'imessage'
   | 'email'
   | 'api'
   | 'tui'
@@ -145,7 +148,7 @@ class Gateway {
 
   getStatus(): Array<{ channel: ChannelType; active: boolean }> {
     const allChannels: ChannelType[] = [
-      'dashboard', 'telegram', 'discord', 'slack', 'whatsapp', 'email', 'api',
+      'dashboard', 'telegram', 'discord', 'slack', 'whatsapp', 'signal', 'sms', 'imessage', 'email', 'api',
     ]
     return allChannels.map(ch => ({
       channel: ch,
