@@ -1188,3 +1188,1069 @@
 | 6 | p16: /channels command is in CLI COMMANDS array | ✓ | 0 | ok |
 | 7 | p16: no process.exit or uncaught throw in adapter config loading sections | ✓ | 0 | ok |
 | 8 | p16: ALLOWED_ env var used in discord, slack, and webhook adapters | ✓ | 1 | ok |
+
+## 2026-04-17T08:56:24.107Z — 10/10 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | p17: stt.ts exports transcribe(), SttResult, SttOptions, getSttProviders() | ✓ | 1 | ok |
+| 2 | p17: stt.ts has Groq, OpenAI, and local whisper-cli fallback chain | ✓ | 0 | ok |
+| 3 | p17: tts.ts exports synthesize(), TtsResult, TtsOptions, getTtsProviders() | ✓ | 0 | ok |
+| 4 | p17: tts.ts has Edge TTS, ElevenLabs, and SAPI fallback chain | ✓ | 0 | ok |
+| 5 | p17: tts.ts exports cleanForTTS() that strips markdown | ✓ | 0 | ok |
+| 6 | p17: audio.ts exports recordAudio(), playAudio(), checkAudioAvailable() | ✓ | 0 | ok |
+| 7 | p17: audio.ts recordAudio() takes durationSeconds and outputPath parameters | ✓ | 1 | ok |
+| 8 | p17: /voice /speak /listen commands registered in CLI COMMANDS array and handleCommand | ✓ | 1 | ok |
+| 9 | p17: CLI state has voiceMode flag; TTS called after AI reply when voiceMode is on | ✓ | 1 | ok |
+| 10 | p17: aidenSdk.ts has voice namespace; aiden-sdk.d.ts has AidenVoice interface | ✓ | 0 | ok |
+
+## 2026-04-17T08:56:32.139Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | panel(): no-title top/bottom border equals body row width | ✓ | 193 | ok |
+| 2 | panel(): titled top border equals body row width | ✓ | 0 | ok |
+| 3 | panel(): minimum outer width is 50 chars | ✓ | 0 | ok |
+| 4 | Skill interface: origin field present on parsed skills | ✓ | 92 | ok |
+| 5 | SkillLoader: origin inferred as aiden vs local from filePath | ✓ | 1 | ok |
+| 6 | parseLessons(): returns [] safely when LESSONS.md absent | ✓ | 17 | ok |
+| 7 | filterLessons(): keyword filter returns correct subset | ✓ | 0 | ok |
+| 8 | COMMAND_DETAIL: no section is named Hermes (renamed to Core) | ✓ | 2 | ok |
+
+## 2026-04-17T08:56:36.875Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | aidenSdk: exports getSdkMethods, getSdkNamespaces, buildSdkSurface, buildSdkRuntime | ✓ | 1088 | ok |
+| 2 | aidenSdk: getSdkMethods() covers all required namespaces | ✓ | 1 | ok |
+| 3 | aidenSdk: getSdkNamespaces() returns sorted array | ✓ | 0 | ok |
+| 4 | aidenSdk: buildSdkSurface() includes expected namespace headers | ✓ | 16 | ok |
+| 5 | aidenSdk: buildSdkRuntime() returns object with all namespace keys | ✓ | 1 | ok |
+| 6 | runSandbox: module exports runInSandbox function | ✓ | 15 | ok |
+| 7 | toolRegistry: run tool is registered + getToolsForCategories includes run | ✓ | 0 | ok |
+| 8 | scripts/: 5 Prompt-12 example scripts exist and use the aiden SDK | ✓ | 2 | ok |
+
+## 2026-04-17T08:56:42.142Z — 10/10 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | spawnManager: exports spawnSubagent, getActiveSpawns, killSpawn + interfaces | ✓ | 1621 | ok |
+| 2 | spawnManager: getActiveSpawns() returns an array (empty or otherwise) | ✓ | 1 | ok |
+| 3 | spawnManager: killSpawn("nonexistent") returns false | ✓ | 0 | ok |
+| 4 | spawnManager: IterationBudget shape used in budget inheritance formula | ✓ | 0 | ok |
+| 5 | swarmManager: exports swarmSubagents function + SwarmStrategy types | ✓ | 10 | ok |
+| 6 | swarmManager: source contains vote, merge, best strategy branches | ✓ | 1 | ok |
+| 7 | sessionSearch: exports searchSessions and getIndexSize | ✓ | 11 | ok |
+| 8 | sessionSearch: searchSessions("test") returns an array | ✓ | 24 | ok |
+| 9 | hybridSearch: exports hybridSearch function | ✓ | 11 | ok |
+| 10 | toolRegistry: spawn, swarm, search tools registered in TOOLS + TOOL_CATEGORIES | ✓ | 0 | ok |
+
+## 2026-04-17T08:56:45.796Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | release: package.json version === "3.5.0" | ✓ | 0 | ok |
+| 2 | release: CHANGELOG.md contains "## v3.5.0" header | ✓ | 1 | ok |
+| 3 | release: local git tag v3.5.0 exists | ✓ | 71 | ok |
+| 4 | release: no stale 3.1.0 or 3.4.0 version strings in source files | ✓ | 3 | ok |
+| 5 | release: CHANGELOG.md references "34 zero-cost audits across 4 suites" | ✓ | 0 | ok |
+| 6 | release: Aiden-Setup-3.5.0.exe exists in release/ and is > 100 MB | ✓ | 1 | ok |
+| 7 | release: package.json test:audit script includes prompt_r1 | ✓ | 0 | ok |
+| 8 | release: all 4 audit suite files exist (prompt_11 · 12 · 13 · r1) | ✓ | 0 | ok |
+
+## 2026-04-17T08:56:49.472Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | skills: all 20 SKILL.md files exist | ✓ | 2 | ok |
+| 2 | skills: each SKILL.md has name, description, version, tags in frontmatter | ✓ | 2 | ok |
+| 3 | skills: each SKILL.md has a # H1 header | ✓ | 3 | ok |
+| 4 | skills: each SKILL.md has "When to Use" and "How to Use" sections | ✓ | 2 | ok |
+| 5 | skills: no SKILL.md contains security-blocked injection patterns | ✓ | 3 | ok |
+| 6 | skills: each SKILL.md is under 10 KB | ✓ | 2 | ok |
+| 7 | skills: AIDEN_CATALOG.md exists and references all 20 skills | ✓ | 0 | ok |
+| 8 | skills: package.json test:audit script includes prompt_15 | ✓ | 0 | ok |
+
+## 2026-04-17T08:56:53.051Z — 5/5 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | cleanup: all workspace/skills files pass structural validation | ✓ | 12 | ok |
+| 2 | cleanup: no duplicate skill names across learned/ and approved/ | ✓ | 3 | ok |
+| 3 | cleanup: known garbage skills have been deleted | ✓ | 0 | ok |
+| 4 | cleanup: skillTeacher.ts has header, origin:local, and size validation | ✓ | 1 | ok |
+| 5 | cleanup: all official skills/ pass structural validation | ✓ | 5 | ok |
+
+## 2026-04-17T08:56:56.618Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | mcp: McpServerConfig and McpTool interfaces exported from mcpClient | ✓ | 0 | ok |
+| 2 | mcp: named function exports connectMcpServer/disconnectMcpServer/listMcpServers/listMcpTools/callMcpTool | ✓ | 1 | ok |
+| 3 | mcp: mcpClient.ts contains JSON-RPC initialize, tools/list, tools/call | ✓ | 0 | ok |
+| 4 | mcp: workspace/config/mcp.json template exists with servers array | ✓ | 0 | ok |
+| 5 | shell-wedges: cmd/ps/wsl registered in toolRegistry.ts TOOLS and TOOL_DESCRIPTIONS | ✓ | 1 | ok |
+| 6 | mcp: toolRegistry.ts routes colon-prefix tool names to callMcpTool | ✓ | 0 | ok |
+| 7 | sdk: aidenSdk.ts has cmd/ps/wsl in shell and mcp namespace | ✓ | 1 | ok |
+| 8 | cli: /mcp /cmd /ps /wsl registered in COMMANDS and handled in handleCommand | ✓ | 1 | ok |
+
+## 2026-04-17T08:57:00.283Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | r2: cloudflare-worker/landing.js exists and is non-trivial | ✓ | 0 | ok |
+| 2 | r2: landing.js contains zero occurrences of 3.3.1 | ✓ | 1 | ok |
+| 3 | r2: nav badge contains v3.5.0 | ✓ | 0 | ok |
+| 4 | r2: hero "JUST UPDATED" badge shows v3.5.0 | ✓ | 1 | ok |
+| 5 | r2: download URL references v3.5.0/Aiden-Setup-3.5.0.exe | ✓ | 0 | ok |
+| 6 | r2: download section h2 reads "Download Aiden v3.5.0" | ✓ | 1 | ok |
+| 7 | r2: Razorpay integration preserved (≥1 occurrence) | ✓ | 0 | ok |
+| 8 | r2: exactly 5 occurrences of "3.5.0" in landing.js | ✓ | 1 | ok |
+
+## 2026-04-17T08:57:03.875Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | r3: electron-updater present in package.json dependencies | ✓ | 1 | ok |
+| 2 | r3: electron-builder publish config has github/taracodlabs/aiden-releases | ✓ | 0 | ok |
+| 3 | r3: electron/main.js requires electron-updater and calls checkForUpdatesAndNotify | ✓ | 1 | ok |
+| 4 | r3: electron/main.js has ipcMain.handle for install-update-now and check-for-update | ✓ | 0 | ok |
+| 5 | r3: electron/preload.js exposes aidenUpdater with installNow and checkNow | ✓ | 0 | ok |
+| 6 | r3: cli/aiden.ts /refresh handler references update-check function | ✓ | 1 | ok |
+| 7 | r3: no localhost/127.0.0.1 in update-related config in main.js | ✓ | 0 | ok |
+| 8 | r3: publish config structure is valid for electron-updater GitHub provider | ✓ | 0 | ok |
+
+## 2026-04-17T08:57:07.504Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | p16: ChannelAdapter interface has name, start, stop, send, isHealthy | ✓ | 1 | ok |
+| 2 | p16: Discord adapter has DISCORD_BOT_TOKEN, discord.js import, graceful degradation | ✓ | 0 | ok |
+| 3 | p16: Slack adapter has SLACK_BOT_TOKEN, @slack/bolt import, signing secret | ✓ | 0 | ok |
+| 4 | p16: Webhook adapter has WEBHOOK_SECRET, HMAC, and signature header check | ✓ | 1 | ok |
+| 5 | p16: ChannelManager class has register, startAll, getStatus | ✓ | 0 | ok |
+| 6 | p16: /channels command is in CLI COMMANDS array | ✓ | 1 | ok |
+| 7 | p16: no process.exit or uncaught throw in adapter config loading sections | ✓ | 0 | ok |
+| 8 | p16: ALLOWED_ env var used in discord, slack, and webhook adapters | ✓ | 0 | ok |
+
+## 2026-04-17T08:57:11.173Z — 10/10 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | p17: stt.ts exports transcribe(), SttResult, SttOptions, getSttProviders() | ✓ | 0 | ok |
+| 2 | p17: stt.ts has Groq, OpenAI, and local whisper-cli fallback chain | ✓ | 0 | ok |
+| 3 | p17: tts.ts exports synthesize(), TtsResult, TtsOptions, getTtsProviders() | ✓ | 0 | ok |
+| 4 | p17: tts.ts has Edge TTS, ElevenLabs, and SAPI fallback chain | ✓ | 0 | ok |
+| 5 | p17: tts.ts exports cleanForTTS() that strips markdown | ✓ | 0 | ok |
+| 6 | p17: audio.ts exports recordAudio(), playAudio(), checkAudioAvailable() | ✓ | 1 | ok |
+| 7 | p17: audio.ts recordAudio() takes durationSeconds and outputPath parameters | ✓ | 0 | ok |
+| 8 | p17: /voice /speak /listen commands registered in CLI COMMANDS array and handleCommand | ✓ | 1 | ok |
+| 9 | p17: CLI state has voiceMode flag; TTS called after AI reply when voiceMode is on | ✓ | 1 | ok |
+| 10 | p17: aidenSdk.ts has voice namespace; aiden-sdk.d.ts has AidenVoice interface | ✓ | 0 | ok |
+
+## 2026-04-17T08:57:19.170Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | panel(): no-title top/bottom border equals body row width | ✓ | 197 | ok |
+| 2 | panel(): titled top border equals body row width | ✓ | 0 | ok |
+| 3 | panel(): minimum outer width is 50 chars | ✓ | 0 | ok |
+| 4 | Skill interface: origin field present on parsed skills | ✓ | 89 | ok |
+| 5 | SkillLoader: origin inferred as aiden vs local from filePath | ✓ | 0 | ok |
+| 6 | parseLessons(): returns [] safely when LESSONS.md absent | ✓ | 16 | ok |
+| 7 | filterLessons(): keyword filter returns correct subset | ✓ | 0 | ok |
+| 8 | COMMAND_DETAIL: no section is named Hermes (renamed to Core) | ✓ | 2 | ok |
+
+## 2026-04-17T08:57:23.955Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | aidenSdk: exports getSdkMethods, getSdkNamespaces, buildSdkSurface, buildSdkRuntime | ✓ | 1118 | ok |
+| 2 | aidenSdk: getSdkMethods() covers all required namespaces | ✓ | 0 | ok |
+| 3 | aidenSdk: getSdkNamespaces() returns sorted array | ✓ | 0 | ok |
+| 4 | aidenSdk: buildSdkSurface() includes expected namespace headers | ✓ | 15 | ok |
+| 5 | aidenSdk: buildSdkRuntime() returns object with all namespace keys | ✓ | 0 | ok |
+| 6 | runSandbox: module exports runInSandbox function | ✓ | 12 | ok |
+| 7 | toolRegistry: run tool is registered + getToolsForCategories includes run | ✓ | 0 | ok |
+| 8 | scripts/: 5 Prompt-12 example scripts exist and use the aiden SDK | ✓ | 1 | ok |
+
+## 2026-04-17T08:57:29.280Z — 10/10 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | spawnManager: exports spawnSubagent, getActiveSpawns, killSpawn + interfaces | ✓ | 1666 | ok |
+| 2 | spawnManager: getActiveSpawns() returns an array (empty or otherwise) | ✓ | 0 | ok |
+| 3 | spawnManager: killSpawn("nonexistent") returns false | ✓ | 1 | ok |
+| 4 | spawnManager: IterationBudget shape used in budget inheritance formula | ✓ | 0 | ok |
+| 5 | swarmManager: exports swarmSubagents function + SwarmStrategy types | ✓ | 11 | ok |
+| 6 | swarmManager: source contains vote, merge, best strategy branches | ✓ | 0 | ok |
+| 7 | sessionSearch: exports searchSessions and getIndexSize | ✓ | 11 | ok |
+| 8 | sessionSearch: searchSessions("test") returns an array | ✓ | 27 | ok |
+| 9 | hybridSearch: exports hybridSearch function | ✓ | 10 | ok |
+| 10 | toolRegistry: spawn, swarm, search tools registered in TOOLS + TOOL_CATEGORIES | ✓ | 0 | ok |
+
+## 2026-04-17T08:57:33.070Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | release: package.json version === "3.5.0" | ✓ | 1 | ok |
+| 2 | release: CHANGELOG.md contains "## v3.5.0" header | ✓ | 0 | ok |
+| 3 | release: local git tag v3.5.0 exists | ✓ | 74 | ok |
+| 4 | release: no stale 3.1.0 or 3.4.0 version strings in source files | ✓ | 3 | ok |
+| 5 | release: CHANGELOG.md references "34 zero-cost audits across 4 suites" | ✓ | 0 | ok |
+| 6 | release: Aiden-Setup-3.5.0.exe exists in release/ and is > 100 MB | ✓ | 0 | ok |
+| 7 | release: package.json test:audit script includes prompt_r1 | ✓ | 1 | ok |
+| 8 | release: all 4 audit suite files exist (prompt_11 · 12 · 13 · r1) | ✓ | 1 | ok |
+
+## 2026-04-17T08:57:36.691Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | skills: all 20 SKILL.md files exist | ✓ | 2 | ok |
+| 2 | skills: each SKILL.md has name, description, version, tags in frontmatter | ✓ | 2 | ok |
+| 3 | skills: each SKILL.md has a # H1 header | ✓ | 2 | ok |
+| 4 | skills: each SKILL.md has "When to Use" and "How to Use" sections | ✓ | 2 | ok |
+| 5 | skills: no SKILL.md contains security-blocked injection patterns | ✓ | 3 | ok |
+| 6 | skills: each SKILL.md is under 10 KB | ✓ | 2 | ok |
+| 7 | skills: AIDEN_CATALOG.md exists and references all 20 skills | ✓ | 0 | ok |
+| 8 | skills: package.json test:audit script includes prompt_15 | ✓ | 0 | ok |
+
+## 2026-04-17T08:57:40.369Z — 5/5 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | cleanup: all workspace/skills files pass structural validation | ✓ | 11 | ok |
+| 2 | cleanup: no duplicate skill names across learned/ and approved/ | ✓ | 3 | ok |
+| 3 | cleanup: known garbage skills have been deleted | ✓ | 0 | ok |
+| 4 | cleanup: skillTeacher.ts has header, origin:local, and size validation | ✓ | 1 | ok |
+| 5 | cleanup: all official skills/ pass structural validation | ✓ | 6 | ok |
+
+## 2026-04-17T08:57:44.012Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | mcp: McpServerConfig and McpTool interfaces exported from mcpClient | ✓ | 0 | ok |
+| 2 | mcp: named function exports connectMcpServer/disconnectMcpServer/listMcpServers/listMcpTools/callMcpTool | ✓ | 0 | ok |
+| 3 | mcp: mcpClient.ts contains JSON-RPC initialize, tools/list, tools/call | ✓ | 1 | ok |
+| 4 | mcp: workspace/config/mcp.json template exists with servers array | ✓ | 0 | ok |
+| 5 | shell-wedges: cmd/ps/wsl registered in toolRegistry.ts TOOLS and TOOL_DESCRIPTIONS | ✓ | 0 | ok |
+| 6 | mcp: toolRegistry.ts routes colon-prefix tool names to callMcpTool | ✓ | 1 | ok |
+| 7 | sdk: aidenSdk.ts has cmd/ps/wsl in shell and mcp namespace | ✓ | 0 | ok |
+| 8 | cli: /mcp /cmd /ps /wsl registered in COMMANDS and handled in handleCommand | ✓ | 2 | ok |
+
+## 2026-04-17T08:57:47.618Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | r2: cloudflare-worker/landing.js exists and is non-trivial | ✓ | 0 | ok |
+| 2 | r2: landing.js contains zero occurrences of 3.3.1 | ✓ | 1 | ok |
+| 3 | r2: nav badge contains v3.5.0 | ✓ | 0 | ok |
+| 4 | r2: hero "JUST UPDATED" badge shows v3.5.0 | ✓ | 1 | ok |
+| 5 | r2: download URL references v3.5.0/Aiden-Setup-3.5.0.exe | ✓ | 0 | ok |
+| 6 | r2: download section h2 reads "Download Aiden v3.5.0" | ✓ | 1 | ok |
+| 7 | r2: Razorpay integration preserved (≥1 occurrence) | ✓ | 0 | ok |
+| 8 | r2: exactly 5 occurrences of "3.5.0" in landing.js | ✓ | 1 | ok |
+
+## 2026-04-17T08:57:51.312Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | r3: electron-updater present in package.json dependencies | ✓ | 1 | ok |
+| 2 | r3: electron-builder publish config has github/taracodlabs/aiden-releases | ✓ | 0 | ok |
+| 3 | r3: electron/main.js requires electron-updater and calls checkForUpdatesAndNotify | ✓ | 0 | ok |
+| 4 | r3: electron/main.js has ipcMain.handle for install-update-now and check-for-update | ✓ | 0 | ok |
+| 5 | r3: electron/preload.js exposes aidenUpdater with installNow and checkNow | ✓ | 1 | ok |
+| 6 | r3: cli/aiden.ts /refresh handler references update-check function | ✓ | 0 | ok |
+| 7 | r3: no localhost/127.0.0.1 in update-related config in main.js | ✓ | 0 | ok |
+| 8 | r3: publish config structure is valid for electron-updater GitHub provider | ✓ | 0 | ok |
+
+## 2026-04-17T08:57:54.955Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | p16: ChannelAdapter interface has name, start, stop, send, isHealthy | ✓ | 1 | ok |
+| 2 | p16: Discord adapter has DISCORD_BOT_TOKEN, discord.js import, graceful degradation | ✓ | 1 | ok |
+| 3 | p16: Slack adapter has SLACK_BOT_TOKEN, @slack/bolt import, signing secret | ✓ | 0 | ok |
+| 4 | p16: Webhook adapter has WEBHOOK_SECRET, HMAC, and signature header check | ✓ | 0 | ok |
+| 5 | p16: ChannelManager class has register, startAll, getStatus | ✓ | 0 | ok |
+| 6 | p16: /channels command is in CLI COMMANDS array | ✓ | 1 | ok |
+| 7 | p16: no process.exit or uncaught throw in adapter config loading sections | ✓ | 0 | ok |
+| 8 | p16: ALLOWED_ env var used in discord, slack, and webhook adapters | ✓ | 1 | ok |
+
+## 2026-04-17T08:57:58.542Z — 10/10 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | p17: stt.ts exports transcribe(), SttResult, SttOptions, getSttProviders() | ✓ | 1 | ok |
+| 2 | p17: stt.ts has Groq, OpenAI, and local whisper-cli fallback chain | ✓ | 0 | ok |
+| 3 | p17: tts.ts exports synthesize(), TtsResult, TtsOptions, getTtsProviders() | ✓ | 0 | ok |
+| 4 | p17: tts.ts has Edge TTS, ElevenLabs, and SAPI fallback chain | ✓ | 0 | ok |
+| 5 | p17: tts.ts exports cleanForTTS() that strips markdown | ✓ | 0 | ok |
+| 6 | p17: audio.ts exports recordAudio(), playAudio(), checkAudioAvailable() | ✓ | 1 | ok |
+| 7 | p17: audio.ts recordAudio() takes durationSeconds and outputPath parameters | ✓ | 0 | ok |
+| 8 | p17: /voice /speak /listen commands registered in CLI COMMANDS array and handleCommand | ✓ | 1 | ok |
+| 9 | p17: CLI state has voiceMode flag; TTS called after AI reply when voiceMode is on | ✓ | 1 | ok |
+| 10 | p17: aidenSdk.ts has voice namespace; aiden-sdk.d.ts has AidenVoice interface | ✓ | 0 | ok |
+
+## 2026-04-17T09:01:46.916Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | panel(): no-title top/bottom border equals body row width | ✓ | 321 | ok |
+| 2 | panel(): titled top border equals body row width | ✓ | 0 | ok |
+| 3 | panel(): minimum outer width is 50 chars | ✓ | 0 | ok |
+| 4 | Skill interface: origin field present on parsed skills | ✓ | 134 | ok |
+| 5 | SkillLoader: origin inferred as aiden vs local from filePath | ✓ | 1 | ok |
+| 6 | parseLessons(): returns [] safely when LESSONS.md absent | ✓ | 25 | ok |
+| 7 | filterLessons(): keyword filter returns correct subset | ✓ | 1 | ok |
+| 8 | COMMAND_DETAIL: no section is named Hermes (renamed to Core) | ✓ | 1 | ok |
+
+## 2026-04-17T09:01:52.704Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | aidenSdk: exports getSdkMethods, getSdkNamespaces, buildSdkSurface, buildSdkRuntime | ✓ | 1423 | ok |
+| 2 | aidenSdk: getSdkMethods() covers all required namespaces | ✓ | 0 | ok |
+| 3 | aidenSdk: getSdkNamespaces() returns sorted array | ✓ | 1 | ok |
+| 4 | aidenSdk: buildSdkSurface() includes expected namespace headers | ✓ | 17 | ok |
+| 5 | aidenSdk: buildSdkRuntime() returns object with all namespace keys | ✓ | 1 | ok |
+| 6 | runSandbox: module exports runInSandbox function | ✓ | 15 | ok |
+| 7 | toolRegistry: run tool is registered + getToolsForCategories includes run | ✓ | 1 | ok |
+| 8 | scripts/: 5 Prompt-12 example scripts exist and use the aiden SDK | ✓ | 2 | ok |
+
+## 2026-04-17T09:01:58.721Z — 10/10 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | spawnManager: exports spawnSubagent, getActiveSpawns, killSpawn + interfaces | ✓ | 2192 | ok |
+| 2 | spawnManager: getActiveSpawns() returns an array (empty or otherwise) | ✓ | 0 | ok |
+| 3 | spawnManager: killSpawn("nonexistent") returns false | ✓ | 0 | ok |
+| 4 | spawnManager: IterationBudget shape used in budget inheritance formula | ✓ | 1 | ok |
+| 5 | swarmManager: exports swarmSubagents function + SwarmStrategy types | ✓ | 13 | ok |
+| 6 | swarmManager: source contains vote, merge, best strategy branches | ✓ | 1 | ok |
+| 7 | sessionSearch: exports searchSessions and getIndexSize | ✓ | 13 | ok |
+| 8 | sessionSearch: searchSessions("test") returns an array | ✓ | 34 | ok |
+| 9 | hybridSearch: exports hybridSearch function | ✓ | 17 | ok |
+| 10 | toolRegistry: spawn, swarm, search tools registered in TOOLS + TOOL_CATEGORIES | ✓ | 1 | ok |
+
+## 2026-04-17T09:02:02.885Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | release: package.json version === "3.5.0" | ✓ | 1 | ok |
+| 2 | release: CHANGELOG.md contains "## v3.5.0" header | ✓ | 0 | ok |
+| 3 | release: local git tag v3.5.0 exists | ✓ | 76 | ok |
+| 4 | release: no stale 3.1.0 or 3.4.0 version strings in source files | ✓ | 3 | ok |
+| 5 | release: CHANGELOG.md references "34 zero-cost audits across 4 suites" | ✓ | 1 | ok |
+| 6 | release: Aiden-Setup-3.5.0.exe exists in release/ and is > 100 MB | ✓ | 0 | ok |
+| 7 | release: package.json test:audit script includes prompt_r1 | ✓ | 1 | ok |
+| 8 | release: all 4 audit suite files exist (prompt_11 · 12 · 13 · r1) | ✓ | 0 | ok |
+
+## 2026-04-17T09:02:07.368Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | skills: all 20 SKILL.md files exist | ✓ | 3 | ok |
+| 2 | skills: each SKILL.md has name, description, version, tags in frontmatter | ✓ | 2 | ok |
+| 3 | skills: each SKILL.md has a # H1 header | ✓ | 2 | ok |
+| 4 | skills: each SKILL.md has "When to Use" and "How to Use" sections | ✓ | 2 | ok |
+| 5 | skills: no SKILL.md contains security-blocked injection patterns | ✓ | 3 | ok |
+| 6 | skills: each SKILL.md is under 10 KB | ✓ | 2 | ok |
+| 7 | skills: AIDEN_CATALOG.md exists and references all 20 skills | ✓ | 1 | ok |
+| 8 | skills: package.json test:audit script includes prompt_15 | ✓ | 0 | ok |
+
+## 2026-04-17T09:02:11.568Z — 5/5 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | cleanup: all workspace/skills files pass structural validation | ✓ | 12 | ok |
+| 2 | cleanup: no duplicate skill names across learned/ and approved/ | ✓ | 3 | ok |
+| 3 | cleanup: known garbage skills have been deleted | ✓ | 0 | ok |
+| 4 | cleanup: skillTeacher.ts has header, origin:local, and size validation | ✓ | 1 | ok |
+| 5 | cleanup: all official skills/ pass structural validation | ✓ | 6 | ok |
+
+## 2026-04-17T09:02:15.223Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | mcp: McpServerConfig and McpTool interfaces exported from mcpClient | ✓ | 0 | ok |
+| 2 | mcp: named function exports connectMcpServer/disconnectMcpServer/listMcpServers/listMcpTools/callMcpTool | ✓ | 1 | ok |
+| 3 | mcp: mcpClient.ts contains JSON-RPC initialize, tools/list, tools/call | ✓ | 0 | ok |
+| 4 | mcp: workspace/config/mcp.json template exists with servers array | ✓ | 0 | ok |
+| 5 | shell-wedges: cmd/ps/wsl registered in toolRegistry.ts TOOLS and TOOL_DESCRIPTIONS | ✓ | 0 | ok |
+| 6 | mcp: toolRegistry.ts routes colon-prefix tool names to callMcpTool | ✓ | 1 | ok |
+| 7 | sdk: aidenSdk.ts has cmd/ps/wsl in shell and mcp namespace | ✓ | 0 | ok |
+| 8 | cli: /mcp /cmd /ps /wsl registered in COMMANDS and handled in handleCommand | ✓ | 1 | ok |
+
+## 2026-04-17T09:02:19.176Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | r2: cloudflare-worker/landing.js exists and is non-trivial | ✓ | 0 | ok |
+| 2 | r2: landing.js contains zero occurrences of 3.3.1 | ✓ | 1 | ok |
+| 3 | r2: nav badge contains v3.5.0 | ✓ | 1 | ok |
+| 4 | r2: hero "JUST UPDATED" badge shows v3.5.0 | ✓ | 0 | ok |
+| 5 | r2: download URL references v3.5.0/Aiden-Setup-3.5.0.exe | ✓ | 1 | ok |
+| 6 | r2: download section h2 reads "Download Aiden v3.5.0" | ✓ | 0 | ok |
+| 7 | r2: Razorpay integration preserved (≥1 occurrence) | ✓ | 1 | ok |
+| 8 | r2: exactly 5 occurrences of "3.5.0" in landing.js | ✓ | 0 | ok |
+
+## 2026-04-17T09:02:23.192Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | r3: electron-updater present in package.json dependencies | ✓ | 0 | ok |
+| 2 | r3: electron-builder publish config has github/taracodlabs/aiden-releases | ✓ | 0 | ok |
+| 3 | r3: electron/main.js requires electron-updater and calls checkForUpdatesAndNotify | ✓ | 1 | ok |
+| 4 | r3: electron/main.js has ipcMain.handle for install-update-now and check-for-update | ✓ | 0 | ok |
+| 5 | r3: electron/preload.js exposes aidenUpdater with installNow and checkNow | ✓ | 0 | ok |
+| 6 | r3: cli/aiden.ts /refresh handler references update-check function | ✓ | 1 | ok |
+| 7 | r3: no localhost/127.0.0.1 in update-related config in main.js | ✓ | 1 | ok |
+| 8 | r3: publish config structure is valid for electron-updater GitHub provider | ✓ | 0 | ok |
+
+## 2026-04-17T09:02:27.039Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | p16: ChannelAdapter interface has name, start, stop, send, isHealthy | ✓ | 1 | ok |
+| 2 | p16: Discord adapter has DISCORD_BOT_TOKEN, discord.js import, graceful degradation | ✓ | 0 | ok |
+| 3 | p16: Slack adapter has SLACK_BOT_TOKEN, @slack/bolt import, signing secret | ✓ | 0 | ok |
+| 4 | p16: Webhook adapter has WEBHOOK_SECRET, HMAC, and signature header check | ✓ | 0 | ok |
+| 5 | p16: ChannelManager class has register, startAll, getStatus | ✓ | 1 | ok |
+| 6 | p16: /channels command is in CLI COMMANDS array | ✓ | 1 | ok |
+| 7 | p16: no process.exit or uncaught throw in adapter config loading sections | ✓ | 1 | ok |
+| 8 | p16: ALLOWED_ env var used in discord, slack, and webhook adapters | ✓ | 0 | ok |
+
+## 2026-04-17T09:02:30.897Z — 10/10 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | p17: stt.ts exports transcribe(), SttResult, SttOptions, getSttProviders() | ✓ | 0 | ok |
+| 2 | p17: stt.ts has Groq, OpenAI, and local whisper-cli fallback chain | ✓ | 0 | ok |
+| 3 | p17: tts.ts exports synthesize(), TtsResult, TtsOptions, getTtsProviders() | ✓ | 0 | ok |
+| 4 | p17: tts.ts has Edge TTS, ElevenLabs, and SAPI fallback chain | ✓ | 0 | ok |
+| 5 | p17: tts.ts exports cleanForTTS() that strips markdown | ✓ | 0 | ok |
+| 6 | p17: audio.ts exports recordAudio(), playAudio(), checkAudioAvailable() | ✓ | 1 | ok |
+| 7 | p17: audio.ts recordAudio() takes durationSeconds and outputPath parameters | ✓ | 0 | ok |
+| 8 | p17: /voice /speak /listen commands registered in CLI COMMANDS array and handleCommand | ✓ | 1 | ok |
+| 9 | p17: CLI state has voiceMode flag; TTS called after AI reply when voiceMode is on | ✓ | 1 | ok |
+| 10 | p17: aidenSdk.ts has voice namespace; aiden-sdk.d.ts has AidenVoice interface | ✓ | 0 | ok |
+
+## 2026-04-17T09:18:23.253Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | panel(): no-title top/bottom border equals body row width | ✓ | 194 | ok |
+| 2 | panel(): titled top border equals body row width | ✓ | 0 | ok |
+| 3 | panel(): minimum outer width is 50 chars | ✓ | 0 | ok |
+| 4 | Skill interface: origin field present on parsed skills | ✓ | 90 | ok |
+| 5 | SkillLoader: origin inferred as aiden vs local from filePath | ✓ | 1 | ok |
+| 6 | parseLessons(): returns [] safely when LESSONS.md absent | ✓ | 16 | ok |
+| 7 | filterLessons(): keyword filter returns correct subset | ✓ | 0 | ok |
+| 8 | COMMAND_DETAIL: no section is named Hermes (renamed to Core) | ✓ | 1 | ok |
+
+## 2026-04-17T09:18:27.878Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | aidenSdk: exports getSdkMethods, getSdkNamespaces, buildSdkSurface, buildSdkRuntime | ✓ | 1093 | ok |
+| 2 | aidenSdk: getSdkMethods() covers all required namespaces | ✓ | 0 | ok |
+| 3 | aidenSdk: getSdkNamespaces() returns sorted array | ✓ | 0 | ok |
+| 4 | aidenSdk: buildSdkSurface() includes expected namespace headers | ✓ | 15 | ok |
+| 5 | aidenSdk: buildSdkRuntime() returns object with all namespace keys | ✓ | 0 | ok |
+| 6 | runSandbox: module exports runInSandbox function | ✓ | 14 | ok |
+| 7 | toolRegistry: run tool is registered + getToolsForCategories includes run | ✓ | 0 | ok |
+| 8 | scripts/: 5 Prompt-12 example scripts exist and use the aiden SDK | ✓ | 2 | ok |
+
+## 2026-04-17T09:18:33.054Z — 10/10 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | spawnManager: exports spawnSubagent, getActiveSpawns, killSpawn + interfaces | ✓ | 1601 | ok |
+| 2 | spawnManager: getActiveSpawns() returns an array (empty or otherwise) | ✓ | 0 | ok |
+| 3 | spawnManager: killSpawn("nonexistent") returns false | ✓ | 0 | ok |
+| 4 | spawnManager: IterationBudget shape used in budget inheritance formula | ✓ | 0 | ok |
+| 5 | swarmManager: exports swarmSubagents function + SwarmStrategy types | ✓ | 11 | ok |
+| 6 | swarmManager: source contains vote, merge, best strategy branches | ✓ | 0 | ok |
+| 7 | sessionSearch: exports searchSessions and getIndexSize | ✓ | 10 | ok |
+| 8 | sessionSearch: searchSessions("test") returns an array | ✓ | 26 | ok |
+| 9 | hybridSearch: exports hybridSearch function | ✓ | 11 | ok |
+| 10 | toolRegistry: spawn, swarm, search tools registered in TOOLS + TOOL_CATEGORIES | ✓ | 1 | ok |
+
+## 2026-04-17T09:18:36.642Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | release: package.json version === "3.5.0" | ✓ | 1 | ok |
+| 2 | release: CHANGELOG.md contains "## v3.5.0" header | ✓ | 1 | ok |
+| 3 | release: local git tag v3.5.0 exists | ✓ | 71 | ok |
+| 4 | release: no stale 3.1.0 or 3.4.0 version strings in source files | ✓ | 3 | ok |
+| 5 | release: CHANGELOG.md references "34 zero-cost audits across 4 suites" | ✓ | 1 | ok |
+| 6 | release: Aiden-Setup-3.5.0.exe exists in release/ and is > 100 MB | ✓ | 0 | ok |
+| 7 | release: package.json test:audit script includes prompt_r1 | ✓ | 0 | ok |
+| 8 | release: all 4 audit suite files exist (prompt_11 · 12 · 13 · r1) | ✓ | 1 | ok |
+
+## 2026-04-17T09:18:40.167Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | skills: all 20 SKILL.md files exist | ✓ | 2 | ok |
+| 2 | skills: each SKILL.md has name, description, version, tags in frontmatter | ✓ | 2 | ok |
+| 3 | skills: each SKILL.md has a # H1 header | ✓ | 2 | ok |
+| 4 | skills: each SKILL.md has "When to Use" and "How to Use" sections | ✓ | 2 | ok |
+| 5 | skills: no SKILL.md contains security-blocked injection patterns | ✓ | 2 | ok |
+| 6 | skills: each SKILL.md is under 10 KB | ✓ | 2 | ok |
+| 7 | skills: AIDEN_CATALOG.md exists and references all 20 skills | ✓ | 0 | ok |
+| 8 | skills: package.json test:audit script includes prompt_15 | ✓ | 1 | ok |
+
+## 2026-04-17T09:18:43.751Z — 5/5 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | cleanup: all workspace/skills files pass structural validation | ✓ | 11 | ok |
+| 2 | cleanup: no duplicate skill names across learned/ and approved/ | ✓ | 3 | ok |
+| 3 | cleanup: known garbage skills have been deleted | ✓ | 0 | ok |
+| 4 | cleanup: skillTeacher.ts has header, origin:local, and size validation | ✓ | 1 | ok |
+| 5 | cleanup: all official skills/ pass structural validation | ✓ | 5 | ok |
+
+## 2026-04-17T09:18:47.587Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | mcp: McpServerConfig and McpTool interfaces exported from mcpClient | ✓ | 1 | ok |
+| 2 | mcp: named function exports connectMcpServer/disconnectMcpServer/listMcpServers/listMcpTools/callMcpTool | ✓ | 0 | ok |
+| 3 | mcp: mcpClient.ts contains JSON-RPC initialize, tools/list, tools/call | ✓ | 1 | ok |
+| 4 | mcp: workspace/config/mcp.json template exists with servers array | ✓ | 0 | ok |
+| 5 | shell-wedges: cmd/ps/wsl registered in toolRegistry.ts TOOLS and TOOL_DESCRIPTIONS | ✓ | 1 | ok |
+| 6 | mcp: toolRegistry.ts routes colon-prefix tool names to callMcpTool | ✓ | 0 | ok |
+| 7 | sdk: aidenSdk.ts has cmd/ps/wsl in shell and mcp namespace | ✓ | 0 | ok |
+| 8 | cli: /mcp /cmd /ps /wsl registered in COMMANDS and handled in handleCommand | ✓ | 1 | ok |
+
+## 2026-04-17T09:18:51.285Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | r2: cloudflare-worker/landing.js exists and is non-trivial | ✓ | 0 | ok |
+| 2 | r2: landing.js contains zero occurrences of 3.3.1 | ✓ | 1 | ok |
+| 3 | r2: nav badge contains v3.5.0 | ✓ | 1 | ok |
+| 4 | r2: hero "JUST UPDATED" badge shows v3.5.0 | ✓ | 0 | ok |
+| 5 | r2: download URL references v3.5.0/Aiden-Setup-3.5.0.exe | ✓ | 1 | ok |
+| 6 | r2: download section h2 reads "Download Aiden v3.5.0" | ✓ | 1 | ok |
+| 7 | r2: Razorpay integration preserved (≥1 occurrence) | ✓ | 1 | ok |
+| 8 | r2: exactly 5 occurrences of "3.5.0" in landing.js | ✓ | 1 | ok |
+
+## 2026-04-17T09:18:54.776Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | r3: electron-updater present in package.json dependencies | ✓ | 0 | ok |
+| 2 | r3: electron-builder publish config has github/taracodlabs/aiden-releases | ✓ | 0 | ok |
+| 3 | r3: electron/main.js requires electron-updater and calls checkForUpdatesAndNotify | ✓ | 0 | ok |
+| 4 | r3: electron/main.js has ipcMain.handle for install-update-now and check-for-update | ✓ | 0 | ok |
+| 5 | r3: electron/preload.js exposes aidenUpdater with installNow and checkNow | ✓ | 1 | ok |
+| 6 | r3: cli/aiden.ts /refresh handler references update-check function | ✓ | 0 | ok |
+| 7 | r3: no localhost/127.0.0.1 in update-related config in main.js | ✓ | 1 | ok |
+| 8 | r3: publish config structure is valid for electron-updater GitHub provider | ✓ | 0 | ok |
+
+## 2026-04-17T09:18:58.267Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | p16: ChannelAdapter interface has name, start, stop, send, isHealthy | ✓ | 0 | ok |
+| 2 | p16: Discord adapter has DISCORD_BOT_TOKEN, discord.js import, graceful degradation | ✓ | 0 | ok |
+| 3 | p16: Slack adapter has SLACK_BOT_TOKEN, @slack/bolt import, signing secret | ✓ | 0 | ok |
+| 4 | p16: Webhook adapter has WEBHOOK_SECRET, HMAC, and signature header check | ✓ | 0 | ok |
+| 5 | p16: ChannelManager class has register, startAll, getStatus | ✓ | 0 | ok |
+| 6 | p16: /channels command is in CLI COMMANDS array | ✓ | 1 | ok |
+| 7 | p16: no process.exit or uncaught throw in adapter config loading sections | ✓ | 1 | ok |
+| 8 | p16: ALLOWED_ env var used in discord, slack, and webhook adapters | ✓ | 0 | ok |
+
+## 2026-04-17T09:19:01.821Z — 10/10 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | p17: stt.ts exports transcribe(), SttResult, SttOptions, getSttProviders() | ✓ | 0 | ok |
+| 2 | p17: stt.ts has Groq, OpenAI, and local whisper-cli fallback chain | ✓ | 0 | ok |
+| 3 | p17: tts.ts exports synthesize(), TtsResult, TtsOptions, getTtsProviders() | ✓ | 1 | ok |
+| 4 | p17: tts.ts has Edge TTS, ElevenLabs, and SAPI fallback chain | ✓ | 0 | ok |
+| 5 | p17: tts.ts exports cleanForTTS() that strips markdown | ✓ | 0 | ok |
+| 6 | p17: audio.ts exports recordAudio(), playAudio(), checkAudioAvailable() | ✓ | 0 | ok |
+| 7 | p17: audio.ts recordAudio() takes durationSeconds and outputPath parameters | ✓ | 1 | ok |
+| 8 | p17: /voice /speak /listen commands registered in CLI COMMANDS array and handleCommand | ✓ | 1 | ok |
+| 9 | p17: CLI state has voiceMode flag; TTS called after AI reply when voiceMode is on | ✓ | 0 | ok |
+| 10 | p17: aidenSdk.ts has voice namespace; aiden-sdk.d.ts has AidenVoice interface | ✓ | 1 | ok |
+
+## 2026-04-17T09:19:09.234Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | panel(): no-title top/bottom border equals body row width | ✓ | 192 | ok |
+| 2 | panel(): titled top border equals body row width | ✓ | 0 | ok |
+| 3 | panel(): minimum outer width is 50 chars | ✓ | 0 | ok |
+| 4 | Skill interface: origin field present on parsed skills | ✓ | 90 | ok |
+| 5 | SkillLoader: origin inferred as aiden vs local from filePath | ✓ | 1 | ok |
+| 6 | parseLessons(): returns [] safely when LESSONS.md absent | ✓ | 17 | ok |
+| 7 | filterLessons(): keyword filter returns correct subset | ✓ | 0 | ok |
+| 8 | COMMAND_DETAIL: no section is named Hermes (renamed to Core) | ✓ | 1 | ok |
+
+## 2026-04-17T09:19:13.983Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | aidenSdk: exports getSdkMethods, getSdkNamespaces, buildSdkSurface, buildSdkRuntime | ✓ | 1069 | ok |
+| 2 | aidenSdk: getSdkMethods() covers all required namespaces | ✓ | 1 | ok |
+| 3 | aidenSdk: getSdkNamespaces() returns sorted array | ✓ | 0 | ok |
+| 4 | aidenSdk: buildSdkSurface() includes expected namespace headers | ✓ | 14 | ok |
+| 5 | aidenSdk: buildSdkRuntime() returns object with all namespace keys | ✓ | 0 | ok |
+| 6 | runSandbox: module exports runInSandbox function | ✓ | 12 | ok |
+| 7 | toolRegistry: run tool is registered + getToolsForCategories includes run | ✓ | 0 | ok |
+| 8 | scripts/: 5 Prompt-12 example scripts exist and use the aiden SDK | ✓ | 2 | ok |
+
+## 2026-04-17T09:19:19.276Z — 10/10 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | spawnManager: exports spawnSubagent, getActiveSpawns, killSpawn + interfaces | ✓ | 1678 | ok |
+| 2 | spawnManager: getActiveSpawns() returns an array (empty or otherwise) | ✓ | 1 | ok |
+| 3 | spawnManager: killSpawn("nonexistent") returns false | ✓ | 0 | ok |
+| 4 | spawnManager: IterationBudget shape used in budget inheritance formula | ✓ | 0 | ok |
+| 5 | swarmManager: exports swarmSubagents function + SwarmStrategy types | ✓ | 12 | ok |
+| 6 | swarmManager: source contains vote, merge, best strategy branches | ✓ | 0 | ok |
+| 7 | sessionSearch: exports searchSessions and getIndexSize | ✓ | 14 | ok |
+| 8 | sessionSearch: searchSessions("test") returns an array | ✓ | 27 | ok |
+| 9 | hybridSearch: exports hybridSearch function | ✓ | 14 | ok |
+| 10 | toolRegistry: spawn, swarm, search tools registered in TOOLS + TOOL_CATEGORIES | ✓ | 1 | ok |
+
+## 2026-04-17T09:19:23.247Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | release: package.json version === "3.5.0" | ✓ | 1 | ok |
+| 2 | release: CHANGELOG.md contains "## v3.5.0" header | ✓ | 0 | ok |
+| 3 | release: local git tag v3.5.0 exists | ✓ | 87 | ok |
+| 4 | release: no stale 3.1.0 or 3.4.0 version strings in source files | ✓ | 3 | ok |
+| 5 | release: CHANGELOG.md references "34 zero-cost audits across 4 suites" | ✓ | 0 | ok |
+| 6 | release: Aiden-Setup-3.5.0.exe exists in release/ and is > 100 MB | ✓ | 0 | ok |
+| 7 | release: package.json test:audit script includes prompt_r1 | ✓ | 0 | ok |
+| 8 | release: all 4 audit suite files exist (prompt_11 · 12 · 13 · r1) | ✓ | 1 | ok |
+
+## 2026-04-17T09:19:27.080Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | skills: all 20 SKILL.md files exist | ✓ | 3 | ok |
+| 2 | skills: each SKILL.md has name, description, version, tags in frontmatter | ✓ | 2 | ok |
+| 3 | skills: each SKILL.md has a # H1 header | ✓ | 2 | ok |
+| 4 | skills: each SKILL.md has "When to Use" and "How to Use" sections | ✓ | 2 | ok |
+| 5 | skills: no SKILL.md contains security-blocked injection patterns | ✓ | 3 | ok |
+| 6 | skills: each SKILL.md is under 10 KB | ✓ | 1 | ok |
+| 7 | skills: AIDEN_CATALOG.md exists and references all 20 skills | ✓ | 0 | ok |
+| 8 | skills: package.json test:audit script includes prompt_15 | ✓ | 1 | ok |
+
+## 2026-04-17T09:19:30.753Z — 5/5 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | cleanup: all workspace/skills files pass structural validation | ✓ | 10 | ok |
+| 2 | cleanup: no duplicate skill names across learned/ and approved/ | ✓ | 3 | ok |
+| 3 | cleanup: known garbage skills have been deleted | ✓ | 0 | ok |
+| 4 | cleanup: skillTeacher.ts has header, origin:local, and size validation | ✓ | 1 | ok |
+| 5 | cleanup: all official skills/ pass structural validation | ✓ | 6 | ok |
+
+## 2026-04-17T09:19:34.370Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | mcp: McpServerConfig and McpTool interfaces exported from mcpClient | ✓ | 1 | ok |
+| 2 | mcp: named function exports connectMcpServer/disconnectMcpServer/listMcpServers/listMcpTools/callMcpTool | ✓ | 0 | ok |
+| 3 | mcp: mcpClient.ts contains JSON-RPC initialize, tools/list, tools/call | ✓ | 1 | ok |
+| 4 | mcp: workspace/config/mcp.json template exists with servers array | ✓ | 0 | ok |
+| 5 | shell-wedges: cmd/ps/wsl registered in toolRegistry.ts TOOLS and TOOL_DESCRIPTIONS | ✓ | 1 | ok |
+| 6 | mcp: toolRegistry.ts routes colon-prefix tool names to callMcpTool | ✓ | 0 | ok |
+| 7 | sdk: aidenSdk.ts has cmd/ps/wsl in shell and mcp namespace | ✓ | 1 | ok |
+| 8 | cli: /mcp /cmd /ps /wsl registered in COMMANDS and handled in handleCommand | ✓ | 1 | ok |
+
+## 2026-04-17T09:19:37.978Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | r2: cloudflare-worker/landing.js exists and is non-trivial | ✓ | 0 | ok |
+| 2 | r2: landing.js contains zero occurrences of 3.3.1 | ✓ | 1 | ok |
+| 3 | r2: nav badge contains v3.5.0 | ✓ | 0 | ok |
+| 4 | r2: hero "JUST UPDATED" badge shows v3.5.0 | ✓ | 1 | ok |
+| 5 | r2: download URL references v3.5.0/Aiden-Setup-3.5.0.exe | ✓ | 0 | ok |
+| 6 | r2: download section h2 reads "Download Aiden v3.5.0" | ✓ | 1 | ok |
+| 7 | r2: Razorpay integration preserved (≥1 occurrence) | ✓ | 0 | ok |
+| 8 | r2: exactly 5 occurrences of "3.5.0" in landing.js | ✓ | 0 | ok |
+
+## 2026-04-17T09:19:41.595Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | r3: electron-updater present in package.json dependencies | ✓ | 1 | ok |
+| 2 | r3: electron-builder publish config has github/taracodlabs/aiden-releases | ✓ | 0 | ok |
+| 3 | r3: electron/main.js requires electron-updater and calls checkForUpdatesAndNotify | ✓ | 0 | ok |
+| 4 | r3: electron/main.js has ipcMain.handle for install-update-now and check-for-update | ✓ | 1 | ok |
+| 5 | r3: electron/preload.js exposes aidenUpdater with installNow and checkNow | ✓ | 0 | ok |
+| 6 | r3: cli/aiden.ts /refresh handler references update-check function | ✓ | 1 | ok |
+| 7 | r3: no localhost/127.0.0.1 in update-related config in main.js | ✓ | 0 | ok |
+| 8 | r3: publish config structure is valid for electron-updater GitHub provider | ✓ | 0 | ok |
+
+## 2026-04-17T09:19:45.290Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | p16: ChannelAdapter interface has name, start, stop, send, isHealthy | ✓ | 1 | ok |
+| 2 | p16: Discord adapter has DISCORD_BOT_TOKEN, discord.js import, graceful degradation | ✓ | 0 | ok |
+| 3 | p16: Slack adapter has SLACK_BOT_TOKEN, @slack/bolt import, signing secret | ✓ | 0 | ok |
+| 4 | p16: Webhook adapter has WEBHOOK_SECRET, HMAC, and signature header check | ✓ | 0 | ok |
+| 5 | p16: ChannelManager class has register, startAll, getStatus | ✓ | 1 | ok |
+| 6 | p16: /channels command is in CLI COMMANDS array | ✓ | 0 | ok |
+| 7 | p16: no process.exit or uncaught throw in adapter config loading sections | ✓ | 0 | ok |
+| 8 | p16: ALLOWED_ env var used in discord, slack, and webhook adapters | ✓ | 0 | ok |
+
+## 2026-04-17T09:19:48.907Z — 10/10 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | p17: stt.ts exports transcribe(), SttResult, SttOptions, getSttProviders() | ✓ | 0 | ok |
+| 2 | p17: stt.ts has Groq, OpenAI, and local whisper-cli fallback chain | ✓ | 0 | ok |
+| 3 | p17: tts.ts exports synthesize(), TtsResult, TtsOptions, getTtsProviders() | ✓ | 0 | ok |
+| 4 | p17: tts.ts has Edge TTS, ElevenLabs, and SAPI fallback chain | ✓ | 0 | ok |
+| 5 | p17: tts.ts exports cleanForTTS() that strips markdown | ✓ | 0 | ok |
+| 6 | p17: audio.ts exports recordAudio(), playAudio(), checkAudioAvailable() | ✓ | 0 | ok |
+| 7 | p17: audio.ts recordAudio() takes durationSeconds and outputPath parameters | ✓ | 0 | ok |
+| 8 | p17: /voice /speak /listen commands registered in CLI COMMANDS array and handleCommand | ✓ | 1 | ok |
+| 9 | p17: CLI state has voiceMode flag; TTS called after AI reply when voiceMode is on | ✓ | 1 | ok |
+| 10 | p17: aidenSdk.ts has voice namespace; aiden-sdk.d.ts has AidenVoice interface | ✓ | 0 | ok |
+
+## 2026-04-17T09:19:56.662Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | panel(): no-title top/bottom border equals body row width | ✓ | 199 | ok |
+| 2 | panel(): titled top border equals body row width | ✓ | 0 | ok |
+| 3 | panel(): minimum outer width is 50 chars | ✓ | 0 | ok |
+| 4 | Skill interface: origin field present on parsed skills | ✓ | 90 | ok |
+| 5 | SkillLoader: origin inferred as aiden vs local from filePath | ✓ | 1 | ok |
+| 6 | parseLessons(): returns [] safely when LESSONS.md absent | ✓ | 17 | ok |
+| 7 | filterLessons(): keyword filter returns correct subset | ✓ | 0 | ok |
+| 8 | COMMAND_DETAIL: no section is named Hermes (renamed to Core) | ✓ | 1 | ok |
+
+## 2026-04-17T09:20:01.484Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | aidenSdk: exports getSdkMethods, getSdkNamespaces, buildSdkSurface, buildSdkRuntime | ✓ | 1134 | ok |
+| 2 | aidenSdk: getSdkMethods() covers all required namespaces | ✓ | 0 | ok |
+| 3 | aidenSdk: getSdkNamespaces() returns sorted array | ✓ | 1 | ok |
+| 4 | aidenSdk: buildSdkSurface() includes expected namespace headers | ✓ | 15 | ok |
+| 5 | aidenSdk: buildSdkRuntime() returns object with all namespace keys | ✓ | 0 | ok |
+| 6 | runSandbox: module exports runInSandbox function | ✓ | 11 | ok |
+| 7 | toolRegistry: run tool is registered + getToolsForCategories includes run | ✓ | 1 | ok |
+| 8 | scripts/: 5 Prompt-12 example scripts exist and use the aiden SDK | ✓ | 1 | ok |
+
+## 2026-04-17T09:20:06.860Z — 10/10 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | spawnManager: exports spawnSubagent, getActiveSpawns, killSpawn + interfaces | ✓ | 1674 | ok |
+| 2 | spawnManager: getActiveSpawns() returns an array (empty or otherwise) | ✓ | 0 | ok |
+| 3 | spawnManager: killSpawn("nonexistent") returns false | ✓ | 0 | ok |
+| 4 | spawnManager: IterationBudget shape used in budget inheritance formula | ✓ | 1 | ok |
+| 5 | swarmManager: exports swarmSubagents function + SwarmStrategy types | ✓ | 10 | ok |
+| 6 | swarmManager: source contains vote, merge, best strategy branches | ✓ | 1 | ok |
+| 7 | sessionSearch: exports searchSessions and getIndexSize | ✓ | 11 | ok |
+| 8 | sessionSearch: searchSessions("test") returns an array | ✓ | 25 | ok |
+| 9 | hybridSearch: exports hybridSearch function | ✓ | 11 | ok |
+| 10 | toolRegistry: spawn, swarm, search tools registered in TOOLS + TOOL_CATEGORIES | ✓ | 0 | ok |
+
+## 2026-04-17T09:20:10.606Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | release: package.json version === "3.5.0" | ✓ | 0 | ok |
+| 2 | release: CHANGELOG.md contains "## v3.5.0" header | ✓ | 1 | ok |
+| 3 | release: local git tag v3.5.0 exists | ✓ | 74 | ok |
+| 4 | release: no stale 3.1.0 or 3.4.0 version strings in source files | ✓ | 3 | ok |
+| 5 | release: CHANGELOG.md references "34 zero-cost audits across 4 suites" | ✓ | 0 | ok |
+| 6 | release: Aiden-Setup-3.5.0.exe exists in release/ and is > 100 MB | ✓ | 0 | ok |
+| 7 | release: package.json test:audit script includes prompt_r1 | ✓ | 0 | ok |
+| 8 | release: all 4 audit suite files exist (prompt_11 · 12 · 13 · r1) | ✓ | 0 | ok |
+
+## 2026-04-17T09:20:14.324Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | skills: all 20 SKILL.md files exist | ✓ | 2 | ok |
+| 2 | skills: each SKILL.md has name, description, version, tags in frontmatter | ✓ | 2 | ok |
+| 3 | skills: each SKILL.md has a # H1 header | ✓ | 3 | ok |
+| 4 | skills: each SKILL.md has "When to Use" and "How to Use" sections | ✓ | 2 | ok |
+| 5 | skills: no SKILL.md contains security-blocked injection patterns | ✓ | 2 | ok |
+| 6 | skills: each SKILL.md is under 10 KB | ✓ | 1 | ok |
+| 7 | skills: AIDEN_CATALOG.md exists and references all 20 skills | ✓ | 1 | ok |
+| 8 | skills: package.json test:audit script includes prompt_15 | ✓ | 0 | ok |
+
+## 2026-04-17T09:20:18.005Z — 5/5 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | cleanup: all workspace/skills files pass structural validation | ✓ | 10 | ok |
+| 2 | cleanup: no duplicate skill names across learned/ and approved/ | ✓ | 2 | ok |
+| 3 | cleanup: known garbage skills have been deleted | ✓ | 1 | ok |
+| 4 | cleanup: skillTeacher.ts has header, origin:local, and size validation | ✓ | 1 | ok |
+| 5 | cleanup: all official skills/ pass structural validation | ✓ | 6 | ok |
+
+## 2026-04-17T09:20:21.738Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | mcp: McpServerConfig and McpTool interfaces exported from mcpClient | ✓ | 1 | ok |
+| 2 | mcp: named function exports connectMcpServer/disconnectMcpServer/listMcpServers/listMcpTools/callMcpTool | ✓ | 1 | ok |
+| 3 | mcp: mcpClient.ts contains JSON-RPC initialize, tools/list, tools/call | ✓ | 0 | ok |
+| 4 | mcp: workspace/config/mcp.json template exists with servers array | ✓ | 0 | ok |
+| 5 | shell-wedges: cmd/ps/wsl registered in toolRegistry.ts TOOLS and TOOL_DESCRIPTIONS | ✓ | 1 | ok |
+| 6 | mcp: toolRegistry.ts routes colon-prefix tool names to callMcpTool | ✓ | 0 | ok |
+| 7 | sdk: aidenSdk.ts has cmd/ps/wsl in shell and mcp namespace | ✓ | 1 | ok |
+| 8 | cli: /mcp /cmd /ps /wsl registered in COMMANDS and handled in handleCommand | ✓ | 1 | ok |
+
+## 2026-04-17T09:20:25.423Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | r2: cloudflare-worker/landing.js exists and is non-trivial | ✓ | 0 | ok |
+| 2 | r2: landing.js contains zero occurrences of 3.3.1 | ✓ | 1 | ok |
+| 3 | r2: nav badge contains v3.5.0 | ✓ | 0 | ok |
+| 4 | r2: hero "JUST UPDATED" badge shows v3.5.0 | ✓ | 1 | ok |
+| 5 | r2: download URL references v3.5.0/Aiden-Setup-3.5.0.exe | ✓ | 0 | ok |
+| 6 | r2: download section h2 reads "Download Aiden v3.5.0" | ✓ | 1 | ok |
+| 7 | r2: Razorpay integration preserved (≥1 occurrence) | ✓ | 0 | ok |
+| 8 | r2: exactly 5 occurrences of "3.5.0" in landing.js | ✓ | 1 | ok |
+
+## 2026-04-17T09:20:29.084Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | r3: electron-updater present in package.json dependencies | ✓ | 0 | ok |
+| 2 | r3: electron-builder publish config has github/taracodlabs/aiden-releases | ✓ | 1 | ok |
+| 3 | r3: electron/main.js requires electron-updater and calls checkForUpdatesAndNotify | ✓ | 0 | ok |
+| 4 | r3: electron/main.js has ipcMain.handle for install-update-now and check-for-update | ✓ | 0 | ok |
+| 5 | r3: electron/preload.js exposes aidenUpdater with installNow and checkNow | ✓ | 0 | ok |
+| 6 | r3: cli/aiden.ts /refresh handler references update-check function | ✓ | 1 | ok |
+| 7 | r3: no localhost/127.0.0.1 in update-related config in main.js | ✓ | 0 | ok |
+| 8 | r3: publish config structure is valid for electron-updater GitHub provider | ✓ | 0 | ok |
+
+## 2026-04-17T09:20:32.691Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | p16: ChannelAdapter interface has name, start, stop, send, isHealthy | ✓ | 1 | ok |
+| 2 | p16: Discord adapter has DISCORD_BOT_TOKEN, discord.js import, graceful degradation | ✓ | 0 | ok |
+| 3 | p16: Slack adapter has SLACK_BOT_TOKEN, @slack/bolt import, signing secret | ✓ | 0 | ok |
+| 4 | p16: Webhook adapter has WEBHOOK_SECRET, HMAC, and signature header check | ✓ | 0 | ok |
+| 5 | p16: ChannelManager class has register, startAll, getStatus | ✓ | 0 | ok |
+| 6 | p16: /channels command is in CLI COMMANDS array | ✓ | 1 | ok |
+| 7 | p16: no process.exit or uncaught throw in adapter config loading sections | ✓ | 0 | ok |
+| 8 | p16: ALLOWED_ env var used in discord, slack, and webhook adapters | ✓ | 0 | ok |
+
+## 2026-04-17T09:20:36.336Z — 10/10 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | p17: stt.ts exports transcribe(), SttResult, SttOptions, getSttProviders() | ✓ | 1 | ok |
+| 2 | p17: stt.ts has Groq, OpenAI, and local whisper-cli fallback chain | ✓ | 0 | ok |
+| 3 | p17: tts.ts exports synthesize(), TtsResult, TtsOptions, getTtsProviders() | ✓ | 1 | ok |
+| 4 | p17: tts.ts has Edge TTS, ElevenLabs, and SAPI fallback chain | ✓ | 0 | ok |
+| 5 | p17: tts.ts exports cleanForTTS() that strips markdown | ✓ | 0 | ok |
+| 6 | p17: audio.ts exports recordAudio(), playAudio(), checkAudioAvailable() | ✓ | 0 | ok |
+| 7 | p17: audio.ts recordAudio() takes durationSeconds and outputPath parameters | ✓ | 1 | ok |
+| 8 | p17: /voice /speak /listen commands registered in CLI COMMANDS array and handleCommand | ✓ | 1 | ok |
+| 9 | p17: CLI state has voiceMode flag; TTS called after AI reply when voiceMode is on | ✓ | 0 | ok |
+| 10 | p17: aidenSdk.ts has voice namespace; aiden-sdk.d.ts has AidenVoice interface | ✓ | 1 | ok |
+
+## 2026-04-17T09:24:23.723Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | panel(): no-title top/bottom border equals body row width | ✓ | 194 | ok |
+| 2 | panel(): titled top border equals body row width | ✓ | 0 | ok |
+| 3 | panel(): minimum outer width is 50 chars | ✓ | 0 | ok |
+| 4 | Skill interface: origin field present on parsed skills | ✓ | 92 | ok |
+| 5 | SkillLoader: origin inferred as aiden vs local from filePath | ✓ | 0 | ok |
+| 6 | parseLessons(): returns [] safely when LESSONS.md absent | ✓ | 16 | ok |
+| 7 | filterLessons(): keyword filter returns correct subset | ✓ | 0 | ok |
+| 8 | COMMAND_DETAIL: no section is named Hermes (renamed to Core) | ✓ | 2 | ok |
+
+## 2026-04-17T09:24:28.445Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | aidenSdk: exports getSdkMethods, getSdkNamespaces, buildSdkSurface, buildSdkRuntime | ✓ | 1110 | ok |
+| 2 | aidenSdk: getSdkMethods() covers all required namespaces | ✓ | 0 | ok |
+| 3 | aidenSdk: getSdkNamespaces() returns sorted array | ✓ | 0 | ok |
+| 4 | aidenSdk: buildSdkSurface() includes expected namespace headers | ✓ | 14 | ok |
+| 5 | aidenSdk: buildSdkRuntime() returns object with all namespace keys | ✓ | 1 | ok |
+| 6 | runSandbox: module exports runInSandbox function | ✓ | 13 | ok |
+| 7 | toolRegistry: run tool is registered + getToolsForCategories includes run | ✓ | 0 | ok |
+| 8 | scripts/: 5 Prompt-12 example scripts exist and use the aiden SDK | ✓ | 2 | ok |
+
+## 2026-04-17T09:24:33.751Z — 10/10 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | spawnManager: exports spawnSubagent, getActiveSpawns, killSpawn + interfaces | ✓ | 1669 | ok |
+| 2 | spawnManager: getActiveSpawns() returns an array (empty or otherwise) | ✓ | 0 | ok |
+| 3 | spawnManager: killSpawn("nonexistent") returns false | ✓ | 0 | ok |
+| 4 | spawnManager: IterationBudget shape used in budget inheritance formula | ✓ | 0 | ok |
+| 5 | swarmManager: exports swarmSubagents function + SwarmStrategy types | ✓ | 12 | ok |
+| 6 | swarmManager: source contains vote, merge, best strategy branches | ✓ | 0 | ok |
+| 7 | sessionSearch: exports searchSessions and getIndexSize | ✓ | 10 | ok |
+| 8 | sessionSearch: searchSessions("test") returns an array | ✓ | 25 | ok |
+| 9 | hybridSearch: exports hybridSearch function | ✓ | 11 | ok |
+| 10 | toolRegistry: spawn, swarm, search tools registered in TOOLS + TOOL_CATEGORIES | ✓ | 0 | ok |
+
+## 2026-04-17T09:24:37.528Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | release: package.json version === "3.5.0" | ✓ | 1 | ok |
+| 2 | release: CHANGELOG.md contains "## v3.5.0" header | ✓ | 0 | ok |
+| 3 | release: local git tag v3.5.0 exists | ✓ | 71 | ok |
+| 4 | release: no stale 3.1.0 or 3.4.0 version strings in source files | ✓ | 3 | ok |
+| 5 | release: CHANGELOG.md references "34 zero-cost audits across 4 suites" | ✓ | 0 | ok |
+| 6 | release: Aiden-Setup-3.5.0.exe exists in release/ and is > 100 MB | ✓ | 0 | ok |
+| 7 | release: package.json test:audit script includes prompt_r1 | ✓ | 0 | ok |
+| 8 | release: all 4 audit suite files exist (prompt_11 · 12 · 13 · r1) | ✓ | 1 | ok |
+
+## 2026-04-17T09:24:41.087Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | skills: all 20 SKILL.md files exist | ✓ | 2 | ok |
+| 2 | skills: each SKILL.md has name, description, version, tags in frontmatter | ✓ | 2 | ok |
+| 3 | skills: each SKILL.md has a # H1 header | ✓ | 3 | ok |
+| 4 | skills: each SKILL.md has "When to Use" and "How to Use" sections | ✓ | 2 | ok |
+| 5 | skills: no SKILL.md contains security-blocked injection patterns | ✓ | 3 | ok |
+| 6 | skills: each SKILL.md is under 10 KB | ✓ | 1 | ok |
+| 7 | skills: AIDEN_CATALOG.md exists and references all 20 skills | ✓ | 0 | ok |
+| 8 | skills: package.json test:audit script includes prompt_15 | ✓ | 1 | ok |
+
+## 2026-04-17T09:24:44.711Z — 5/5 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | cleanup: all workspace/skills files pass structural validation | ✓ | 11 | ok |
+| 2 | cleanup: no duplicate skill names across learned/ and approved/ | ✓ | 3 | ok |
+| 3 | cleanup: known garbage skills have been deleted | ✓ | 0 | ok |
+| 4 | cleanup: skillTeacher.ts has header, origin:local, and size validation | ✓ | 1 | ok |
+| 5 | cleanup: all official skills/ pass structural validation | ✓ | 4 | ok |
+
+## 2026-04-17T09:24:48.420Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | mcp: McpServerConfig and McpTool interfaces exported from mcpClient | ✓ | 1 | ok |
+| 2 | mcp: named function exports connectMcpServer/disconnectMcpServer/listMcpServers/listMcpTools/callMcpTool | ✓ | 1 | ok |
+| 3 | mcp: mcpClient.ts contains JSON-RPC initialize, tools/list, tools/call | ✓ | 0 | ok |
+| 4 | mcp: workspace/config/mcp.json template exists with servers array | ✓ | 0 | ok |
+| 5 | shell-wedges: cmd/ps/wsl registered in toolRegistry.ts TOOLS and TOOL_DESCRIPTIONS | ✓ | 1 | ok |
+| 6 | mcp: toolRegistry.ts routes colon-prefix tool names to callMcpTool | ✓ | 1 | ok |
+| 7 | sdk: aidenSdk.ts has cmd/ps/wsl in shell and mcp namespace | ✓ | 0 | ok |
+| 8 | cli: /mcp /cmd /ps /wsl registered in COMMANDS and handled in handleCommand | ✓ | 1 | ok |
+
+## 2026-04-17T09:24:52.053Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | r2: cloudflare-worker/landing.js exists and is non-trivial | ✓ | 1 | ok |
+| 2 | r2: landing.js contains zero occurrences of 3.3.1 | ✓ | 1 | ok |
+| 3 | r2: nav badge contains v3.5.0 | ✓ | 1 | ok |
+| 4 | r2: hero "JUST UPDATED" badge shows v3.5.0 | ✓ | 0 | ok |
+| 5 | r2: download URL references v3.5.0/Aiden-Setup-3.5.0.exe | ✓ | 1 | ok |
+| 6 | r2: download section h2 reads "Download Aiden v3.5.0" | ✓ | 0 | ok |
+| 7 | r2: Razorpay integration preserved (≥1 occurrence) | ✓ | 1 | ok |
+| 8 | r2: exactly 5 occurrences of "3.5.0" in landing.js | ✓ | 0 | ok |
+
+## 2026-04-17T09:24:55.828Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | r3: electron-updater present in package.json dependencies | ✓ | 0 | ok |
+| 2 | r3: electron-builder publish config has github/taracodlabs/aiden-releases | ✓ | 0 | ok |
+| 3 | r3: electron/main.js requires electron-updater and calls checkForUpdatesAndNotify | ✓ | 0 | ok |
+| 4 | r3: electron/main.js has ipcMain.handle for install-update-now and check-for-update | ✓ | 0 | ok |
+| 5 | r3: electron/preload.js exposes aidenUpdater with installNow and checkNow | ✓ | 0 | ok |
+| 6 | r3: cli/aiden.ts /refresh handler references update-check function | ✓ | 0 | ok |
+| 7 | r3: no localhost/127.0.0.1 in update-related config in main.js | ✓ | 1 | ok |
+| 8 | r3: publish config structure is valid for electron-updater GitHub provider | ✓ | 0 | ok |
+
+## 2026-04-17T09:24:59.445Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | p16: ChannelAdapter interface has name, start, stop, send, isHealthy | ✓ | 1 | ok |
+| 2 | p16: Discord adapter has DISCORD_BOT_TOKEN, discord.js import, graceful degradation | ✓ | 0 | ok |
+| 3 | p16: Slack adapter has SLACK_BOT_TOKEN, @slack/bolt import, signing secret | ✓ | 0 | ok |
+| 4 | p16: Webhook adapter has WEBHOOK_SECRET, HMAC, and signature header check | ✓ | 0 | ok |
+| 5 | p16: ChannelManager class has register, startAll, getStatus | ✓ | 1 | ok |
+| 6 | p16: /channels command is in CLI COMMANDS array | ✓ | 0 | ok |
+| 7 | p16: no process.exit or uncaught throw in adapter config loading sections | ✓ | 1 | ok |
+| 8 | p16: ALLOWED_ env var used in discord, slack, and webhook adapters | ✓ | 0 | ok |
+
+## 2026-04-17T09:25:03.210Z — 10/10 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | p17: stt.ts exports transcribe(), SttResult, SttOptions, getSttProviders() | ✓ | 0 | ok |
+| 2 | p17: stt.ts has Groq, OpenAI, and local whisper-cli fallback chain | ✓ | 0 | ok |
+| 3 | p17: tts.ts exports synthesize(), TtsResult, TtsOptions, getTtsProviders() | ✓ | 0 | ok |
+| 4 | p17: tts.ts has Edge TTS, ElevenLabs, and SAPI fallback chain | ✓ | 0 | ok |
+| 5 | p17: tts.ts exports cleanForTTS() that strips markdown | ✓ | 0 | ok |
+| 6 | p17: audio.ts exports recordAudio(), playAudio(), checkAudioAvailable() | ✓ | 1 | ok |
+| 7 | p17: audio.ts recordAudio() takes durationSeconds and outputPath parameters | ✓ | 0 | ok |
+| 8 | p17: /voice /speak /listen commands registered in CLI COMMANDS array and handleCommand | ✓ | 1 | ok |
+| 9 | p17: CLI state has voiceMode flag; TTS called after AI reply when voiceMode is on | ✓ | 1 | ok |
+| 10 | p17: aidenSdk.ts has voice namespace; aiden-sdk.d.ts has AidenVoice interface | ✓ | 0 | ok |
+
+## 2026-04-17T12:00:00.000Z — 38/38 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | p21: all required new files present (voxcpm_runner.py, VOXCPM_SETUP.md) | ✓ | 0 | ok |
+| 2 | p21: ToolCategory type includes 'voice' | ✓ | 0 | ok |
+| 3 | p21: TOOL_CATEGORIES maps all 4 voice tools | ✓ | 0 | ok |
+| 4 | p21: voice_speak implementation present in TOOLS | ✓ | 0 | ok |
+| 5 | p21: voice_transcribe implementation present in TOOLS | ✓ | 0 | ok |
+| 6 | p21: voice_clone implementation present in TOOLS | ✓ | 0 | ok |
+| 7 | p21: voice_design implementation present in TOOLS | ✓ | 0 | ok |
+| 8 | p21: TOOL_TIMEOUTS includes voice_speak | ✓ | 0 | ok |
+| 9 | p21: TOOL_TIMEOUTS includes voice_transcribe | ✓ | 0 | ok |
+| 10 | p21: TOOL_TIMEOUTS includes voice_clone | ✓ | 0 | ok |
+| 11 | p21: TOOL_TIMEOUTS includes voice_design | ✓ | 0 | ok |
+| 12 | p21: detectToolCategories adds 'voice' for speak/transcribe queries | ✓ | 0 | ok |
+| 13 | p21: detectToolCategories voice regex covers speak, transcribe, clone, design | ✓ | 0 | ok |
+| 14 | p21: voxcpm_runner.py reads JSON from stdin | ✓ | 0 | ok |
+| 15 | p21: voxcpm_runner.py writes JSON to stdout | ✓ | 0 | ok |
+| 16 | p21: voxcpm_runner.py handles clone mode | ✓ | 0 | ok |
+| 17 | p21: voxcpm_runner.py handles design mode | ✓ | 0 | ok |
+| 18 | p21: voxcpm_runner.py handles CUDA OOM gracefully | ✓ | 0 | ok |
+| 19 | p21: TtsOptions.provider includes 'voxcpm' | ✓ | 0 | ok |
+| 20 | p21: USE_VOXCPM=1 opt-in check present in tts.ts | ✓ | 0 | ok |
+| 21 | p21: synthesize() calls synthesizeVoxCPM when enabled | ✓ | 0 | ok |
+| 22 | p21: getTtsProviders() returns voxcpm entry | ✓ | 0 | ok |
+| 23 | p21: referenceAudioPath and voiceDesignPrompt in TtsOptions | ✓ | 0 | ok |
+| 24 | p21: /voice design subcommand present in CLI | ✓ | 0 | ok |
+| 25 | p21: /voice clone subcommand present in CLI | ✓ | 0 | ok |
+| 26 | p21: /voice reset subcommand present in CLI | ✓ | 0 | ok |
+| 27 | p21: /voice providers subcommand present in CLI | ✓ | 0 | ok |
+| 28 | p21: voiceDesign state field added to CLI | ✓ | 0 | ok |
+| 29 | p21: voiceReferencePath state field added to CLI | ✓ | 0 | ok |
+| 30 | p21: aiden.voice.speak() registered in SDK | ✓ | 0 | ok |
+| 31 | p21: aiden.voice.clone() registered in SDK | ✓ | 0 | ok |
+| 32 | p21: aiden.voice.design() registered in SDK | ✓ | 0 | ok |
+| 33 | p21: aiden.voice.reset() registered in SDK | ✓ | 0 | ok |
+| 34 | p21: aiden.voice.providers() registered in SDK | ✓ | 0 | ok |
+| 35 | p21: VOXCPM_SETUP.md mentions OpenBMB | ✓ | 0 | ok |
+| 36 | p21: VOXCPM_SETUP.md mentions Apache 2.0 license | ✓ | 0 | ok |
+| 37 | p21: VOXCPM_SETUP.md has arXiv reference | ✓ | 0 | ok |
+| 38 | p21: VOXCPM_SETUP.md has USE_VOXCPM=1 opt-in instruction | ✓ | 0 | ok |

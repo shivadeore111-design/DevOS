@@ -21,7 +21,7 @@ voice cloning from 5–10 s of reference audio, and voice design from a text des
 
 - Python 3.10+
 - CUDA-capable GPU with 8 GB+ VRAM (recommended) — CPU fallback is supported but slow
-- ~4 GB disk space for model weights
+- ~4–5 GB disk space for model weights
 
 ---
 
@@ -55,51 +55,85 @@ pip install transformers accelerate huggingface_hub
 pip install git+https://github.com/OpenBMB/MiniCPM-o.git#egg=voxcpm
 ```
 
-### 4. Download the model weights
+### 4. Download the model (4–5 GB, one-time)
 
-The model is downloaded automatically on first use. To pre-download:
+```bash
+pip install huggingface_hub
+huggingface-cli download openbmb/VoxCPM2 --local-dir ~/.cache/voxcpm/VoxCPM2
+```
+
+Alternatively, via Python:
 
 ```python
 from huggingface_hub import snapshot_download
-snapshot_download("openbmb/VoxCPM", local_dir="./models/voxcpm")
+snapshot_download("openbmb/VoxCPM2", local_dir="~/.cache/voxcpm/VoxCPM2")
 ```
 
-Set `VOXCPM_MODEL` env var to use a local path:
-```bash
-VOXCPM_MODEL=./models/voxcpm
-```
-
----
-
-## Enabling VoxCPM in DevOS
-
-Add to your `.env` or shell profile:
+### 5. Enable in DevOS by setting environment variables
 
 ```bash
 USE_VOXCPM=1
+VOXCPM_MODEL_PATH=~/.cache/voxcpm/VoxCPM2
 ```
 
-DevOS will automatically place VoxCPM at the top of the TTS provider chain.
+On **Windows (PowerShell)** — set persistently for your user account:
+
+```powershell
+[Environment]::SetEnvironmentVariable('USE_VOXCPM', '1', 'User')
+[Environment]::SetEnvironmentVariable('VOXCPM_MODEL_PATH', "$HOME/.cache/voxcpm/VoxCPM2", 'User')
+```
+
+### 6. Restart DevOS and verify
+
+```
+/voice providers
+```
+
+VoxCPM should appear at position 1 with **active** status.
 
 ---
 
 ## Usage
 
-### CLI
+### Basic TTS
 
 ```
-# Toggle voice design
-/voice design "calm, deep male voice with slight British accent"
+/speak "Hello from VoxCPM, speaking naturally."
+```
 
-# Toggle voice clone from reference audio
-/voice clone ./reference.wav
+### Voice design (no reference audio needed)
 
-# Reset to standard provider chain
+```
+/voice design "Young female voice, warm and gentle, radio announcer"
+/speak "This is now the designed voice."
+```
+
+### Voice cloning (requires reference audio)
+
+```
+/voice clone ~/my_voice_sample.wav
+/speak "This sounds like you."
+```
+
+### Reset
+
+```
 /voice reset
-
-# Show all TTS providers and availability
-/voice providers
 ```
+
+Returns to the default VoxCPM voice, clearing any active design or clone.
+
+### Agent usage
+
+When VoxCPM is active, the planner can call `voice_speak`, `voice_clone`, and
+`voice_design` as first-class tools in multi-step tasks. Example:
+
+> **User:** "Clone the voice from attached.wav and read monthly_report.md aloud"
+>
+> **Agent plan:**
+> 1. `voice_clone(referenceAudioPath: "attached.wav")`
+> 2. `file_read("monthly_report.md")`
+> 3. `voice_speak(text: <content>)`
 
 ### SDK
 
@@ -119,11 +153,25 @@ const providers = await aiden.voice.providers()
 
 ### Tool names (for agent plans)
 
-| Tool           | Description |
-|----------------|-------------|
-| `voice_speak`  | Standard TTS with provider fallback |
-| `voice_clone`  | Clone voice from reference audio |
-| `voice_design` | Design voice from text description |
+| Tool             | Description |
+|------------------|-------------|
+| `voice_speak`    | Standard TTS with provider fallback |
+| `voice_clone`    | Clone voice from reference audio |
+| `voice_design`   | Design voice from text description |
+| `voice_transcribe` | Speech-to-text from an audio file |
+
+---
+
+## When to use each provider
+
+| Need                          | Provider     |
+|-------------------------------|--------------|
+| Simple English TTS, fast, free | Edge TTS    |
+| Best quality English TTS, paid | ElevenLabs  |
+| Offline TTS, any Windows machine | Windows SAPI |
+| Multilingual (30+ languages)  | VoxCPM       |
+| Voice cloning                 | VoxCPM       |
+| Voice design from text        | VoxCPM       |
 
 ---
 
@@ -131,26 +179,60 @@ const providers = await aiden.voice.providers()
 
 ### "No module named voxcpm"
 
-VoxCPM is not installed. Follow the Installation steps above.
+VoxCPM is not installed, or the wrong Python environment is active.
+
+```bash
+python -c "import voxcpm"   # should print nothing on success
+```
+
+If it fails, re-run the `pip install` step in the correct virtual environment.
+
+### "Model not found at VOXCPM_MODEL_PATH"
+
+The `huggingface-cli download` step was skipped. Re-run:
+
+```bash
+huggingface-cli download openbmb/VoxCPM2 --local-dir ~/.cache/voxcpm/VoxCPM2
+```
 
 ### "CUDA out of memory"
 
 Your GPU has less than 8 GB VRAM. Options:
-1. Use CPU by setting `CUDA_VISIBLE_DEVICES=-1`
-2. Reduce text length (VoxCPM works best with ≤500 characters per call)
-3. Use a machine with more VRAM
+
+1. Lower inference steps by reducing text length (VoxCPM works best with ≤500 chars per call)
+2. Close other GPU-heavy applications
+3. Use CPU mode by setting `CUDA_VISIBLE_DEVICES=-1`
+4. Use a machine with more VRAM
+
+### "python3 not found" on Windows
+
+Set the `VOXCPM_PYTHON_CMD` environment variable to point at your Python binary:
+
+```powershell
+[Environment]::SetEnvironmentVariable('VOXCPM_PYTHON_CMD', 'python', 'User')
+```
 
 ### VoxCPM is slow
 
 VoxCPM on CPU is roughly 10–30× slower than GPU. A 5-second audio clip may take
 30–90 seconds on CPU. For real-time use, GPU acceleration is strongly recommended.
 
-### VoxCPM not used even with USE_VOXCPM=1
+### VoxCPM not appearing in `/voice providers`
 
-Check the `[TTS]` logs in the DevOS console. Common causes:
+Confirm `USE_VOXCPM=1` is set in the **same shell** where you launch DevOS.
+
+```powershell
+echo $env:USE_VOXCPM   # PowerShell
+```
+
+```bash
+echo $USE_VOXCPM       # bash / zsh
+```
+
+Common causes:
 - Python binary not in PATH — check `python --version`
 - Wrong virtual environment active — the `python` that DevOS spawns must have voxcpm installed
-- Model download in progress on first run
+- Model download still in progress on first run
 
 ---
 
