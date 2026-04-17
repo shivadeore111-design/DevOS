@@ -33,11 +33,41 @@ At v3.5.0 Aiden reaches full feature parity with the best commercial agents on t
 
 ## Installation
 
-Download the signed Windows installer from the latest release:
+### PowerShell one-liner (recommended)
+
+```powershell
+iwr https://aiden.taracod.com/install.ps1 -useb | iex
+```
+
+Opens a new terminal and type `aiden` to start. Auto-updates are built in — install once, stay current.
+
+### Direct download
 
 **[→ Download Aiden v3.5.0 for Windows](https://github.com/taracodlabs/aiden-releases/releases/tag/v3.5.0)**
 
-Requirements: Windows 10/11 (64-bit). Auto-updates are built in — install once, stay current.
+Run `Aiden-Setup-3.5.0.exe` and follow the installer. After install, `aiden` is available in any terminal.
+
+### winget *(coming soon)*
+
+```powershell
+winget install Taracod.Aiden
+```
+
+Submission to the Windows Package Manager Community Repository is in progress.
+See [`packaging/winget/`](packaging/winget/) for manifest files.
+
+### Scoop *(coming soon)*
+
+```powershell
+scoop bucket add taracod https://github.com/taracodlabs/scoop-bucket
+scoop install aiden
+```
+
+See [`packaging/scoop/`](packaging/scoop/) for manifest and bucket setup instructions.
+
+---
+
+Requirements: Windows 10/11 (64-bit).
 
 ---
 
