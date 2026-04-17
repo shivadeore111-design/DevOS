@@ -223,7 +223,7 @@ async function printBanner(): Promise<void> {
     apiFetch<any[]>('/api/tools',   []),
   ])
 
-  const version   = health.version || '3.5.0'
+  const version   = health.version || '3.6.0'
   const cfg       = loadCfg()
   const apis      = Array.isArray(provData.apis) ? provData.apis : []
   const active    = apis.filter((a: any) => a.enabled && a.hasKey)
@@ -3805,7 +3805,7 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
   // ── /refresh ────────────────────────────────────────────────────────────────
   if (command === '/refresh') {
     const pkgVersion = (() => {
-      try { return (require('../package.json') as { version: string }).version } catch { return '3.5.0' }
+      try { return (require('../package.json') as { version: string }).version } catch { return '3.6.0' }
     })()
     console.log(`\n  ${T.dim}Checking for updates...${T.reset}`)
     try {

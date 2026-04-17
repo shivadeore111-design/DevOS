@@ -1,12 +1,12 @@
 PackageIdentifier: Taracod.Aiden
-PackageVersion: 3.5.0
+PackageVersion: 3.6.0
 InstallerType: nullsoft
 InstallModes:
   - interactive
   - silent
 Installers:
   - Architecture: x64
-    InstallerUrl: https://github.com/taracodlabs/aiden-releases/releases/download/v3.5.0/Aiden-Setup-3.5.0.exe
+    InstallerUrl: https://github.com/taracodlabs/aiden-releases/releases/download/v3.6.0/Aiden-Setup-3.6.0.exe
     InstallerSha256: <PLACEHOLDER — run packaging/winget/generate-sha256.ps1 to obtain>
     InstallerSwitches:
       Silent: /S

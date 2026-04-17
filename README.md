@@ -14,7 +14,7 @@ Aiden is a local-first AI operating system that runs entirely on your machine vi
 
 It is built to be the only AI you need. Aiden remembers everything across sessions, learns permanently from its own mistakes via a LESSONS.md moat, and can delegate work to subagents, run code in a sandboxed SDK, control your screen, send emails, search the web, and more — all from one CLI.
 
-At v3.5.0 Aiden reaches full feature parity with the best commercial agents on the market, while remaining completely private, local, and free to self-host.
+At v3.6.0 Aiden reaches full feature parity with the best commercial agents on the market, while remaining completely private, local, and free to self-host.
 
 ---
 
@@ -43,9 +43,9 @@ Opens a new terminal and type `aiden` to start. Auto-updates are built in — in
 
 ### Direct download
 
-**[→ Download Aiden v3.5.0 for Windows](https://github.com/taracodlabs/aiden-releases/releases/tag/v3.5.0)**
+**[→ Download Aiden v3.6.0 for Windows](https://github.com/taracodlabs/aiden-releases/releases/tag/v3.6.0)**
 
-Run `Aiden-Setup-3.5.0.exe` and follow the installer. After install, `aiden` is available in any terminal.
+Run `Aiden-Setup-3.6.0.exe` and follow the installer. After install, `aiden` is available in any terminal.
 
 ### winget *(coming soon)*
 

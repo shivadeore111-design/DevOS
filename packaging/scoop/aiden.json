@@ -1,9 +1,9 @@
 {
-  "version": "3.5.0",
+  "version": "3.6.0",
   "description": "Your personal AI. Runs on your machine. Remembers everything.",
   "homepage": "https://aiden.taracod.com",
   "license": "Proprietary",
-  "url": "https://github.com/taracodlabs/aiden-releases/releases/download/v3.5.0/Aiden-Setup-3.5.0.exe",
+  "url": "https://github.com/taracodlabs/aiden-releases/releases/download/v3.6.0/Aiden-Setup-3.6.0.exe",
   "hash": "sha256:PLACEHOLDER",
   "installer": {
     "script": [

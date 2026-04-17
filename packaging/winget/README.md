@@ -23,12 +23,12 @@ Aiden to the [Windows Package Manager Community Repository](https://github.com/m
 
 3. **Copy** these three files to:
    ```
-   manifests/t/Taracod/Aiden/3.5.0/
+   manifests/t/Taracod/Aiden/3.6.0/
    ```
 
 4. **Open a Pull Request** against `microsoft/winget-pkgs` with title:
    ```
-   New package: Taracod.Aiden version 3.5.0
+   New package: Taracod.Aiden version 3.6.0
    ```
 
 5. The winget validation bot will run automated checks. Address any failures
