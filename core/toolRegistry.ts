@@ -1623,6 +1623,50 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
       return { success: false, output: '', error: e.message }
     }
   },
+
+  // ── ▲ spawn — delegate a sub-task to an isolated subagent ────────────────
+  spawn: async (p) => {
+    const task    = p.task || p.prompt || ''
+    const context = p.context ?? undefined
+    const timeout = typeof p.timeout === 'number' ? p.timeout : 60000
+    if (!task) return { success: false, output: '', error: 'No task provided' }
+    try {
+      const { spawnSubagent }  = await import('./spawnManager')
+      const { getBudgetState } = await import('./agentLoop')
+      const budget = getBudgetState() ?? { current: 1, max: 10, remaining: 9 }
+      const result = await spawnSubagent({ task, context, timeout, parentBudget: budget })
+      const out = [
+        result.result ?? '',
+        `[spawn] iterations=${result.iterationsUsed}  duration=${result.duration}ms`,
+        result.providerChain.length ? `[providers] ${result.providerChain.join(' → ')}` : '',
+      ].filter(Boolean).join('\n')
+      return { success: result.success, output: out, error: result.error }
+    } catch (e: any) {
+      return { success: false, output: '', error: e.message }
+    }
+  },
+
+  // ── ▲ swarm — run parallel subagents and aggregate results ───────────────
+  swarm: async (p) => {
+    const task     = p.task || p.prompt || ''
+    const n        = typeof p.n === 'number' ? Math.max(2, Math.min(p.n, 5)) : 3
+    const strategy = p.strategy ?? 'vote'
+    const timeout  = typeof p.timeout === 'number' ? p.timeout : 90000
+    if (!task) return { success: false, output: '', error: 'No task provided' }
+    try {
+      const { swarmSubagents } = await import('./swarmManager')
+      const { getBudgetState } = await import('./agentLoop')
+      const budget = getBudgetState() ?? { current: 1, max: 10, remaining: 9 }
+      const result = await swarmSubagents({ task, n, strategy, timeout, parentBudget: budget })
+      const out = [
+        result.result ?? '',
+        `[swarm] agents=${result.agentsRun}  strategy=${result.strategy}  duration=${result.duration}ms`,
+      ].filter(Boolean).join('\n')
+      return { success: result.success, output: out, error: result.error }
+    } catch (e: any) {
+      return { success: false, output: '', error: e.message }
+    }
+  },
 }
 
 // ── Plugin-registered tools ───────────────────────────────────
@@ -1914,6 +1958,7 @@ export type ToolCategory =
   | 'memory'       // (reserved for future memory/knowledge tools)
   | 'media'        // (reserved for future voice/audio tools)
   | 'introspection' // status, analytics, spend, memory_show, lessons, skills_list, tools_list, whoami, channels_status, goals
+  | 'delegation'   // spawn, swarm — subagent orchestration
 
 const TOOL_CATEGORIES: Record<string, ToolCategory[]> = {
   respond:                 ['core'],
@@ -1981,6 +2026,8 @@ const TOOL_CATEGORIES: Record<string, ToolCategory[]> = {
   channels_status:         ['introspection'],
   goals:                   ['introspection', 'memory'],
   run:                     ['code'],
+  spawn:                   ['delegation', 'core'],
+  swarm:                   ['delegation', 'core'],
 }
 
 export function detectToolCategories(message: string): ToolCategory[] {
@@ -2009,6 +2056,8 @@ export function detectToolCategories(message: string): ToolCategory[] {
     categories.add('memory')
   if (/status|uptime|analytics|how much.*spent|spending|cost|lessons|skills|what tools|tools (do you|available)|who am i|whoami|channels|providers|my goals|active goals/i.test(msg))
     categories.add('introspection')
+  if (/spawn|swarm|subagent|delegate|parallel agent|fork agent/i.test(msg))
+    categories.add('delegation')
 
   return Array.from(categories)
 }

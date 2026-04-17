@@ -662,6 +662,8 @@ const COMMANDS = [
   '/theme', '/persona', '/detail', '/depth', '/provider',
   '/private',
   '/run',
+  '/spawn',
+  '/swarm',
   '/quit', '/exit', '/q',
 ]
 
@@ -782,6 +784,16 @@ const COMMAND_DETAIL: Record<string, CmdDetail> = {
   '/run':        { section: 'Power',     desc: 'Execute JS in the Aiden VM sandbox with full SDK access.',
     subs:     ['<file.js>', '- [desc]', 'examples', 'help', 'help <ns>'],
     examples: ['/run scripts/port_checker.js', '/run -', '/run examples', '/run help', '/run help web'],
+  },
+  '/spawn':      { section: 'Power',     desc: 'Delegate a sub-task to an isolated subagent.',
+    subs:     ['<task>', 'list', 'kill <id>'],
+    examples: ['/spawn summarise the logs', '/spawn list', '/spawn kill spawn_1234_abc'],
+    usage:    '/spawn <task> | list | kill <id>',
+  },
+  '/swarm':      { section: 'Power',     desc: 'Run N parallel subagents and aggregate results.',
+    subs:     ['<task>', '<task> --n=<N>', '<task> --strategy=vote|merge|best'],
+    examples: ['/swarm research quantum computing', '/swarm write a haiku --n=5 --strategy=vote'],
+    usage:    '/swarm <task> [--n=3] [--strategy=vote|merge|best]',
   },
   '/security':   { section: 'Power',     desc: 'Run AgentShield security scan.',                            usage: '/security' },
   '/debug':      { section: 'Power',     desc: 'Recent server log entries.',                                usage: '/debug' },
@@ -3294,6 +3306,169 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       lines,
       accent: res.success ? COLORS.success : COLORS.error,
     }))
+  }
+
+  // ── /spawn [<task>|list|kill <id>] ──────────────────────────────────────────
+  if (command === '/spawn') {
+    const sub = parts[1]
+    const O   = fg(COLORS.orange)
+    const D   = T.dim
+    const R   = T.reset
+    const G   = T.success
+
+    // /spawn list
+    if (sub === 'list') {
+      try {
+        const { getActiveSpawns } = await import('../core/spawnManager')
+        const spawns = getActiveSpawns()
+        if (!spawns.length) {
+          console.log(`\n  ${D}No active or recent spawns.${R}\n`)
+          return true
+        }
+        const lines: string[] = ['']
+        for (const s of spawns) {
+          const age    = Math.round((Date.now() - s.startedAt) / 1000)
+          const status = s.status === 'running'  ? `${O}running${R}`
+                       : s.status === 'done'     ? `${G}done${R}`
+                       : s.status === 'aborted'  ? `${T.error}aborted${R}`
+                       : `${D}pending${R}`
+          lines.push(`  ${D}${s.id}${R}`)
+          lines.push(`    ${status}  ${D}${age}s ago${R}  ${s.task}`)
+          lines.push('')
+        }
+        console.log(panel({ title: `${MARKS.TRI} /spawn list`, lines, accent: COLORS.orange }))
+      } catch (e: any) {
+        console.log(`\n  ${T.error}✗ ${e?.message}${R}\n`)
+      }
+      return true
+    }
+
+    // /spawn kill <id>
+    if (sub === 'kill') {
+      const id = parts[2]
+      if (!id) { console.log(`\n  ${D}Usage: /spawn kill <id>${R}\n`); return true }
+      try {
+        const { killSpawn } = await import('../core/spawnManager')
+        const killed = killSpawn(id)
+        if (killed) console.log(`\n  ${G}✓ Spawn ${id} aborted.${R}\n`)
+        else        console.log(`\n  ${T.error}✗ No running spawn with id: ${id}${R}\n`)
+      } catch (e: any) {
+        console.log(`\n  ${T.error}✗ ${e?.message}${R}\n`)
+      }
+      return true
+    }
+
+    // /spawn <task>
+    if (sub) {
+      const task = parts.slice(1).join(' ')
+      console.log(`\n  ${D}▲ Spawning subagent…${R}`)
+      try {
+        const { spawnSubagent }  = await import('../core/spawnManager')
+        const { getBudgetState } = await import('../core/agentLoop')
+        const budget = getBudgetState() ?? { current: 1, max: 20, remaining: 19 }
+        const t0     = Date.now()
+        const result = await spawnSubagent({ task, timeout: 120000, parentBudget: budget })
+        const ms     = Date.now() - t0
+        const lines: string[] = ['']
+        if (result.result) {
+          for (const l of result.result.split('\n')) lines.push(`  ${l}`)
+          lines.push('')
+        }
+        lines.push(`  ${D}iterations=${result.iterationsUsed}  duration=${ms}ms${R}`)
+        if (result.providerChain.length)
+          lines.push(`  ${D}providers: ${result.providerChain.join(' → ')}${R}`)
+        lines.push('')
+        const accent = result.success ? COLORS.success : COLORS.error
+        if (result.error) lines.splice(1, 0, `  ${T.error}✗ ${result.error}${R}`, '')
+        console.log(panel({ title: `${MARKS.TRI} /spawn — ${task.slice(0, 50)}`, lines, accent }))
+      } catch (e: any) {
+        console.log(`\n  ${T.error}✗ Spawn failed: ${e?.message}${R}\n`)
+      }
+      return true
+    }
+
+    // /spawn (no args)
+    console.log(panel({
+      title: `${MARKS.TRI} /spawn — subagent delegation`,
+      lines: [
+        '',
+        `  ${D}Delegate a sub-task to an isolated subagent with context isolation.${R}`,
+        '',
+        `  ${O}Usage:${R}`,
+        `    ${D}/spawn <task>          ${R}Delegate task to subagent`,
+        `    ${D}/spawn list            ${R}Show active / recent spawns`,
+        `    ${D}/spawn kill <id>       ${R}Abort a running spawn`,
+        '',
+      ],
+      accent: COLORS.orange,
+    }))
+    return true
+  }
+
+  // ── /swarm [<task>] [--n=N] [--strategy=vote|merge|best] ────────────────────
+  if (command === '/swarm') {
+    const O   = fg(COLORS.orange)
+    const D   = T.dim
+    const R   = T.reset
+
+    // Parse flags from args
+    const rawArgs  = parts.slice(1)
+    const flagN    = rawArgs.find(a => a.startsWith('--n='))
+    const flagS    = rawArgs.find(a => a.startsWith('--strategy='))
+    const n        = flagN    ? parseInt(flagN.replace('--n=', ''),        10) : 3
+    const strategy = flagS    ? flagS.replace('--strategy=', '')               : 'vote'
+    const taskParts = rawArgs.filter(a => !a.startsWith('--'))
+    const task      = taskParts.join(' ')
+
+    if (!task) {
+      console.log(panel({
+        title: `${MARKS.TRI} /swarm — parallel subagents`,
+        lines: [
+          '',
+          `  ${D}Run N subagents in parallel and aggregate their answers.${R}`,
+          '',
+          `  ${O}Usage:${R}`,
+          `    ${D}/swarm <task>                          ${R}3 agents, vote strategy`,
+          `    ${D}/swarm <task> --n=5                    ${R}5 agents`,
+          `    ${D}/swarm <task> --strategy=merge         ${R}Synthesise all answers`,
+          `    ${D}/swarm <task> --strategy=best          ${R}Ranked list of all answers`,
+          '',
+          `  ${O}Strategies:${R}`,
+          `    ${D}vote   ${R}LLM judge picks the best single answer (default)`,
+          `    ${D}merge  ${R}Synthesise all successful answers into one`,
+          `    ${D}best   ${R}Return all answers ranked by completeness`,
+          '',
+        ],
+        accent: COLORS.orange,
+      }))
+      return true
+    }
+
+    const safeN       = Math.max(2, Math.min(isNaN(n) ? 3 : n, 5))
+    const safeStrat   = ['vote', 'merge', 'best'].includes(strategy) ? strategy as 'vote' | 'merge' | 'best' : 'vote'
+
+    console.log(`\n  ${D}▲ Swarming ${safeN} agents (strategy: ${safeStrat})…${R}`)
+    try {
+      const { swarmSubagents } = await import('../core/swarmManager')
+      const { getBudgetState } = await import('../core/agentLoop')
+      const budget = getBudgetState() ?? { current: 1, max: 20, remaining: 19 }
+      const t0     = Date.now()
+      const result = await swarmSubagents({ task, n: safeN, strategy: safeStrat, timeout: 120000, parentBudget: budget })
+      const ms     = Date.now() - t0
+      const lines: string[] = ['']
+      if (result.result) {
+        for (const l of result.result.split('\n')) lines.push(`  ${l}`)
+        lines.push('')
+      }
+      lines.push(`  ${D}agents=${result.agentsRun}  strategy=${result.strategy}  duration=${ms}ms${R}`)
+      lines.push('')
+      if (result.error) lines.splice(1, 0, `  ${T.error}✗ ${result.error}${R}`, '')
+      const accent = result.success ? COLORS.success : COLORS.error
+      console.log(panel({ title: `${MARKS.TRI} /swarm — ${task.slice(0, 50)}`, lines, accent }))
+    } catch (e: any) {
+      console.log(`\n  ${T.error}✗ Swarm failed: ${e?.message}${R}\n`)
+    }
+    return true
   }
 
   console.log(`  ${T.dim}Unknown command. /help for list.${T.reset}\n`)
