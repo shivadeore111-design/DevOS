@@ -664,6 +664,7 @@ const COMMANDS = [
   '/run',
   '/spawn',
   '/swarm',
+  '/search',
   '/quit', '/exit', '/q',
 ]
 
@@ -794,6 +795,11 @@ const COMMAND_DETAIL: Record<string, CmdDetail> = {
     subs:     ['<task>', '<task> --n=<N>', '<task> --strategy=vote|merge|best'],
     examples: ['/swarm research quantum computing', '/swarm write a haiku --n=5 --strategy=vote'],
     usage:    '/swarm <task> [--n=3] [--strategy=vote|merge|best]',
+  },
+  '/search':     { section: 'Power',     desc: 'Hybrid BM25 + semantic search over sessions and memory.',
+    subs:     ['<query>', '<query> --top=N'],
+    examples: ['/search market research', '/search authentication bug --top=10'],
+    usage:    '/search <query> [--top=N]',
   },
   '/security':   { section: 'Power',     desc: 'Run AgentShield security scan.',                            usage: '/security' },
   '/debug':      { section: 'Power',     desc: 'Recent server log entries.',                                usage: '/debug' },
@@ -3467,6 +3473,64 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       console.log(panel({ title: `${MARKS.TRI} /swarm — ${task.slice(0, 50)}`, lines, accent }))
     } catch (e: any) {
       console.log(`\n  ${T.error}✗ Swarm failed: ${e?.message}${R}\n`)
+    }
+    return true
+  }
+
+  // ── /search <query> [--top=N] ────────────────────────────────────────────────
+  if (command === '/search') {
+    const O   = fg(COLORS.orange)
+    const D   = T.dim
+    const R   = T.reset
+    const G   = T.success
+
+    const rawArgs  = parts.slice(1)
+    const flagTop  = rawArgs.find(a => a.startsWith('--top='))
+    const topK     = flagTop ? parseInt(flagTop.replace('--top=', ''), 10) : 5
+    const query    = rawArgs.filter(a => !a.startsWith('--')).join(' ')
+
+    if (!query) {
+      console.log(panel({
+        title: `${MARKS.TRI} /search — session & memory search`,
+        lines: [
+          '',
+          `  ${D}Hybrid BM25 + semantic search over sessions and memory files.${R}`,
+          '',
+          `  ${O}Usage:${R}`,
+          `    ${D}/search <query>           ${R}Top-5 results`,
+          `    ${D}/search <query> --top=N   ${R}Top-N results`,
+          '',
+        ],
+        accent: COLORS.orange,
+      }))
+      return true
+    }
+
+    try {
+      const { hybridSearch } = await import('../core/hybridSearch')
+      const { getIndexSize } = await import('../core/sessionSearch')
+      const safeTop = isNaN(topK) ? 5 : Math.max(1, Math.min(topK, 20))
+      const hits    = hybridSearch(query, { topK: safeTop })
+      const size    = getIndexSize()
+
+      if (!hits.length) {
+        console.log(`\n  ${D}No results for "${query}" (${size} docs indexed).${R}\n`)
+        return true
+      }
+
+      const lines: string[] = ['']
+      for (const h of hits) {
+        const pct = (h.score * 100).toFixed(0).padStart(3)
+        const src = h.source === 'both' ? 'sem+fts' : h.source === 'semantic' ? 'sem' : 'fts'
+        lines.push(`  ${O}${pct}%${R}  ${h.title}  ${D}[${src}]${R}`)
+        lines.push(`  ${D}${h.snippet}${R}`)
+        lines.push('')
+      }
+      lines.push(`  ${D}${hits.length} result(s)  ·  ${size} docs indexed${R}`)
+      lines.push('')
+      console.log(panel({ title: `${MARKS.TRI} /search — ${query}`, lines, accent: COLORS.orange }))
+    } catch (e: any) {
+      console.log(`\n  ${T.error}✗ Search failed: ${e?.message}${R}\n`)
     }
     return true
   }

@@ -2827,6 +2827,23 @@ export function createApiServer(): Express {
     }
   })
 
+  // POST /api/search -- hybrid BM25 + semantic search over sessions & memory
+  app.post('/api/search', async (req: Request, res: Response) => {
+    const { query, topK } = req.body as { query?: string; topK?: number }
+    if (!query) {
+      res.status(400).json({ error: 'query is required' })
+      return
+    }
+    try {
+      const { hybridSearch }  = await import('../core/hybridSearch')
+      const { getIndexSize }  = await import('../core/sessionSearch')
+      const hits = hybridSearch(query, { topK: typeof topK === 'number' ? topK : 5 })
+      res.json({ hits, indexSize: getIndexSize() })
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message ?? String(err) })
+    }
+  })
+
   // POST /api/mcp/servers -- register a new MCP server and discover its tools
   app.post('/api/mcp/servers', async (req: Request, res: Response) => {
     const { name, url, description } = req.body as { name?: string; url?: string; description?: string }

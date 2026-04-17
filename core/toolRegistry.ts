@@ -1667,6 +1667,23 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
       return { success: false, output: '', error: e.message }
     }
   },
+  // ── ▲ search — hybrid BM25 + semantic search over sessions & memory ─────
+  search: async (p) => {
+    const query = p.query || p.q || ''
+    const topK  = typeof p.topK === 'number' ? p.topK : 5
+    if (!query) return { success: false, output: '', error: 'No query provided' }
+    try {
+      const { hybridSearch } = await import('./hybridSearch')
+      const hits = hybridSearch(query, { topK })
+      if (!hits.length) return { success: true, output: 'No results found.' }
+      const out = hits.map((h, i) =>
+        `[${i + 1}] (${(h.score * 100).toFixed(0)}%) ${h.title}\n    ${h.snippet}`
+      ).join('\n\n')
+      return { success: true, output: out }
+    } catch (e: any) {
+      return { success: false, output: '', error: e.message }
+    }
+  },
 }
 
 // ── Plugin-registered tools ───────────────────────────────────
@@ -2028,6 +2045,7 @@ const TOOL_CATEGORIES: Record<string, ToolCategory[]> = {
   run:                     ['code'],
   spawn:                   ['delegation', 'core'],
   swarm:                   ['delegation', 'core'],
+  search:                  ['memory', 'introspection'],
 }
 
 export function detectToolCategories(message: string): ToolCategory[] {
