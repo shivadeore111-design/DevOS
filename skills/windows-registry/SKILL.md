@@ -31,13 +31,11 @@ Get-ItemPropertyValue -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Exp
 Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion"
 ```
 
-### Check startup programs (current user)
+### Check startup programs (current user and all users)
 ```powershell
+# Current user only
 Get-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
-```
-
-### Check startup programs (all users)
-```powershell
+# All users (machine-wide)
 Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
 ```
 

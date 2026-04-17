@@ -87,9 +87,12 @@ Write a SKILL.md with this EXACT format:
 name: ${skillName}
 description: [one line description of what this skill does]
 version: 1.0.0
+origin: local
 confidence: low
 tags: [comma separated tags relevant to this task]
 ---
+
+# [Skill Title in Title Case]
 
 [2-5 bullet points of key instructions for doing this type of task well]
 [Include specific tips learned from this execution]
@@ -116,13 +119,17 @@ function buildFallbackSkill(
   tools:     string[],
   duration:  number,
 ): string {
+  const title = skillName.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
   return `---
 name: ${skillName}
 description: ${task.slice(0, 80)}
 version: 1.0.0
+origin: local
 confidence: low
 tags: ${tools.join(', ')}
 ---
+
+# ${title}
 
 When performing this type of task:
 1. Use tools in this order: ${tools.join(' → ')}
@@ -237,6 +244,17 @@ export class SkillTeacher {
         skillName, task, tools, duration,
         llmCaller, apiKey, model, provider,
       )
+
+      // ── Size validation — reject suspiciously small or large content ──
+      const byteLen = Buffer.byteLength(content, 'utf-8')
+      if (byteLen < 50) {
+        console.warn(`[SkillTeacher] Rejected "${skillName}": content too small (${byteLen} bytes)`)
+        return
+      }
+      if (byteLen > 10240) {
+        console.warn(`[SkillTeacher] Rejected "${skillName}": content too large (${byteLen} bytes > 10KB)`)
+        return
+      }
 
       fs.mkdirSync(path.join(LEARNED_DIR, skillName), { recursive: true })
       fs.writeFileSync(skillPath, content, 'utf-8')

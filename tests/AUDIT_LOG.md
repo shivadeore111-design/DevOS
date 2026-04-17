@@ -217,3 +217,214 @@
 | 6 | release: Aiden-Setup-3.5.0.exe exists in release/ and is > 100 MB | ✓ | 0 | ok |
 | 7 | release: package.json test:audit script includes prompt_r1 | ✓ | 0 | ok |
 | 8 | release: all 4 audit suite files exist (prompt_11 · 12 · 13 · r1) | ✓ | 1 | ok |
+
+## 2026-04-17T06:30:24.789Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | panel(): no-title top/bottom border equals body row width | ✓ | 144 | ok |
+| 2 | panel(): titled top border equals body row width | ✓ | 1 | ok |
+| 3 | panel(): minimum outer width is 50 chars | ✓ | 1 | ok |
+| 4 | Skill interface: origin field present on parsed skills | ✓ | 139 | ok |
+| 5 | SkillLoader: origin inferred as aiden vs local from filePath | ✓ | 1 | ok |
+| 6 | parseLessons(): returns [] safely when LESSONS.md absent | ✓ | 57 | ok |
+| 7 | filterLessons(): keyword filter returns correct subset | ✓ | 0 | ok |
+| 8 | COMMAND_DETAIL: no section is named Hermes (renamed to Core) | ✓ | 2 | ok |
+
+## 2026-04-17T06:30:29.628Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | aidenSdk: exports getSdkMethods, getSdkNamespaces, buildSdkSurface, buildSdkRuntime | ✓ | 1281 | ok |
+| 2 | aidenSdk: getSdkMethods() covers all required namespaces | ✓ | 0 | ok |
+| 3 | aidenSdk: getSdkNamespaces() returns sorted array | ✓ | 0 | ok |
+| 4 | aidenSdk: buildSdkSurface() includes expected namespace headers | ✓ | 17 | ok |
+| 5 | aidenSdk: buildSdkRuntime() returns object with all namespace keys | ✓ | 0 | ok |
+| 6 | runSandbox: module exports runInSandbox function | ✓ | 14 | ok |
+| 7 | toolRegistry: run tool is registered + getToolsForCategories includes run | ✓ | 1 | ok |
+| 8 | scripts/: 5 Prompt-12 example scripts exist and use the aiden SDK | ✓ | 1 | ok |
+
+## 2026-04-17T06:30:34.664Z — 10/10 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | spawnManager: exports spawnSubagent, getActiveSpawns, killSpawn + interfaces | ✓ | 1775 | ok |
+| 2 | spawnManager: getActiveSpawns() returns an array (empty or otherwise) | ✓ | 0 | ok |
+| 3 | spawnManager: killSpawn("nonexistent") returns false | ✓ | 0 | ok |
+| 4 | spawnManager: IterationBudget shape used in budget inheritance formula | ✓ | 1 | ok |
+| 5 | swarmManager: exports swarmSubagents function + SwarmStrategy types | ✓ | 14 | ok |
+| 6 | swarmManager: source contains vote, merge, best strategy branches | ✓ | 1 | ok |
+| 7 | sessionSearch: exports searchSessions and getIndexSize | ✓ | 12 | ok |
+| 8 | sessionSearch: searchSessions("test") returns an array | ✓ | 27 | ok |
+| 9 | hybridSearch: exports hybridSearch function | ✓ | 12 | ok |
+| 10 | toolRegistry: spawn, swarm, search tools registered in TOOLS + TOOL_CATEGORIES | ✓ | 0 | ok |
+
+## 2026-04-17T06:30:37.858Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | release: package.json version === "3.5.0" | ✓ | 1 | ok |
+| 2 | release: CHANGELOG.md contains "## v3.5.0" header | ✓ | 0 | ok |
+| 3 | release: local git tag v3.5.0 exists | ✓ | 80 | ok |
+| 4 | release: no stale 3.1.0 or 3.4.0 version strings in source files | ✓ | 4 | ok |
+| 5 | release: CHANGELOG.md references "34 zero-cost audits across 4 suites" | ✓ | 1 | ok |
+| 6 | release: Aiden-Setup-3.5.0.exe exists in release/ and is > 100 MB | ✓ | 0 | ok |
+| 7 | release: package.json test:audit script includes prompt_r1 | ✓ | 0 | ok |
+| 8 | release: all 4 audit suite files exist (prompt_11 · 12 · 13 · r1) | ✓ | 1 | ok |
+
+## 2026-04-17T06:49:24.420Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | skills: all 20 SKILL.md files exist | ✓ | 2 | ok |
+| 2 | skills: each SKILL.md has name, description, version, tags in frontmatter | ✓ | 2 | ok |
+| 3 | skills: each SKILL.md has a # H1 header | ✓ | 3 | ok |
+| 4 | skills: each SKILL.md has "When to Use" and "How to Use" sections | ✓ | 2 | ok |
+| 5 | skills: no SKILL.md contains security-blocked injection patterns | ✓ | 2 | ok |
+| 6 | skills: each SKILL.md is under 10 KB | ✓ | 1 | ok |
+| 7 | skills: AIDEN_CATALOG.md exists and references all 20 skills | ✓ | 1 | ok |
+| 8 | skills: package.json test:audit script includes prompt_15 | ✓ | 0 | ok |
+
+## 2026-04-17T06:49:31.525Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | panel(): no-title top/bottom border equals body row width | ✓ | 121 | ok |
+| 2 | panel(): titled top border equals body row width | ✓ | 0 | ok |
+| 3 | panel(): minimum outer width is 50 chars | ✓ | 0 | ok |
+| 4 | Skill interface: origin field present on parsed skills | ✓ | 110 | ok |
+| 5 | SkillLoader: origin inferred as aiden vs local from filePath | ✓ | 1 | ok |
+| 6 | parseLessons(): returns [] safely when LESSONS.md absent | ✓ | 19 | ok |
+| 7 | filterLessons(): keyword filter returns correct subset | ✓ | 1 | ok |
+| 8 | COMMAND_DETAIL: no section is named Hermes (renamed to Core) | ✓ | 1 | ok |
+
+## 2026-04-17T06:49:35.398Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | aidenSdk: exports getSdkMethods, getSdkNamespaces, buildSdkSurface, buildSdkRuntime | ✓ | 1008 | ok |
+| 2 | aidenSdk: getSdkMethods() covers all required namespaces | ✓ | 1 | ok |
+| 3 | aidenSdk: getSdkNamespaces() returns sorted array | ✓ | 0 | ok |
+| 4 | aidenSdk: buildSdkSurface() includes expected namespace headers | ✓ | 14 | ok |
+| 5 | aidenSdk: buildSdkRuntime() returns object with all namespace keys | ✓ | 1 | ok |
+| 6 | runSandbox: module exports runInSandbox function | ✓ | 13 | ok |
+| 7 | toolRegistry: run tool is registered + getToolsForCategories includes run | ✓ | 1 | ok |
+| 8 | scripts/: 5 Prompt-12 example scripts exist and use the aiden SDK | ✓ | 3 | ok |
+
+## 2026-04-17T06:49:39.796Z — 10/10 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | spawnManager: exports spawnSubagent, getActiveSpawns, killSpawn + interfaces | ✓ | 1540 | ok |
+| 2 | spawnManager: getActiveSpawns() returns an array (empty or otherwise) | ✓ | 1 | ok |
+| 3 | spawnManager: killSpawn("nonexistent") returns false | ✓ | 0 | ok |
+| 4 | spawnManager: IterationBudget shape used in budget inheritance formula | ✓ | 0 | ok |
+| 5 | swarmManager: exports swarmSubagents function + SwarmStrategy types | ✓ | 11 | ok |
+| 6 | swarmManager: source contains vote, merge, best strategy branches | ✓ | 0 | ok |
+| 7 | sessionSearch: exports searchSessions and getIndexSize | ✓ | 10 | ok |
+| 8 | sessionSearch: searchSessions("test") returns an array | ✓ | 28 | ok |
+| 9 | hybridSearch: exports hybridSearch function | ✓ | 9 | ok |
+| 10 | toolRegistry: spawn, swarm, search tools registered in TOOLS + TOOL_CATEGORIES | ✓ | 0 | ok |
+
+## 2026-04-17T06:49:42.692Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | release: package.json version === "3.5.0" | ✓ | 1 | ok |
+| 2 | release: CHANGELOG.md contains "## v3.5.0" header | ✓ | 0 | ok |
+| 3 | release: local git tag v3.5.0 exists | ✓ | 72 | ok |
+| 4 | release: no stale 3.1.0 or 3.4.0 version strings in source files | ✓ | 3 | ok |
+| 5 | release: CHANGELOG.md references "34 zero-cost audits across 4 suites" | ✓ | 1 | ok |
+| 6 | release: Aiden-Setup-3.5.0.exe exists in release/ and is > 100 MB | ✓ | 0 | ok |
+| 7 | release: package.json test:audit script includes prompt_r1 | ✓ | 0 | ok |
+| 8 | release: all 4 audit suite files exist (prompt_11 · 12 · 13 · r1) | ✓ | 1 | ok |
+
+## 2026-04-17T06:49:45.513Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | skills: all 20 SKILL.md files exist | ✓ | 2 | ok |
+| 2 | skills: each SKILL.md has name, description, version, tags in frontmatter | ✓ | 2 | ok |
+| 3 | skills: each SKILL.md has a # H1 header | ✓ | 2 | ok |
+| 4 | skills: each SKILL.md has "When to Use" and "How to Use" sections | ✓ | 2 | ok |
+| 5 | skills: no SKILL.md contains security-blocked injection patterns | ✓ | 2 | ok |
+| 6 | skills: each SKILL.md is under 10 KB | ✓ | 1 | ok |
+| 7 | skills: AIDEN_CATALOG.md exists and references all 20 skills | ✓ | 0 | ok |
+| 8 | skills: package.json test:audit script includes prompt_15 | ✓ | 0 | ok |
+
+## 2026-04-17T07:27:49.239Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | panel(): no-title top/bottom border equals body row width | ✓ | 118 | ok |
+| 2 | panel(): titled top border equals body row width | ✓ | 0 | ok |
+| 3 | panel(): minimum outer width is 50 chars | ✓ | 0 | ok |
+| 4 | Skill interface: origin field present on parsed skills | ✓ | 96 | ok |
+| 5 | SkillLoader: origin inferred as aiden vs local from filePath | ✓ | 1 | ok |
+| 6 | parseLessons(): returns [] safely when LESSONS.md absent | ✓ | 17 | ok |
+| 7 | filterLessons(): keyword filter returns correct subset | ✓ | 0 | ok |
+| 8 | COMMAND_DETAIL: no section is named Hermes (renamed to Core) | ✓ | 1 | ok |
+
+## 2026-04-17T07:27:53.149Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | aidenSdk: exports getSdkMethods, getSdkNamespaces, buildSdkSurface, buildSdkRuntime | ✓ | 1021 | ok |
+| 2 | aidenSdk: getSdkMethods() covers all required namespaces | ✓ | 0 | ok |
+| 3 | aidenSdk: getSdkNamespaces() returns sorted array | ✓ | 0 | ok |
+| 4 | aidenSdk: buildSdkSurface() includes expected namespace headers | ✓ | 15 | ok |
+| 5 | aidenSdk: buildSdkRuntime() returns object with all namespace keys | ✓ | 0 | ok |
+| 6 | runSandbox: module exports runInSandbox function | ✓ | 12 | ok |
+| 7 | toolRegistry: run tool is registered + getToolsForCategories includes run | ✓ | 1 | ok |
+| 8 | scripts/: 5 Prompt-12 example scripts exist and use the aiden SDK | ✓ | 1 | ok |
+
+## 2026-04-17T07:27:57.670Z — 10/10 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | spawnManager: exports spawnSubagent, getActiveSpawns, killSpawn + interfaces | ✓ | 1594 | ok |
+| 2 | spawnManager: getActiveSpawns() returns an array (empty or otherwise) | ✓ | 1 | ok |
+| 3 | spawnManager: killSpawn("nonexistent") returns false | ✓ | 0 | ok |
+| 4 | spawnManager: IterationBudget shape used in budget inheritance formula | ✓ | 0 | ok |
+| 5 | swarmManager: exports swarmSubagents function + SwarmStrategy types | ✓ | 12 | ok |
+| 6 | swarmManager: source contains vote, merge, best strategy branches | ✓ | 0 | ok |
+| 7 | sessionSearch: exports searchSessions and getIndexSize | ✓ | 11 | ok |
+| 8 | sessionSearch: searchSessions("test") returns an array | ✓ | 26 | ok |
+| 9 | hybridSearch: exports hybridSearch function | ✓ | 11 | ok |
+| 10 | toolRegistry: spawn, swarm, search tools registered in TOOLS + TOOL_CATEGORIES | ✓ | 1 | ok |
+
+## 2026-04-17T07:28:00.685Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | release: package.json version === "3.5.0" | ✓ | 1 | ok |
+| 2 | release: CHANGELOG.md contains "## v3.5.0" header | ✓ | 0 | ok |
+| 3 | release: local git tag v3.5.0 exists | ✓ | 77 | ok |
+| 4 | release: no stale 3.1.0 or 3.4.0 version strings in source files | ✓ | 4 | ok |
+| 5 | release: CHANGELOG.md references "34 zero-cost audits across 4 suites" | ✓ | 1 | ok |
+| 6 | release: Aiden-Setup-3.5.0.exe exists in release/ and is > 100 MB | ✓ | 0 | ok |
+| 7 | release: package.json test:audit script includes prompt_r1 | ✓ | 0 | ok |
+| 8 | release: all 4 audit suite files exist (prompt_11 · 12 · 13 · r1) | ✓ | 1 | ok |
+
+## 2026-04-17T07:28:03.570Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | skills: all 20 SKILL.md files exist | ✓ | 2 | ok |
+| 2 | skills: each SKILL.md has name, description, version, tags in frontmatter | ✓ | 2 | ok |
+| 3 | skills: each SKILL.md has a # H1 header | ✓ | 3 | ok |
+| 4 | skills: each SKILL.md has "When to Use" and "How to Use" sections | ✓ | 3 | ok |
+| 5 | skills: no SKILL.md contains security-blocked injection patterns | ✓ | 3 | ok |
+| 6 | skills: each SKILL.md is under 10 KB | ✓ | 1 | ok |
+| 7 | skills: AIDEN_CATALOG.md exists and references all 20 skills | ✓ | 0 | ok |
+| 8 | skills: package.json test:audit script includes prompt_15 | ✓ | 1 | ok |
+
+## 2026-04-17T07:28:06.485Z — 5/5 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | cleanup: all workspace/skills files pass structural validation | ✓ | 10 | ok |
+| 2 | cleanup: no duplicate skill names across learned/ and approved/ | ✓ | 3 | ok |
+| 3 | cleanup: known garbage skills have been deleted | ✓ | 2 | ok |
+| 4 | cleanup: skillTeacher.ts has header, origin:local, and size validation | ✓ | 0 | ok |
+| 5 | cleanup: all official skills/ pass structural validation | ✓ | 5 | ok |

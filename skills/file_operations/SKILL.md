@@ -5,6 +5,8 @@ version: 1.0.0
 tags: file, write, read, save, document, report
 ---
 
+# File Operations
+
 When writing files on Windows:
 1. Always use full absolute paths: C:\Users\shiva\Desktop\filename.ext
 2. For reports: use .md extension for markdown, .txt for plain text

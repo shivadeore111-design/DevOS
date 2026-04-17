@@ -5,6 +5,8 @@ version: 1.0.0
 tags: web, research, search, analyze
 ---
 
+# Web Research
+
 When performing web research:
 1. Search broad first, then narrow by entity
 2. Fetch actual page content, not just snippets

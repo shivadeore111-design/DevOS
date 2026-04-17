@@ -32,19 +32,11 @@ Get-Service | Where-Object Status -eq 'Running' |
 Get-Service -Name "*sql*" | Select-Object Name, DisplayName, Status, StartType
 ```
 
-### Start a service
+### Start, stop, or restart a service
 ```powershell
-Start-Service -Name "wuauserv"   # Windows Update
-```
-
-### Stop a service
-```powershell
-Stop-Service -Name "wuauserv" -Force
-```
-
-### Restart a service
-```powershell
-Restart-Service -Name "Spooler"  # Print Spooler
+Start-Service   -Name "wuauserv"         # Windows Update — start
+Stop-Service    -Name "wuauserv" -Force  # Windows Update — stop
+Restart-Service -Name "Spooler"          # Print Spooler  — restart
 ```
 
 ### Check service startup type
@@ -52,14 +44,11 @@ Restart-Service -Name "Spooler"  # Print Spooler
 Get-Service -Name "wuauserv" | Select-Object Name, StartType, Status
 ```
 
-### Change startup type to Manual
+### Change startup type (Manual / Disabled / Automatic)
 ```powershell
-Set-Service -Name "wuauserv" -StartupType Manual
-```
-
-### Change startup type to Disabled
-```powershell
-Set-Service -Name "DiagTrack" -StartupType Disabled
+Set-Service -Name "wuauserv" -StartupType Manual     # won't start automatically
+Set-Service -Name "DiagTrack" -StartupType Disabled  # blocked from starting
+Set-Service -Name "Spooler"   -StartupType Automatic # restores auto-start
 ```
 
 ### List services that failed to start

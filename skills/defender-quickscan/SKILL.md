@@ -27,14 +27,10 @@ Get-MpComputerStatus | Select-Object AMServiceEnabled, AntispywareEnabled,
   AntispywareSignatureAge, AntivirusSignatureAge, QuickScanAge
 ```
 
-### Run a quick scan
+### Run a quick or full scan
 ```powershell
-Start-MpScan -ScanType QuickScan
-```
-
-### Run a full scan
-```powershell
-Start-MpScan -ScanType FullScan
+Start-MpScan -ScanType QuickScan   # fast scan of likely threat locations
+Start-MpScan -ScanType FullScan    # thorough scan of all files (30-60 min)
 ```
 
 ### Scan a specific file or folder

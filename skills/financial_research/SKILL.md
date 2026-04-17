@@ -5,6 +5,8 @@ version: 1.0.0
 tags: finance, stocks, market, investment, NSE, BSE, equity, company
 ---
 
+# Financial Research
+
 When performing financial research:
 1. Use get_market_data first to get the live price, change %, and volume for any symbol
 2. Use get_company_info to fetch sector, industry, P/E ratio, EPS, revenue, and profit margins

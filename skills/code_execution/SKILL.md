@@ -5,6 +5,8 @@ version: 1.0.0
 tags: code, script, python, node, run, execute, build
 ---
 
+# Code Execution
+
 When executing code on Windows:
 1. Use PowerShell syntax for shell commands
 2. Full paths always: C:\Users\shiva\DevOS\workspace\
