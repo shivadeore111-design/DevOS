@@ -34,6 +34,7 @@ interface Theme {
   primary: string; accent: string; dim: string
   success: string; error: string;  warning: string
   bold: string;    reset: string;  white: string
+  ok: string
 }
 
 const THEMES: Record<ThemeName, Theme> = {
@@ -41,21 +42,25 @@ const THEMES: Record<ThemeName, Theme> = {
     primary: '\x1b[38;5;208m', accent : '\x1b[36m',         dim    : '\x1b[2m',
     success: '\x1b[32m',       error  : '\x1b[31m',         warning: '\x1b[33m',
     bold   : '\x1b[1m',        reset  : '\x1b[0m',          white  : '\x1b[97m',
+    ok     : '\x1b[32m',
   },
   mono: {
     primary: '\x1b[97m',       accent : '\x1b[90m',         dim    : '\x1b[2m',
     success: '\x1b[97m',       error  : '\x1b[31m',         warning: '\x1b[97m',
     bold   : '\x1b[1m',        reset  : '\x1b[0m',          white  : '\x1b[97m',
+    ok     : '\x1b[97m',
   },
   slate: {
     primary: '\x1b[38;5;111m', accent : '\x1b[38;5;147m',  dim    : '\x1b[2m',
     success: '\x1b[32m',       error  : '\x1b[31m',         warning: '\x1b[33m',
     bold   : '\x1b[1m',        reset  : '\x1b[0m',          white  : '\x1b[97m',
+    ok     : '\x1b[32m',
   },
   ember: {
     primary: '\x1b[38;5;160m', accent : '\x1b[38;5;214m',  dim    : '\x1b[2m',
     success: '\x1b[32m',       error  : '\x1b[31m',         warning: '\x1b[33m',
     bold   : '\x1b[1m',        reset  : '\x1b[0m',          white  : '\x1b[97m',
+    ok     : '\x1b[32m',
   },
 }
 
@@ -908,6 +913,7 @@ function getPrompt(): string {
 async function handleCommand(cmd: string, rl: readline.Interface): Promise<boolean> {
   const parts   = cmd.trim().split(/\s+/)
   const command = parts[0].toLowerCase()
+  const args    = parts.slice(1)
 
   // ── /help ─────────────────────────────────────────────────────────────────────
   if (command === '/help') {
