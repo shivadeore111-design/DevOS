@@ -145,7 +145,7 @@ function disclaimerPage() {
 function installPs1Route() {
   // Proxy the install.ps1 from the source repo raw URL.
   // Cache for 5 minutes so updates propagate quickly.
-  const RAW_URL = 'https://raw.githubusercontent.com/taracodlabs/devos/master/install.ps1'
+  const RAW_URL = 'https://raw.githubusercontent.com/taracodlabs/aiden-releases/main/install.ps1'
   return fetch(RAW_URL).then(res => {
     if (!res.ok) {
       return new Response('# install.ps1 temporarily unavailable\n', {
