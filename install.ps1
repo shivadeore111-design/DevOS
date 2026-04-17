@@ -1,74 +1,109 @@
-# Aiden -- Personal AI OS Installer
-# Run as Administrator: Right-click install.ps1 -> Run with PowerShell
+<#
+.SYNOPSIS
+  Aiden installer for Windows.
+
+.DESCRIPTION
+  Downloads the latest Aiden release from GitHub, runs the installer
+  silently, and verifies the aiden launcher is on PATH.
+
+.EXAMPLE
+  iwr https://aiden.taracod.com/install.ps1 -useb | iex
+  # — or equivalently —
+  Invoke-WebRequest https://aiden.taracod.com/install.ps1 -UseBasicParsing | Invoke-Expression
+#>
+
+$ErrorActionPreference = "Stop"
+
+$Repo        = "taracodlabs/aiden-releases"
+$TempDir     = "$env:TEMP\aiden-install"
 
 Write-Host ""
-Write-Host "  +==========================================+" -ForegroundColor Cyan
-Write-Host "  |  Aiden -- Personal AI OS                |" -ForegroundColor Cyan
-Write-Host "  |  by Taracod                             |" -ForegroundColor Cyan
-Write-Host "  +==========================================+" -ForegroundColor Cyan
+Write-Host "  ▲ Aiden Installer" -ForegroundColor DarkYellow
+Write-Host "  ---"
 Write-Host ""
 
-$DEVOS_DIR = Split-Path -Parent $MyInvocation.MyCommand.Path
-$errors = @()
-
-Write-Host "  [1/4] Checking Node.js..." -ForegroundColor Yellow
+# ── 1. Fetch latest release metadata ──────────────────────────────────────────
+Write-Host "  Fetching latest release..." -ForegroundColor Gray
 try {
-    $nodeVersion = node --version 2>&1
-    if ($nodeVersion -match "v(\d+)" -and [int]$Matches[1] -ge 18) {
-        Write-Host "        OK  Node.js $nodeVersion" -ForegroundColor Green
-    } else {
-        Write-Host "        Node.js v18+ required -- get it at nodejs.org" -ForegroundColor Red
-        $errors += "Node.js v18+ required"
-    }
+  $Release = Invoke-RestMethod `
+    -Uri "https://api.github.com/repos/$Repo/releases/latest" `
+    -UseBasicParsing
+  $Version = $Release.tag_name
+  $Asset   = $Release.assets |
+               Where-Object { $_.name -like "Aiden-Setup-*.exe" } |
+               Select-Object -First 1
+  if (-not $Asset) {
+    throw "No installer asset found in release $Version"
+  }
 } catch {
-    Write-Host "        Node.js not found -- download from nodejs.org" -ForegroundColor Red
-    $errors += "Node.js not installed"
+  Write-Host "  ✗ Failed to fetch release info: $_" -ForegroundColor Red
+  exit 1
 }
 
-Write-Host "  [2/4] Checking Ollama (optional)..." -ForegroundColor Yellow
-try {
-    ollama --version 2>&1 | Out-Null
-    Write-Host "        OK  Ollama found" -ForegroundColor Green
-} catch {
-    Write-Host "        Ollama not found -- Aiden will use cloud providers" -ForegroundColor Yellow
-    Write-Host "        Install later from ollama.com for fully local mode" -ForegroundColor Gray
-}
-
-Write-Host "  [3/4] Installing dependencies..." -ForegroundColor Yellow
-try {
-    Set-Location $DEVOS_DIR
-    npm install --silent 2>&1 | Out-Null
-    Set-Location "$DEVOS_DIR\dashboard-next"
-    npm install --silent 2>&1 | Out-Null
-    Set-Location $DEVOS_DIR
-    Write-Host "        OK  Dependencies ready" -ForegroundColor Green
-} catch {
-    Write-Host "        Install failed -- check your internet connection" -ForegroundColor Red
-    $errors += "npm install failed"
-}
-
-Write-Host "  [4/4] Creating desktop shortcut..." -ForegroundColor Yellow
-try {
-    $WshShell = New-Object -comObject WScript.Shell
-    $Shortcut = $WshShell.CreateShortcut("$env:USERPROFILE\Desktop\Aiden.lnk")
-    $Shortcut.TargetPath = "$DEVOS_DIR\START_AIDEN.bat"
-    $Shortcut.WorkingDirectory = $DEVOS_DIR
-    $Shortcut.Description = "Start Aiden"
-    $Shortcut.Save()
-    Write-Host "        OK  Shortcut on Desktop" -ForegroundColor Green
-} catch {
-    Write-Host "        Could not create shortcut" -ForegroundColor Yellow
-}
-
+Write-Host "  Latest version : $Version" -ForegroundColor White
+Write-Host "  Installer      : $($Asset.name)  ($([math]::Round($Asset.size / 1MB, 1)) MB)" -ForegroundColor White
 Write-Host ""
-if ($errors.Count -eq 0) {
-    Write-Host "  +==========================================+" -ForegroundColor Green
-    Write-Host "  |  Ready. Double-click Aiden on Desktop   |" -ForegroundColor Green
-    Write-Host "  +==========================================+" -ForegroundColor Green
+
+# ── 2. Prepare temp directory ─────────────────────────────────────────────────
+if (-not (Test-Path $TempDir)) {
+  New-Item -ItemType Directory -Path $TempDir -Force | Out-Null
+}
+$InstallerPath = Join-Path $TempDir $Asset.name
+
+# ── 3. Download ───────────────────────────────────────────────────────────────
+Write-Host "  Downloading..." -ForegroundColor Gray
+$ProgressPreference = 'SilentlyContinue'
+try {
+  Invoke-WebRequest `
+    -Uri $Asset.browser_download_url `
+    -OutFile $InstallerPath `
+    -UseBasicParsing
+} catch {
+  Write-Host "  ✗ Download failed: $_" -ForegroundColor Red
+  exit 1
+}
+
+# Verify file size is at least 95 % of reported size
+$ActualSize = (Get-Item $InstallerPath).Length
+if ($ActualSize -lt ($Asset.size * 0.95)) {
+  Write-Host "  ✗ Downloaded file size mismatch (got $ActualSize, expected $($Asset.size))." -ForegroundColor Red
+  exit 1
+}
+Write-Host "  Download complete." -ForegroundColor Green
+Write-Host ""
+
+# ── 4. Run installer silently ─────────────────────────────────────────────────
+Write-Host "  Running installer..." -ForegroundColor Gray
+Write-Host "  (Note: Windows SmartScreen may show a warning — click 'More info' → 'Run anyway')" -ForegroundColor DarkGray
+Write-Host ""
+
+$Process = Start-Process `
+  -FilePath $InstallerPath `
+  -ArgumentList "/S" `
+  -PassThru `
+  -Wait
+
+if ($Process.ExitCode -ne 0) {
+  Write-Host "  ✗ Installer exited with code $($Process.ExitCode)." -ForegroundColor Red
+  exit 1
+}
+
+# ── 5. Verify aiden is on PATH ────────────────────────────────────────────────
+# Refresh PATH from registry so we see the new entry without reopening terminal
+$env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "User") + ";" +
+            [System.Environment]::GetEnvironmentVariable("PATH", "Machine")
+
+$AidenCmd = Get-Command aiden -ErrorAction SilentlyContinue
+if ($AidenCmd) {
+  Write-Host "  ✓ Aiden installed: $($AidenCmd.Source)" -ForegroundColor Green
+  Write-Host ""
+  Write-Host "  Open a NEW terminal and type:  aiden" -ForegroundColor DarkYellow
+  Write-Host ""
 } else {
-    $errors | ForEach-Object { Write-Host "  - $_" -ForegroundColor Red }
-    Write-Host "  Fix the above then run install.ps1 again" -ForegroundColor Yellow
+  Write-Host "  ⚠  Install completed but 'aiden' not yet on PATH." -ForegroundColor Yellow
+  Write-Host "     Restart your terminal or log out and back in."
+  Write-Host ""
 }
-Write-Host ""
-Write-Host "  Press any key to exit..."
-$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+
+# ── 6. Cleanup ────────────────────────────────────────────────────────────────
+Remove-Item $TempDir -Recurse -Force -ErrorAction SilentlyContinue

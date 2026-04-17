@@ -6,6 +6,7 @@ export default {
     if (pathname === '/privacy')    return privacyPage();
     if (pathname === '/terms')      return termsPage();
     if (pathname === '/disclaimer') return disclaimerPage();
+    if (pathname === '/install.ps1')   return installPs1Route();
 
     return new Response(html, {
       status: 200,
@@ -139,4 +140,25 @@ function disclaimerPage() {
   return new Response(legalHtml("Disclaimer", body), {
     status: 200, headers: { "Content-Type": "text/html;charset=UTF-8" }
   });
+}
+
+function installPs1Route() {
+  // Proxy the install.ps1 from the source repo raw URL.
+  // Cache for 5 minutes so updates propagate quickly.
+  const RAW_URL = 'https://raw.githubusercontent.com/taracodlabs/devos/master/install.ps1'
+  return fetch(RAW_URL).then(res => {
+    if (!res.ok) {
+      return new Response('# install.ps1 temporarily unavailable\n', {
+        status: 503,
+        headers: { 'Content-Type': 'text/plain;charset=UTF-8' }
+      })
+    }
+    return res.text().then(body => new Response(body, {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/plain;charset=UTF-8',
+        'Cache-Control': 'public, max-age=300'
+      }
+    }))
+  })
 }

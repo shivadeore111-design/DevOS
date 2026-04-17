@@ -97,7 +97,8 @@
       "installerIcon": "assets/icon.ico",
       "uninstallerIcon": "assets/icon.ico",
       "installerHeaderIcon": "assets/icon.ico",
-      "deleteAppDataOnUninstall": false
+      "deleteAppDataOnUninstall": false,
+      "include": "build/installer.nsh"
     },
     "files": [
       "electron/**/*",
@@ -105,6 +106,11 @@
       "package.json"
     ],
     "extraResources": [
+      {
+        "from": "bin",
+        "to": "bin",
+        "filter": ["**/*"]
+      },
       {
         "from": "dist-bundle",
         "to": "dist",
