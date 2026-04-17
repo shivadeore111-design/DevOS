@@ -1,8 +1,8 @@
 ---
 name: gif-search
-description: Search and fetch GIFs from Tenor using the public API with curl or PowerShell — no API key required for basic use
+description: Search and fetch GIFs from Tenor using the public API with curl or PowerShell — requires a free Tenor API key
 category: media
-version: 1.0.0
+version: 1.0.1
 origin: aiden
 license: Apache-2.0
 tags: gif, tenor, giphy, search, media, animation, image, reaction, fun
@@ -10,7 +10,10 @@ tags: gif, tenor, giphy, search, media, animation, image, reaction, fun
 
 # GIF Search via Tenor
 
-Search and fetch GIFs using the Tenor API. Basic searches work without an API key; register a free key at tenor.com/developer for higher rate limits.
+Search and fetch GIFs using the Tenor API. Obtain a free API key at
+https://developers.google.com/tenor/guides/quickstart (takes 2 minutes) and set it as
+the `TENOR_API_KEY` environment variable. All examples below use `$env:TENOR_API_KEY`
+(PowerShell) or `os.environ["TENOR_API_KEY"]` (Python).
 
 ## When to Use
 
@@ -26,7 +29,7 @@ Search and fetch GIFs using the Tenor API. Basic searches work without an API ke
 ```powershell
 function Search-Gif($query, $limit = 5) {
   $q    = [Uri]::EscapeDataString($query)
-  $url  = "https://tenor.googleapis.com/v2/search?q=$q&limit=$limit&key=AIzaSyAyimkuYQYF_FXVALexPuGQctUWRURdCDg"
+  $url  = "https://tenor.googleapis.com/v2/search?q=$q&limit=$limit&key=$env:TENOR_API_KEY"
   $resp = Invoke-RestMethod -Uri $url
   $resp.results | ForEach-Object {
     [PSCustomObject]@{
@@ -46,7 +49,8 @@ Search-Gif "excited celebration" | Format-Table -AutoSize
 ```python
 import requests, urllib.parse
 
-def search_gif(query, limit=5, api_key="AIzaSyAyimkuYQYF_FXVALexPuGQctUWRURdCDg"):
+def search_gif(query, limit=5, api_key=None):
+  api_key = api_key or os.environ.get("TENOR_API_KEY", "")
   params = {"q": query, "limit": limit, "key": api_key}
   resp   = requests.get("https://tenor.googleapis.com/v2/search", params=params)
   resp.raise_for_status()
@@ -63,7 +67,7 @@ for g in gifs:
 ### 3. Get trending GIFs
 
 ```powershell
-$url  = "https://tenor.googleapis.com/v2/featured?limit=10&key=AIzaSyAyimkuYQYF_FXVALexPuGQctUWRURdCDg"
+$url  = "https://tenor.googleapis.com/v2/featured?limit=10&key=$env:TENOR_API_KEY"
 $resp = Invoke-RestMethod -Uri $url
 $resp.results | Select-Object title, @{N="url";E={$_.media_formats.gif.url}}
 ```

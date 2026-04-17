@@ -54,7 +54,7 @@ Cumulative when full chain runs: 148/148 expected.
 
 **⚠️ KEY IN TREE + HISTORY — `skills/gif-search/SKILL.md`**
 
-A Tenor/Google API key (`AIzaSyAyimkuYQYF_FXVALexPuGQctUWRURdCDg`) appears 3 times
+A Tenor/Google API key (`[REDACTED]`) appears 3 times
 as a hardcoded example in the gif-search skill, committed in f4981e8.
 
 Risk level: LOW-MEDIUM. Tenor API keys gate GIF search volume, not billing. Key is
@@ -142,5 +142,5 @@ release build, then address the two yellow items in v3.6.1 / v3.7 prep.
    and prose.
 
 6. *(Before v3.7 / skills split only)* **Scrub Tenor key in gif-search/SKILL.md** —
-   replace hardcoded `AIzaSyAyimkuYQYF_FXVALexPuGQctUWRURdCDg` with
+   replace hardcoded `[REDACTED]` with
    `$env:TENOR_API_KEY` placeholder in all 3 occurrences.
