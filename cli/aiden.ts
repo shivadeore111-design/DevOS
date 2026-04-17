@@ -106,7 +106,9 @@ const state = {
   attachments : [] as string[],
   sessionName : '',
   redoStack   : [] as HistoryEntry[][],
-  voiceMode   : false,
+  voiceMode          : false,
+  voiceDesign        : undefined as string | undefined,
+  voiceReferencePath : undefined as string | undefined,
 }
 
 // ── Terminal helpers ──────────────────────────────────────────────────────────────
@@ -616,7 +618,11 @@ async function streamChat(message: string): Promise<void> {
     // ── Voice mode: speak AI reply ──
     if (state.voiceMode && fullReply.trim()) {
       const { synthesize } = await import('../core/voice/tts')
-      synthesize({ text: fullReply }).catch((e: Error) =>
+      synthesize({
+        text:               fullReply,
+        referenceAudioPath: state.voiceReferencePath,
+        voiceDesignPrompt:  state.voiceDesign,
+      }).catch((e: Error) =>
         console.warn(`  ${T.dim}[TTS] ${e.message}${T.reset}`),
       )
     }
@@ -847,9 +853,9 @@ const COMMAND_DETAIL: Record<string, CmdDetail> = {
     examples: ['/channels', '/channels restart discord', '/channels test slack'],
   },
   '/voice':      { section: 'Voice',     desc: 'Toggle voice mode — TTS reads every AI reply aloud.',
-    subs:    ['on', 'off', 'status', 'providers'],
-    usage:   '/voice [on|off|status|providers]',
-    examples: ['/voice', '/voice on', '/voice off', '/voice providers'],
+    subs:    ['on', 'off', 'status', 'providers', 'design', 'clone', 'reset'],
+    usage:   '/voice [on|off|status|providers|design <desc>|clone <path>|reset]',
+    examples: ['/voice', '/voice on', '/voice off', '/voice providers', '/voice design "calm, deep male voice"', '/voice clone ./ref.wav', '/voice reset'],
   },
   '/speak':      { section: 'Voice',     desc: 'Speak text immediately using the TTS engine.',
     usage:    '/speak <text>',
@@ -3894,6 +3900,56 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
         const label = p.available ? `${T.ok}available${T.reset}` : `${T.dim}unavailable${T.reset}`
         console.log(`  ${icon}  ${p.name.padEnd(12)}${label}`)
       }
+      console.log()
+      return true
+    }
+
+    if (sub === 'design') {
+      const desc = args.slice(1).join(' ').trim().replace(/^["']|["']$/g, '')
+      if (!desc) {
+        console.log(`\n  ${T.dim}Usage: /voice design <description>${T.reset}`)
+        console.log(`  ${T.dim}Example: /voice design "calm, deep male voice with British accent"${T.reset}\n`)
+        return true
+      }
+      state.voiceDesign        = desc
+      state.voiceReferencePath = undefined
+      console.log(`\n  ${T.ok}✓ Voice design set:${T.reset} "${desc}"`)
+      console.log(`  ${T.dim}Next TTS output will use this voice design (requires USE_VOXCPM=1).${T.reset}\n`)
+      return true
+    }
+
+    if (sub === 'clone') {
+      const refPath = args[1]?.trim()
+      if (!refPath) {
+        console.log(`\n  ${T.dim}Usage: /voice clone <path-to-reference-audio.wav>${T.reset}\n`)
+        return true
+      }
+      const fs = require('fs')
+      if (!fs.existsSync(refPath)) {
+        console.log(`\n  ${T.error}✗ Reference audio file not found: ${refPath}${T.reset}\n`)
+        return true
+      }
+      state.voiceReferencePath = refPath
+      state.voiceDesign        = undefined
+      console.log(`\n  ${T.ok}✓ Voice clone reference set:${T.reset} ${refPath}`)
+      console.log(`  ${T.dim}Next TTS output will clone this voice (requires USE_VOXCPM=1).${T.reset}\n`)
+      return true
+    }
+
+    if (sub === 'reset') {
+      state.voiceDesign        = undefined
+      state.voiceReferencePath = undefined
+      console.log(`\n  ${T.ok}✓ Voice design/clone reset${T.reset} — standard provider chain will be used.\n`)
+      return true
+    }
+
+    if (sub === 'status') {
+      const voxEnabled = process.env.USE_VOXCPM === '1'
+      console.log(`\n  ${T.accent}Voice status${T.reset}`)
+      console.log(`  Mode:      ${state.voiceMode ? T.ok + 'ON' : T.dim + 'OFF'}${T.reset}`)
+      console.log(`  VoxCPM:    ${voxEnabled ? T.ok + 'enabled (USE_VOXCPM=1)' : T.dim + 'disabled'}${T.reset}`)
+      console.log(`  Design:    ${state.voiceDesign ? T.ok + '"' + state.voiceDesign + '"' : T.dim + 'none'}${T.reset}`)
+      console.log(`  Clone ref: ${state.voiceReferencePath ? T.ok + state.voiceReferencePath : T.dim + 'none'}${T.reset}`)
       console.log()
       return true
     }

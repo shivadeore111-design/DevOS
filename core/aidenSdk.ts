@@ -103,10 +103,12 @@ const TOOL_SDK_MAP: Array<{
   { toolName: 'read_email',       namespace: 'data',    method: 'email',        description: 'Read recent emails',             signature: '(limit?: number) => Promise<any[]>'                      },
 
   // voice
-  { toolName: 'voice_transcribe', namespace: 'voice',   method: 'transcribe',   description: 'Transcribe audio file to text',  signature: '(audioFilePath: string, language?: string) => Promise<{text:string,provider:string,durationMs:number}>' },
-  { toolName: 'voice_synthesize', namespace: 'voice',   method: 'synthesize',   description: 'Speak text via TTS engine',      signature: '(text: string, voice?: string) => Promise<{provider:string,durationMs:number}>'                         },
-  { toolName: 'voice_record',     namespace: 'voice',   method: 'record',       description: 'Record audio from microphone',   signature: '(durationSeconds?: number, outputPath?: string) => Promise<string>'                                     },
-  { toolName: 'voice_play',       namespace: 'voice',   method: 'play',         description: 'Play an audio file',             signature: '(audioSource: string) => Promise<void>'                                                                  },
+  { toolName: 'voice_speak',      namespace: 'voice',   method: 'speak',        description: 'Speak text via TTS provider chain',   signature: '(text: string, opts?: {voice?:string,provider?:string,rate?:number,volume?:number}) => Promise<{provider:string,durationMs:number}>'  },
+  { toolName: 'voice_transcribe', namespace: 'voice',   method: 'transcribe',   description: 'Transcribe audio file to text',        signature: '(audioFilePath: string, language?: string) => Promise<{text:string,provider:string,durationMs:number}>'                              },
+  { toolName: 'voice_clone',      namespace: 'voice',   method: 'clone',        description: 'Clone a voice and speak text',         signature: '(text: string, referenceAudioPath: string) => Promise<{provider:string,durationMs:number}>'                                          },
+  { toolName: 'voice_design',     namespace: 'voice',   method: 'design',       description: 'Design a voice from description',      signature: '(text: string, voiceDescription: string) => Promise<{provider:string,durationMs:number}>'                                            },
+  { toolName: 'voice_record',     namespace: 'voice',   method: 'record',       description: 'Record audio from microphone',         signature: '(durationSeconds?: number, outputPath?: string) => Promise<string>'                                                                   },
+  { toolName: 'voice_play',       namespace: 'voice',   method: 'play',         description: 'Play an audio file',                   signature: '(audioSource: string) => Promise<void>'                                                                                               },
 
   // todo
   { toolName: 'todo',             namespace: 'todo',    method: 'add',          description: 'Add a todo item',                signature: '(text: string, priority?: string) => Promise<string>'    },
@@ -241,15 +243,33 @@ export function buildSdkRuntime(
     },
     // voice
     voice: {
+      speak: async (text: string, opts: { voice?: string; provider?: string; rate?: number; volume?: number } = {}) => {
+        onToolCall('voice_speak', { text, ...opts })
+        const { synthesize } = await import('./voice/tts')
+        return synthesize({ text, voice: opts.voice, provider: opts.provider as any, rate: opts.rate, volume: opts.volume })
+      },
       transcribe: async (audioFilePath: string, language?: string) => {
         onToolCall('voice_transcribe', { audioFilePath, language })
         const { transcribe } = await import('./voice/stt')
         return transcribe({ audioFilePath, language })
       },
-      synthesize: async (text: string, voice?: string) => {
-        onToolCall('voice_synthesize', { text, voice })
+      clone: async (text: string, referenceAudioPath: string) => {
+        onToolCall('voice_clone', { text, referenceAudioPath })
         const { synthesize } = await import('./voice/tts')
-        return synthesize({ text, voice })
+        return synthesize({ text, referenceAudioPath, provider: 'voxcpm' } as any)
+      },
+      design: async (text: string, voiceDescription: string) => {
+        onToolCall('voice_design', { text, voiceDescription })
+        const { synthesize } = await import('./voice/tts')
+        return synthesize({ text, voiceDesignPrompt: voiceDescription, provider: 'voxcpm' } as any)
+      },
+      reset: async () => {
+        // No-op in SDK context — state reset is a CLI concern
+        return { provider: 'none', durationMs: 0, note: 'voice reset (use /voice reset in CLI)' }
+      },
+      providers: async () => {
+        const { getTtsProviders } = await import('./voice/tts')
+        return getTtsProviders()
       },
       record: async (durationSeconds?: number, outputPath?: string) => {
         onToolCall('voice_record', { durationSeconds, outputPath })

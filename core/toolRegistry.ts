@@ -308,6 +308,10 @@ const TOOL_TIMEOUTS: Record<string, number> = {
   watch_folder_list:             5000,
   clarify:                  300_000,   // up to 5 min for human response
   vision_analyze:            45_000,
+  voice_speak:               60_000,
+  voice_transcribe:          60_000,
+  voice_clone:              120_000,
+  voice_design:             120_000,
 }
 
 // ── NSE symbol normalizer ─────────────────────────────────────
@@ -1905,6 +1909,86 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
       return { success: false, output: '', error: e.message }
     }
   },
+
+  // ── voice_speak — TTS with provider fallback chain ────────────────────────
+  voice_speak: async (p) => {
+    const text = p.text || p.command || ''
+    if (!text) return { success: false, output: '', error: 'No text provided' }
+    try {
+      const { synthesize } = await import('./voice/tts')
+      const result = await synthesize({
+        text,
+        voice:     p.voice,
+        rate:      p.rate,
+        volume:    p.volume,
+        provider:  p.provider,
+        timeoutMs: p.timeoutMs,
+      })
+      if (result.error) return { success: false, output: '', error: result.error }
+      return { success: true, output: `Spoken via ${result.provider} (${result.durationMs}ms)` }
+    } catch (e: any) {
+      return { success: false, output: '', error: e.message }
+    }
+  },
+
+  // ── voice_transcribe — STT with provider fallback chain ──────────────────
+  voice_transcribe: async (p) => {
+    const audioFilePath = p.audioFilePath || p.path || p.file || ''
+    if (!audioFilePath) return { success: false, output: '', error: 'No audioFilePath provided' }
+    try {
+      const { transcribe } = await import('./voice/stt')
+      const result = await transcribe({ audioFilePath, language: p.language })
+      if (result.error) return { success: false, output: '', error: result.error }
+      return {
+        success: true,
+        output:  JSON.stringify({ text: result.text, provider: result.provider, durationMs: result.durationMs }),
+      }
+    } catch (e: any) {
+      return { success: false, output: '', error: e.message }
+    }
+  },
+
+  // ── voice_clone — clone a voice from reference audio (VoxCPM / ElevenLabs) ─
+  voice_clone: async (p) => {
+    const text               = p.text || ''
+    const referenceAudioPath = p.referenceAudioPath || p.reference || p.ref || ''
+    if (!text)               return { success: false, output: '', error: 'No text provided' }
+    if (!referenceAudioPath) return { success: false, output: '', error: 'No referenceAudioPath provided' }
+    try {
+      const { synthesize } = await import('./voice/tts')
+      const result = await synthesize({
+        text,
+        voice:              p.voice,
+        provider:           p.provider,
+        referenceAudioPath,
+        timeoutMs:          p.timeoutMs ?? 120_000,
+      } as any)
+      if (result.error) return { success: false, output: '', error: result.error }
+      return { success: true, output: `Voice cloned via ${result.provider} (${result.durationMs}ms)` }
+    } catch (e: any) {
+      return { success: false, output: '', error: e.message }
+    }
+  },
+
+  // ── voice_design — synthesize with a text voice description (VoxCPM) ──────
+  voice_design: async (p) => {
+    const text             = p.text || ''
+    const voiceDescription = p.voiceDescription || p.description || p.design || ''
+    if (!text)             return { success: false, output: '', error: 'No text provided' }
+    if (!voiceDescription) return { success: false, output: '', error: 'No voiceDescription provided' }
+    try {
+      const { synthesize } = await import('./voice/tts')
+      const result = await synthesize({
+        text:        `design:${voiceDescription}\n${text}`,
+        provider:    p.provider,
+        timeoutMs:   p.timeoutMs ?? 120_000,
+      } as any)
+      if (result.error) return { success: false, output: '', error: result.error }
+      return { success: true, output: `Voice designed via ${result.provider} (${result.durationMs}ms)` }
+    } catch (e: any) {
+      return { success: false, output: '', error: e.message }
+    }
+  },
 }
 
 // ── Plugin-registered tools ───────────────────────────────────
@@ -2121,6 +2205,10 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   send_email:              'Send an email via Gmail (requires App Password in Settings → Channels). Parameters: to (string), subject (string), body (string).',
   compact_context:         'Summarize and compress the current conversation context. Saves session to disk and extracts durable memories. Call when context is getting long.',
   get_natural_events:      'Fetch active natural events from NASA EONET API. Returns current earthquakes, wildfires, storms, floods, and other natural events worldwide.',
+  voice_speak:             'Speak text aloud using the TTS provider chain (VoxCPM → Edge TTS → ElevenLabs → SAPI). Accepts text, voice, rate, volume, provider overrides.',
+  voice_transcribe:        'Transcribe an audio file to text using the STT provider chain (Groq Whisper → OpenAI Whisper → Whisper.cpp). Returns { text, provider, durationMs }.',
+  voice_clone:             'Clone a voice from a reference audio file and synthesize new text. Requires text and referenceAudioPath. Uses VoxCPM when USE_VOXCPM=1.',
+  voice_design:            'Design a custom voice from a text description and synthesize text with it. Requires text and voiceDescription. Uses VoxCPM when USE_VOXCPM=1.',
 }
 
 // ── Tool tier hierarchy ────────────────────────────────────────
@@ -2186,6 +2274,12 @@ const TOOL_TIERS: Record<string, ToolTier> = {
   app_launch:              3,
   app_close:               3,
 
+  // Voice tools — Tier 2 (subprocess / local model)
+  voice_speak:             2,
+  voice_transcribe:        2,
+  voice_clone:             2,
+  voice_design:            2,
+
   // Tier 4 — Screen/mouse/keyboard (last resort)
   mouse_move:              4,
   mouse_click:             4,
@@ -2216,7 +2310,8 @@ export type ToolCategory =
   | 'system'        // notify, system_info, clipboard, app_launch/close, wait
   | 'git'           // git_status, git_commit, git_push
   | 'memory'        // (reserved for future memory/knowledge tools)
-  | 'media'         // (reserved for future voice/audio tools)
+  | 'media'         // (reserved for future audio/media tools)
+  | 'voice'         // voice_speak, voice_transcribe, voice_clone, voice_design
   | 'introspection' // status, analytics, spend, memory_show, lessons, skills_list, tools_list, whoami, channels_status, goals
   | 'delegation'    // spawn, swarm — subagent orchestration
   | 'interaction'   // clarify, todo — user-facing interaction tools
@@ -2297,6 +2392,10 @@ const TOOL_CATEGORIES: Record<string, ToolCategory[]> = {
   todo:                    ['interaction', 'core'],
   cronjob:                 ['system', 'core'],
   vision_analyze:          ['screen', 'data'],
+  voice_speak:             ['voice'],
+  voice_transcribe:        ['voice'],
+  voice_clone:             ['voice'],
+  voice_design:            ['voice'],
 }
 
 export function detectToolCategories(message: string): ToolCategory[] {
@@ -2317,7 +2416,9 @@ export function detectToolCategories(message: string): ToolCategory[] {
     categories.add('data')
   if (/notify|notification|remind|alert|system info|cpu|ram|disk|hardware|clipboard|launch|close app/i.test(msg))
     categories.add('system')
-  if (/voice|speak|say aloud|listen|record audio/i.test(msg))
+  if (/voice|speak|say aloud|listen|record audio|tts|text.to.speech|transcribe|speech.to.text|clone.*voice|voice.*design|voice.*clone|design.*voice/i.test(msg))
+    categories.add('voice')
+  if (/play audio|play music|media file|audio file/i.test(msg))
     categories.add('media')
   if (/\bgit\b|commit|push|pull|branch|merge|git status|diff|repo|repository/i.test(msg))
     categories.add('git')

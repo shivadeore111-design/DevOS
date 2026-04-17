@@ -211,7 +211,21 @@ export interface TtsResult {
   error?:     string
 }
 
+export interface VoiceSpeakOpts {
+  voice?:    string
+  provider?: 'voxcpm' | 'edge' | 'elevenlabs' | 'sapi'
+  rate?:     number
+  volume?:   number
+}
+
 export interface AidenVoice {
+  /**
+   * Speak text aloud using the TTS provider chain.
+   * Chain: VoxCPM2 (if USE_VOXCPM=1) → Edge TTS → ElevenLabs → Windows SAPI.
+   * Returns TtsResult — check result.error on failure.
+   */
+  speak(text: string, opts?: VoiceSpeakOpts): Promise<TtsResult>
+
   /**
    * Transcribe an audio file to text.
    * Tries Groq Whisper → OpenAI Whisper → local Whisper.cpp in order.
@@ -220,11 +234,31 @@ export interface AidenVoice {
   transcribe(audioFilePath: string, language?: string): Promise<SttResult>
 
   /**
-   * Synthesize text to speech and play it.
-   * Tries Edge TTS → ElevenLabs → Windows SAPI in order.
-   * Returns TtsResult — check result.error on failure.
+   * Clone a voice from a 5–10 s reference audio file and speak text.
+   * Requires USE_VOXCPM=1 and voxcpm Python package installed.
+   * See docs/VOXCPM_SETUP.md for installation instructions.
    */
-  synthesize(text: string, voice?: string): Promise<TtsResult>
+  clone(text: string, referenceAudioPath: string): Promise<TtsResult>
+
+  /**
+   * Design a custom voice from a text description and speak text.
+   * Example description: "calm, deep male voice with slight British accent".
+   * Requires USE_VOXCPM=1 and voxcpm Python package installed.
+   * See docs/VOXCPM_SETUP.md for installation instructions.
+   */
+  design(text: string, voiceDescription: string): Promise<TtsResult>
+
+  /**
+   * Reset any active voice design or clone reference back to defaults.
+   * In SDK context this is a no-op — use /voice reset in the CLI.
+   */
+  reset(): Promise<{ provider: string; durationMs: number; note?: string }>
+
+  /**
+   * List all TTS providers and their availability status.
+   * Returns an array of { name, available, note? }.
+   */
+  providers(): Promise<Array<{ name: string; available: boolean; note?: string }>>
 
   /**
    * Record audio from the default microphone.

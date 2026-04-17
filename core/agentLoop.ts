@@ -775,6 +775,7 @@ export async function planWithLLM(
     'get_briefing',
     'respond',
     'clarify', 'todo', 'cronjob', 'vision_analyze',
+    'voice_speak', 'voice_transcribe', 'voice_clone', 'voice_design',
     ...SLASH_MIRROR_TOOL_NAMES,
   ]
 
@@ -1340,6 +1341,7 @@ const VALID_TOOLS = [
   'app_launch', 'app_close',
   'watch_folder', 'watch_folder_list',
   'clarify', 'todo', 'cronjob', 'vision_analyze',
+  'voice_speak', 'voice_transcribe', 'voice_clone', 'voice_design',
   ...SLASH_MIRROR_TOOL_NAMES,
 ]
 
