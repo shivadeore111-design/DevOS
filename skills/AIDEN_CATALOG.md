@@ -1,6 +1,6 @@
-# Aiden Skills Catalog — Wave 1
+# Aiden Skills Catalog
 
-> 20 Aiden-exclusive skills shipped in v3.5.0. Zero npm dependencies. Auto-loaded by skillLoader.ts on startup.
+> 52 Aiden-exclusive skills across 2 waves. Zero npm dependencies. Auto-loaded by skillLoader.ts on startup.
 
 ---
 
@@ -38,6 +38,80 @@
 
 ---
 
+## Wave 2 — Productivity Skills (7)
+
+| Skill | Description | Tags |
+|-------|-------------|------|
+| **obsidian** | Read, search, and create notes in Obsidian vaults using file system operations | obsidian, notes, vault, markdown, knowledge-base, zettelkasten, pkm |
+| **notion** | Read, create, and update Notion pages and databases via the Notion REST API | notion, notes, database, pages, workspace, api, tasks |
+| **google-workspace** | Interact with Gmail, Google Calendar, Drive, Sheets, and Docs via Google API | google, gmail, calendar, drive, sheets, docs, workspace, oauth |
+| **linear** | Manage Linear issues, projects, and cycles via the Linear GraphQL API | linear, issues, project-management, graphql, engineering, sprint, cycle |
+| **ocr-and-documents** | Extract text from PDFs, images, scans, and Word documents using Python libraries | ocr, pdf, image, text-extraction, documents, docx, pymupdf, tesseract |
+| **nano-pdf** | Edit PDFs with natural-language instructions using the nano-pdf CLI tool | pdf, edit, merge, split, compress, nano-pdf, cli, document, watermark |
+| **excalidraw** | Create hand-drawn style diagrams and sketches in Excalidraw JSON format | excalidraw, diagram, architecture, flowchart, sketch, visualization, json |
+
+---
+
+## Wave 2 — Developer Workflow Skills (8)
+
+| Skill | Description | Tags |
+|-------|-------------|------|
+| **jupyter-live-kernel** | Execute code in a stateful Jupyter kernel session with persistent variables using hamelnb | jupyter, notebook, kernel, python, data-science, stateful, pandas |
+| **docker-management** | Manage Docker containers, images, volumes, and networks via Docker CLI and Dockerode | docker, containers, images, volumes, networks, compose, devops |
+| **github-auth** | Set up GitHub authentication via gh CLI, SSH keys, and HTTPS personal access tokens | github, auth, ssh, pat, token, credentials, gh-cli, git |
+| **github-issues** | Create, list, view, and manage GitHub issues using the gh CLI | github, issues, bug-tracker, gh-cli, labels, milestones, triage |
+| **github-pr-workflow** | Full pull request lifecycle — create, review, merge, and manage PRs using gh CLI | github, pull-request, pr, review, merge, gh-cli, code-review |
+| **github-repo-management** | Create, clone, fork, archive, and manage GitHub repositories using gh CLI and git | github, repository, clone, fork, branch, gh-cli, secrets |
+| **systematic-debugging** | Four-phase root cause investigation — Reproduce, Isolate, Hypothesize, Verify | debugging, root-cause, bug, diagnosis, troubleshooting, git-bisect |
+| **test-driven-development** | Write software using the RED-GREEN-REFACTOR cycle for reliable, well-tested code | tdd, testing, red-green-refactor, pytest, jest, vitest, quality |
+
+---
+
+## Wave 2 — Research & Knowledge Skills (4)
+
+| Skill | Description | Tags |
+|-------|-------------|------|
+| **arxiv** | Search, fetch, and download academic papers from arXiv using the public REST API | arxiv, research, papers, academic, ai, ml, science, pdf, preprint |
+| **youtube-content** | Extract transcripts, download audio/video, and analyze YouTube content | youtube, transcript, video, audio, download, yt-dlp, summary |
+| **blogwatcher** | Monitor RSS and Atom feeds for new posts from blogs, news sites, and podcasts | rss, atom, feed, blog, news, monitor, feedparser, podcast |
+| **research-paper-writing** | Structured pipeline for writing ML and AI research papers with LaTeX | research, paper, writing, latex, ml, ai, academic, arxiv, publication |
+
+---
+
+## Wave 2 — Creative Skills (4)
+
+| Skill | Description | Tags |
+|-------|-------------|------|
+| **architecture-diagram** | Generate dark-themed system architecture diagrams as HTML/SVG for the browser | architecture, diagram, svg, html, dark-theme, system-design, visualization |
+| **ascii-art** | Generate ASCII art text banners, box art, and decorative text using pyfiglet and cowsay | ascii, art, banner, text, figlet, cowsay, terminal, decoration |
+| **stable-diffusion-image-generation** | Generate images using Stable Diffusion via HuggingFace Diffusers locally or via API | stable-diffusion, image-generation, ai-art, diffusers, huggingface, sdxl |
+| **p5js** | Create generative visual art and interactive sketches using p5.js as self-contained HTML | p5js, generative-art, creative-coding, canvas, animation, visualization |
+
+---
+
+## Wave 2 — Media, Gaming & Social Skills (6)
+
+| Skill | Description | Tags |
+|-------|-------------|------|
+| **gif-search** | Search and fetch GIFs from Tenor using the public API — no API key required for basic use | gif, tenor, search, media, animation, reaction |
+| **songsee** | Visualize audio files as mel spectrograms, chromagrams, and MFCC plots using librosa | audio, spectrogram, mel, chroma, mfcc, librosa, music, sound-analysis |
+| **minecraft-modpack-server** | Set up and manage a modded Minecraft server using NeoForge or Forge with a modpack | minecraft, neoforge, forge, modpack, server, java, gaming, mods |
+| **pokemon-player** | Run and automate Pokémon games using headless emulation, RAM state, and button inputs | pokemon, emulator, gameboy, automation, mgba, rom, ram, bot |
+| **openhue** | Control Philips Hue smart lights using the OpenHue CLI and local Hue Bridge REST API | hue, philips, smart-home, lights, openhue, cli, iot, rgb, brightness |
+| **xitter** | Post, read, and search X (Twitter) content using x-cli or the X API v2 | twitter, x, social-media, tweet, post, search, api, timeline |
+
+---
+
+## Wave 2 — Agent Bridge Skills (3)
+
+| Skill | Description | Tags |
+|-------|-------------|------|
+| **claude-code** | Delegate complex coding and file-editing tasks to Anthropic Claude Code CLI | claude, anthropic, code, cli, agent-bridge, coding, delegation |
+| **codex** | Delegate coding tasks to OpenAI Codex CLI for code generation, editing, and explanation | openai, codex, cli, code-generation, agent-bridge, gpt, automation |
+| **opencode** | Delegate coding tasks to the open-source OpenCode CLI supporting multiple LLM providers | opencode, ai-coding, agent-bridge, open-source, multi-model, ollama |
+
+---
+
 ## Loader Notes
 
 - All skills live under `skills/<skill-name>/SKILL.md`
@@ -47,4 +121,4 @@
 
 ---
 
-*Last updated: v3.5.0 — Wave 1 (April 2026)*
+*Last updated: v3.5.0 — Wave 2 (April 2026)*
