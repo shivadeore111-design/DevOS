@@ -11,7 +11,7 @@ contextBridge.exposeInMainWorld('aidenElectron', {
   // Let the dashboard know it's running inside Electron
   isElectron: true,
   platform:   process.platform,
-  version:    process.env.npm_package_version || '3.1.0',
+  version:    process.env.npm_package_version || '3.5.0',
 })
 
 // ── Auto-updater IPC bridge ───────────────────────────────────
