@@ -5,7 +5,7 @@
 
 if [[ -n "$WSL_DISTRO_NAME" ]]; then
   # Running inside WSL — call the Windows binary via interop
-  AIDEN_WIN_PATH="${AIDEN_WIN_PATH:-/mnt/c/Program Files/Aiden/Aiden.exe}"
+  AIDEN_WIN_PATH="${AIDEN_WIN_PATH:-/mnt/c/Users/$USER/AppData/Local/Programs/Aiden/Aiden.exe}"
   if [[ -f "$AIDEN_WIN_PATH" ]]; then
     "$AIDEN_WIN_PATH" "$@"
   else
