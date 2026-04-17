@@ -4,7 +4,8 @@
 // ============================================================
 'use strict'
 
-const { app, BrowserWindow, Tray, Menu, nativeImage, dialog, shell } = require('electron')
+const { app, BrowserWindow, Tray, Menu, nativeImage, dialog, shell, ipcMain } = require('electron')
+const { autoUpdater } = require('electron-updater')
 const { spawn, execSync }  = require('child_process')
 const path  = require('path')
 const http  = require('http')
@@ -80,6 +81,26 @@ function bootstrapUserData () {
       onboardingComplete: false,
       routing: { mode: 'auto', fallbackToOllama: true }
     }, null, 2), 'utf-8')
+  }
+
+  // ── Seed workspace template files (only if not already present) ──
+  // These ship as resources and are copied to the user's workspace on first boot.
+  // We never overwrite existing files to preserve user customizations.
+  const WORKSPACE_TEMPLATES_SRC = IS_PACKAGED
+    ? path.join(process.resourcesPath, 'workspace-templates')
+    : path.join(__dirname, '..', 'workspace-templates')
+
+  const WORKSPACE_TEMPLATE_FILES = ['SOUL.md', 'STANDING_ORDERS.md', 'HEARTBEAT.md']
+  for (const file of WORKSPACE_TEMPLATE_FILES) {
+    const dest = path.join(WORKSPACE, file)
+    const src  = path.join(WORKSPACE_TEMPLATES_SRC, file)
+    if (!fs.existsSync(dest) && fs.existsSync(src)) {
+      try {
+        fs.mkdirSync(path.dirname(dest), { recursive: true })
+        fs.copyFileSync(src, dest)
+        log(`[Seed] Copied ${file} to workspace`)
+      } catch (e) { log(`[Seed] Failed to copy ${file}: ${e.message}`) }
+    }
   }
 
   try { process.chdir(USER_DATA) } catch { /* non-fatal */ }
@@ -246,41 +267,80 @@ function loadDashboard () {
   mainWindow.loadURL(startUrl)
 }
 
-// ── Auto update check (35s after launch) ─────────────────────
-function scheduleUpdateCheck () {
-  setTimeout(async () => {
-    try {
-      const https   = require('https')
-      const pkgPath = path.join(__dirname, '..', 'package.json')
-      const version = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')).version || '0.0.0'
-      const reqUrl  = `https://api.taracod.com/update/check?version=${encodeURIComponent(version)}`
-      log(`Checking for updates (current: v${version})`)
-      await new Promise((resolve) => {
-        https.get(reqUrl, (res) => {
-          let body = ''
-          res.on('data', (chunk) => { body += chunk })
-          res.on('end', () => {
-            try {
-              const data = JSON.parse(body)
-              if (data.updateAvailable && data.latestVersion) {
-                log(`Update available: v${data.latestVersion}`)
-                if (mainWindow && !mainWindow.isDestroyed()) {
-                  const detail = JSON.stringify({ version: data.latestVersion, url: data.downloadUrl || '' })
-                  mainWindow.webContents.executeJavaScript(
-                    `window.dispatchEvent(new CustomEvent('aiden:update', { detail: ${detail} }))`
-                  ).catch(() => {})
-                }
-              } else {
-                log('No update available')
-              }
-            } catch { /* ignore parse errors */ }
-            resolve(null)
-          })
-        }).on('error', (err) => { log(`Update check error: ${err.message}`); resolve(null) })
+// ── electron-updater setup ────────────────────────────────────
+function setupAutoUpdater () {
+  autoUpdater.autoDownload        = false  // let user decide
+  autoUpdater.autoInstallOnAppQuit = true
+
+  autoUpdater.on('update-available', (info) => {
+    log(`[Update] New version available: ${info.version}`)
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update-available', {
+        version:      info.version,
+        releaseNotes: info.releaseNotes,
+        releaseDate:  info.releaseDate,
       })
-    } catch (err) { log(`Update check failed: ${err.message}`) }
-  }, 35000)
+    }
+  })
+
+  autoUpdater.on('update-not-available', () => {
+    log('[Update] Already on latest version')
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update-not-available')
+    }
+  })
+
+  autoUpdater.on('download-progress', (progress) => {
+    log(`[Update] Download: ${Math.round(progress.percent)}%`)
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update-progress', {
+        percent:     Math.round(progress.percent),
+        transferred: progress.transferred,
+        total:       progress.total,
+        speed:       progress.bytesPerSecond,
+      })
+    }
+  })
+
+  autoUpdater.on('update-downloaded', (info) => {
+    log(`[Update] Downloaded: ${info.version} — ready to install`)
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update-downloaded', { version: info.version })
+    }
+  })
+
+  autoUpdater.on('error', (err) => {
+    log(`[Update] Error: ${err.message}`)
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update-error', { message: err.message })
+    }
+  })
+
+  // IPC handlers for user-initiated actions
+  ipcMain.on('download-update', () => {
+    log('[Update] User requested download')
+    autoUpdater.downloadUpdate().catch(err => log(`[Update] Download error: ${err.message}`))
+  })
+
+  ipcMain.on('install-update', () => {
+    log('[Update] User requested install — quitting and installing')
+    autoUpdater.quitAndInstall(false, true)
+  })
+
+  ipcMain.on('check-update', () => {
+    log('[Update] Manual check requested')
+    autoUpdater.checkForUpdates().catch(err => log(`[Update] Check error: ${err.message}`))
+  })
+
+  // Auto-check 30s after launch
+  setTimeout(() => {
+    log('[Update] Checking for updates...')
+    autoUpdater.checkForUpdates().catch(err => log(`[Update] Check failed: ${err.message}`))
+  }, 30000)
 }
+
+// Keep old name as alias so existing call site still works
+const scheduleUpdateCheck = setupAutoUpdater
 
 // ── Start API server as child process ────────────────────────
 function startApiServer () {

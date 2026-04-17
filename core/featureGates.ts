@@ -47,7 +47,7 @@ export type FeatureLimits = typeof FREE_LIMITS
  */
 export function getFeatureLimits(): FeatureLimits {
   const { isPro } = getLicenseStatus()
-  return isPro ? (PRO_LIMITS as FeatureLimits) : FREE_LIMITS
+  return isPro ? (PRO_LIMITS as unknown as FeatureLimits) : FREE_LIMITS
 }
 
 /**

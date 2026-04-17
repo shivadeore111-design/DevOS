@@ -11,12 +11,23 @@
 import fs   from 'fs'
 import path from 'path'
 
+// ── Workspace root — same logic as api/server.ts ──────────────
+// In Electron: AIDEN_USER_DATA = %APPDATA%/devos-ai
+// In direct dev (npm run dev): process.cwd() = project root
+const SOUL_WORKSPACE_ROOT = process.env.AIDEN_USER_DATA || process.cwd()
+
 // ── Load SOUL.md at startup ────────────────────────────────────
 function loadSoul(): string {
   try {
-    const soulPath = path.join(process.cwd(), 'SOUL.md')
-    if (fs.existsSync(soulPath)) {
-      return fs.readFileSync(soulPath, 'utf-8')
+    // Primary: workspace/SOUL.md (installed Electron app location)
+    const wsPath = path.join(SOUL_WORKSPACE_ROOT, 'workspace', 'SOUL.md')
+    if (fs.existsSync(wsPath)) {
+      return fs.readFileSync(wsPath, 'utf-8')
+    }
+    // Fallback: SOUL.md at root (direct npm run dev, cwd = project root)
+    const rootPath = path.join(process.cwd(), 'SOUL.md')
+    if (fs.existsSync(rootPath)) {
+      return fs.readFileSync(rootPath, 'utf-8')
     }
   } catch {}
   return ''
@@ -83,7 +94,7 @@ HARD RULES v5 — never violate these (system prompt verification: active):
 - NEVER say "I cannot create files" — you have file_write
 - NEVER say "I don't have real-time data" — you have web_search and get_stocks
 - NEVER list fake capabilities (graphic design, video production, music generation)
-- NEVER say you have 250+ skills — you have the 44+ real tools listed above
+- NEVER say you have 250+ skills — you have the 48 real tools listed above
 - NEVER use bullet points for simple conversational replies
 - NEVER say "key findings from our research" unless the user asked for research
 - NEVER say "as per your request, I have written" — just report what was done
@@ -104,7 +115,7 @@ Bad:  "As an AI, I don't have access to real-time stock data."
 Good: "NSE top gainers today: [actual data from get_stocks tool]"
 
 Bad:  "I have over 250 skills including graphic design and video production."
-Good: "I have 44+ built-in tools: web_search, file_write, run_python... [lists real tools]"
+Good: "I have 48 built-in tools: web_search, file_write, run_python... [lists real tools]"
 
 ## Core Principles
 - Be genuinely helpful, not performatively helpful.

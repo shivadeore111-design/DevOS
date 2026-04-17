@@ -9,10 +9,60 @@
 // every response. Injected into the system prompt so Aiden feels
 // like it knows the user — without the user having to re-explain.
 
+import fs   from 'fs'
+import path from 'path'
 import { conversationMemory } from './conversationMemory'
 import { semanticMemory }     from './semanticMemory'
 import { entityGraph }        from './entityGraph'
 import { knowledgeBase }      from './knowledgeBase'
+
+// ── Durable memory confidence filtering ───────────────────────
+
+const MEMORY_DIR        = path.join(process.cwd(), 'workspace', 'memory')
+const CONFIDENCE_FLOOR  = 0.6
+
+interface DurableMemory {
+  text:       string
+  source:     string
+  confidence: number
+}
+
+function loadDurableMemoriesFiltered(): DurableMemory[] {
+  try {
+    if (!fs.existsSync(MEMORY_DIR)) return []
+    const files = fs.readdirSync(MEMORY_DIR).filter(f => f.endsWith('.md') && f !== 'MEMORY_INDEX.md')
+
+    const all: DurableMemory[] = []
+
+    for (const file of files) {
+      try {
+        const content    = fs.readFileSync(path.join(MEMORY_DIR, file), 'utf-8')
+        const sourceMatch     = content.match(/^source:\s*(.+)$/m)
+        const confidenceMatch = content.match(/^confidence:\s*([0-9.]+)$/m)
+
+        const source     = sourceMatch     ? sourceMatch[1].trim()          : 'llm_inferred'
+        const confidence = confidenceMatch ? parseFloat(confidenceMatch[1]) : 0.5
+
+        // Strip frontmatter, get body text
+        const body = content.replace(/^---[\s\S]*?---\s*/m, '').trim()
+        if (body) all.push({ text: body, source, confidence })
+      } catch {}
+    }
+
+    const passing = all.filter(m => m.confidence >= CONFIDENCE_FLOOR)
+    const skipped = all.filter(m => m.confidence <  CONFIDENCE_FLOOR)
+
+    if (skipped.length > 0) {
+      console.log(`[Memory] Skipped ${skipped.length} low-confidence memories (confidence < ${CONFIDENCE_FLOOR})`)
+    }
+
+    return passing
+      .sort((a, b) => b.confidence - a.confidence)
+      .slice(0, 20)
+  } catch {
+    return []
+  }
+}
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -72,6 +122,20 @@ export async function unifiedMemoryRecall(
     for (const ex of relevant.slice(0, 2)) {
       if (ex.userMessage) {
         results.push(`Previously: ${ex.userMessage.slice(0, 150)}`)
+      }
+    }
+  } catch {}
+
+  // 5. Durable memory files — confidence-filtered .md facts
+  try {
+    const durable = loadDurableMemoriesFiltered()
+    const queryLower = query.toLowerCase()
+    const queryWords = queryLower.split(/\s+/).filter(w => w.length > 3)
+    for (const mem of durable) {
+      const textLower = mem.text.toLowerCase()
+      const relevant  = queryWords.some(w => textLower.includes(w))
+      if (relevant && !results.includes(mem.text.slice(0, 200))) {
+        results.push(mem.text.slice(0, 200))
       }
     }
   } catch {}

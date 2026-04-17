@@ -11,6 +11,10 @@
 //           hardware, automate, automate:stop, memory, models, help
 // ============================================================
 
+// Force UTF-8 output so unicode symbols render correctly on all terminals
+try { process.stdout.write('\u001b%G') } catch {}
+if (process.stdout.isTTY) { try { (process.stdout as any).setDefaultEncoding('utf8') } catch {} }
+
 import 'dotenv/config'
 import path from 'path'
 import fs   from 'fs'
@@ -227,8 +231,9 @@ async function main(): Promise<void> {
           console.log(`[Capability] Tier: ${profile.tier} | RAM: ${profile.ramGB}GB | GPU: ${profile.gpuVRAM}GB VRAM | Local LLM: ${profile.localLLM}`)
         }).catch(() => { /* non-fatal */ })
 
+        const _ver = (() => { try { return require('./package.json').version } catch { return '3.1.0' } })()
         console.log('╔══════════════════════════════════════════════╗')
-        console.log('║  DevOS v2.0 · Aiden — Your Personal AI OS   ║')
+        console.log(`║  DevOS v${_ver} - Aiden - Your Personal AI OS  ║`)
         console.log('║  http://localhost:4200  ·  Zero telemetry    ║')
         console.log('╚══════════════════════════════════════════════╝')
       } catch (err: any) {
