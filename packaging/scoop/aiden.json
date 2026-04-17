@@ -1,0 +1,35 @@
+{
+  "version": "3.5.0",
+  "description": "Your personal AI. Runs on your machine. Remembers everything.",
+  "homepage": "https://aiden.taracod.com",
+  "license": "Proprietary",
+  "url": "https://github.com/taracodlabs/aiden-releases/releases/download/v3.5.0/Aiden-Setup-3.5.0.exe",
+  "hash": "sha256:PLACEHOLDER",
+  "installer": {
+    "script": [
+      "$installer = \"$dir\\Aiden-Setup-$version.exe\"",
+      "Start-Process -FilePath $installer -ArgumentList '/S' -Wait"
+    ]
+  },
+  "uninstaller": {
+    "script": [
+      "$uninstaller = \"$env:LOCALAPPDATA\\Programs\\Aiden\\Uninstall Aiden.exe\"",
+      "if (Test-Path $uninstaller) { Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait }"
+    ]
+  },
+  "bin": "aiden",
+  "shortcuts": [
+    ["$env:LOCALAPPDATA\\Programs\\Aiden\\Aiden.exe", "Aiden"]
+  ],
+  "persist": [],
+  "checkver": {
+    "github": "https://github.com/taracodlabs/aiden-releases"
+  },
+  "autoupdate": {
+    "url": "https://github.com/taracodlabs/aiden-releases/releases/download/v$version/Aiden-Setup-$version.exe"
+  },
+  "notes": [
+    "Aiden has been installed.",
+    "Type 'aiden' in a new terminal to start."
+  ]
+}
