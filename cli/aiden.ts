@@ -4333,6 +4333,19 @@ async function resolveSessionArgs(): Promise<void> {
 // ── Main ──────────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
+  // ── Windows VT / ANSI init ──────────────────────────────────────────────────
+  if (process.platform === 'win32') {
+    try {
+      // Spawning any shell command activates the ConPTY VT pipeline on older hosts
+      const { execSync } = require('child_process')
+      execSync('', { shell: true, stdio: 'ignore' })
+    } catch { /* ignore */ }
+    if (process.stdout.isTTY) {
+      process.env.FORCE_COLOR = '3'
+      if (!process.env.TERM) process.env.TERM = 'xterm-256color'
+    }
+  }
+
   const health = await apiFetch<any>('/api/health', null)
   if (!health || health.status !== 'ok') {
     console.log(`\n  ${T.error}✗ Cannot connect to Aiden at ${API_BASE}${T.reset}`)

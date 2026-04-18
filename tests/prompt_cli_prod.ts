@@ -3,7 +3,7 @@
 // Copyright (c) 2026 Shiva Deore. All rights reserved.
 // ============================================================
 
-// tests/prompt_cli_prod.ts — 40 zero-cost audits for the
+// tests/prompt_cli_prod.ts — 44 zero-cost audits for the
 // feat(install): bundle CLI + --cli via Electron's bundled Node.
 // fix(install): aiden tui spawns v3.6 CLI, API bundle points at real server entry
 // chore(scripts): remove legacy/ references, fix dev script
@@ -611,6 +611,60 @@ test('cli-prod: dist-bundle/index.js contains version literal, no require(packag
     bundle,
     'VERSION = "3.6.0"',
     'dist-bundle/index.js must contain the version string as an inlined literal (VERSION = "3.6.0")',
+  )
+})
+
+// ── Test 41 — electron/main.js CLI spawn uses explicit stdio handles ─────────
+test('cli-prod: electron/main.js CLI spawn uses explicit stdio array not "inherit"', () => {
+  const src = read('electron/main.js')
+  assertExcludes(
+    src,
+    "stdio: 'inherit'",
+    'electron/main.js CLI spawn must use explicit stdio array, not "inherit"',
+  )
+  assertIncludes(
+    src,
+    'stdio: [process.stdin, process.stdout, process.stderr]',
+    'electron/main.js must use stdio: [process.stdin, process.stdout, process.stderr] for CLI spawn',
+  )
+})
+
+// ── Test 42 — cli/aiden.ts has Windows VT / ANSI init in main() ──────────────
+test('cli-prod: cli/aiden.ts has Windows VT/ANSI init in main()', () => {
+  const src = read('cli/aiden.ts')
+  assertIncludes(
+    src,
+    'process.platform === \'win32\'',
+    'cli/aiden.ts must contain Windows VT/ANSI init guard in main()',
+  )
+  assertIncludes(
+    src,
+    'FORCE_COLOR',
+    'cli/aiden.ts must set FORCE_COLOR for Windows ANSI support',
+  )
+})
+
+// ── Test 43 — bin/aiden.cmd routes help/--help/?? and prints unknown cmd ─────
+test('cli-prod: bin/aiden.cmd has help/--help/?? routing and unknown-command message', () => {
+  const src = read('bin/aiden.cmd')
+  assertIncludes(src, '"--help"',  'bin/aiden.cmd must handle --help')
+  assertIncludes(src, '"/?"',      'bin/aiden.cmd must handle /?')
+  assertIncludes(src, '"help"',    'bin/aiden.cmd must handle help')
+  assertIncludes(src, 'Unknown command', 'bin/aiden.cmd must print "Unknown command:" for unrecognized args')
+})
+
+// ── Test 44 — electron/main.js quit handlers are inside else block ────────────
+test('cli-prod: electron/main.js before-quit and will-quit are not top-level', () => {
+  const src = read('electron/main.js')
+  // The handlers must be inside the else (GUI) block — not registered at top level.
+  // Verify there's no bare top-level registration after the closing brace of the else block.
+  const elseIdx = src.indexOf('} else {')
+  assert(elseIdx !== -1, 'electron/main.js must contain an "} else {" block')
+  // The last occurrence of before-quit must be inside the else block
+  const lastBeforeQuit = src.lastIndexOf("'before-quit'")
+  assert(
+    lastBeforeQuit > elseIdx,
+    'electron/main.js app.on("before-quit") must be inside the else (GUI) block, not top-level',
   )
 })
 

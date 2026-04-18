@@ -686,7 +686,7 @@ if (isCliMode) {
     }
     const cliArgs = process.argv.slice(2).filter(a => a !== '--cli')
     const child   = spawn(process.execPath, [CLI_BUNDLE, ...cliArgs], {
-      stdio: 'inherit',
+      stdio: [process.stdin, process.stdout, process.stderr],
       env:   { ...process.env, ELECTRON_RUN_AS_NODE: '1', AIDEN_CLI_MODE: '1', AIDEN_LOG_FILE: LOG_FILE },
     })
     child.on('exit', (code) => app.exit(code ?? 0))
@@ -784,18 +784,17 @@ if (isCliMode) {
   app.on('activate', () => {
     if (!mainWindow) createMainWindow()
   })
+
+  app.on('before-quit', () => {
+    isQuitting = true
+  })
+
+  app.on('will-quit', () => {
+    if (apiProcess) {
+      try { apiProcess.kill('SIGTERM') } catch { /* ignore */ }
+    }
+    if (dashProcess) {
+      try { dashProcess.kill('SIGTERM') } catch { /* ignore */ }
+    }
+  })
 }
-
-// ── Shared quit handlers (both modes) ────────────────────────
-app.on('before-quit', () => {
-  isQuitting = true
-})
-
-app.on('will-quit', () => {
-  if (apiProcess) {
-    try { apiProcess.kill('SIGTERM') } catch { /* ignore */ }
-  }
-  if (dashProcess) {
-    try { dashProcess.kill('SIGTERM') } catch { /* ignore */ }
-  }
-})
