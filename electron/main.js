@@ -179,7 +179,13 @@ async function waitForApi (url, timeoutMs) {
   while (Date.now() - start < timeoutMs) {
     try {
       const res = await fetch(url, { signal: AbortSignal.timeout(500) })
-      if (res.ok) return true
+      if (res.ok) {
+        // Validate we got a real health response, not a proxy/other service
+        try {
+          const body = await res.json()
+          if (body && body.status === 'ok') return true
+        } catch { /* not a valid health response, keep waiting */ }
+      }
     } catch { /* not ready yet */ }
     await new Promise(r => setTimeout(r, 200))
   }
@@ -638,7 +644,13 @@ if (isCliMode) {
     if (fs.existsSync(API_BUNDLE)) {
       const apiChild = spawn(process.execPath, [API_BUNDLE], {
         stdio: ['ignore', 'pipe', 'pipe'],
-        env:   { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+        env:   {
+          ...process.env,
+          ELECTRON_RUN_AS_NODE: '1',
+          AIDEN_USER_DATA:  USER_DATA,
+          AIDEN_WORKSPACE:  WORKSPACE,
+          AIDEN_CONFIG_DIR: CONFIG_DIR,
+        },
       })
       const apiErrLines = []
       apiChild.stdout.on('data', d => log('[API] ' + d.toString().trim()))

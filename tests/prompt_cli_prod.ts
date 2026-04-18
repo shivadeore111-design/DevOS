@@ -3,7 +3,7 @@
 // Copyright (c) 2026 Shiva Deore. All rights reserved.
 // ============================================================
 
-// tests/prompt_cli_prod.ts — 30 zero-cost audits for the
+// tests/prompt_cli_prod.ts — 37 zero-cost audits for the
 // feat(install): bundle CLI + --cli via Electron's bundled Node.
 // fix(install): aiden tui spawns v3.6 CLI, API bundle points at real server entry
 // chore(scripts): remove legacy/ references, fix dev script
@@ -413,6 +413,136 @@ test('cli-prod: --cli mode error path does not show "set AIDEN_API env var" mess
     cliErrBranch,
     'logFile',
     '--cli error branch must reference the log file path',
+  )
+})
+
+// ── Test 31 — waitForApi checks res.ok ───────────────────────────────────────
+test('cli-prod: waitForApi checks res.ok before treating response as success', () => {
+  const src = read('electron/main.js')
+  // Locate the async waitForApi definition (not the callback-based one)
+  const asyncIdx = src.indexOf('async function waitForApi')
+  assert(asyncIdx !== -1, 'electron/main.js must define async function waitForApi')
+  // Find the closing brace of this function by scanning forward ~30 lines worth
+  const funcBody = src.substring(asyncIdx, asyncIdx + 1000)
+  assertIncludes(
+    funcBody,
+    'res.ok',
+    'async waitForApi must check res.ok to reject non-2xx responses',
+  )
+})
+
+// ── Test 32 — waitForApi validates JSON body ──────────────────────────────────
+test('cli-prod: waitForApi validates health response body has status ok', () => {
+  const src = read('electron/main.js')
+  const asyncIdx = src.indexOf('async function waitForApi')
+  assert(asyncIdx !== -1, 'electron/main.js must define async function waitForApi')
+  const funcBody = src.substring(asyncIdx, asyncIdx + 1000)
+  assertIncludes(
+    funcBody,
+    'res.json()',
+    'async waitForApi must parse JSON body to validate the health response',
+  )
+  assertIncludes(
+    funcBody,
+    "body.status === 'ok'",
+    "async waitForApi must verify body.status === 'ok' to reject proxies/other services",
+  )
+})
+
+// ── Test 33 — --cli child spawn has AIDEN_CLI_MODE=1 ─────────────────────────
+test('cli-prod: --cli block injects AIDEN_CLI_MODE=1 into CLI child env', () => {
+  const src = read('electron/main.js')
+  // Find the CLI child spawn (after the waitForApi call)
+  const cliChildIdx = src.indexOf('AIDEN_CLI_MODE')
+  assert(cliChildIdx !== -1, 'electron/main.js must set AIDEN_CLI_MODE in CLI child env')
+  const vicinity = src.substring(cliChildIdx, cliChildIdx + 200)
+  assertIncludes(
+    vicinity,
+    "'1'",
+    'AIDEN_CLI_MODE must be set to "1" in the CLI child process env',
+  )
+})
+
+// ── Test 34 — --cli API child spawn has AIDEN_USER_DATA ──────────────────────
+test('cli-prod: --cli block injects AIDEN_USER_DATA into API child spawn env', () => {
+  const src = read('electron/main.js')
+  // Find the API child spawn section (before CLI child spawn)
+  assertIncludes(
+    src,
+    'AIDEN_USER_DATA:  USER_DATA',
+    'electron/main.js must inject AIDEN_USER_DATA into the API child process env',
+  )
+  assertIncludes(
+    src,
+    'AIDEN_WORKSPACE:  WORKSPACE',
+    'electron/main.js must inject AIDEN_WORKSPACE into the API child process env',
+  )
+  assertIncludes(
+    src,
+    'AIDEN_CONFIG_DIR: CONFIG_DIR',
+    'electron/main.js must inject AIDEN_CONFIG_DIR into the API child process env',
+  )
+})
+
+// ── Test 35 — CLI bundle has branched error messages ─────────────────────────
+test('cli-prod: dist-bundle/cli.js has AIDEN_CLI_MODE branch for error messages', () => {
+  const src = read('dist-bundle/cli.js')
+  assertIncludes(
+    src,
+    'AIDEN_CLI_MODE',
+    'dist-bundle/cli.js must contain AIDEN_CLI_MODE check for branched error messages',
+  )
+  // Confirm both branches exist
+  assertIncludes(
+    src,
+    '[CLI] API server did not start',
+    'dist-bundle/cli.js must have the CLI-mode error message branch',
+  )
+  assertIncludes(
+    src,
+    'Start the Aiden desktop app first',
+    'dist-bundle/cli.js must retain the standalone-mode error message in the else branch',
+  )
+})
+
+// ── Test 36 — CLI bundle CLI-mode branch does NOT show "AIDEN_API env var" ───
+test('cli-prod: dist-bundle/cli.js CLI-mode error branch excludes "AIDEN_API env var"', () => {
+  const src = read('dist-bundle/cli.js')
+  const cliModeIdx = src.indexOf('AIDEN_CLI_MODE')
+  assert(cliModeIdx !== -1, 'dist-bundle/cli.js must contain AIDEN_CLI_MODE')
+  // The CLI branch ends at the "} else {" that precedes the standalone message
+  const elseIdx = src.indexOf('} else {', cliModeIdx)
+  assert(elseIdx !== -1, 'dist-bundle/cli.js must have an else branch after AIDEN_CLI_MODE check')
+  const cliBranch = src.substring(cliModeIdx, elseIdx)
+  assertExcludes(
+    cliBranch,
+    'AIDEN_API env var',
+    'The AIDEN_CLI_MODE=1 branch must NOT contain "AIDEN_API env var" — that belongs in the else branch only',
+  )
+})
+
+// ── Test 37 — providers/index.ts CONFIG_PATH respects AIDEN_CONFIG_DIR ───────
+test('cli-prod: providers/index.ts CONFIG_PATH respects AIDEN_CONFIG_DIR env var', () => {
+  const src = read('providers/index.ts')
+  assertIncludes(
+    src,
+    'AIDEN_CONFIG_DIR',
+    'providers/index.ts CONFIG_PATH must check process.env.AIDEN_CONFIG_DIR',
+  )
+  // Ensure fallback is present so standalone mode still works
+  assertIncludes(
+    src,
+    'process.cwd()',
+    'providers/index.ts CONFIG_PATH must fall back to process.cwd() when AIDEN_CONFIG_DIR is not set',
+  )
+  // Confirm the config path uses whichever is set
+  const configPathIdx = src.indexOf('CONFIG_PATH')
+  assert(configPathIdx !== -1, 'providers/index.ts must declare CONFIG_PATH')
+  const configPathLine = src.substring(configPathIdx, configPathIdx + 300)
+  assertIncludes(
+    configPathLine,
+    'AIDEN_CONFIG_DIR',
+    'CONFIG_PATH declaration must reference AIDEN_CONFIG_DIR',
   )
 })
 

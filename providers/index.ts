@@ -79,7 +79,11 @@ export interface DevOSConfig {
   }
 }
 
-const CONFIG_PATH = path.join(process.cwd(), 'config', 'devos.config.json')
+// Use AIDEN_CONFIG_DIR when injected by Electron CLI mode, otherwise fall back to cwd/config
+const CONFIG_PATH = path.join(
+  process.env.AIDEN_CONFIG_DIR || path.join(process.cwd(), 'config'),
+  'devos.config.json'
+)
 
 // ── Defaults ──────────────────────────────────────────────────
 

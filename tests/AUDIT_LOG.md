@@ -4857,3 +4857,45 @@
 | 28 | cli-prod: electron/main.js --cli branch awaits waitForApi before spawning CLI | ✓ | 0 | ok |
 | 29 | cli-prod: waitForApi function accepts a timeoutMs parameter | ✓ | 0 | ok |
 | 30 | cli-prod: --cli mode error path does not show "set AIDEN_API env var" message | ✓ | 1 | ok |
+
+## 2026-04-18T08:58:50.917Z — 37/37 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | cli-prod: package.json has build:cli script | ✓ | 0 | ok |
+| 2 | cli-prod: build:cli entry point is cli/aiden.ts | ✓ | 0 | ok |
+| 3 | cli-prod: build:cli outputs to dist-bundle/cli.js | ✓ | 0 | ok |
+| 4 | cli-prod: build:cli marks electron as external dependency | ✓ | 1 | ok |
+| 5 | cli-prod: main build script invokes build:cli | ✓ | 0 | ok |
+| 6 | cli-prod: electron-builder ships dist-bundle via extraResources | ✓ | 0 | ok |
+| 7 | cli-prod: bin/aiden.cmd handles "tui" subcommand | ✓ | 0 | ok |
+| 8 | cli-prod: bin/aiden.cmd handles "pc" subcommand | ✓ | 1 | ok |
+| 9 | cli-prod: bin/aiden.cmd uses Aiden.exe --cli (not node) for tui | ✓ | 0 | ok |
+| 10 | cli-prod: bin/aiden (bash) handles tui and pc subcommands | ✓ | 0 | ok |
+| 11 | cli-prod: electron/main.js detects --cli flag via process.argv | ✓ | 1 | ok |
+| 12 | cli-prod: --cli mode sets ELECTRON_RUN_AS_NODE=1 on spawned child | ✓ | 0 | ok |
+| 13 | cli-prod: --cli mode path does not call createMainWindow() | ✓ | 0 | ok |
+| 14 | cli-prod: --cli mode spawns API server as isolated child process | ✓ | 0 | ok |
+| 15 | cli-prod: --cli mode hides macOS dock icon | ✓ | 0 | ok |
+| 16 | cli-prod: build:api script exists and targets api/entry.ts | ✓ | 0 | ok |
+| 17 | cli-prod: dist-bundle/index.js contains API server code | ✓ | 183 | ok |
+| 18 | cli-prod: dist-bundle/index.js must not contain legacy v1.0 CLI banner | ✓ | 248 | ok |
+| 19 | cli-prod: API spawn in --cli mode passes ELECTRON_RUN_AS_NODE=1 | ✓ | 0 | ok |
+| 20 | cli-prod: root index.ts has been moved to legacy/ (not present at repo root) | ✓ | 0 | ok |
+| 21 | cli-prod: package.json dev script does not reference legacy/ | ✓ | 1 | ok |
+| 22 | cli-prod: no package.json script references legacy/index | ✓ | 0 | ok |
+| 23 | cli-prod: package.json dev script launches Electron (contains "electron .") | ✓ | 0 | ok |
+| 24 | cli-prod: literal grep of package.json contains no "legacy/index" string | ✓ | 0 | ok |
+| 25 | cli-prod: legacy/ directory exists but live source files do not import it | ✓ | 35 | ok |
+| 26 | cli-prod: /api/health endpoint is registered in api/server.ts | ✓ | 1 | ok |
+| 27 | cli-prod: ollama execSync in modelRouter uses stdio pipe to suppress Windows errors | ✓ | 1 | ok |
+| 28 | cli-prod: electron/main.js --cli branch awaits waitForApi before spawning CLI | ✓ | 0 | ok |
+| 29 | cli-prod: waitForApi function accepts a timeoutMs parameter | ✓ | 0 | ok |
+| 30 | cli-prod: --cli mode error path does not show "set AIDEN_API env var" message | ✓ | 1 | ok |
+| 31 | cli-prod: waitForApi checks res.ok before treating response as success | ✓ | 0 | ok |
+| 32 | cli-prod: waitForApi validates health response body has status ok | ✓ | 1 | ok |
+| 33 | cli-prod: --cli block injects AIDEN_CLI_MODE=1 into CLI child env | ✓ | 0 | ok |
+| 34 | cli-prod: --cli block injects AIDEN_USER_DATA into API child spawn env | ✓ | 0 | ok |
+| 35 | cli-prod: dist-bundle/cli.js has AIDEN_CLI_MODE branch for error messages | ✓ | 90 | ok |
+| 36 | cli-prod: dist-bundle/cli.js CLI-mode error branch excludes "AIDEN_API env var" | ✓ | 74 | ok |
+| 37 | cli-prod: providers/index.ts CONFIG_PATH respects AIDEN_CONFIG_DIR env var | ✓ | 1 | ok |
