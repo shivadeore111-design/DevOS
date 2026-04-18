@@ -5240,7 +5240,7 @@ async function fetchProviderResponse(
   api:      import('../providers/index').APIEntry,
   messages: { role: string; content: string }[],
   signal:   AbortSignal,
-): Promise<{ text: string; apiName: string }> {
+): Promise<{ text: string; apiName: string; model: string }> {
   const key = api.key.startsWith('env:')
     ? (process.env[api.key.replace('env:', '')] || '')
     : api.key
@@ -5256,7 +5256,7 @@ async function fetchProviderResponse(
     })
     if (!resp.ok) throw new Error(`Gemini ${resp.status}`)
     const d = await resp.json() as any
-    return { text: d?.choices?.[0]?.message?.content || '', apiName: api.name }
+    return { text: d?.choices?.[0]?.message?.content || '', apiName: api.name, model }
 
   } else if (providerType === 'ollama') {
     const resp = await fetch('http://localhost:11434/api/chat', {
@@ -5267,7 +5267,7 @@ async function fetchProviderResponse(
     })
     if (!resp.ok) throw new Error(`Ollama ${resp.status}`)
     const d = await resp.json() as any
-    return { text: d?.message?.content || '', apiName: api.name }
+    return { text: d?.message?.content || '', apiName: api.name, model }
 
   } else {
     const COMPAT_ENDPOINTS: Record<string, string> = {
@@ -5292,15 +5292,43 @@ async function fetchProviderResponse(
     })
     if (!resp.ok) throw new Error(`${providerType} ${resp.status}`)
     const d = await resp.json() as any
-    return { text: d?.choices?.[0]?.message?.content || '', apiName: api.name }
+    return { text: d?.choices?.[0]?.message?.content || '', apiName: api.name, model }
   }
 }
 
 async function raceProviders(
   messages: { role: string; content: string }[],
   topN = 2,
-): Promise<{ text: string; apiName: string } | null> {
-  const cfg  = loadConfig()
+): Promise<{ text: string; apiName: string; model: string } | null> {
+  const cfg = loadConfig()
+
+  // ── Pin-first: if primaryProvider is set, use it directly (no racing) ──────
+  if (cfg.primaryProvider) {
+    const pinned = cfg.providers.apis.find(a =>
+      (a.name === cfg.primaryProvider || a.provider === cfg.primaryProvider) &&
+      a.enabled && !a.rateLimited,
+    )
+    if (pinned) {
+      const k = pinned.key.startsWith('env:')
+        ? (process.env[pinned.key.replace('env:', '')] || '')
+        : pinned.key
+      if (k.length > 0) {
+        const ctrl = new AbortController()
+        try {
+          const result = await fetchProviderResponse(pinned, messages, ctrl.signal)
+          if (result.text.trim()) {
+            console.log(`[Router] raceProviders → pinned: ${cfg.primaryProvider} (${pinned.model})`)
+            return result
+          }
+        } catch {
+          // Pinned provider failed — fall through to racing for this call only.
+          // Auto-unpin-on-3-failures (markRateLimited) is a separate mechanism.
+          console.log(`[Router] Pinned provider "${cfg.primaryProvider}" failed — falling back to race`)
+        }
+      }
+    }
+  }
+
   const apis = cfg.providers.apis
     .filter(a => {
       if (!a.enabled || a.rateLimited) return false
@@ -5467,6 +5495,8 @@ ${cognitionHint}${firstMessageContext}${memoryContext}${greetingPreamble}${sessi
   try {
     const raceResult = await raceProviders(msgs)
     if (raceResult) {
+      // Emit meta event BEFORE first token so the CLI status bar updates immediately
+      send({ event: 'meta', provider: raceResult.apiName, model: raceResult.model })
       // Simulate streaming: send each word as a token for natural feel
       const words = raceResult.text.split(' ')
       for (let wi = 0; wi < words.length; wi++) {
@@ -5486,6 +5516,8 @@ ${cognitionHint}${firstMessageContext}${memoryContext}${greetingPreamble}${sessi
   const _streamStart     = Date.now()
   console.log(`[Router] streamChat → provider: ${providerType}, model: ${activeStreamModel}, msg: "${message.substring(0, 40)}"`)
 
+  // Emit meta event before streaming starts so the CLI status bar reflects the actual provider
+  send({ event: 'meta', provider: providerType, model: activeStreamModel })
 
   let streamEnded = false
   const timeout = setTimeout(() => {

@@ -588,6 +588,12 @@ async function streamChat(message: string): Promise<void> {
             }
           }
 
+          // ── Meta event — update status bar state before first token ──
+          if (evt.event === 'meta') {
+            if (evt.provider) { state.lastProvider = evt.provider as string; provider = evt.provider as string }
+            if (evt.model)    state.lastModel    = evt.model    as string
+          }
+
           // ── Text token — stop spinner, open response panel ──
           if (evt.token !== undefined) {
             if (!boxOpen) stopActivityRender()
@@ -801,7 +807,7 @@ const COMMAND_DETAIL: Record<string, CmdDetail> = {
     subs:     ['<name>', 'add <name>', 'remove <name>', 'test'],
     examples: ['/provider openai', '/provider add groq', '/provider test'],
   },
-  '/primary':    { section: 'Config',    desc: 'Pin a provider to front of the chain.',                     usage: '/primary <name>|reset' },
+  '/primary':    { section: 'Config',    desc: 'Pin a provider to front of the chain.',                     usage: '/primary [list|<name>|reset]' },
   '/theme':      { section: 'Config',    desc: 'Change color theme.',
     usage:    '/theme <name>',
     examples: ['/theme default', '/theme mono', '/theme slate', '/theme ember'],
@@ -3222,7 +3228,7 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
     process.exit(0)
   }
 
-  // ── /primary [name|reset] ─────────────────────────────────────────────────────
+  // ── /primary [list|name|reset] ───────────────────────────────────────────────
   if (command === '/primary') {
     const arg = parts[1]
     try {
@@ -3232,17 +3238,47 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
         const pin = data?.primaryProvider
         if (pin) console.log(`\n  ${T.success}Primary provider: ${pin}${T.reset}\n`)
         else     console.log(`\n  ${T.dim}No primary provider set (default ordering)${T.reset}\n`)
+      } else if (arg === 'list') {
+        // Show all providers with readiness status
+        const data = await apiFetch<any>('/api/providers/state', { primary: null, providers: [], currentChain: [] })
+        const pin  = data.primary
+        console.log(`\n  ${T.bold}Providers${T.reset}`)
+        console.log(`  ${T.dim}${hr()}${T.reset}`)
+        for (const p of (data.providers || [])) {
+          const ready = p.enabled && !p.rateLimited
+          const dot   = ready ? `${T.success}●` : `${T.dim}○`
+          const star  = p.isPrimary ? ` ${fg(COLORS.orange)}★${T.reset}` : ''
+          const rl    = p.rateLimited ? ` ${T.warning}[rate-limited]${T.reset}` : ''
+          const noKey = p.enabled && !ready && !p.rateLimited ? ` ${T.dim}[no key]${T.reset}` : ''
+          console.log(`  ${dot}${T.reset} ${(p.name || '').padEnd(18)}${T.dim}${p.model || ''}${T.reset}${star}${rl}${noKey}`)
+        }
+        if (pin) console.log(`\n  ${T.dim}Pinned: ${T.reset}${T.success}${pin}${T.reset}  ${T.dim}(use /primary reset to clear)${T.reset}`)
+        else     console.log(`\n  ${T.dim}No pin — default ordering. Use /primary <name> to pin.${T.reset}`)
+        console.log()
       } else if (arg === 'reset') {
         const r = await fetch('http://localhost:4200/api/config/primary', { method: 'DELETE' })
         if (r.ok) console.log(`\n  ${T.success}✓ Primary provider cleared — default ordering restored${T.reset}\n`)
         else      console.log(`\n  ${T.error}✗ Failed to clear primary provider${T.reset}\n`)
       } else {
-        const r = await fetch('http://localhost:4200/api/config/primary', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: arg }),
-        })
-        if (r.ok) console.log(`\n  ${T.success}✓ Primary provider pinned: ${arg}${T.reset}\n`)
-        else      console.log(`\n  ${T.error}✗ Failed to set primary provider${T.reset}\n`)
+        // Validate provider exists before pinning
+        const state_ = await apiFetch<any>('/api/providers/state', { primary: null, providers: [] })
+        const known  = (state_.providers || []) as any[]
+        const match  = known.find((p: any) => p.name === arg || p.provider === arg)
+        if (!match) {
+          const names = known.map((p: any) => p.name).join(', ')
+          console.log(`\n  ${T.error}✗ Unknown provider "${arg}"${T.reset}`)
+          console.log(`  ${T.dim}Available: ${names}${T.reset}\n`)
+        } else {
+          const r = await fetch('http://localhost:4200/api/config/primary', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: arg }),
+          })
+          if (r.ok) {
+            console.log(`\n  ${T.success}✓ Primary provider pinned: ${arg}${T.reset}\n`)
+          } else {
+            console.log(`\n  ${T.error}✗ Failed to set primary provider${T.reset}\n`)
+          }
+        }
       }
     } catch {
       console.log(`\n  ${T.error}✗ Could not reach server.${T.reset}\n`)
