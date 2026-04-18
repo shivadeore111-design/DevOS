@@ -510,8 +510,8 @@ test('cli-prod: dist-bundle/index.js contains version literal, no require(packag
   )
   assertIncludes(
     bundle,
-    'VERSION = "3.6.0"',
-    'dist-bundle/index.js must contain the version string as an inlined literal (VERSION = "3.6.0")',
+    'VERSION = "3.7.0"',
+    'dist-bundle/index.js must contain the version string as an inlined literal (VERSION = "3.7.0")',
   )
 })
 
