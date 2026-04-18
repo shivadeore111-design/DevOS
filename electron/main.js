@@ -20,6 +20,8 @@ let dashProcess   = null
 let apiProcess    = null
 let isQuitting    = false
 
+const isCliMode   = process.argv.includes('--cli')
+
 // ── Paths ─────────────────────────────────────────────────────
 const IS_PACKAGED = app.isPackaged
 const USER_DATA   = app.getPath('userData')
@@ -28,6 +30,15 @@ const RESOURCES   = IS_PACKAGED ? process.resourcesPath : path.join(__dirname, '
 const DIST_DIR    = IS_PACKAGED
   ? path.join(process.resourcesPath, 'dist')
   : path.join(__dirname, '..', 'dist')
+
+// Bundle paths used by --cli mode (resolve from resources/dist in packaged app,
+// or from dist-bundle/ in dev where esbuild outputs the CLI bundle)
+const CLI_BUNDLE  = IS_PACKAGED
+  ? path.join(process.resourcesPath, 'dist', 'cli.js')
+  : path.join(__dirname, '..', 'dist-bundle', 'cli.js')
+const API_BUNDLE  = IS_PACKAGED
+  ? path.join(process.resourcesPath, 'dist', 'index.js')
+  : path.join(__dirname, '..', 'dist-bundle', 'index.js')
 const DASH_DIR    = IS_PACKAGED
   ? path.join(process.resourcesPath, 'dashboard', 'standalone')
   : path.join(__dirname, '..', 'dashboard-next', '.next', 'standalone')
@@ -596,97 +607,136 @@ function createTray () {
 }
 
 // ── App lifecycle ─────────────────────────────────────────────
-app.whenReady().then(async () => {
-  // Ensure log directory exists before first log() call
-  try { fs.mkdirSync(path.dirname(LOG_FILE), { recursive: true }) } catch { /* ignore */ }
-  try { fs.mkdirSync(LOGS_DIR, { recursive: true }) } catch { /* ignore */ }
-  log('=== Aiden starting ===')
-  log(`userData: ${USER_DATA}`)
-  log(`IS_PACKAGED: ${IS_PACKAGED}`)
-  log(`DIST_DIR: ${DIST_DIR}`)
-  log(`DASH_DIR: ${DASH_DIR}`)
 
-  // 0. Verify Node.js
-  if (!checkNodeJs()) return
+if (isCliMode) {
+  // ── CLI mode — no window, no tray, no dashboard ───────────────
+  // Electron's bundled Node runs the CLI bundle via ELECTRON_RUN_AS_NODE=1,
+  // so end users need zero system dependencies.
+  if (process.platform === 'darwin' && app.dock) app.dock.hide()
 
-  // 1. Bootstrap dirs
-  bootstrapUserData()
+  app.whenReady().then(async () => {
+    try { fs.mkdirSync(path.dirname(LOG_FILE), { recursive: true }) } catch { /* ignore */ }
+    try { fs.mkdirSync(LOGS_DIR, { recursive: true }) } catch { /* ignore */ }
+    log('=== Aiden CLI mode ===')
+    bootstrapUserData()
 
-  // 2. Show main window immediately with loading screen
-  createMainWindow()
-
-  // 3. Create tray
-  createTray()
-
-  // 4. Free port 4200 if occupied
-  setStatus('Checking ports...')
-  const port4200free = await checkPort(4200)
-  if (!port4200free) {
-    log('Port 4200 in use — freeing it')
-    setStatus('Freeing port 4200...')
-    await freePort(4200)
-  }
-
-  // 5. Start API server in-process
-  setStatus('Starting API server...')
-  startApiServer()
-
-  // 6. Start Next.js dashboard
-  setStatus('Starting dashboard...')
-  startDashboard()
-
-  // 7. Wait for API, then dashboard, then navigate
-  setStatus('Waiting for API server (up to 40s)...')
-  waitForApi(
-    () => {
-      setStatus('API ready — waiting for dashboard...')
-      waitForDash(
-        () => {
-          setStatus('All systems ready!')
-          loadDashboard()
-          scheduleUpdateCheck()
-        },
-        (reason) => {
-          log(`Dashboard wait FAILED: ${reason}`)
-          setLoadingError(`Dashboard failed to start.\n${reason}\n\nPlease check the log file.`)
-          dialog.showMessageBox(mainWindow, {
-            type:    'error',
-            title:   'Aiden — Dashboard timed out',
-            message: 'The dashboard did not start in time.',
-            detail:  `${reason}\n\nLog file: ${LOG_FILE}\n\nPlease send this log to hello@taracod.com`,
-            buttons: ['Open Log File', 'Keep Waiting', 'Quit'],
-          }).then(({ response }) => {
-            if (response === 0) shell.openPath(LOG_FILE)
-            if (response === 2) { isQuitting = true; app.quit() }
-          })
-        }
-      )
-    },
-    (reason) => {
-      log(`API wait FAILED: ${reason}`)
-      setLoadingError(`API server failed to start.\n${reason}\n\nPlease check the log file.`)
-      dialog.showMessageBox(mainWindow, {
-        type:    'error',
-        title:   'Aiden — API server timed out',
-        message: 'The Aiden API server did not start in time.',
-        detail:  `${reason}\n\nLog file: ${LOG_FILE}\n\nPlease send this log to hello@taracod.com`,
-        buttons: ['Open Log File', 'Keep Waiting', 'Quit'],
-      }).then(({ response }) => {
-        if (response === 0) shell.openPath(LOG_FILE)
-        if (response === 2) { isQuitting = true; app.quit() }
-      })
+    // Start API server in-process so CLI tools (web search, file ops, etc.) work
+    if (fs.existsSync(API_BUNDLE)) {
+      try { require(API_BUNDLE) } catch (e) { log(`[CLI] API start failed: ${e.message}`) }
+    } else {
+      log(`[CLI] API bundle not found at ${API_BUNDLE} — tools may be unavailable`)
     }
-  )
-})
 
-app.on('window-all-closed', (e) => {
-  if (!isQuitting) e.preventDefault()
-})
+    // Spawn CLI using Electron's own executable (ELECTRON_RUN_AS_NODE=1 = pure Node, no Chromium)
+    if (!fs.existsSync(CLI_BUNDLE)) {
+      console.error(`[Aiden] CLI bundle not found: ${CLI_BUNDLE}`)
+      console.error('  Run: npm run build:cli')
+      app.exit(1)
+      return
+    }
+    const cliArgs = process.argv.slice(2).filter(a => a !== '--cli')
+    const child   = spawn(process.execPath, [CLI_BUNDLE, ...cliArgs], {
+      stdio: 'inherit',
+      env:   { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+    })
+    child.on('exit', (code) => app.exit(code ?? 0))
+  })
 
-app.on('activate', () => {
-  if (!mainWindow) createMainWindow()
-})
+} else {
+  // ── GUI mode ──────────────────────────────────────────────────
+  app.whenReady().then(async () => {
+    // Ensure log directory exists before first log() call
+    try { fs.mkdirSync(path.dirname(LOG_FILE), { recursive: true }) } catch { /* ignore */ }
+    try { fs.mkdirSync(LOGS_DIR, { recursive: true }) } catch { /* ignore */ }
+    log('=== Aiden starting ===')
+    log(`userData: ${USER_DATA}`)
+    log(`IS_PACKAGED: ${IS_PACKAGED}`)
+    log(`DIST_DIR: ${DIST_DIR}`)
+    log(`DASH_DIR: ${DASH_DIR}`)
 
+    // 0. Verify Node.js
+    if (!checkNodeJs()) return
+
+    // 1. Bootstrap dirs
+    bootstrapUserData()
+
+    // 2. Show main window immediately with loading screen
+    createMainWindow()
+
+    // 3. Create tray
+    createTray()
+
+    // 4. Free port 4200 if occupied
+    setStatus('Checking ports...')
+    const port4200free = await checkPort(4200)
+    if (!port4200free) {
+      log('Port 4200 in use — freeing it')
+      setStatus('Freeing port 4200...')
+      await freePort(4200)
+    }
+
+    // 5. Start API server in-process
+    setStatus('Starting API server...')
+    startApiServer()
+
+    // 6. Start Next.js dashboard
+    setStatus('Starting dashboard...')
+    startDashboard()
+
+    // 7. Wait for API, then dashboard, then navigate
+    setStatus('Waiting for API server (up to 40s)...')
+    waitForApi(
+      () => {
+        setStatus('API ready — waiting for dashboard...')
+        waitForDash(
+          () => {
+            setStatus('All systems ready!')
+            loadDashboard()
+            scheduleUpdateCheck()
+          },
+          (reason) => {
+            log(`Dashboard wait FAILED: ${reason}`)
+            setLoadingError(`Dashboard failed to start.\n${reason}\n\nPlease check the log file.`)
+            dialog.showMessageBox(mainWindow, {
+              type:    'error',
+              title:   'Aiden — Dashboard timed out',
+              message: 'The dashboard did not start in time.',
+              detail:  `${reason}\n\nLog file: ${LOG_FILE}\n\nPlease send this log to hello@taracod.com`,
+              buttons: ['Open Log File', 'Keep Waiting', 'Quit'],
+            }).then(({ response }) => {
+              if (response === 0) shell.openPath(LOG_FILE)
+              if (response === 2) { isQuitting = true; app.quit() }
+            })
+          }
+        )
+      },
+      (reason) => {
+        log(`API wait FAILED: ${reason}`)
+        setLoadingError(`API server failed to start.\n${reason}\n\nPlease check the log file.`)
+        dialog.showMessageBox(mainWindow, {
+          type:    'error',
+          title:   'Aiden — API server timed out',
+          message: 'The Aiden API server did not start in time.',
+          detail:  `${reason}\n\nLog file: ${LOG_FILE}\n\nPlease send this log to hello@taracod.com`,
+          buttons: ['Open Log File', 'Keep Waiting', 'Quit'],
+        }).then(({ response }) => {
+          if (response === 0) shell.openPath(LOG_FILE)
+          if (response === 2) { isQuitting = true; app.quit() }
+        })
+      }
+    )
+  })
+
+  app.on('window-all-closed', (e) => {
+    if (!isQuitting) e.preventDefault()
+  })
+
+  app.on('activate', () => {
+    if (!mainWindow) createMainWindow()
+  })
+}
+
+// ── Shared quit handlers (both modes) ────────────────────────
 app.on('before-quit', () => {
   isQuitting = true
 })

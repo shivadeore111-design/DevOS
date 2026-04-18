@@ -14,27 +14,9 @@ if "%~1"=="pc" (
 )
 
 if "%~1"=="tui" (
-  :: Launch Aiden terminal UI (CLI) in the current terminal window
-  :: In the installed build: use the bundled CLI script from resources\dist
-  :: In dev: fall back to ts-node
-  set "CLI_BUNDLE=%~dp0..\dist\cli.js"
-  set "NODE_PATH_DIR=%~dp0..\node_modules"
-  if exist "%CLI_BUNDLE%" (
-    node --enable-source-maps "%CLI_BUNDLE%"
-  ) else (
-    :: Dev fallback — run from source via ts-node
-    where ts-node >nul 2>&1
-    if not errorlevel 1 (
-      ts-node "%~dp0..\..\cli\aiden.ts"
-    ) else (
-      echo.
-      echo   [Aiden] TUI requires the Aiden desktop app to be running.
-      echo.
-      echo   Try:  aiden pc    to launch the desktop app first,
-      echo   then: aiden tui   to open the terminal interface.
-      echo.
-    )
-  )
+  :: Use Aiden.exe --cli — Electron's bundled Node runs the CLI bundle.
+  :: No system Node.js required: ELECTRON_RUN_AS_NODE=1 is set inside main.js.
+  "%~dp0..\..\Aiden.exe" --cli %2 %3 %4 %5 %6 %7 %8 %9
   goto :eof
 )
 
