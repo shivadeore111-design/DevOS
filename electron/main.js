@@ -647,25 +647,6 @@ function startDashboard () {
   })
 }
 
-// ── Poll until API is ready (async/Promise version — used by CLI branch) ──────
-async function waitForApi (url, timeoutMs = 40000) {
-  const deadline = Date.now() + timeoutMs
-  while (Date.now() < deadline) {
-    try {
-      const res = await fetch(url)
-      if (res.ok) {
-        const body = await res.json()
-        if (body.status === 'ok') {
-          log('API ready')
-          return
-        }
-      }
-    } catch { /* not ready yet — keep polling */ }
-    await new Promise(r => setTimeout(r, 1000))
-  }
-  throw new Error(`API did not respond within ${timeoutMs}ms`)
-}
-
 // ── Poll until API is ready (callback version — used by GUI branch) ───────────
 function waitForApiCallback (onReady, onFail, retries = 40) {
   const req = http.get('http://127.0.0.1:4200/api/health', (res) => {
