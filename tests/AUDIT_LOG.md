@@ -4792,3 +4792,33 @@
 | 18 | cli-prod: dist-bundle/index.js must not contain legacy v1.0 CLI banner | ✓ | 239 | ok |
 | 19 | cli-prod: API spawn in --cli mode passes ELECTRON_RUN_AS_NODE=1 | ✓ | 1 | ok |
 | 20 | cli-prod: root index.ts has been moved to legacy/ (not present at repo root) | ✓ | 0 | ok |
+
+## 2026-04-18T08:00:27.129Z — 25/25 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | cli-prod: package.json has build:cli script | ✓ | 0 | ok |
+| 2 | cli-prod: build:cli entry point is cli/aiden.ts | ✓ | 1 | ok |
+| 3 | cli-prod: build:cli outputs to dist-bundle/cli.js | ✓ | 0 | ok |
+| 4 | cli-prod: build:cli marks electron as external dependency | ✓ | 0 | ok |
+| 5 | cli-prod: main build script invokes build:cli | ✓ | 1 | ok |
+| 6 | cli-prod: electron-builder ships dist-bundle via extraResources | ✓ | 0 | ok |
+| 7 | cli-prod: bin/aiden.cmd handles "tui" subcommand | ✓ | 0 | ok |
+| 8 | cli-prod: bin/aiden.cmd handles "pc" subcommand | ✓ | 0 | ok |
+| 9 | cli-prod: bin/aiden.cmd uses Aiden.exe --cli (not node) for tui | ✓ | 0 | ok |
+| 10 | cli-prod: bin/aiden (bash) handles tui and pc subcommands | ✓ | 0 | ok |
+| 11 | cli-prod: electron/main.js detects --cli flag via process.argv | ✓ | 0 | ok |
+| 12 | cli-prod: --cli mode sets ELECTRON_RUN_AS_NODE=1 on spawned child | ✓ | 0 | ok |
+| 13 | cli-prod: --cli mode path does not call createMainWindow() | ✓ | 0 | ok |
+| 14 | cli-prod: --cli mode spawns API server as isolated child process | ✓ | 1 | ok |
+| 15 | cli-prod: --cli mode hides macOS dock icon | ✓ | 0 | ok |
+| 16 | cli-prod: build:api script exists and targets api/entry.ts | ✓ | 0 | ok |
+| 17 | cli-prod: dist-bundle/index.js contains API server code | ✓ | 143 | ok |
+| 18 | cli-prod: dist-bundle/index.js must not contain legacy v1.0 CLI banner | ✓ | 252 | ok |
+| 19 | cli-prod: API spawn in --cli mode passes ELECTRON_RUN_AS_NODE=1 | ✓ | 1 | ok |
+| 20 | cli-prod: root index.ts has been moved to legacy/ (not present at repo root) | ✓ | 0 | ok |
+| 21 | cli-prod: package.json dev script does not reference legacy/ | ✓ | 0 | ok |
+| 22 | cli-prod: no package.json script references legacy/index | ✓ | 1 | ok |
+| 23 | cli-prod: package.json dev script launches Electron (contains "electron .") | ✓ | 0 | ok |
+| 24 | cli-prod: literal grep of package.json contains no "legacy/index" string | ✓ | 0 | ok |
+| 25 | cli-prod: legacy/ directory exists but live source files do not import it | ✓ | 35 | ok |

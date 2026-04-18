@@ -3,9 +3,10 @@
 // Copyright (c) 2026 Shiva Deore. All rights reserved.
 // ============================================================
 
-// tests/prompt_cli_prod.ts — 20 zero-cost audits for the
+// tests/prompt_cli_prod.ts — 25 zero-cost audits for the
 // feat(install): bundle CLI + --cli via Electron's bundled Node.
 // fix(install): aiden tui spawns v3.6 CLI, API bundle points at real server entry
+// chore(scripts): remove legacy/ references, fix dev script
 // No LLM. No network. No side effects.
 // Run via:  npm run test:audit
 
@@ -253,6 +254,81 @@ test('cli-prod: root index.ts has been moved to legacy/ (not present at repo roo
   assert(
     fs.existsSync(legacyIndex),
     'legacy/index.ts must exist — the v1.0 CLI was moved there, not deleted',
+  )
+})
+
+// ── Test 21 — package.json "dev" script does NOT contain "legacy/" ───────────
+test('cli-prod: package.json dev script does not reference legacy/', () => {
+  const pkg = JSON.parse(read('package.json'))
+  const script: string = pkg.scripts['dev'] ?? ''
+  assertExcludes(
+    script,
+    'legacy/',
+    'package.json "dev" script must not reference legacy/ — the v1.0 CLI is dead',
+  )
+})
+
+// ── Test 22 — no package.json script references "legacy/index" ───────────────
+test('cli-prod: no package.json script references legacy/index', () => {
+  const pkg = JSON.parse(read('package.json'))
+  const scripts = pkg.scripts as Record<string, string>
+  const offenders = Object.entries(scripts)
+    .filter(([, v]) => v.includes('legacy/index'))
+    .map(([k]) => k)
+  assert(
+    offenders.length === 0,
+    `package.json scripts must not reference legacy/index — offending keys: ${offenders.join(', ')}`,
+  )
+})
+
+// ── Test 23 — package.json "dev" script launches Electron ────────────────────
+test('cli-prod: package.json dev script launches Electron (contains "electron .")', () => {
+  const pkg = JSON.parse(read('package.json'))
+  const script: string = pkg.scripts['dev'] ?? ''
+  assert(
+    script.includes('electron .'),
+    `package.json "dev" must run "electron ." to launch the app in dev mode (got: "${script}")`,
+  )
+})
+
+// ── Test 24 — grep-style: legacy/index does not appear in package.json text ──
+test('cli-prod: literal grep of package.json contains no "legacy/index" string', () => {
+  const raw = read('package.json')
+  assertExcludes(
+    raw,
+    'legacy/index',
+    'package.json raw text must not contain "legacy/index" anywhere',
+  )
+})
+
+// ── Test 25 — legacy/ dir exists but is not referenced from live source ───────
+test('cli-prod: legacy/ directory exists but live source files do not import it', () => {
+  // Structural: legacy/ must be present (historical archive)
+  const legacyDir = path.join(ROOT, 'legacy')
+  assert(fs.existsSync(legacyDir), 'legacy/ directory must exist as historical archive')
+
+  // Live source files in core/, api/, cli/, agents/, providers/, coordination/,
+  // integrations/, memory/, security/ must not import from legacy/
+  const liveDirs = ['core', 'api', 'cli', 'agents', 'providers', 'coordination',
+                    'integrations', 'memory', 'security', 'bin']
+  const hits: string[] = []
+  for (const dir of liveDirs) {
+    const absDir = path.join(ROOT, dir)
+    if (!fs.existsSync(absDir)) continue
+    const walk = (d: string): void => {
+      for (const entry of fs.readdirSync(d, { withFileTypes: true })) {
+        const full = path.join(d, entry.name)
+        if (entry.isDirectory()) { walk(full); continue }
+        if (!entry.name.endsWith('.ts') && !entry.name.endsWith('.js')) continue
+        const src = fs.readFileSync(full, 'utf-8')
+        if (src.includes('legacy/')) hits.push(path.relative(ROOT, full))
+      }
+    }
+    walk(absDir)
+  }
+  assert(
+    hits.length === 0,
+    `Live source files must not import legacy/ — found references in: ${hits.join(', ')}`,
   )
 })
 
