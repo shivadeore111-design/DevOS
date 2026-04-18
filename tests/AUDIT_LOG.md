@@ -4767,3 +4767,28 @@
 | 13 | cli-prod: --cli mode path does not call createMainWindow() | ✓ | 0 | ok |
 | 14 | cli-prod: --cli mode starts API server before spawning CLI child | ✓ | 0 | ok |
 | 15 | cli-prod: --cli mode hides macOS dock icon | ✓ | 0 | ok |
+
+## 2026-04-18T07:50:49.741Z — 20/20 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | cli-prod: package.json has build:cli script | ✓ | 1 | ok |
+| 2 | cli-prod: build:cli entry point is cli/aiden.ts | ✓ | 0 | ok |
+| 3 | cli-prod: build:cli outputs to dist-bundle/cli.js | ✓ | 0 | ok |
+| 4 | cli-prod: build:cli marks electron as external dependency | ✓ | 1 | ok |
+| 5 | cli-prod: main build script invokes build:cli | ✓ | 0 | ok |
+| 6 | cli-prod: electron-builder ships dist-bundle via extraResources | ✓ | 0 | ok |
+| 7 | cli-prod: bin/aiden.cmd handles "tui" subcommand | ✓ | 12 | ok |
+| 8 | cli-prod: bin/aiden.cmd handles "pc" subcommand | ✓ | 1 | ok |
+| 9 | cli-prod: bin/aiden.cmd uses Aiden.exe --cli (not node) for tui | ✓ | 0 | ok |
+| 10 | cli-prod: bin/aiden (bash) handles tui and pc subcommands | ✓ | 9 | ok |
+| 11 | cli-prod: electron/main.js detects --cli flag via process.argv | ✓ | 0 | ok |
+| 12 | cli-prod: --cli mode sets ELECTRON_RUN_AS_NODE=1 on spawned child | ✓ | 1 | ok |
+| 13 | cli-prod: --cli mode path does not call createMainWindow() | ✓ | 0 | ok |
+| 14 | cli-prod: --cli mode spawns API server as isolated child process | ✓ | 0 | ok |
+| 15 | cli-prod: --cli mode hides macOS dock icon | ✓ | 0 | ok |
+| 16 | cli-prod: build:api script exists and targets api/entry.ts | ✓ | 1 | ok |
+| 17 | cli-prod: dist-bundle/index.js contains API server code | ✓ | 142 | ok |
+| 18 | cli-prod: dist-bundle/index.js must not contain legacy v1.0 CLI banner | ✓ | 239 | ok |
+| 19 | cli-prod: API spawn in --cli mode passes ELECTRON_RUN_AS_NODE=1 | ✓ | 1 | ok |
+| 20 | cli-prod: root index.ts has been moved to legacy/ (not present at repo root) | ✓ | 0 | ok |

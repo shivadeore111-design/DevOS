@@ -14,7 +14,6 @@
     "typeRoots": ["./node_modules/@types", "./types"]
   },
   "files": [
-    "index.ts",
     "types/computerUse.ts",
     "types/executor.ts",
     "types/screenshot-desktop.d.ts",
@@ -57,6 +56,8 @@
   "exclude": [
     "node_modules",
     "dist",
-    "dashboard-next"
+    "dist-bundle",
+    "dashboard-next",
+    "legacy"
   ]
 }

@@ -620,9 +620,17 @@ if (isCliMode) {
     log('=== Aiden CLI mode ===')
     bootstrapUserData()
 
-    // Start API server in-process so CLI tools (web search, file ops, etc.) work
+    // Start API server as isolated child process so its stdout/stderr cannot
+    // pollute the CLI terminal and a crash in the API server cannot block the CLI spawn.
     if (fs.existsSync(API_BUNDLE)) {
-      try { require(API_BUNDLE) } catch (e) { log(`[CLI] API start failed: ${e.message}`) }
+      const apiChild = spawn(process.execPath, [API_BUNDLE], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env:   { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+      })
+      apiChild.stdout.on('data', d => log('[API] ' + d.toString().trim()))
+      apiChild.stderr.on('data', d => log('[API-ERR] ' + d.toString().trim()))
+      process.on('exit', () => { try { apiChild.kill() } catch {} })
+      log(`[CLI] API server spawned (pid ${apiChild.pid})`)
     } else {
       log(`[CLI] API bundle not found at ${API_BUNDLE} — tools may be unavailable`)
     }
