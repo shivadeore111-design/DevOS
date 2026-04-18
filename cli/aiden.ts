@@ -114,7 +114,11 @@ const state = {
   voiceMode          : false,
   voiceDesign        : undefined as string | undefined,
   voiceReferencePath : undefined as string | undefined,
+  lastTimingData     : null as null | { first_token_ms: number; total_ms: number; completion_tokens: number },
 }
+
+// ── Module-level rl reference for pause/resume during streaming ───────────────────
+let _rl: import('readline').Interface | null = null
 
 // ── Terminal helpers ──────────────────────────────────────────────────────────────
 
@@ -331,6 +335,7 @@ function printSessionSummary(): void {
 // ── Stream chat ───────────────────────────────────────────────────────────────────
 
 async function streamChat(message: string): Promise<void> {
+  if (_rl) _rl.pause()  // prevent readline from fighting with unbuffered stdout writes
   state.streaming    = true
   state.abortCtrl    = new AbortController()
   const startedAt    = Date.now()
@@ -605,6 +610,7 @@ async function streamChat(message: string): Promise<void> {
           // ── Done ──
           if (evt.done === true) {
             if (evt.provider) provider = evt.provider
+            if (evt.timing) state.lastTimingData = evt.timing as typeof state.lastTimingData
             streamDone = true
             break
           }
@@ -669,6 +675,7 @@ async function streamChat(message: string): Promise<void> {
     stopActivityRender()
     state.streaming = false
     state.abortCtrl = null
+    if (_rl) _rl.resume()  // re-enable readline after streaming completes
   }
 }
 
@@ -705,6 +712,8 @@ const COMMANDS = [
   '/todo',
   '/cron',
   '/vision',
+  '/timing',
+  '/version',
   '/quit', '/exit', '/q',
 ]
 
@@ -727,6 +736,8 @@ const COMMAND_DETAIL: Record<string, CmdDetail> = {
   '/export':     { section: 'Session',   desc: 'Export conversation as Markdown or JSON.',                   usage: '/export md|json' },
   '/fork':       { section: 'Session',   desc: 'Branch current session under a new name.',                   usage: '/fork <name>' },
   '/checkpoint': { section: 'Session',   desc: 'Save a state snapshot.',                                     usage: '/checkpoint' },
+  '/timing':     { section: 'Info',      desc: 'Show timing breakdown for the last response.',              usage: '/timing' },
+  '/version':    { section: 'Info',      desc: 'Show current version and check for updates.',                usage: '/version' },
   '/status':     { section: 'Info',      desc: 'Show server health, uptime, RAM.',                           usage: '/status' },
   '/tools':      { section: 'Info',      desc: 'All registered tools grouped by category.',                  usage: '/tools' },
   '/kit':        { section: 'Info',      desc: 'Toolkit categories — enable or disable tool groups.',        usage: '/kit' },
@@ -1007,6 +1018,8 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       helpRow('/fork <name>',       'Fork current session'),
       helpRow('/checkpoint',        'Save state snapshot'),
       helpSection('Info'),
+      helpRow('/timing',             'Last response timing breakdown'),
+      helpRow('/version',            'Current version + update check'),
       helpRow('/status',            'Health + uptime'),
       helpRow('/tools',             'All registered tools  (grouped by category)'),
       helpRow('/kit',               'Toolkit categories — enable / disable'),
@@ -3286,6 +3299,48 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
     return true
   }
 
+  // ── /timing ──────────────────────────────────────────────────────────────────
+  if (command === '/timing') {
+    const t = state.lastTimingData
+    if (!t) {
+      console.log(`\n  ${T.dim}No timing data yet — send a message first.${T.reset}\n`)
+      return true
+    }
+    const fmt = (ms: number) => ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : `${ms}ms`
+    console.log()
+    console.log(`  ${T.bold}Response Timing${T.reset}`)
+    console.log(`  ${T.dim}${'─'.repeat(38)}${T.reset}`)
+    console.log(`  ${T.dim}first token   ${T.reset}${fmt(t.first_token_ms).padStart(8)}`)
+    console.log(`  ${T.dim}total time    ${T.reset}${fmt(t.total_ms).padStart(8)}`)
+    console.log(`  ${T.dim}output tokens ${T.reset}${String(t.completion_tokens).padStart(8)}`)
+    console.log()
+    return true
+  }
+
+  // ── /version ─────────────────────────────────────────────────────────────────
+  if (command === '/version') {
+    const pkgVersion = (() => {
+      try { return (require('../package.json') as { version: string }).version } catch { return '3.6.0' }
+    })()
+    console.log(`\n  ${T.bold}Aiden${T.reset}  ${T.dim}v${pkgVersion}${T.reset}`)
+    console.log(`  ${T.dim}Checking for updates...${T.reset}`)
+    try {
+      const { checkForUpdate } = await import('../core/updateCheck')
+      const info = await checkForUpdate(pkgVersion, 5000)
+      if (!info) {
+        console.log(`  ${T.dim}Update check unavailable (offline or rate-limited).${T.reset}\n`)
+      } else if (info.updateAvailable) {
+        console.log(`  ${fg(COLORS.orange)}↑ Update available: v${info.latestVersion}${T.reset}`)
+        console.log(`  ${T.dim}${info.releaseUrl}${T.reset}\n`)
+      } else {
+        console.log(`  ${T.success}✓ Already on latest (v${pkgVersion}).${T.reset}\n`)
+      }
+    } catch (e: any) {
+      console.log(`  ${T.error}✗ Update check failed: ${e?.message}${T.reset}\n`)
+    }
+    return true
+  }
+
   // ── /run [<file>|'-'|examples|help [ns]] ─────────────────────────────────────
   if (command === '/run') {
     const sub  = parts[1]
@@ -4302,6 +4357,8 @@ async function main(): Promise<void> {
     completer,
     terminal : true,
   })
+
+  _rl = rl  // expose to streamChat for pause/resume during streaming
 
   rl.prompt()
 
