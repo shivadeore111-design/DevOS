@@ -4346,6 +4346,15 @@ async function main(): Promise<void> {
     }
   }
 
+  // ── DIAGNOSTIC — remove once stdin TTY issue is resolved ─────────────────────
+  console.log('[DIAG] process.stdin.isTTY     :', process.stdin.isTTY)
+  console.log('[DIAG] process.stdout.isTTY    :', process.stdout.isTTY)
+  console.log('[DIAG] process.stdin.readable  :', process.stdin.readable)
+  console.log('[DIAG] process.stdin.destroyed :', process.stdin.destroyed)
+  console.log('[DIAG] process.platform        :', process.platform)
+  console.log('[DIAG] Electron?               :', !!process.versions.electron)
+  // ─────────────────────────────────────────────────────────────────────────────
+
   const health = await apiFetch<any>('/api/health', null)
   if (!health || health.status !== 'ok') {
     console.log(`\n  ${T.error}✗ Cannot connect to Aiden at ${API_BASE}${T.reset}`)
@@ -4489,6 +4498,12 @@ async function main(): Promise<void> {
   })
 
   rl.on('close', () => {
+    // ── DIAGNOSTIC — remove once stdin TTY issue is resolved ─────────────────
+    console.log('[DIAG] readline closed.')
+    console.log('[DIAG] process.stdin.destroyed at close:', process.stdin.destroyed)
+    console.log('[DIAG] process.stdin.readable  at close:', process.stdin.readable)
+    console.trace('[DIAG] readline close stack')
+    // ─────────────────────────────────────────────────────────────────────────
     printSessionSummary()
     process.exit(0)
   })
