@@ -1236,8 +1236,25 @@ export function createApiServer(): Express {
 
     // â”€â”€ SSE streaming mode (browser clients) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // (Headers already flushed + "Understanding…" event sent at request entry.)
+    const _sseStart        = Date.now()
+    let   _firstTokenAt    = 0
+    let   _completionCount = 0
     const send = (data: object) => {
-      try { res.write(`data: ${JSON.stringify(data)}\n\n`) } catch (writeErr: any) {
+      try {
+        const d = data as any
+        if (d.token !== undefined) {
+          if (!_firstTokenAt) _firstTokenAt = Date.now()
+          _completionCount++
+        }
+        if (d.done === true && !d.timing) {
+          d.timing = {
+            first_token_ms:    _firstTokenAt ? _firstTokenAt - _sseStart : 0,
+            total_ms:          Date.now() - _sseStart,
+            completion_tokens: _completionCount,
+          }
+        }
+        res.write(`data: ${JSON.stringify(data)}\n\n`)
+      } catch (writeErr: any) {
         console.error('[Chat] SSE write failed:', writeErr.message)
       }
     }
@@ -1316,14 +1333,11 @@ export function createApiServer(): Express {
         const convTokens: string[] = []
         await streamChat(message, history, userName, provider, activeModel, apiName, (data: object) => {
           const d = data as any
-          if (d.token) convTokens.push(d.token)
+          if (d.done === true) return  // suppress — caller emits timing-enriched done
+          if (d.token !== undefined) convTokens.push(d.token)
+          send(d)  // forward meta + token events in real-time
         }, sessionId)
         const reply = convTokens.join('').trim() || 'Hey! What do you need?'
-        const words = reply.split(' ')
-        for (const word of words) {
-          send({ token: word + ' ', done: false, provider: apiName })
-          await new Promise(r => setTimeout(r, 8))
-        }
         send({ done: true, provider: apiName })
         res.end()
         userCognitionProfile.observe(message, reply)
@@ -5352,6 +5366,127 @@ async function raceProviders(
     if (winner.text.trim()) return winner
   } catch {}
   return null
+}
+
+// ── streamTokens — common AsyncIterable<string> per provider ────────────────
+
+async function* streamTokens(
+  providerType: string,
+  apiKey:       string,
+  model:        string,
+  messages:     any[],
+  opts: { apiName?: string; timeoutMs?: number } = {},
+): AsyncIterable<string> {
+  const ENDPOINTS: Record<string, string> = {
+    groq:       'https://api.groq.com/openai/v1/chat/completions',
+    openrouter: 'https://openrouter.ai/api/v1/chat/completions',
+    cerebras:   'https://api.cerebras.ai/v1/chat/completions',
+    openai:     'https://api.openai.com/v1/chat/completions',
+    boa:        'https://api.bayofassets.com/v1/chat/completions',
+    gemini:     'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+  }
+
+  // Shared tool-call buffering helper
+  let toolBuf      = ''
+  let toolDetected = false
+  let flushed      = false
+
+  function* handleToken(token: string): Generator<string> {
+    if (toolDetected) return  // tool call in progress — suppress tokens
+    if (!flushed) {
+      toolBuf += token
+      // Early detection: stop as soon as tool marker found
+      if (toolBuf.includes('"tool_calls":[') || toolBuf.includes('"type":"tool_use"')) {
+        toolDetected = true
+        return
+      }
+      if (toolBuf.length >= 200) {
+        flushed = true
+        yield toolBuf
+        toolBuf = ''
+      }
+    } else {
+      yield token
+    }
+  }
+
+  function* flushBuffer(): Generator<string> {
+    if (!toolDetected && toolBuf) { yield toolBuf; toolBuf = '' }
+  }
+
+  if (providerType === 'ollama') {
+    const timeoutMs = opts.timeoutMs ?? getOllamaTimeout(model)
+    const resp = await fetch('http://localhost:11434/api/chat', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ model, messages, stream: true }),
+      signal:  AbortSignal.timeout(timeoutMs),
+    })
+    if (!resp.ok || !resp.body) throw new Error(`Ollama ${resp.status}: ${resp.statusText}`)
+    const reader = resp.body.getReader()
+    const dec    = new TextDecoder()
+    let   buf    = ''
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) break
+      buf += dec.decode(value, { stream: true })
+      const lines = buf.split('\n')
+      buf = lines.pop() ?? ''
+      for (const line of lines) {
+        if (!line.trim()) continue
+        try {
+          const parsed = JSON.parse(line)
+          const token  = parsed.message?.content
+          if (token) yield* handleToken(token)
+        } catch { /* skip malformed */ }
+      }
+    }
+    yield* flushBuffer()
+
+  } else {
+    // OpenAI-compatible SSE (gemini, groq, openrouter, cerebras, openai, boa)
+    const endpoint = ENDPOINTS[providerType] ?? ENDPOINTS['groq']
+    const headers: Record<string, string> = {
+      'Content-Type':  'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    }
+    if (providerType === 'openrouter') {
+      headers['HTTP-Referer'] = 'https://devos.local'
+      headers['X-Title']      = 'DevOS'
+    }
+    const resp = await fetch(endpoint, {
+      method:  'POST',
+      headers,
+      body:    JSON.stringify({ model, messages, stream: true }),
+      signal:  AbortSignal.timeout(opts.timeoutMs ?? 30000),
+    })
+    if (!resp.ok || !resp.body) {
+      const errText = await resp.text().catch(() => resp.statusText)
+      throw new Error(`${providerType} ${resp.status}: ${errText}`)
+    }
+    const reader = resp.body.getReader()
+    const dec    = new TextDecoder()
+    let   buf    = ''
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) break
+      buf += dec.decode(value, { stream: true })
+      const lines = buf.split('\n')
+      buf = lines.pop() ?? ''
+      for (const line of lines) {
+        const trimmed = line.trim()
+        if (!trimmed.startsWith('data:')) continue
+        const data = trimmed.slice(5).trim()
+        if (data === '[DONE]') return
+        try {
+          const parsed = JSON.parse(data)
+          const token  = parsed.choices?.[0]?.delta?.content
+          if (token) yield* handleToken(token)
+        } catch { /* skip malformed */ }
+      }
+    }
+    yield* flushBuffer()
+  }
 }
 
 // ── Pure-chat streaming helper (no planner, no tools) ─────────
