@@ -838,4 +838,3 @@ function createTray () {
     }
   })
 }
-} // end else (Electron GUI mode)
