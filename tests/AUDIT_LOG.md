@@ -4679,3 +4679,51 @@
 | 8 | provider: /primary list fetches /api/providers/state | ✓ | 1 | ok |
 | 9 | provider: /primary <unknown> errors without mutation | ✓ | 1 | ok |
 | 10 | provider: /api/providers/state marks isPrimary correctly | ✓ | 1 | ok |
+
+## 2026-04-18T06:06:30.689Z — 16/19 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | streaming: streamTokens async generator exists in server.ts | ✓ | 1 | ok |
+| 2 | streaming: streamTokens returns on [DONE] in SSE path | ✓ | 1 | ok |
+| 3 | streaming: streamTokens reads message?.content for Ollama NDJSON | ✓ | 1 | ok |
+| 4 | streaming: streamTokens buffers and suppresses on "tool_calls":[ | ✗ | 1 | streamTokens must check for OpenAI tool_calls marker in buffer |
+| 5 | streaming: streamTokens buffers and suppresses on "type":"tool_use" | ✓ | 1 | ok |
+| 6 | streaming: conversational fast-path no longer replays tokens word-by-word | ✗ | 0 | conversational path must NOT use the old word-by-word setTimeout replay |
+| 7 | streaming: conversational fast-path forwards events via send(d) | ✓ | 0 | ok |
+| 8 | streaming: SSE send function tracks _firstTokenAt for timing | ✓ | 1 | ok |
+| 9 | streaming: SSE done event injects first_token_ms / total_ms / completion_tokens | ✓ | 1 | ok |
+| 10 | streaming: CLI state object has lastTimingData field | ✗ | 1 | CLI state must declare lastTimingData field |
+| 11 | streaming: CLI done handler captures evt.timing into state.lastTimingData | ✓ | 1 | ok |
+| 12 | streaming: CLI streamChat calls _rl.pause() before fetch | ✓ | 0 | ok |
+| 13 | streaming: CLI streamChat calls _rl.resume() in finally block | ✓ | 1 | ok |
+| 14 | cli: /timing registered in COMMANDS array | ✓ | 1 | ok |
+| 15 | cli: /timing handler displays first_token_ms timing field | ✓ | 0 | ok |
+| 16 | cli: /version registered in COMMANDS array | ✓ | 0 | ok |
+| 17 | cli: /version handler invokes checkForUpdate | ✓ | 1 | ok |
+| 18 | version: semverGt is a named export in core/updateCheck.ts | ✓ | 0 | ok |
+| 19 | version: updateCheck.ts has 6-hour rate limiting | ✓ | 0 | ok |
+
+## 2026-04-18T06:07:36.724Z — 19/19 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | streaming: streamTokens async generator exists in server.ts | ✓ | 1 | ok |
+| 2 | streaming: streamTokens returns on [DONE] in SSE path | ✓ | 1 | ok |
+| 3 | streaming: streamTokens reads message?.content for Ollama NDJSON | ✓ | 1 | ok |
+| 4 | streaming: streamTokens buffers and suppresses on "tool_calls":[ | ✓ | 1 | ok |
+| 5 | streaming: streamTokens buffers and suppresses on "type":"tool_use" | ✓ | 0 | ok |
+| 6 | streaming: conversational fast-path no longer replays tokens word-by-word | ✓ | 0 | ok |
+| 7 | streaming: conversational fast-path forwards events via send(d) | ✓ | 1 | ok |
+| 8 | streaming: SSE send function tracks _firstTokenAt for timing | ✓ | 1 | ok |
+| 9 | streaming: SSE done event injects first_token_ms / total_ms / completion_tokens | ✓ | 2 | ok |
+| 10 | streaming: CLI state object has lastTimingData field | ✓ | 1 | ok |
+| 11 | streaming: CLI done handler captures evt.timing into state.lastTimingData | ✓ | 1 | ok |
+| 12 | streaming: CLI streamChat calls _rl.pause() before fetch | ✓ | 1 | ok |
+| 13 | streaming: CLI streamChat calls _rl.resume() in finally block | ✓ | 1 | ok |
+| 14 | cli: /timing registered in COMMANDS array | ✓ | 1 | ok |
+| 15 | cli: /timing handler displays first_token_ms timing field | ✓ | 0 | ok |
+| 16 | cli: /version registered in COMMANDS array | ✓ | 1 | ok |
+| 17 | cli: /version handler invokes checkForUpdate | ✓ | 1 | ok |
+| 18 | version: semverGt is a named export in core/updateCheck.ts | ✓ | 0 | ok |
+| 19 | version: updateCheck.ts has 6-hour rate limiting | ✓ | 0 | ok |
