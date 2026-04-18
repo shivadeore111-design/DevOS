@@ -3,10 +3,11 @@
 // Copyright (c) 2026 Shiva Deore. All rights reserved.
 // ============================================================
 
-// tests/prompt_cli_prod.ts — 25 zero-cost audits for the
+// tests/prompt_cli_prod.ts — 30 zero-cost audits for the
 // feat(install): bundle CLI + --cli via Electron's bundled Node.
 // fix(install): aiden tui spawns v3.6 CLI, API bundle points at real server entry
 // chore(scripts): remove legacy/ references, fix dev script
+// fix(startup): ollama optional, CLI waits for API ready, better errors
 // No LLM. No network. No side effects.
 // Run via:  npm run test:audit
 
@@ -329,6 +330,89 @@ test('cli-prod: legacy/ directory exists but live source files do not import it'
   assert(
     hits.length === 0,
     `Live source files must not import legacy/ — found references in: ${hits.join(', ')}`,
+  )
+})
+
+// ── Test 26 — /api/health endpoint exists in api/server.ts ───────────────────
+test('cli-prod: /api/health endpoint is registered in api/server.ts', () => {
+  const src = read('api/server.ts')
+  assertIncludes(
+    src,
+    "app.get('/api/health'",
+    "api/server.ts must register GET /api/health — used by waitForApi in --cli mode",
+  )
+})
+
+// ── Test 27 — Ollama execSync uses stdio:'pipe' (no leaking Windows errors) ──
+test('cli-prod: ollama execSync in modelRouter uses stdio pipe to suppress Windows errors', () => {
+  const src = read('core/modelRouter.ts')
+  // The execSync call must have stdio:'pipe' so Windows "not recognized" doesn't leak
+  const execIdx = src.indexOf("execSync('ollama list'")
+  assert(execIdx !== -1, "core/modelRouter.ts must contain execSync('ollama list')")
+  const callSlice = src.substring(execIdx, execIdx + 120)
+  assertIncludes(
+    callSlice,
+    'stdio',
+    "execSync('ollama list') must pass stdio option to suppress Windows stderr leakage",
+  )
+  assertIncludes(
+    callSlice,
+    'pipe',
+    "execSync('ollama list') must set stdio to 'pipe'",
+  )
+})
+
+// ── Test 28 — electron/main.js --cli branch calls waitForApi ─────────────────
+test('cli-prod: electron/main.js --cli branch awaits waitForApi before spawning CLI', () => {
+  const src       = read('electron/main.js')
+  const isCliIdx  = src.indexOf('if (isCliMode)')
+  const guiMarker = src.indexOf('// ── GUI mode')
+  const cliBlock  = src.substring(isCliIdx, guiMarker)
+  assertIncludes(
+    cliBlock,
+    'waitForApi',
+    '--cli block must call waitForApi() to poll API readiness before spawning the CLI child',
+  )
+  assertIncludes(
+    cliBlock,
+    'await waitForApi',
+    '--cli block must AWAIT waitForApi (not fire-and-forget)',
+  )
+})
+
+// ── Test 29 — waitForApi accepts a timeout parameter ─────────────────────────
+test('cli-prod: waitForApi function accepts a timeoutMs parameter', () => {
+  const src = read('electron/main.js')
+  assertIncludes(
+    src,
+    'async function waitForApi',
+    'electron/main.js must define async function waitForApi',
+  )
+  assertIncludes(
+    src,
+    'timeoutMs',
+    'waitForApi must accept a timeoutMs parameter for configurable timeout',
+  )
+})
+
+// ── Test 30 — no hardcoded AIDEN_API message in --cli error path ──────────────
+test('cli-prod: --cli mode error path does not show "set AIDEN_API env var" message', () => {
+  const src = read('cli/aiden.ts')
+  // Find the AIDEN_CLI_MODE branch
+  const cliModeIdx = src.indexOf('AIDEN_CLI_MODE')
+  assert(cliModeIdx !== -1, 'cli/aiden.ts must check process.env.AIDEN_CLI_MODE for error message branching')
+  // In the --cli branch (before the else), the "AIDEN_API env var" text must NOT appear
+  const cliErrBranch = src.substring(cliModeIdx, src.indexOf('} else {', cliModeIdx))
+  assertExcludes(
+    cliErrBranch,
+    'AIDEN_API env var',
+    '--cli error branch must NOT show "AIDEN_API env var" — that message is for standalone mode only',
+  )
+  // But it must reference the log file
+  assertIncludes(
+    cliErrBranch,
+    'logFile',
+    '--cli error branch must reference the log file path',
   )
 })
 

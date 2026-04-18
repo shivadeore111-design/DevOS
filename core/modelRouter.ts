@@ -69,7 +69,8 @@ export class ModelRouter {
 
   syncWithOllama(): void {
     try {
-      const output = execSync('ollama list', { timeout: 5000 }).toString()
+      // stdio:'pipe' suppresses the Windows "not recognized" error from leaking to stderr
+      const output = execSync('ollama list', { timeout: 5000, stdio: 'pipe' }).toString()
       const installedNames = output.split('\n')
         .slice(1)
         .map(l => l.trim().split(/\s+/)[0])
@@ -80,7 +81,11 @@ export class ModelRouter {
           inst.toLowerCase().includes(m.name.split(':')[0].toLowerCase())
         ),
       }))
-    } catch { /* Ollama not running — all installed:false */ }
+    } catch {
+      // Ollama not installed or not on PATH — log once and continue
+      console.log('[providers] Ollama not detected — skipping local model support')
+      this.models = this.models.map(m => ({ ...m, installed: false }))
+    }
   }
 
   recommendModel(taskType: TaskType): string {

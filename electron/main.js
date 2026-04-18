@@ -173,6 +173,19 @@ function checkOllama () {
   catch { return false }
 }
 
+// ── Wait for API to become ready ─────────────────────────────
+async function waitForApi (url, timeoutMs) {
+  const start = Date.now()
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(500) })
+      if (res.ok) return true
+    } catch { /* not ready yet */ }
+    await new Promise(r => setTimeout(r, 200))
+  }
+  throw new Error(`API did not become ready within ${timeoutMs}ms`)
+}
+
 // ── Port availability check ───────────────────────────────────
 function checkPort (port) {
   return new Promise((resolve) => {
@@ -627,10 +640,27 @@ if (isCliMode) {
         stdio: ['ignore', 'pipe', 'pipe'],
         env:   { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
       })
+      const apiErrLines = []
       apiChild.stdout.on('data', d => log('[API] ' + d.toString().trim()))
-      apiChild.stderr.on('data', d => log('[API-ERR] ' + d.toString().trim()))
+      apiChild.stderr.on('data', d => {
+        const line = d.toString().trim()
+        apiErrLines.push(line)
+        log('[API-ERR] ' + line)
+      })
       process.on('exit', () => { try { apiChild.kill() } catch {} })
       log(`[CLI] API server spawned (pid ${apiChild.pid})`)
+
+      // Wait for the API to accept connections before starting the CLI
+      try {
+        await waitForApi('http://localhost:4200/api/health', 10000)
+        log('[CLI] API ready at http://localhost:4200')
+      } catch (waitErr) {
+        log('[CLI] API server failed to start after 10s')
+        if (apiErrLines.length) log('[CLI] Last API errors:\n  ' + apiErrLines.slice(-5).join('\n  '))
+        log(`[CLI] Check logs at ${LOG_FILE}`)
+        app.exit(1)
+        return
+      }
     } else {
       log(`[CLI] API bundle not found at ${API_BUNDLE} — tools may be unavailable`)
     }
@@ -645,7 +675,7 @@ if (isCliMode) {
     const cliArgs = process.argv.slice(2).filter(a => a !== '--cli')
     const child   = spawn(process.execPath, [CLI_BUNDLE, ...cliArgs], {
       stdio: 'inherit',
-      env:   { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+      env:   { ...process.env, ELECTRON_RUN_AS_NODE: '1', AIDEN_CLI_MODE: '1', AIDEN_LOG_FILE: LOG_FILE },
     })
     child.on('exit', (code) => app.exit(code ?? 0))
   })

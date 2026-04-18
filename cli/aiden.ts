@@ -4342,7 +4342,12 @@ async function main(): Promise<void> {
   const health = await apiFetch<any>('/api/health', null)
   if (!health || health.status !== 'ok') {
     console.log(`\n  ${T.error}✗ Cannot connect to Aiden at ${API_BASE}${T.reset}`)
-    console.log(`  ${T.dim}Start the Aiden desktop app first, or set AIDEN_API env var.${T.reset}\n`)
+    if (process.env.AIDEN_CLI_MODE === '1') {
+      const logFile = process.env.AIDEN_LOG_FILE || '(unknown log path)'
+      console.log(`  ${T.dim}[CLI] API server did not start. Check logs at ${logFile}${T.reset}\n`)
+    } else {
+      console.log(`  ${T.dim}Start the Aiden desktop app first, or set AIDEN_API env var.${T.reset}\n`)
+    }
     process.exit(1)
   }
 
