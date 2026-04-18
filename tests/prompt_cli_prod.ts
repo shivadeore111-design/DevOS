@@ -3,7 +3,7 @@
 // Copyright (c) 2026 Shiva Deore. All rights reserved.
 // ============================================================
 
-// tests/prompt_cli_prod.ts — 44 zero-cost audits for the
+// tests/prompt_cli_prod.ts — 45 zero-cost audits for the
 // feat(install): bundle CLI + --cli via Electron's bundled Node.
 // fix(install): aiden tui spawns v3.6 CLI, API bundle points at real server entry
 // chore(scripts): remove legacy/ references, fix dev script
@@ -615,17 +615,19 @@ test('cli-prod: dist-bundle/index.js contains version literal, no require(packag
 })
 
 // ── Test 41 — electron/main.js CLI spawn uses explicit stdio handles ─────────
-test('cli-prod: electron/main.js CLI spawn uses explicit stdio array not "inherit"', () => {
+test('cli-prod: electron/main.js CLI spawn uses stdio inherit', () => {
   const src = read('electron/main.js')
+  // On Windows, passing process.stdin/stdout/stderr as handles to spawn() causes
+  // ERR_INVALID_ARG_VALUE. Use 'inherit' so the OS inherits the parent's handles directly.
   assertExcludes(
     src,
-    "stdio: 'inherit'",
-    'electron/main.js CLI spawn must use explicit stdio array, not "inherit"',
+    'stdio: [process.stdin, process.stdout, process.stderr]',
+    'electron/main.js CLI spawn must not use explicit stdio handle array (breaks on Windows)',
   )
   assertIncludes(
     src,
-    'stdio: [process.stdin, process.stdout, process.stderr]',
-    'electron/main.js must use stdio: [process.stdin, process.stdout, process.stderr] for CLI spawn',
+    "stdio: 'inherit'",
+    "electron/main.js CLI spawn must use stdio: 'inherit'",
   )
 })
 
@@ -665,6 +667,34 @@ test('cli-prod: electron/main.js before-quit and will-quit are not top-level', (
   assert(
     lastBeforeQuit > elseIdx,
     'electron/main.js app.on("before-quit") must be inside the else (GUI) block, not top-level',
+  )
+})
+
+// ── Test 45 — onReady only appears inside waitForApiCallback and waitForDash ──
+test('cli-prod: no unguarded onReady() calls outside callback-function bodies', () => {
+  const src = read('electron/main.js')
+  // async waitForApi must NOT have onReady in it — it uses fetch/res.ok instead
+  const asyncIdx = src.indexOf('async function waitForApi')
+  assert(asyncIdx !== -1, 'electron/main.js must define async function waitForApi')
+  const asyncBody = src.substring(asyncIdx, asyncIdx + 800)
+  assertExcludes(
+    asyncBody,
+    'onReady',
+    'async function waitForApi must not reference onReady — it should use fetch/res.ok pattern',
+  )
+  // waitForApiCallback IS allowed to have onReady (it's the callback parameter)
+  assertIncludes(
+    src,
+    'function waitForApiCallback',
+    'electron/main.js must define waitForApiCallback for the GUI callback-based call site',
+  )
+  // GUI block must call waitForApiCallback, not the old waitForApi
+  const elseIdx = src.indexOf('} else {')
+  const guiBlock = src.substring(elseIdx)
+  assertIncludes(
+    guiBlock,
+    'waitForApiCallback(',
+    'GUI block must call waitForApiCallback() not waitForApi()',
   )
 })
 

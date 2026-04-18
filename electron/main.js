@@ -541,21 +541,40 @@ function startDashboard () {
   })
 }
 
-// ── Poll until API is ready ───────────────────────────────────
-function waitForApi (onReady, onFail, retries = 40) {
+// ── Poll until API is ready (async/Promise version — used by CLI branch) ──────
+async function waitForApi (url, timeoutMs = 40000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(url)
+      if (res.ok) {
+        const body = await res.json()
+        if (body.status === 'ok') {
+          log('API ready')
+          return
+        }
+      }
+    } catch { /* not ready yet — keep polling */ }
+    await new Promise(r => setTimeout(r, 1000))
+  }
+  throw new Error(`API did not respond within ${timeoutMs}ms`)
+}
+
+// ── Poll until API is ready (callback version — used by GUI branch) ───────────
+function waitForApiCallback (onReady, onFail, retries = 40) {
   const req = http.get('http://127.0.0.1:4200/api/health', (res) => {
     if (res.statusCode === 200) {
       log('API ready')
       onReady()
     } else if (retries > 0) {
-      setTimeout(() => waitForApi(onReady, onFail, retries - 1), 1000)
+      setTimeout(() => waitForApiCallback(onReady, onFail, retries - 1), 1000)
     } else {
       onFail('API server did not respond after 40 seconds')
     }
     res.resume()
   })
   req.on('error', () => {
-    if (retries > 0) setTimeout(() => waitForApi(onReady, onFail, retries - 1), 1000)
+    if (retries > 0) setTimeout(() => waitForApiCallback(onReady, onFail, retries - 1), 1000)
     else onFail('API server did not start (connection refused after 40s)')
   })
   req.setTimeout(900, () => req.destroy())
@@ -686,7 +705,7 @@ if (isCliMode) {
     }
     const cliArgs = process.argv.slice(2).filter(a => a !== '--cli')
     const child   = spawn(process.execPath, [CLI_BUNDLE, ...cliArgs], {
-      stdio: [process.stdin, process.stdout, process.stderr],
+      stdio: 'inherit',
       env:   { ...process.env, ELECTRON_RUN_AS_NODE: '1', AIDEN_CLI_MODE: '1', AIDEN_LOG_FILE: LOG_FILE },
     })
     child.on('exit', (code) => app.exit(code ?? 0))
@@ -735,7 +754,7 @@ if (isCliMode) {
 
     // 7. Wait for API, then dashboard, then navigate
     setStatus('Waiting for API server (up to 40s)...')
-    waitForApi(
+    waitForApiCallback(
       () => {
         setStatus('API ready — waiting for dashboard...')
         waitForDash(
