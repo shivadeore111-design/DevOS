@@ -696,19 +696,22 @@ if (isCliMode) {
       log(`[CLI] API bundle not found at ${API_BUNDLE} — tools may be unavailable`)
     }
 
-    // Spawn CLI using Electron's own executable (ELECTRON_RUN_AS_NODE=1 = pure Node, no Chromium)
+    // Run CLI in this process — no spawn, no stdio plumbing.
+    // Electron's own main process has a live stdin TTY when invoked from a terminal.
+    // Spawning a child and inheriting stdio across a spawn boundary breaks readline
+    // on Windows (inherited stdin arrives as a wrapped Readable, not a raw fd).
     if (!fs.existsSync(CLI_BUNDLE)) {
       console.error(`[Aiden] CLI bundle not found: ${CLI_BUNDLE}`)
       console.error('  Run: npm run build:cli')
       app.exit(1)
       return
     }
-    const cliArgs = process.argv.slice(2).filter(a => a !== '--cli')
-    const child   = spawn(process.execPath, [CLI_BUNDLE, ...cliArgs], {
-      stdio: 'inherit',
-      env:   { ...process.env, ELECTRON_RUN_AS_NODE: '1', AIDEN_CLI_MODE: '1', AIDEN_LOG_FILE: LOG_FILE },
-    })
-    child.on('exit', (code) => app.exit(code ?? 0))
+    // Expose CLI context via env before requiring so the bundle can branch on them
+    process.env.AIDEN_CLI_MODE = '1'
+    process.env.AIDEN_LOG_FILE = LOG_FILE
+    // Strip --cli so the bundle sees only the user-supplied sub-commands / flags
+    process.argv = process.argv.filter(a => a !== '--cli')
+    require(CLI_BUNDLE)
   })
 
 } else {

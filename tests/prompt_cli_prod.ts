@@ -3,7 +3,7 @@
 // Copyright (c) 2026 Shiva Deore. All rights reserved.
 // ============================================================
 
-// tests/prompt_cli_prod.ts — 45 zero-cost audits for the
+// tests/prompt_cli_prod.ts — 46 zero-cost audits for the
 // feat(install): bundle CLI + --cli via Electron's bundled Node.
 // fix(install): aiden tui spawns v3.6 CLI, API bundle points at real server entry
 // chore(scripts): remove legacy/ references, fix dev script
@@ -614,20 +614,23 @@ test('cli-prod: dist-bundle/index.js contains version literal, no require(packag
   )
 })
 
-// ── Test 41 — electron/main.js CLI spawn uses explicit stdio handles ─────────
-test('cli-prod: electron/main.js CLI spawn uses stdio inherit', () => {
+// ── Test 41 — electron/main.js CLI runs in-process via require, not spawn ─────
+test('cli-prod: electron/main.js CLI runs in-process via require(CLI_BUNDLE)', () => {
   const src = read('electron/main.js')
-  // On Windows, passing process.stdin/stdout/stderr as handles to spawn() causes
-  // ERR_INVALID_ARG_VALUE. Use 'inherit' so the OS inherits the parent's handles directly.
-  assertExcludes(
-    src,
-    'stdio: [process.stdin, process.stdout, process.stderr]',
-    'electron/main.js CLI spawn must not use explicit stdio handle array (breaks on Windows)',
-  )
+  const isCliIdx  = src.indexOf('if (isCliMode)')
+  const guiMarker = src.indexOf('// ── GUI mode')
+  const cliBlock  = src.substring(isCliIdx, guiMarker)
+  // CLI itself must be require()'d in-process — not spawned as a child
   assertIncludes(
-    src,
-    "stdio: 'inherit'",
-    "electron/main.js CLI spawn must use stdio: 'inherit'",
+    cliBlock,
+    'require(CLI_BUNDLE)',
+    'electron/main.js CLI block must run CLI bundle in-process via require(CLI_BUNDLE)',
+  )
+  // Must NOT spawn a child for the CLI (API can still be spawned)
+  assertExcludes(
+    cliBlock,
+    'spawn(process.execPath, [CLI_BUNDLE',
+    'electron/main.js CLI block must not spawn a child process for the CLI bundle',
   )
 })
 
@@ -667,6 +670,31 @@ test('cli-prod: electron/main.js before-quit and will-quit are not top-level', (
   assert(
     lastBeforeQuit > elseIdx,
     'electron/main.js app.on("before-quit") must be inside the else (GUI) block, not top-level',
+  )
+})
+
+// ── Test 46 — electron/main.js CLI injects AIDEN_CLI_MODE via process.env ─────
+test('cli-prod: electron/main.js CLI sets process.env.AIDEN_CLI_MODE before require', () => {
+  const src = read('electron/main.js')
+  const isCliIdx  = src.indexOf('if (isCliMode)')
+  const guiMarker = src.indexOf('// ── GUI mode')
+  const cliBlock  = src.substring(isCliIdx, guiMarker)
+  // Must set env vars before the require() call
+  assertIncludes(
+    cliBlock,
+    "process.env.AIDEN_CLI_MODE = '1'",
+    "electron/main.js CLI block must set process.env.AIDEN_CLI_MODE = '1' before require(CLI_BUNDLE)",
+  )
+  assertIncludes(
+    cliBlock,
+    'process.env.AIDEN_LOG_FILE = LOG_FILE',
+    'electron/main.js CLI block must set process.env.AIDEN_LOG_FILE before require(CLI_BUNDLE)',
+  )
+  // Must strip --cli from argv so the bundle sees clean args
+  assertIncludes(
+    cliBlock,
+    "process.argv.filter(a => a !== '--cli')",
+    "electron/main.js CLI block must filter --cli from process.argv before require(CLI_BUNDLE)",
   )
 })
 
