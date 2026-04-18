@@ -18,26 +18,19 @@ if [[ -n "$WSL_DISTRO_NAME" ]]; then
         exit 1
       fi
       ;;
-    tui)
-      # ELECTRON_RUN_AS_NODE=1 makes Electron behave as plain Node.js so
-      # process.stdin is a real TTY — required for readline to work correctly.
-      shift
-      if [[ -f "$AIDEN_WIN_PATH" ]]; then
-        ELECTRON_RUN_AS_NODE=1 "$AIDEN_WIN_PATH" --cli "$@"
-      else
-        echo "Aiden not found at $AIDEN_WIN_PATH"
-        echo "Set AIDEN_WIN_PATH to your Aiden.exe install location."
-        exit 1
-      fi
-      ;;
     "")
       echo ""
       echo "  Aiden | Local-first Windows AI OS"
       echo ""
       echo "  Usage:"
-      echo "    aiden tui      Start the terminal (CLI) interface"
       echo "    aiden pc       Launch the desktop app (Electron GUI)"
       echo "    aiden          Show this help message"
+      echo ""
+      echo "  Terminal (TUI) interface:"
+      echo "    To start the CLI, run the API server first, then launch the TUI:"
+      echo "      npm run serve          # starts API on port 4200"
+      echo "      npm run cli            # starts the TUI"
+      echo "    Or from a packaged install, use the Aiden desktop app."
       echo ""
       ;;
     *)

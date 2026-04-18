@@ -1,3 +1,22 @@
+## v3.7.0 — 2026-04-18
+
+**The Desktop-Primary release.** Desktop app is now the primary Aiden experience.
+The `aiden tui` launcher shortcut is removed pending a proper single-command
+terminal launcher in v3.8. TUI usage is documented via `npm run serve` +
+`npm run cli`.
+
+### Changes
+
+- **Desktop app promoted to primary** — `aiden pc` launches the full Electron UI;
+  `aiden` / `aiden help` shows updated help pointing to `aiden pc`
+- **`aiden tui` shortcut removed** — the ELECTRON_RUN_AS_NODE node-mode branch
+  is stripped from `electron/main.js`; TUI launch instructions added to README
+  and `aiden help` output
+- **README: Running Aiden section** — documents desktop and TUI launch paths,
+  including `npm run serve` + `npm run cli` workflow
+
+---
+
 ## v3.6.0 — 2026-04-18
 
 **The Scale release.** Aiden is now feature-competitive with leading AI agents:

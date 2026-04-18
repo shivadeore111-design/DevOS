@@ -88,6 +88,37 @@ Set your API keys in the `.env` file in the Aiden data directory (shown on first
 
 ---
 
+## Running Aiden
+
+### Desktop app (primary — recommended)
+
+Double-click **Aiden** in your Start menu, or run:
+
+```cmd
+aiden pc
+```
+
+The Electron desktop app starts the API server automatically and loads the full UI.
+
+### Terminal / TUI interface
+
+The TUI requires the API server to be running first. Start both from the project directory:
+
+```cmd
+npm run serve          # start API server on port 4200
+npm run cli            # start the TUI (in a second terminal)
+```
+
+Or from the packaged install, use the dev shortcut to start the API, then:
+
+```cmd
+npx ts-node cli/aiden.ts
+```
+
+> **Note:** `aiden tui` is not available as a one-command shortcut in v3.7. Run `npm run serve` + `npm run cli` instead. A single-command TUI launcher is planned for v3.8.
+
+---
+
 ## Documentation
 
 - **Landing page & docs:** [aiden.taracod.com](https://aiden.taracod.com)
