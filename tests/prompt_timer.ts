@@ -33,12 +33,16 @@ test('timer: cli/aiden.ts status bar passes startedAt-based elapsedMs', () => {
   )
 })
 
-// ── Test 3 — cli/aiden.ts printBanner reads version from package.json ────────
-test('timer: cli/aiden.ts printBanner reads version from package.json', () => {
+// ── Test 3 — cli/aiden.ts uses VERSION from core/version (not inline require) ─
+test('timer: cli/aiden.ts uses VERSION from core/version for display', () => {
   const src = read('cli/aiden.ts')
   assert(
-    src.includes("require('../package.json')") || src.includes('require("../package.json")'),
-    'cli/aiden.ts printBanner must require package.json for version'
+    src.includes("from '../core/version'"),
+    "cli/aiden.ts must import VERSION from '../core/version' (not inline require package.json)"
+  )
+  assert(
+    src.includes('VERSION'),
+    'cli/aiden.ts must reference VERSION constant for version display'
   )
 })
 

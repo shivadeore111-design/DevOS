@@ -3,7 +3,7 @@
 // Copyright (c) 2026 Shiva Deore. All rights reserved.
 // ============================================================
 
-// tests/prompt_cli_prod.ts — 37 zero-cost audits for the
+// tests/prompt_cli_prod.ts — 40 zero-cost audits for the
 // feat(install): bundle CLI + --cli via Electron's bundled Node.
 // fix(install): aiden tui spawns v3.6 CLI, API bundle points at real server entry
 // chore(scripts): remove legacy/ references, fix dev script
@@ -543,6 +543,74 @@ test('cli-prod: providers/index.ts CONFIG_PATH respects AIDEN_CONFIG_DIR env var
     configPathLine,
     'AIDEN_CONFIG_DIR',
     'CONFIG_PATH declaration must reference AIDEN_CONFIG_DIR',
+  )
+})
+
+// ── Test 38 — No source require('../package.json') outside fallback ──────────
+test('cli-prod: no source file contains bare require("../package.json") outside electron/preload.js', () => {
+  const sourceFiles = [
+    'api/server.ts',
+    'cli/aiden.ts',
+    'core/mcpClient.ts',
+    'core/agentLoop.ts',
+  ]
+  for (const f of sourceFiles) {
+    const src = read(f)
+    assertExcludes(
+      src,
+      "require('../package.json')",
+      `${f} must not contain require('../package.json') — use VERSION from core/version instead`,
+    )
+    assertExcludes(
+      src,
+      'require("../package.json")',
+      `${f} must not contain require("../package.json") — use VERSION from core/version instead`,
+    )
+  }
+})
+
+// ── Test 39 — prebuild scripts and core/version.ts exist ─────────────────────
+test('cli-prod: prebuild:api and prebuild:cli scripts exist, and core/version.ts is present', () => {
+  const pkg = JSON.parse(read('package.json'))
+  assert(
+    typeof pkg.scripts['prebuild:api'] === 'string' && pkg.scripts['prebuild:api'].includes('inject-version'),
+    'package.json must have prebuild:api script running inject-version.js',
+  )
+  assert(
+    typeof pkg.scripts['prebuild:cli'] === 'string' && pkg.scripts['prebuild:cli'].includes('inject-version'),
+    'package.json must have prebuild:cli script running inject-version.js',
+  )
+  const versionSrc = read('core/version.ts')
+  assertIncludes(
+    versionSrc,
+    'export const VERSION',
+    'core/version.ts must export a VERSION constant',
+  )
+  const injectScript = read('scripts/inject-version.js')
+  assertIncludes(
+    injectScript,
+    'core/version.ts',
+    'scripts/inject-version.js must write to core/version.ts',
+  )
+})
+
+// ── Test 40 — dist-bundle/index.js has version as literal, not require ───────
+test('cli-prod: dist-bundle/index.js contains version literal, no require(package.json)', () => {
+  const bundle = read('dist-bundle/index.js')
+  assertExcludes(
+    bundle,
+    "require('../package.json')",
+    'dist-bundle/index.js must not contain require("../package.json") — version must be inlined',
+  )
+  assertExcludes(
+    bundle,
+    'require("../package.json")',
+    'dist-bundle/index.js must not contain require("../package.json") — version must be inlined',
+  )
+  assertIncludes(
+    bundle,
+    'VERSION = "3.6.0"',
+    'dist-bundle/index.js must contain the version string as an inlined literal (VERSION = "3.6.0")',
   )
 })
 

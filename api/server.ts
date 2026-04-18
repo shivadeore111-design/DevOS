@@ -28,6 +28,7 @@ import express, { Express, Request, Response, NextFunction } from 'express'
 import { WebSocketServer } from 'ws'
 
 // â”€â”€ Real imports only â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+import { VERSION }        from '../core/version'
 import { memoryLayers }   from '../memory/memoryLayers'
 import { livePulse }      from '../coordination/livePulse'
 import { runDoctor }      from '../core/doctor'
@@ -442,8 +443,7 @@ export function createApiServer(): Express {
 
   // GET /api/health â€” liveness probe (no auth required)
   app.get('/api/health', (_req: Request, res: Response) => {
-    const { version } = require('../package.json') as { version: string }
-    res.json({ status: 'ok', version, timestamp: new Date().toISOString() })
+    res.json({ status: 'ok', version: VERSION, timestamp: new Date().toISOString() })
   })
 
   // ── Update endpoints ─────────────────────────────────────────
@@ -455,8 +455,7 @@ export function createApiServer(): Express {
       const result = await checkForUpdate()
       res.json(result)
     } catch (e: any) {
-      const { version: currentVersion } = require('../package.json') as { version: string }
-      res.json({ available: false, currentVersion, error: e.message })
+      res.json({ available: false, currentVersion: VERSION, error: e.message })
     }
   })
 
@@ -5134,8 +5133,7 @@ export function startApiServer(portArg?: number): Express {
     console.log(`  session_stop:    ${getHookCount('session_stop')} handler(s)`)
     console.log(`  after_tool_call: ${getHookCount('after_tool_call')} handler(s)`)
 
-    const { version: _v } = require('../package.json') as { version: string }
-    console.log(`[API] DevOS v${_v} - Aiden running at http://${host}:${port}`)
+    console.log(`[API] DevOS v${VERSION} - Aiden running at http://${host}:${port}`)
     console.log(`[API] Health: http://${host}:${port}/api/health`)
     console.log(`[API] LivePulse WS: ws://${host}:${port}`)
   })

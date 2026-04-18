@@ -16,6 +16,7 @@ import { table, panel }                                      from '../core/panel
 import type { ColDef }                                       from '../core/panel'
 import { SPINNER_FRAMES_RAW }                               from '../core/spinner'
 import { checkForUpdate, formatUpdateLine }                  from '../core/updateCheck'
+import { VERSION }                                           from '../core/version'
 
 // ── Constants ────────────────────────────────────────────────────────────────────
 
@@ -232,8 +233,7 @@ async function printBanner(): Promise<void> {
     apiFetch<any[]>('/api/tools',   []),
   ])
 
-  const { version: pkgVersion } = require('../package.json') as { version: string }
-  const version   = pkgVersion || health.version || '3.6.0'
+  const version   = VERSION || health.version || '3.6.0'
   const cfg       = loadCfg()
   const apis      = Array.isArray(provData.apis) ? provData.apis : []
   const active    = apis.filter((a: any) => a.enabled && a.hasKey)
@@ -3319,14 +3319,11 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
 
   // ── /version ─────────────────────────────────────────────────────────────────
   if (command === '/version') {
-    const pkgVersion = (() => {
-      try { return (require('../package.json') as { version: string }).version } catch { return '3.6.0' }
-    })()
-    console.log(`\n  ${T.bold}Aiden${T.reset}  ${T.dim}v${pkgVersion}${T.reset}`)
+    console.log(`\n  ${T.bold}Aiden${T.reset}  ${T.dim}v${VERSION}${T.reset}`)
     console.log(`  ${T.dim}Checking for updates...${T.reset}`)
     try {
       const { checkForUpdate } = await import('../core/updateCheck')
-      const info = await checkForUpdate(pkgVersion, 5000)
+      const info = await checkForUpdate(VERSION, 5000)
       if (!info) {
         console.log(`  ${T.dim}Update check unavailable (offline or rate-limited).${T.reset}\n`)
       } else if (info.updateAvailable) {
@@ -3903,12 +3900,9 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
 
   // ── /refresh ────────────────────────────────────────────────────────────────
   if (command === '/refresh') {
-    const pkgVersion = (() => {
-      try { return (require('../package.json') as { version: string }).version } catch { return '3.6.0' }
-    })()
     console.log(`\n  ${T.dim}Checking for updates...${T.reset}`)
     try {
-      const info = await checkForUpdate(pkgVersion)
+      const info = await checkForUpdate(VERSION)
       if (!info) {
         console.log(`  ${T.dim}Update check unavailable (offline or rate-limited).${T.reset}\n`)
       } else if (info.updateAvailable) {

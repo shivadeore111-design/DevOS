@@ -16,6 +16,7 @@ import fs            from 'fs'
 import path          from 'path'
 import { spawn }     from 'child_process'
 import type { ChildProcess } from 'child_process'
+import { VERSION }   from './version'
 
 // ── Paths ──────────────────────────────────────────────────────
 
@@ -216,7 +217,7 @@ class McpManager {
       await this._rpcStdio(conn, 'initialize', {
         protocolVersion: '2024-11-05',
         capabilities:    {},
-        clientInfo:      { name: 'aiden', version: (require('../package.json') as { version: string }).version },
+        clientInfo:      { name: 'aiden', version: VERSION },
       })
       // Discover tools
       const result = await this._rpcStdio(conn, 'tools/list', {})
@@ -280,7 +281,7 @@ class McpManager {
       await this._rpcHttp(config.url, 'initialize', {
         protocolVersion: '2024-11-05',
         capabilities:    {},
-        clientInfo:      { name: 'aiden', version: (require('../package.json') as { version: string }).version },
+        clientInfo:      { name: 'aiden', version: VERSION },
       })
       // discover tools via "tools/list"
       const result = await this._rpcHttp(config.url, 'tools/list', {})
