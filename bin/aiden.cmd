@@ -14,8 +14,9 @@ if "%~1"=="pc" (
 )
 
 if "%~1"=="tui" (
-  :: Use Aiden.exe --cli — Electron's bundled Node runs the CLI bundle.
-  :: No system Node.js required: ELECTRON_RUN_AS_NODE=1 is set inside main.js.
+  :: ELECTRON_RUN_AS_NODE=1 makes Electron behave as plain Node.js so
+  :: process.stdin is a real TTY — required for readline to work correctly.
+  set "ELECTRON_RUN_AS_NODE=1"
   "%~dp0..\..\Aiden.exe" --cli %2 %3 %4 %5 %6 %7 %8 %9
   goto :eof
 )

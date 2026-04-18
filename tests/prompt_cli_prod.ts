@@ -3,7 +3,7 @@
 // Copyright (c) 2026 Shiva Deore. All rights reserved.
 // ============================================================
 
-// tests/prompt_cli_prod.ts — 46 zero-cost audits for the
+// tests/prompt_cli_prod.ts — 48 zero-cost audits for the
 // feat(install): bundle CLI + --cli via Electron's bundled Node.
 // fix(install): aiden tui spawns v3.6 CLI, API bundle points at real server entry
 // chore(scripts): remove legacy/ references, fix dev script
@@ -134,56 +134,56 @@ test('cli-prod: --cli mode sets ELECTRON_RUN_AS_NODE=1 on spawned child', () => 
 // ── Test 13 — --cli mode does NOT create a BrowserWindow ─────────────────────
 test('cli-prod: --cli mode path does not call createMainWindow()', () => {
   const src = read('electron/main.js')
-  // Use the unique comment that marks the GUI-only else branch as the boundary
-  const isCliIdx  = src.indexOf('if (isCliMode)')
-  const guiMarker = src.indexOf('// ── GUI mode')
-  assert(isCliIdx  !== -1, 'isCliMode block must exist in main.js')
-  assert(guiMarker !== -1, '"// ── GUI mode" comment must exist to mark GUI branch')
-  assert(isCliIdx  < guiMarker, 'isCliMode block must appear before the GUI mode branch')
-  // Extract just the CLI block (between isCliMode and the GUI marker)
-  const cliBlock = src.substring(isCliIdx, guiMarker)
+  const nodeIdx   = src.indexOf('if (isNodeMode && isCliMode)')
+  const elseStart = src.indexOf('} else {')
+  assert(nodeIdx   !== -1, '"if (isNodeMode && isCliMode)" block must exist in main.js')
+  assert(elseStart !== -1, '"} else {" must exist to separate node-mode from GUI mode')
+  assert(nodeIdx   < elseStart, 'Node-mode block must appear before the "} else {" boundary')
+  // Only inspect the node-mode branch itself (not the else/GUI section)
+  const cliBlock = src.substring(nodeIdx, elseStart)
   assertExcludes(
     cliBlock,
     'createMainWindow',
-    '--cli mode must NOT call createMainWindow() — no window in CLI mode',
+    'Node-mode CLI branch must NOT call createMainWindow() — no window in CLI mode',
   )
 })
 
 // ── Test 14 — --cli mode spawns API bundle (isolated, not require) ───────────
 test('cli-prod: --cli mode spawns API server as isolated child process', () => {
   const src = read('electron/main.js')
-  const isCliIdx  = src.indexOf('if (isCliMode)')
-  const guiMarker = src.indexOf('// ── GUI mode')
-  const cliBlock  = src.substring(isCliIdx, guiMarker)
+  const nodeIdx   = src.indexOf('if (isNodeMode && isCliMode)')
+  const elseStart = src.indexOf('} else {')
+  const cliBlock  = src.substring(nodeIdx, elseStart)
   // API must be spawned via spawn(process.execPath, [API_BUNDLE]) — NOT require()
   assertIncludes(
     cliBlock,
     'spawn(process.execPath, [API_BUNDLE]',
-    '--cli block must spawn API bundle as child process (not require it in-process)',
+    'Node-mode CLI branch must spawn API bundle as child process (not require it in-process)',
   )
   assertExcludes(
     cliBlock,
     'require(API_BUNDLE)',
-    '--cli block must NOT use require(API_BUNDLE) — process isolation is required',
+    'Node-mode CLI branch must NOT use require(API_BUNDLE) — process isolation is required',
   )
 })
 
-// ── Test 15 — --cli mode hides macOS dock icon ────────────────────────────────
-test('cli-prod: --cli mode hides macOS dock icon', () => {
+// ── Test 15 — Node-mode CLI branch does not use Electron app APIs ─────────────
+test('cli-prod: Node-mode CLI branch does not call Electron app.dock or app.exit', () => {
   const src = read('electron/main.js')
-  assertIncludes(
-    src,
-    "app.dock.hide()",
-    '--cli mode must call app.dock.hide() to suppress macOS dock icon',
-  )
-  // The dock.hide() call must be inside the isCliMode block, not the GUI block
-  const isCliIdx  = src.indexOf('if (isCliMode)')
-  const guiMarker = src.indexOf('// ── GUI mode')
-  const cliBlock  = src.substring(isCliIdx, guiMarker)
-  assertIncludes(
+  const nodeIdx   = src.indexOf('if (isNodeMode && isCliMode)')
+  const elseStart = src.indexOf('} else {')
+  assert(nodeIdx !== -1, '"if (isNodeMode && isCliMode)" block must exist in main.js')
+  const cliBlock  = src.substring(nodeIdx, elseStart)
+  // Node-mode has no Electron APIs — must not call app.exit() or app.dock
+  assertExcludes(
     cliBlock,
-    'app.dock.hide()',
-    'app.dock.hide() must be inside the isCliMode block, not the GUI block',
+    'app.exit(',
+    'Node-mode CLI branch must use process.exit() not app.exit() — no Electron APIs available',
+  )
+  assertExcludes(
+    cliBlock,
+    'app.dock',
+    'Node-mode CLI branch must not call app.dock — no Electron APIs available in Node mode',
   )
 })
 
@@ -234,9 +234,9 @@ test('cli-prod: dist-bundle/index.js must not contain legacy v1.0 CLI banner', (
 // ── Test 19 — electron/main.js --cli API spawn uses ELECTRON_RUN_AS_NODE ─────
 test('cli-prod: API spawn in --cli mode passes ELECTRON_RUN_AS_NODE=1', () => {
   const src       = read('electron/main.js')
-  const isCliIdx  = src.indexOf('if (isCliMode)')
-  const guiMarker = src.indexOf('// ── GUI mode')
-  const cliBlock  = src.substring(isCliIdx, guiMarker)
+  const nodeIdx   = src.indexOf('if (isNodeMode && isCliMode)')
+  const elseStart = src.indexOf('} else {')
+  const cliBlock  = src.substring(nodeIdx, elseStart)
   assertIncludes(
     cliBlock,
     'ELECTRON_RUN_AS_NODE',
@@ -363,20 +363,22 @@ test('cli-prod: ollama execSync in modelRouter uses stdio pipe to suppress Windo
 })
 
 // ── Test 28 — electron/main.js --cli branch calls waitForApi ─────────────────
-test('cli-prod: electron/main.js --cli branch awaits waitForApi before spawning CLI', () => {
+test('cli-prod: electron/main.js Node-mode branch polls API before starting CLI', () => {
   const src       = read('electron/main.js')
-  const isCliIdx  = src.indexOf('if (isCliMode)')
-  const guiMarker = src.indexOf('// ── GUI mode')
-  const cliBlock  = src.substring(isCliIdx, guiMarker)
+  const nodeIdx   = src.indexOf('if (isNodeMode && isCliMode)')
+  const elseStart = src.indexOf('} else {')
+  const cliBlock  = src.substring(nodeIdx, elseStart)
+  // Node-mode branch uses an inline polling loop (not waitForApi helper)
   assertIncludes(
     cliBlock,
-    'waitForApi',
-    '--cli block must call waitForApi() to poll API readiness before spawning the CLI child',
+    'api/health',
+    'Node-mode branch must poll /api/health before starting CLI',
   )
+  // Must wait for readiness before requiring the CLI bundle
   assertIncludes(
     cliBlock,
-    'await waitForApi',
-    '--cli block must AWAIT waitForApi (not fire-and-forget)',
+    'await new Promise',
+    'Node-mode branch must await a sleep between poll attempts (not fire-and-forget)',
   )
 })
 
@@ -614,23 +616,25 @@ test('cli-prod: dist-bundle/index.js contains version literal, no require(packag
   )
 })
 
-// ── Test 41 — electron/main.js CLI runs in-process via require, not spawn ─────
-test('cli-prod: electron/main.js CLI runs in-process via require(CLI_BUNDLE)', () => {
+// ── Test 41 — electron/main.js Node-mode CLI runs in-process via require ──────
+test('cli-prod: electron/main.js Node-mode CLI branch uses require(CLI_BUNDLE)', () => {
   const src = read('electron/main.js')
-  const isCliIdx  = src.indexOf('if (isCliMode)')
-  const guiMarker = src.indexOf('// ── GUI mode')
-  const cliBlock  = src.substring(isCliIdx, guiMarker)
+  const nodeIdx   = src.indexOf('if (isNodeMode && isCliMode)')
+  const elseStart = src.indexOf('} else {')
+  assert(nodeIdx   !== -1, 'electron/main.js must contain "if (isNodeMode && isCliMode)" node-mode branch')
+  assert(elseStart > nodeIdx, 'electron/main.js must have "} else {" after the node-mode branch')
+  const cliBlock  = src.substring(nodeIdx, elseStart)
   // CLI itself must be require()'d in-process — not spawned as a child
   assertIncludes(
     cliBlock,
     'require(CLI_BUNDLE)',
-    'electron/main.js CLI block must run CLI bundle in-process via require(CLI_BUNDLE)',
+    'electron/main.js Node-mode branch must run CLI bundle in-process via require(CLI_BUNDLE)',
   )
-  // Must NOT spawn a child for the CLI (API can still be spawned)
+  // Must NOT spawn a child for the CLI (API server can still be spawned)
   assertExcludes(
     cliBlock,
     'spawn(process.execPath, [CLI_BUNDLE',
-    'electron/main.js CLI block must not spawn a child process for the CLI bundle',
+    'electron/main.js Node-mode branch must not spawn a child process for the CLI bundle',
   )
 })
 
@@ -673,28 +677,28 @@ test('cli-prod: electron/main.js before-quit and will-quit are not top-level', (
   )
 })
 
-// ── Test 46 — electron/main.js CLI injects AIDEN_CLI_MODE via process.env ─────
-test('cli-prod: electron/main.js CLI sets process.env.AIDEN_CLI_MODE before require', () => {
+// ── Test 46 — electron/main.js Node-mode branch injects AIDEN_CLI_MODE ────────
+test('cli-prod: electron/main.js Node-mode branch sets process.env.AIDEN_CLI_MODE', () => {
   const src = read('electron/main.js')
-  const isCliIdx  = src.indexOf('if (isCliMode)')
-  const guiMarker = src.indexOf('// ── GUI mode')
-  const cliBlock  = src.substring(isCliIdx, guiMarker)
+  const nodeIdx   = src.indexOf('if (isNodeMode && isCliMode)')
+  const elseStart = src.indexOf('} else {')
+  const cliBlock  = src.substring(nodeIdx, elseStart)
   // Must set env vars before the require() call
   assertIncludes(
     cliBlock,
     "process.env.AIDEN_CLI_MODE = '1'",
-    "electron/main.js CLI block must set process.env.AIDEN_CLI_MODE = '1' before require(CLI_BUNDLE)",
+    "electron/main.js Node-mode branch must set process.env.AIDEN_CLI_MODE = '1' before require(CLI_BUNDLE)",
   )
   assertIncludes(
     cliBlock,
     'process.env.AIDEN_LOG_FILE = LOG_FILE',
-    'electron/main.js CLI block must set process.env.AIDEN_LOG_FILE before require(CLI_BUNDLE)',
+    'electron/main.js Node-mode branch must set process.env.AIDEN_LOG_FILE before require(CLI_BUNDLE)',
   )
   // Must strip --cli from argv so the bundle sees clean args
   assertIncludes(
     cliBlock,
     "process.argv.filter(a => a !== '--cli')",
-    "electron/main.js CLI block must filter --cli from process.argv before require(CLI_BUNDLE)",
+    "electron/main.js Node-mode branch must filter --cli from process.argv before require(CLI_BUNDLE)",
   )
 })
 
@@ -723,6 +727,35 @@ test('cli-prod: no unguarded onReady() calls outside callback-function bodies', 
     guiBlock,
     'waitForApiCallback(',
     'GUI block must call waitForApiCallback() not waitForApi()',
+  )
+})
+
+// ── Test 47 — bin/aiden.cmd sets ELECTRON_RUN_AS_NODE=1 for tui ───────────────
+test('cli-prod: bin/aiden.cmd sets ELECTRON_RUN_AS_NODE=1 in tui branch', () => {
+  const src = read('bin/aiden.cmd')
+  // Find the tui branch
+  const tuiIdx = src.indexOf('"tui"')
+  assert(tuiIdx !== -1, 'bin/aiden.cmd must have a "tui" branch')
+  // Find the next subcommand branch after tui to bound the search
+  const pcIdx = src.indexOf('"pc"', tuiIdx)
+  const tuiBranch = src.substring(tuiIdx, pcIdx !== -1 ? pcIdx : tuiIdx + 400)
+  assertIncludes(
+    tuiBranch,
+    'ELECTRON_RUN_AS_NODE=1',
+    'bin/aiden.cmd tui branch must set ELECTRON_RUN_AS_NODE=1 before invoking Aiden.exe',
+  )
+})
+
+// ── Test 48 — electron/main.js node-mode branch precedes require('electron') ──
+test('cli-prod: electron/main.js node-mode branch appears before require("electron")', () => {
+  const src = read('electron/main.js')
+  const nodeIdx    = src.indexOf('if (isNodeMode && isCliMode)')
+  const requireIdx = src.indexOf("require('electron')")
+  assert(nodeIdx !== -1,    'electron/main.js must contain "if (isNodeMode && isCliMode)"')
+  assert(requireIdx !== -1, "electron/main.js must contain require('electron')")
+  assert(
+    nodeIdx < requireIdx,
+    'electron/main.js node-mode branch must appear BEFORE require(\'electron\') so Electron APIs are not called in Node mode',
   )
 })
 

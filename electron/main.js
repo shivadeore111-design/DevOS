@@ -4,6 +4,114 @@
 // ============================================================
 'use strict'
 
+// ── Mode detection — must precede Electron module load ──────
+// When ELECTRON_RUN_AS_NODE=1 (set by bin/aiden.cmd for `aiden tui`),
+// Electron behaves as plain Node.js — no app/window APIs are available,
+// but process.stdin IS a real TTY, which is exactly what readline needs.
+const isNodeMode = process.env.ELECTRON_RUN_AS_NODE === '1'
+const isCliMode  = process.argv.includes('--cli')
+
+if (isNodeMode && isCliMode) {
+  // ── Pure Node CLI mode ──────────────────────────────────────────
+  // No Electron APIs — use standard Node modules only.
+  const path = require('path')
+  const fs   = require('fs')
+  const os   = require('os')
+  const { spawn } = require('child_process')
+
+  // Mirror app.getPath('userData') — productName is "Aiden"
+  const HOME      = os.homedir()
+  const USER_DATA = process.platform === 'win32'
+    ? path.join(HOME, 'AppData', 'Roaming', 'Aiden')
+    : process.platform === 'darwin'
+      ? path.join(HOME, 'Library', 'Application Support', 'Aiden')
+      : path.join(HOME, '.config', 'Aiden')
+  const WORKSPACE   = path.join(USER_DATA, 'workspace')
+  const CONFIG_DIR  = path.join(USER_DATA, 'config')
+  const LOGS_DIR    = path.join(USER_DATA, 'logs')
+  const LOG_FILE    = path.join(USER_DATA, 'aiden.log')
+  const IS_PACKAGED = __dirname.includes('app.asar')
+  const RESOURCES   = IS_PACKAGED
+    ? (process.resourcesPath || path.join(__dirname, '..', '..'))
+    : path.join(__dirname, '..')
+  const API_BUNDLE  = IS_PACKAGED
+    ? path.join(RESOURCES, 'dist', 'index.js')
+    : path.join(RESOURCES, 'dist-bundle', 'index.js')
+  const CLI_BUNDLE  = IS_PACKAGED
+    ? path.join(RESOURCES, 'dist', 'cli.js')
+    : path.join(RESOURCES, 'dist-bundle', 'cli.js')
+
+  // Bootstrap dirs
+  for (const dir of [USER_DATA, WORKSPACE, CONFIG_DIR, LOGS_DIR]) {
+    try { fs.mkdirSync(dir, { recursive: true }) } catch {}
+  }
+
+  function log (msg) {
+    const line = `[${new Date().toISOString()}] ${msg}\n`
+    try { fs.appendFileSync(LOG_FILE, line) } catch {}
+    console.log(msg)
+  }
+
+  log('=== Aiden CLI mode (Node) ===')
+
+  // Spawn API server
+  if (!fs.existsSync(API_BUNDLE)) {
+    console.error(`[Aiden] API bundle not found: ${API_BUNDLE}`)
+    process.exit(1)
+  }
+
+  const apiChild = spawn(process.execPath, [API_BUNDLE], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: '1',
+      AIDEN_USER_DATA:  USER_DATA,
+      AIDEN_WORKSPACE:  WORKSPACE,
+      AIDEN_CONFIG_DIR: CONFIG_DIR,
+    },
+  })
+  apiChild.stdout.on('data', d => log('[API] ' + d.toString().trim()))
+  apiChild.stderr.on('data', d => log('[API-ERR] ' + d.toString().trim()))
+  process.on('exit', () => { try { apiChild.kill() } catch {} })
+  log(`[CLI] API server spawned (pid ${apiChild.pid})`)
+
+  // Wait for API, then require CLI bundle in-process.
+  // process.stdin is a real TTY in Node mode — readline works correctly.
+  ;(async () => {
+    const url   = 'http://localhost:4200/api/health'
+    const start = Date.now()
+    let ready   = false
+    while (Date.now() - start < 10000) {
+      try {
+        const res = await fetch(url, { signal: AbortSignal.timeout(500) })
+        if (res.ok) {
+          const body = await res.json()
+          if (body && body.status === 'ok') { ready = true; break }
+        }
+      } catch {}
+      await new Promise(r => setTimeout(r, 200))
+    }
+
+    if (!ready) {
+      log('[CLI] API server failed to start after 10s')
+      process.exit(1)
+    }
+    log('[CLI] API ready at http://localhost:4200')
+
+    if (!fs.existsSync(CLI_BUNDLE)) {
+      console.error(`[Aiden] CLI bundle not found: ${CLI_BUNDLE}`)
+      console.error('  Run: npm run build:cli')
+      process.exit(1)
+    }
+
+    process.env.AIDEN_CLI_MODE = '1'
+    process.env.AIDEN_LOG_FILE = LOG_FILE
+    process.argv = process.argv.filter(a => a !== '--cli')
+    require(CLI_BUNDLE)
+  })()
+
+} else {
+  // ── Electron GUI mode — full app/BrowserWindow/Tray APIs available ──
 const { app, BrowserWindow, Tray, Menu, nativeImage, dialog, shell, ipcMain } = require('electron')
 const { autoUpdater } = require('electron-updater')
 const { spawn, execSync }  = require('child_process')
@@ -19,8 +127,6 @@ let tray          = null
 let dashProcess   = null
 let apiProcess    = null
 let isQuitting    = false
-
-const isCliMode   = process.argv.includes('--cli')
 
 // ── Paths ─────────────────────────────────────────────────────
 const IS_PACKAGED = app.isPackaged
@@ -646,75 +752,6 @@ function createTray () {
 
 // ── App lifecycle ─────────────────────────────────────────────
 
-if (isCliMode) {
-  // ── CLI mode — no window, no tray, no dashboard ───────────────
-  // Electron's bundled Node runs the CLI bundle via ELECTRON_RUN_AS_NODE=1,
-  // so end users need zero system dependencies.
-  if (process.platform === 'darwin' && app.dock) app.dock.hide()
-
-  app.whenReady().then(async () => {
-    try { fs.mkdirSync(path.dirname(LOG_FILE), { recursive: true }) } catch { /* ignore */ }
-    try { fs.mkdirSync(LOGS_DIR, { recursive: true }) } catch { /* ignore */ }
-    log('=== Aiden CLI mode ===')
-    bootstrapUserData()
-
-    // Start API server as isolated child process so its stdout/stderr cannot
-    // pollute the CLI terminal and a crash in the API server cannot block the CLI spawn.
-    if (fs.existsSync(API_BUNDLE)) {
-      const apiChild = spawn(process.execPath, [API_BUNDLE], {
-        stdio: ['ignore', 'pipe', 'pipe'],
-        env:   {
-          ...process.env,
-          ELECTRON_RUN_AS_NODE: '1',
-          AIDEN_USER_DATA:  USER_DATA,
-          AIDEN_WORKSPACE:  WORKSPACE,
-          AIDEN_CONFIG_DIR: CONFIG_DIR,
-        },
-      })
-      const apiErrLines = []
-      apiChild.stdout.on('data', d => log('[API] ' + d.toString().trim()))
-      apiChild.stderr.on('data', d => {
-        const line = d.toString().trim()
-        apiErrLines.push(line)
-        log('[API-ERR] ' + line)
-      })
-      process.on('exit', () => { try { apiChild.kill() } catch {} })
-      log(`[CLI] API server spawned (pid ${apiChild.pid})`)
-
-      // Wait for the API to accept connections before starting the CLI
-      try {
-        await waitForApi('http://localhost:4200/api/health', 10000)
-        log('[CLI] API ready at http://localhost:4200')
-      } catch (waitErr) {
-        log('[CLI] API server failed to start after 10s')
-        if (apiErrLines.length) log('[CLI] Last API errors:\n  ' + apiErrLines.slice(-5).join('\n  '))
-        log(`[CLI] Check logs at ${LOG_FILE}`)
-        app.exit(1)
-        return
-      }
-    } else {
-      log(`[CLI] API bundle not found at ${API_BUNDLE} — tools may be unavailable`)
-    }
-
-    // Run CLI in this process — no spawn, no stdio plumbing.
-    // Electron's own main process has a live stdin TTY when invoked from a terminal.
-    // Spawning a child and inheriting stdio across a spawn boundary breaks readline
-    // on Windows (inherited stdin arrives as a wrapped Readable, not a raw fd).
-    if (!fs.existsSync(CLI_BUNDLE)) {
-      console.error(`[Aiden] CLI bundle not found: ${CLI_BUNDLE}`)
-      console.error('  Run: npm run build:cli')
-      app.exit(1)
-      return
-    }
-    // Expose CLI context via env before requiring so the bundle can branch on them
-    process.env.AIDEN_CLI_MODE = '1'
-    process.env.AIDEN_LOG_FILE = LOG_FILE
-    // Strip --cli so the bundle sees only the user-supplied sub-commands / flags
-    process.argv = process.argv.filter(a => a !== '--cli')
-    require(CLI_BUNDLE)
-  })
-
-} else {
   // ── GUI mode ──────────────────────────────────────────────────
   app.whenReady().then(async () => {
     // Ensure log directory exists before first log() call
@@ -820,3 +857,4 @@ if (isCliMode) {
     }
   })
 }
+} // end else (Electron GUI mode)
