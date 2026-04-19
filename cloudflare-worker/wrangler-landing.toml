@@ -10,3 +10,10 @@ zone_name = "taracod.com"
 [[routes]]
 pattern = "aiden.taracod.com"
 custom_domain = true
+
+# KV namespace for contact form submissions (90-day TTL backup)
+# To create: npx wrangler kv namespace create CONTACT_SUBMISSIONS --config wrangler-landing.toml
+# Then replace PLACEHOLDER below with the returned namespace id
+[[kv_namespaces]]
+binding = "CONTACT_SUBMISSIONS"
+id = "00b79151cbd14203bb72ec8bbf33cd26"
