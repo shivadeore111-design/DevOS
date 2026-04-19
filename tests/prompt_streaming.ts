@@ -209,7 +209,7 @@ test('cli: /version handler invokes checkForUpdate', () => {
   // Must use dynamic import with timeout argument for /version
   assertIncludes(
     src,
-    'checkForUpdate(pkgVersion, 5000)',
+    'checkForUpdate(VERSION, 5000)',
     '/version must pass 5000ms timeout to checkForUpdate',
   )
 })

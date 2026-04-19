@@ -3330,7 +3330,7 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
         console.log(`  ${fg(COLORS.orange)}↑ Update available: v${info.latestVersion}${T.reset}`)
         console.log(`  ${T.dim}${info.releaseUrl}${T.reset}\n`)
       } else {
-        console.log(`  ${T.success}✓ Already on latest (v${pkgVersion}).${T.reset}\n`)
+        console.log(`  ${T.success}✓ Already on latest (v${VERSION}).${T.reset}\n`)
       }
     } catch (e: any) {
       console.log(`  ${T.error}✗ Update check failed: ${e?.message}${T.reset}\n`)
@@ -3915,7 +3915,7 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
           await (globalThis as any).aidenUpdater.checkNow()
         }
       } else {
-        console.log(`  ${T.ok}✓ Already on latest version (v${pkgVersion}).${T.reset}`)
+        console.log(`  ${T.ok}✓ Already on latest version (v${VERSION}).${T.reset}`)
       }
     } catch (e: any) {
       console.log(`  ${T.error}✗ Update check failed: ${e?.message}${T.reset}`)
