@@ -29,6 +29,7 @@ Aiden is a local-first AI operating system for Windows. It runs entirely on your
 | **Releases & changelog** | [github.com/taracodlabs/aiden-releases](https://github.com/taracodlabs/aiden-releases) |
 | **Landing page** | [aiden.taracod.com](https://aiden.taracod.com) |
 | **Contact / commercial** | [aiden.taracod.com/contact](https://aiden.taracod.com/contact) |
+| **Discord** | [discord.gg/TwrWSkph](https://discord.gg/TwrWSkph) |
 | **License** | AGPL-3.0 core · Apache-2.0 skills |
 
 ---
