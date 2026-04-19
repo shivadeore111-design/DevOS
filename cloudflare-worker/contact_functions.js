@@ -32,7 +32,7 @@ function contactPage(url) {
 .err{font-family:'JetBrains Mono',monospace;font-size:12px;color:#ef4444;background:#1a0808;border:1px solid #3b1010;border-radius:6px;padding:10px 14px;margin-bottom:16px}
 </style>
 <h1>Get in touch</h1>
-<div class="meta">We respond within 48 hours &middot; <a href="mailto:hello@taracod.com">hello@taracod.com</a></div>
+<div class="meta">We respond within 48 hours &middot; <a href="mailto:contact@taracod.com">contact@taracod.com</a></div>
 <form id="cf" onsubmit="submitCF(event)" style="margin-top:32px">
   <div class="field">
     <label>Name</label>
@@ -214,17 +214,18 @@ async function contactApiHandler(request, env) {
         '<!DOCTYPE html><html><body style="font-family:\'Outfit\',sans-serif;background:#0e0e0e;color:#e8e8e8;padding:24px;max-width:600px;line-height:1.7">' +
         '<h2 style="color:#f97316;margin:0 0 20px">Hey ' + escHtml(nameClean) + ',</h2>' +
         '<p style="color:#aaa">Thanks for reaching out &mdash; your message landed safely. I&rsquo;ll read it personally and get back to you within 48 hours.</p>' +
-        '<p style="color:#aaa">If it&rsquo;s urgent, you can reach me directly at <a href="mailto:hello@taracod.com" style="color:#f97316">hello@taracod.com</a>.</p>' +
+        '<p style="color:#aaa">If it&rsquo;s urgent, you can reach me directly at <a href="mailto:contact@taracod.com" style="color:#f97316">contact@taracod.com</a>.</p>' +
         '<p style="color:#aaa">In the meantime, feel free to <a href="https://github.com/taracodlabs/aiden-releases" style="color:#f97316">check out Aiden on GitHub</a> or <a href="https://aiden.taracod.com/#download" style="color:#f97316">install it now</a> if you haven&rsquo;t already.</p>' +
         '<p style="color:#555;font-size:12px;margin-top:32px;border-top:1px solid #1a1a1a;padding-top:20px">&mdash; Shiva Deore, Taracod &middot; <a href="https://taracod.com" style="color:#555">taracod.com</a></p>' +
         '</body></html>';
 
+      console.log('Resend internal to: contact@taracod.com, auto-reply to:', emailClean);
       const sends = [
         fetch(RESEND, {
           method: 'POST', headers: hdr,
           body: JSON.stringify({
             from:     'Aiden Contact <contact@taracod.com>',
-            to:       ['hello@taracod.com'],
+            to:       ['contact@taracod.com'],
             reply_to: emailClean,
             subject:  '[Aiden] ' + typeLabel + ' \u2014 ' + nameClean,
             html:     internalHtml
@@ -247,7 +248,10 @@ async function contactApiHandler(request, env) {
         if (r.status === 'rejected') {
           console.warn('Resend email', i, 'rejected:', r.reason);
         } else if (r.value && !r.value.ok) {
-          console.warn('Resend email', i, 'HTTP error:', r.value.status);
+          const errBody = await r.value.text().catch(() => '');
+          console.warn('Resend email', i, 'HTTP error:', r.value.status, errBody.slice(0, 200));
+        } else if (r.value && r.value.ok) {
+          console.log('Resend email', i, 'sent OK:', r.value.status);
         }
       }
     }
@@ -259,7 +263,7 @@ async function contactApiHandler(request, env) {
 
   } catch (e) {
     console.error('contactApiHandler error:', e);
-    return jsonErr('Server error. Please try again or email hello@taracod.com.', 500);
+    return jsonErr('Server error. Please try again or email contact@taracod.com.', 500);
   }
 }
 
