@@ -59,7 +59,8 @@ export const ollamaProvider: Provider = {
 
   async listModels() {
     try {
-      const res  = await fetch('http://localhost:11434/api/tags')
+      const ollamaBase = (process.env.OLLAMA_HOST ?? 'http://127.0.0.1:11434').replace(/\/$/, '')
+      const res  = await fetch(`${ollamaBase}/api/tags`, { signal: AbortSignal.timeout(3000) })
       const data = await res.json() as any
       return data.models?.map((m: any) => m.name) || []
     } catch { return [] }

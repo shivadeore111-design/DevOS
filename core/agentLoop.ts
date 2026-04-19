@@ -1168,7 +1168,8 @@ Output ONLY valid JSON, nothing else:`
       const cfg = loadConfig()
       let ollamaModel = process.env.OLLAMA_MODEL || cfg.ollama?.model || 'gemma4:e4b'
       try {
-        const tagsRes = await fetch('http://localhost:11434/api/tags', { signal: AbortSignal.timeout(3000) })
+        const _ollamaBase = (process.env.OLLAMA_HOST ?? 'http://127.0.0.1:11434').replace(/\/$/, '')
+        const tagsRes = await fetch(`${_ollamaBase}/api/tags`, { signal: AbortSignal.timeout(3000) })
         if (tagsRes.ok) {
           const tagsData = await tagsRes.json() as any
           const firstModel = tagsData?.models?.[0]?.name
@@ -2527,7 +2528,8 @@ CRITICAL RULES FOR YOUR RESPONSE:
         const cfg = loadConfig()
         let ollamaModel = process.env.OLLAMA_MODEL || cfg.ollama?.model || 'gemma4:e4b'
         try {
-          const tagsRes = await fetch('http://localhost:11434/api/tags', { signal: AbortSignal.timeout(2000) })
+          const _ob = (process.env.OLLAMA_HOST ?? 'http://127.0.0.1:11434').replace(/\/$/, '')
+          const tagsRes = await fetch(`${_ob}/api/tags`, { signal: AbortSignal.timeout(3000) })
           if (tagsRes.ok) {
             const tagsData = await tagsRes.json() as any
             const firstModel = tagsData?.models?.[0]?.name

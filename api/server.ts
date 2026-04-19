@@ -2750,7 +2750,8 @@ export function createApiServer(): Express {
       }
 
       if (provider === 'ollama') {
-        const r = await fetch('http://localhost:11434/api/tags', { signal: AbortSignal.timeout(3000) })
+        const ollamaBase = (process.env.OLLAMA_HOST ?? 'http://127.0.0.1:11434').replace(/\/$/, '')
+        const r = await fetch(`${ollamaBase}/api/tags`, { signal: AbortSignal.timeout(3000) })
         const data = await r.json() as { models?: unknown[] }
         return res.json({ valid: r.ok, models: data.models?.length || 0, provider: 'ollama' })
       }

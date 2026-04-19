@@ -12,6 +12,11 @@ import ChatHeader from '../components/ChatHeader'
 import Sidebar from '../components/Sidebar'
 import WorkflowView from '../components/WorkflowView'
 
+// ── Version ───────────────────────────────────────────────────
+// Single source of truth for display version in the dashboard.
+// Updated by scripts/inject-version.js on each release.
+const AIDEN_VERSION = '3.7.0'
+
 // ── Types ─────────────────────────────────────────────────────
 
 type UIMode   = 'focus' | 'execution' | 'power' | 'watch'
@@ -1762,7 +1767,7 @@ function HistorySidebar() {
         fontFamily: 'var(--mono)',
       }}>
         <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--green)', display: 'inline-block' }} />
-        Aiden v3.1.0 · local
+        Aiden v{AIDEN_VERSION} · local
       </div>
     </aside>
   )
@@ -2482,7 +2487,7 @@ function StatusBar() {
       fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--muted)',
       userSelect: 'none',
     }}>
-      <span style={{ color: 'var(--muted3)' }}>Aiden v3.1.0</span>
+      <span style={{ color: 'var(--muted3)' }}>Aiden v{AIDEN_VERSION}</span>
       <span style={{ color: 'var(--border2)' }}>·</span>
       <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
         <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--green)', display: 'inline-block' }} />
@@ -3235,7 +3240,7 @@ function UpdatesTab() {
           }}>
             <span style={{ fontSize: 18 }}>🤖</span>
             <div>
-              <div style={{ ...mono12, color: 'var(--text)', fontWeight: 600 }}>Aiden v3.1.0</div>
+              <div style={{ ...mono12, color: 'var(--text)', fontWeight: 600 }}>Aiden v{AIDEN_VERSION}</div>
               <div style={{ ...mono10, color: 'var(--muted)', marginTop: 2 }}>
                 Installed · Local AI OS{!isElectron ? ' · browser mode' : ''}
               </div>
@@ -3247,7 +3252,7 @@ function UpdatesTab() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {updateState === 'uptodate' && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, ...mono12, color: '#4ade80' }}>
-                  ✓ Aiden v3.1.0 — You&apos;re on the latest version
+                  ✓ Aiden v{AIDEN_VERSION} — You&apos;re on the latest version
                   {checkedAt && <span style={{ ...mono10, color: 'var(--muted)' }}>· checked {checkedAt}</span>}
                 </div>
               )}
@@ -3283,7 +3288,7 @@ function UpdatesTab() {
                     Aiden v{latestVersion} is available!
                   </div>
                   <div style={{ ...mono10, color: 'var(--muted)', marginTop: 2 }}>
-                    Current: v3.1.0{releaseDate ? ` · Released ${releaseDate}` : ''}
+                    Current: v{AIDEN_VERSION}{releaseDate ? ` · Released ${releaseDate}` : ''}
                   </div>
                 </div>
                 <button onClick={handleDownload} style={{
@@ -4531,7 +4536,7 @@ function SettingsDrawer() {
                   fontFamily: 'var(--sans)',
                 }}>D/</div>
                 <div style={{ fontFamily: 'var(--sans)', fontSize: 16, fontWeight: 700, color: 'var(--text)' }}>DevOS · Aiden</div>
-                <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>v3.1.0 · Local AI OS</div>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>v{AIDEN_VERSION} · Local AI OS</div>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {[

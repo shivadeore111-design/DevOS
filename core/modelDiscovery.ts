@@ -39,6 +39,12 @@ const MODEL_PROFILES: Record<string, ModelProfile> = {
 // Skip these — they are embedding / vision models, not chat
 const SKIP_PATTERNS = ['embed', 'nomic', 'mxbai', 'clip', 'whisper']
 
+// ── Ollama base URL ─────────────────────────────────────────────
+// Prefer OLLAMA_HOST env var, fall back to 127.0.0.1 (NOT localhost —
+// on Windows, localhost resolves to ::1 (IPv6) but Ollama only binds
+// to 127.0.0.1 (IPv4), causing ECONNREFUSED when IPv6 is tried first).
+const OLLAMA_BASE = (process.env.OLLAMA_HOST ?? 'http://127.0.0.1:11434').replace(/\/$/, '')
+
 // ── Discovery result ────────────────────────────────────────────
 
 export interface DiscoveredModels {
@@ -59,7 +65,7 @@ export async function discoverLocalModels(
 
   for (let i = 0; i < retries; i++) {
     try {
-      const r = await fetch('http://localhost:11434/api/tags', {
+      const r = await fetch(`${OLLAMA_BASE}/api/tags`, {
         signal: AbortSignal.timeout(3000),
       })
       if (r.ok) {

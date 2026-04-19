@@ -81,8 +81,9 @@ async function checkComputerUseMemory(): Promise<DoctorCheckResult> {
 
 async function checkOllama(): Promise<DoctorCheckResult> {
   try {
-    const r = await fetch('http://localhost:11434/api/tags', {
-      signal: (AbortSignal as any).timeout ? (AbortSignal as any).timeout(3000) : undefined,
+    const ollamaBase = (process.env.OLLAMA_HOST ?? 'http://127.0.0.1:11434').replace(/\/$/, '')
+    const r = await fetch(`${ollamaBase}/api/tags`, {
+      signal: AbortSignal.timeout(3000),
     })
     if (!r.ok) return { name: 'Ollama', status: 'warn', message: `Ollama HTTP ${r.status}` }
     const data = await r.json() as any
