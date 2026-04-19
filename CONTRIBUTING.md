@@ -1,61 +1,153 @@
 # Contributing to Aiden
 
-Aiden's core (planner, router, memory engine, agent loop) is
-proprietary software owned by Taracod. The community skills
-library is open-source under Apache-2.0 and welcomes contributions.
+Thank you for your interest in contributing! Aiden is an AGPL-3.0 open source project maintained by [Taracod](https://taracod.com). All contributions — bug fixes, skills, documentation, translations — are welcome.
 
-## What you can contribute
+---
 
-### Skills (open for contribution)
-Skills are markdown instruction files that teach Aiden how to do
-specific tasks. If you've built a useful workflow — like
-controlling a piece of software, scraping a specific site,
-handling a domain-specific data format — you can contribute it
-as a skill.
+## Getting Started
 
-See /skills/SKILL_TEMPLATE.md for the required structure.
+### Prerequisites
 
-### Documentation (open for contribution)
-Typo fixes, clearer explanations, missing edge cases — all welcome.
+- **Node.js ≥ 18** (LTS recommended — `node --version`)
+- **Windows 10 or 11** (64-bit) — Aiden is Windows-only at this time
+- **Git** with a configured user name and email
+- **[Ollama](https://ollama.com)** installed and running locally (optional for most unit tests)
 
-### Core Aiden (not open for contribution)
-The core agent loop, planner, router, memory system, and
-associated infrastructure are proprietary and not open for
-community contributions at this time.
+### First-time setup
 
-## How to contribute a skill
+```bash
+git clone https://github.com/taracodlabs/aiden.git
+cd aiden
+npm install
+cp .env.example .env        # fill in values you need for your work
+npm run build               # TypeScript compile + CLI + API bundle
+npm run cli                 # start the TUI to confirm it works
+```
 
-Once the public skills repo opens (expected after Aiden v3.7), the
-flow will be:
+If `npm run build` fails, check Node version first (`node --version` must be ≥ 18).
 
-1. Fork taracodlabs/aiden-skills
-2. Create a new branch: `git checkout -b skill/<name>`
-3. Copy /skills/SKILL_TEMPLATE.md to /skills/<your-skill-name>/SKILL.md
-4. Fill in the template
-5. Test locally: place the skill in your Aiden workspace and run it
-6. Open a PR with your skill and a short description of what it does
+---
 
-Until the public skills repo opens, skill contributions are
-tracked via GitHub issues at github.com/taracodlabs/aiden-releases.
+## Development Workflow
 
-## Code of conduct
+### Branching
 
-Be respectful. Be constructive. Don't submit skills that enable
-harm, violate platform terms of service (e.g., jailbreak tooling,
-scraping that violates target site ToS), or facilitate illegal
-activity.
+Branch off `master` using a descriptive name:
 
-## License
+| Prefix | Purpose |
+|--------|---------|
+| `feature/` | New capabilities |
+| `fix/` | Bug fixes |
+| `chore/` | Build, CI, tooling |
+| `docs/` | Documentation only |
+| `skill/` | New or updated skills |
 
-Contributions to skills and documentation are licensed under
-Apache-2.0. By contributing, you agree your contribution may be
-distributed under this license.
+Example: `git checkout -b fix/ollama-ipv6-windows`
 
-For contributions larger than a typo fix, you'll be asked to sign
-a Contributor License Agreement (CLA) via the CLA bot. This
-confirms you have the right to contribute what you're contributing.
+### Commit messages
 
-## Questions?
+Use [Conventional Commits](https://www.conventionalcommits.org/):
 
-Open an issue at github.com/taracodlabs/aiden-releases or reach out
-via the Ship It newsletter at shipit.taracod.com.
+```
+feat(providers): add Cerebras streaming support
+fix(ollama): use 127.0.0.1 to avoid IPv6 ECONNREFUSED on Windows
+chore(deps): bump playwright to 1.58
+docs(readme): update install section for v3.7
+```
+
+Types: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `style`, `perf`
+
+### Before every commit
+
+```bash
+npx tsc --noEmit    # must be clean — zero errors, zero warnings
+```
+
+### Before opening a PR
+
+```bash
+npm run test:audit  # integration audit suite — confirm nothing regressed
+```
+
+The audit suite is zero-cost (curl + file reads, no token burn). Fix any failures before opening the PR.
+
+---
+
+## Adding a Skill
+
+Skills are the easiest contribution. Each skill is a self-contained directory:
+
+```
+skills/
+  your-skill-name/
+    SKILL.md          ← required: manifest + prompt
+    README.md         ← optional: user-facing docs
+    tools.ts          ← optional: tool implementations
+    examples/         ← optional: usage examples
+```
+
+### SKILL.md manifest format
+
+```markdown
+# skill-name
+
+Short one-line description of what the skill does.
+
+## Trigger
+
+Phrases that activate this skill (used by the skill router):
+- "do X"
+- "help me with Y"
+
+## Tools
+
+List of tool names this skill exposes (if any).
+
+## Prompt
+
+The system prompt injected when this skill is active.
+[Full skill context here]
+```
+
+### Testing a skill locally
+
+1. Place your skill directory under `skills/your-skill-name/`
+2. Start Aiden (`npm run serve` + `npm run cli`)
+3. Type `/skills` to confirm it appears in the registry
+4. Test your trigger phrases in the chat
+
+### License note
+
+Skills ship under **Apache-2.0** (see [LICENSE-SKILLS.md](LICENSE-SKILLS.md)), which allows commercial use without copyleft. By submitting a skill you agree to license it under Apache-2.0.
+
+---
+
+## Pull Request Process
+
+1. Fork the repo, create your branch, commit your changes
+2. Push to your fork and open a PR against `master`
+3. Fill in the PR template — especially **how you tested** and whether there are **breaking changes**
+4. The [CLA Assistant bot](https://cla-assistant.io) will prompt you to sign the Contributor License Agreement on your first PR — this is a one-time step
+5. A maintainer will review within **3–7 business days** (Aiden is solo-maintained; please be patient)
+6. Address review feedback with new commits (don't force-push during review)
+7. Once approved, the maintainer will squash-merge
+
+---
+
+## Code Style
+
+- **TypeScript strict mode** — `tsconfig.json` has `"strict": true`; no `any` escapes without a comment explaining why
+- **No new runtime dependencies** without opening a discussion first — bundle size and supply-chain risk matter
+- **Follow the file's existing patterns** — if a file uses a specific error-handling style, match it
+- **No commented-out code** in PRs — delete it or add a `// TODO:` with a tracking issue number
+- **Imports** — no default exports on new modules; named exports only
+
+---
+
+## Questions
+
+- **Design questions / RFC-style discussion** → open a [GitHub Discussion](https://github.com/taracodlabs/aiden/discussions), not an Issue
+- **Bug reports** → use the [bug report template](.github/ISSUE_TEMPLATE/bug_report.md)
+- **Feature requests** → use the [feature request template](.github/ISSUE_TEMPLATE/feature_request.md)
+- **Security vulnerabilities** → see [SECURITY.md](SECURITY.md); do **not** open a public issue
+- **Anything sensitive** → hello@taracod.com
