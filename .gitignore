@@ -13,6 +13,7 @@ ui/node_modules/
 # ── Build artifacts ───────────────────────────────────────────────────────────
 dist/
 dist-bundle/
+.next/
 dashboard-next/.next/
 dashboard-next/tsconfig.tsbuildinfo
 
@@ -38,6 +39,11 @@ graphify-out/
 cloudflare-worker/wrangler.toml
 .wrangler/
 ui/.vercel/
+
+# ── Secrets & certificates ────────────────────────────────────────────────────
+*.key
+*.pem
+secrets/
 
 # ── OS ────────────────────────────────────────────────────────────────────────
 .DS_Store
