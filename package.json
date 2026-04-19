@@ -1,10 +1,9 @@
 {
   "name": "devos-ai",
-  "version": "3.6.0",
+  "version": "3.7.0",
   "description": "Autonomous AI Operating System — Local, Private, Free. Runs on your machine with Ollama.",
   "author": "Taracod <hello@taracod.com>",
-  "license": "UNLICENSED",
-  "private": true,
+  "license": "AGPL-3.0-only",
   "keywords": [
     "ai",
     "autonomous-agent",
@@ -29,7 +28,7 @@
     "devos": "./dist/index.js",
     "aiden": "./cli/aiden.js"
   },
-  "main": "electron/main.js",
+  "main": "./dist/index.js",
   "files": [
     "dist/",
     "dashboard-next/",
