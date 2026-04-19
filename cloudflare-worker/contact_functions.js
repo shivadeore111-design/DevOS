@@ -118,7 +118,7 @@ function contactSuccessPage(url) {
 <ul>
   <li><a href="https://github.com/taracodlabs/aiden-releases">Browse releases on GitHub</a></li>
   <li><a href="/#download">Install Aiden</a> &mdash; one command, done in under a minute</li>
-  <li><a href="https://discord.gg/TwrWSkph">Join the Discord</a> &mdash; community support &amp; updates</li>
+  <li><a href="https://discord.gg/gMZ3hUnQTm">Join the Discord</a> &mdash; community support &amp; updates</li>
   <li><a href="/#business">Read about the FOR TEAMS offering</a></li>
   <li><a href="/">Back to homepage</a></li>
 </ul>`;
