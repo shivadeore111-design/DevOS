@@ -83,11 +83,28 @@ Install the `.exe` in `release/`, then run `aiden` from any terminal.
 
 ## Screenshots
 
-> _Screenshots live in `docs/images/`. PRs adding them are welcome._
+### Terminal (TUI)
 
-| TUI (terminal) | Desktop app | Web dashboard |
-|---|---|---|
-| `docs/images/tui.png` | `docs/images/desktop.png` | `docs/images/dashboard.png` |
+![TUI](docs/images/tui.png)
+
+Full command palette, 56 skills, 80 tools, automatic provider
+routing (Groq → BOA → Ollama). Runs in any terminal.
+
+### Desktop app
+
+![Desktop](docs/images/dashboard.png)
+
+Full chat interface with live activity panel. Local-first,
+connects to Ollama or any of 13 cloud providers via your
+own API key.
+
+### Memory graph
+
+![Memory graph](docs/images/memory-graph.png)
+
+6-layer memory visualized — every conversation, task, and
+learned pattern becomes a node in the knowledge graph. Fully
+local, persisted to disk, searchable.
 
 ---
 
