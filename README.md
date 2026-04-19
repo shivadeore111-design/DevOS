@@ -1,43 +1,55 @@
-# Aiden
+```
+    ___   _    ___   ___  _  _
+   /   \ | |  |   \ | __|| \| |
+  / /\ / | |_ | |) || _| | .` |
+ /_/\_\  |___||___/ |___||_|\_|
+  local-first AI OS for Windows
+```
 
-> Local-first Windows AI OS · 56 skills · 60+ tools · 13 providers
+**[aiden.taracod.com](https://aiden.taracod.com)** · **[Releases](https://github.com/taracodlabs/aiden-releases/releases)** · **[Contact](https://aiden.taracod.com/contact)**
 
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-blue)](https://github.com/taracodlabs/aiden-releases/releases/latest)
-[![Version](https://img.shields.io/badge/version-v3.7.0-orange)](https://github.com/taracodlabs/aiden-releases/releases/latest)
+[![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078d4)](https://github.com/taracodlabs/aiden-releases/releases/latest)
+[![Version](https://img.shields.io/badge/version-v3.7.0-f97316)](https://github.com/taracodlabs/aiden-releases/releases/latest)
+[![Skills](https://img.shields.io/badge/skills-56-22c55e)](skills/)
+[![Providers](https://img.shields.io/badge/providers-13-a855f7)](providers/)
 
 ---
 
-## What is Aiden?
-
-Aiden is a local-first AI operating system that runs entirely on your Windows machine. It combines a full terminal UI, a web dashboard, 60+ autonomous tools, and a plugin-style skill system — all powered by local models via [Ollama](https://ollama.com) with optional cloud provider fallback. No data leaves your hardware unless you configure a cloud API key. At v3.7.0, Aiden ships as a signed installer with auto-updates, a 6-layer memory architecture, self-healing provider routing, and the ability to control your screen, browse the web, run code, send emails, manage files, and talk to you — entirely offline.
+Aiden is a local-first AI operating system for Windows. It runs entirely on your machine — no cloud account required, no telemetry, no data leaving your hardware unless you configure a cloud API key. At v3.7.0 it ships as a signed installer with auto-updates, 56 composable skills, 60+ autonomous tools, a 6-layer memory architecture, self-healing provider routing, and the ability to control your screen, browse the web, run code, send emails, manage files, and hold a full conversation — entirely offline via Ollama.
 
 ---
 
-## Features
+## Quick links
 
-- **Local-first inference** — runs on Ollama (Llama 3, Mistral, Qwen, Gemma, and more); cloud providers (OpenAI, Anthropic, Groq, Cerebras, NVIDIA NIM, OpenRouter) are optional fallbacks
-- **60+ built-in tools** — web search, file read/write, shell execution, browser automation (Playwright), screen capture & OCR, calendar, email (IMAP/SMTP), and more
-- **56 installable skills** — composable plugins that teach Aiden new domains (stock research, code review, image generation, Minecraft server setup, Pokémon emulation, and more)
-- **Subagent swarm** — spawn N parallel agents on a task, then vote, merge, or pick the best result
-- **6-layer memory** — episodic, semantic (BM25 + vector), procedural, skill, goal, and LESSONS.md permanent-failure moat
-- **Self-healing provider chain** — exponential backoff, keepalive, fast-path routing; Aiden never drops a request
-- **Voice layer** — speech-to-text (Groq → OpenAI → local Whisper.cpp) + text-to-speech (Edge TTS → ElevenLabs → Windows SAPI)
-- **Channel adapters** — Discord, Slack, Telegram, WhatsApp, Email, Webhook, and Twilio out of the box
-- **Computer use** — takes screenshots, reads screen state, and performs GUI automation when asked
-- **Self-evolution** — analyses its own past failures and appends permanent rules to `LESSONS.md`; the moat grows every session
+| | |
+|---|---|
+| **Install (one command)** | `irm aiden.taracod.com/install.ps1 \| iex` |
+| **Download installer** | [Aiden-Setup-3.7.0.exe](https://github.com/taracodlabs/aiden-releases/releases/download/v3.7.0/Aiden-Setup-3.7.0.exe) |
+| **Releases & changelog** | [github.com/taracodlabs/aiden-releases](https://github.com/taracodlabs/aiden-releases) |
+| **Landing page** | [aiden.taracod.com](https://aiden.taracod.com) |
+| **Contact / commercial** | [aiden.taracod.com/contact](https://aiden.taracod.com/contact) |
+| **License** | AGPL-3.0 core · Apache-2.0 skills |
 
 ---
 
 ## Install
 
-### Option A — Download installer (recommended)
+### One command (PowerShell 5.1+, Windows 10/11)
 
-**[→ Download Aiden v3.7.0 for Windows](https://github.com/taracodlabs/aiden-releases/releases/latest)**
+```powershell
+irm aiden.taracod.com/install.ps1 | iex
+```
 
-Run `Aiden-Setup-3.7.0.exe`. Aiden installs with auto-update support — install once, stay current.
+Downloads and runs the signed installer, then places `aiden` on your PATH. Run `aiden pc` to launch.
 
-### Option B — Build from source
+### Download the installer directly
+
+**[→ Aiden-Setup-3.7.0.exe](https://github.com/taracodlabs/aiden-releases/releases/download/v3.7.0/Aiden-Setup-3.7.0.exe)**
+
+Run the installer. Aiden auto-updates after first launch — install once, stay current.
+
+### Build from source
 
 Requires: Node.js ≥ 18, Windows 10/11 (64-bit), [Ollama](https://ollama.com) installed and running.
 
@@ -46,43 +58,84 @@ git clone https://github.com/taracodlabs/aiden.git
 cd aiden
 npm install
 npm run build          # TypeScript compile + CLI + API bundle
-npm run dist           # Build signed Windows installer → release/
+npm run dist           # Signed Windows installer → release/
 ```
 
-The installer lands in `release/`. Install it, then run `aiden` from any terminal.
+Install the `.exe` in `release/`, then run `aiden` from any terminal.
 
 ---
 
-## Running Aiden
+## Features
 
-### Desktop app (recommended)
+| Category | What Aiden does |
+|---|---|
+| **Inference & providers** | Local Ollama (Llama 3, Mistral, Qwen, Gemma, Phi…) with optional cloud fallback to OpenAI, Anthropic, Groq, Cerebras, NVIDIA NIM, OpenRouter, and more — 13 providers total |
+| **60+ tools** | Web search, file read/write, shell execution, Playwright browser automation, screen capture & OCR, calendar, email (IMAP/SMTP), code execution sandbox, clipboard, system info |
+| **56 skills** | Composable plugins each with a `SKILL.md` prompt, tool implementations, and optional sandbox runner — install per-session or globally |
+| **Subagent swarm** | Spawn N parallel agents on any task; vote, merge, or pick the best result automatically |
+| **6-layer memory** | Episodic (in-context), BM25 keyword, vector semantic, procedural (skill), goal tracking, and `LESSONS.md` permanent-failure moat that grows every session |
+| **Voice** | Speech-to-text (Groq → OpenAI → local Whisper.cpp) + text-to-speech (Edge TTS → ElevenLabs → Windows SAPI); full offline voice loop |
+| **Channel adapters** | Discord, Slack, Telegram, WhatsApp, Email, Webhook, Twilio — any channel triggers the same agent loop |
+| **Computer use** | Screenshots, screen state reader, GUI automation via keyboard/mouse when asked — full OS control mode |
 
-```cmd
-aiden pc
+---
+
+## Screenshots
+
+> _Screenshots live in `docs/images/`. PRs adding them are welcome._
+
+| TUI (terminal) | Desktop app | Web dashboard |
+|---|---|---|
+| `docs/images/tui.png` | `docs/images/desktop.png` | `docs/images/dashboard.png` |
+
+---
+
+## Architecture
+
+```
+User input (any channel)
+        │
+        ▼
+  ┌─────────────┐
+  │  Planner    │  ← breaks task into steps
+  └──────┬──────┘
+         │
+         ▼
+  ┌─────────────┐     ┌──────────────────┐
+  │  Agent loop │────▶│  Tool dispatcher │──▶ 60+ tools
+  │  agentLoop  │     └──────────────────┘
+  └──────┬──────┘
+         │
+         ▼
+  ┌─────────────────────────────────┐
+  │  Memory (6 layers)              │
+  │  episodic · BM25 · vector ·     │
+  │  procedural · goal · LESSONS.md │
+  └─────────────────────────────────┘
+         │
+         ▼
+  ┌─────────────┐
+  │  Provider   │  ← self-healing chain, 13 providers
+  │  router     │
+  └─────────────┘
+         │
+         ▼
+     Response (streamed to originating channel)
 ```
 
-Launches the Electron desktop app. The API server starts automatically.
-
-### Terminal / TUI mode
-
-```cmd
-npm run serve          # start API server on :4200
-npm run cli            # start the TUI (separate terminal)
-```
-
-Once running, explore with `/help`, `/tools`, `/skills`, `/providers`.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for a full layer-by-layer breakdown, data flow diagrams, and the skill system design.
 
 ---
 
 ## Configuration
 
-Copy `.env.example` to `.env` in the Aiden data directory and fill in the values you need.
+Copy `.env.example` to `.env` in the Aiden data directory.
 
 ```bash
 cp .env.example .env
 ```
 
-Key settings:
+Key environment variables:
 
 | Variable | Default | Notes |
 |---|---|---|
@@ -91,16 +144,9 @@ Key settings:
 | `ANTHROPIC_API_KEY` | — | Optional cloud fallback |
 | `OPENAI_API_KEY` | — | Optional cloud fallback |
 | `GROQ_API_KEY` | — | Free tier: fast Llama 3 inference |
+| `DAILY_BUDGET_USD` | `5.00` | Hard cap on daily cloud API spend |
 
-See `.env.example` for the full list of ~90 variables covering messaging integrations, voice, search, and more.
-
----
-
-## Architecture
-
-Aiden's core is an autonomous agent loop (`core/agentLoop.ts`) that routes each user message through a planner, a set of tool-calling steps, and a responder. Memory is split across six layers: in-context episodic, BM25 keyword search, vector semantic search, procedural (skill scripts), goal tracking, and the permanent `LESSONS.md` moat. Skills (`skills/`) are self-contained directories each with a `SKILL.md` prompt, tool implementations, and an optional sandbox runner. The provider router (`providers/router.ts`) tries each configured provider in priority order with automatic retry and keepalive.
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for a full diagram and layer-by-layer breakdown.
+See `.env.example` for the full list of ~90 variables covering voice, messaging integrations, search, computer use, and more.
 
 ---
 
@@ -108,21 +154,10 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for a full diagram and layer-by-layer bre
 
 Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide.
 
-Quick summary:
-- Bug fixes and skill contributions are the easiest entry points
-- All contributors must sign the [Contributor License Agreement](.github/CLA.md) (one-time, via PR comment)
-- Commit messages must follow [Conventional Commits](https://www.conventionalcommits.org/)
+- Bug fixes and new skills are the easiest entry points
+- All contributors sign the [CLA](.github/CLA.md) once via PR comment
+- Follow [Conventional Commits](https://www.conventionalcommits.org/)
 - Run `npx tsc --noEmit` before opening a PR
-
----
-
-## Commercial Use
-
-Aiden's core is **AGPL-3.0**. You can self-host, study, and modify it freely. If you embed Aiden in a commercial product or offer it as a hosted service, AGPL-3.0 requires you to release your modifications under the same license — **or** purchase a commercial license that removes this requirement.
-
-For commercial licensing inquiries: **hello@taracod.com**
-
-Skills in `skills/` are licensed under **Apache-2.0** (see [LICENSE-SKILLS.md](LICENSE-SKILLS.md)) and can be used in commercial products without copyleft obligations.
 
 ---
 
@@ -133,6 +168,14 @@ Skills in `skills/` are licensed under **Apache-2.0** (see [LICENSE-SKILLS.md](L
 | Core (`src/`, `cli/`, `api/`, `core/`, `providers/`, `dashboard-next/`) | [AGPL-3.0-only](LICENSE) |
 | Skills (`skills/`) | [Apache-2.0](LICENSE-SKILLS.md) |
 
+## Commercial use
+
+Aiden's core is **AGPL-3.0**. You can self-host, modify, and study it freely. Embedding it in a commercial product or offering it as a hosted service requires either releasing your modifications under AGPL-3.0 or purchasing a commercial license.
+
+Skills in `skills/` are **Apache-2.0** and can be used in commercial products without copyleft obligations.
+
+For commercial licensing and enterprise deployments: **[aiden.taracod.com/contact?type=enterprise](https://aiden.taracod.com/contact?type=enterprise)**
+
 ---
 
-Built by [Taracod](https://taracod.com) · Made in India
+Built by [Taracod](https://taracod.com) · Made in India · AGPL-3.0
