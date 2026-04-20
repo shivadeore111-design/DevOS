@@ -595,7 +595,7 @@ async function main(): Promise<void> {
         }
 
         // Check 4: GitHub visibility reminder
-        console.log('  ⚠  Verify GitHub repo is private: github.com/shivadeore111-design/DevOS')
+        console.log('  ⚠  Verify GitHub repo is public: github.com/taracodlabs/aiden')
 
         console.log(`\n  ${issues === 0 ? '✓ Clean' : `✗ ${issues} issue(s) found`}\n`)
       } catch (err: any) {

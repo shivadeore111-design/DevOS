@@ -312,4 +312,4 @@ bridge — delegate sub-tasks to other coding agents
 
 **Total: 102 commits since v3.1.0.**
 
-Full commit list: [v3.1.0...v3.5.0](https://github.com/shivadeore111-design/DevOS/compare/v3.1.0...v3.5.0)
+Full commit list: [v3.1.0...v3.5.0](https://github.com/taracodlabs/aiden/compare/v3.1.0...v3.5.0)

@@ -15,7 +15,7 @@ local-first AI operating system for Windows
   <a href="https://github.com/taracodlabs/aiden-releases/releases"><img src="https://img.shields.io/github/downloads/taracodlabs/aiden-releases/total?color=f97316&label=downloads" alt="Downloads" /></a>
   <a href="https://discord.gg/gMZ3hUnQTm"><img src="https://img.shields.io/badge/chat-discord-7289da?logo=discord&logoColor=white" alt="Discord" /></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-orange" alt="License: AGPL-3.0" /></a>
-  <a href="https://github.com/shivadeore111-design/DevOS/stargazers"><img src="https://img.shields.io/github/stars/shivadeore111-design/DevOS?style=flat&color=f9d71c" alt="Stars" /></a>
+  <a href="https://github.com/taracodlabs/aiden/stargazers"><img src="https://img.shields.io/github/stars/taracodlabs/aiden?style=flat&color=f9d71c" alt="Stars" /></a>
 </p>
 
 <p align="center">
