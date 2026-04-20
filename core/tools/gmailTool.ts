@@ -9,6 +9,11 @@
 //     guarded behind a try/catch so missing packages don't crash
 //     the server. Full IMAP read will land in v1.2 once the
 //     imap-simple package is added to dependencies.
+//
+// NOTE: imap-simple brings transitive vulns
+// (semver/tough-cookie/qs/form-data). Acceptable
+// because this tool is optional and only runs when
+// a skill explicitly invokes Gmail operations.
 
 // ── Types ──────────────────────────────────────────────────────
 
