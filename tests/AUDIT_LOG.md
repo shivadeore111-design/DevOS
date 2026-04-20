@@ -4944,3 +4944,1608 @@
 | 38 | cli-prod: no source file contains bare require("../package.json") outside electron/preload.js | ✓ | 2 | ok |
 | 39 | cli-prod: prebuild:api and prebuild:cli scripts exist, and core/version.ts is present | ✓ | 1 | ok |
 | 40 | cli-prod: dist-bundle/index.js contains version literal, no require(package.json) | ✓ | 191 | ok |
+
+## 2026-04-18T09:33:50.560Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | panel(): no-title top/bottom border equals body row width | ✓ | 199 | ok |
+| 2 | panel(): titled top border equals body row width | ✓ | 0 | ok |
+| 3 | panel(): minimum outer width is 50 chars | ✓ | 0 | ok |
+| 4 | Skill interface: origin field present on parsed skills | ✓ | 102 | ok |
+| 5 | SkillLoader: origin inferred as aiden vs local from filePath | ✓ | 0 | ok |
+| 6 | parseLessons(): returns [] safely when LESSONS.md absent | ✓ | 16 | ok |
+| 7 | filterLessons(): keyword filter returns correct subset | ✓ | 0 | ok |
+| 8 | COMMAND_DETAIL: no section is named Hermes (renamed to Core) | ✓ | 2 | ok |
+
+## 2026-04-18T09:33:55.545Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | aidenSdk: exports getSdkMethods, getSdkNamespaces, buildSdkSurface, buildSdkRuntime | ✓ | 1138 | ok |
+| 2 | aidenSdk: getSdkMethods() covers all required namespaces | ✓ | 0 | ok |
+| 3 | aidenSdk: getSdkNamespaces() returns sorted array | ✓ | 0 | ok |
+| 4 | aidenSdk: buildSdkSurface() includes expected namespace headers | ✓ | 16 | ok |
+| 5 | aidenSdk: buildSdkRuntime() returns object with all namespace keys | ✓ | 1 | ok |
+| 6 | runSandbox: module exports runInSandbox function | ✓ | 12 | ok |
+| 7 | toolRegistry: run tool is registered + getToolsForCategories includes run | ✓ | 0 | ok |
+| 8 | scripts/: 5 Prompt-12 example scripts exist and use the aiden SDK | ✓ | 1 | ok |
+
+## 2026-04-18T09:34:01.142Z — 10/10 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | spawnManager: exports spawnSubagent, getActiveSpawns, killSpawn + interfaces | ✓ | 1695 | ok |
+| 2 | spawnManager: getActiveSpawns() returns an array (empty or otherwise) | ✓ | 1 | ok |
+| 3 | spawnManager: killSpawn("nonexistent") returns false | ✓ | 0 | ok |
+| 4 | spawnManager: IterationBudget shape used in budget inheritance formula | ✓ | 1 | ok |
+| 5 | swarmManager: exports swarmSubagents function + SwarmStrategy types | ✓ | 10 | ok |
+| 6 | swarmManager: source contains vote, merge, best strategy branches | ✓ | 1 | ok |
+| 7 | sessionSearch: exports searchSessions and getIndexSize | ✓ | 13 | ok |
+| 8 | sessionSearch: searchSessions("test") returns an array | ✓ | 32 | ok |
+| 9 | hybridSearch: exports hybridSearch function | ✓ | 10 | ok |
+| 10 | toolRegistry: spawn, swarm, search tools registered in TOOLS + TOOL_CATEGORIES | ✓ | 1 | ok |
+
+## 2026-04-18T09:34:05.008Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | release: package.json version === "3.6.0" | ✓ | 0 | ok |
+| 2 | release: CHANGELOG.md contains "## v3.5.0" header | ✓ | 1 | ok |
+| 3 | release: local git tag v3.5.0 exists | ✓ | 57 | ok |
+| 4 | release: no stale 3.1.0 or 3.4.0 version strings in source files | ✓ | 3 | ok |
+| 5 | release: CHANGELOG.md references "34 zero-cost audits across 4 suites" | ✓ | 0 | ok |
+| 6 | release: Aiden-Setup-3.5.0.exe exists in release/ and is > 100 MB | ✓ | 1 | ok |
+| 7 | release: package.json test:audit script includes prompt_r1 | ✓ | 1 | ok |
+| 8 | release: all 4 audit suite files exist (prompt_11 · 12 · 13 · r1) | ✓ | 1 | ok |
+
+## 2026-04-18T09:34:08.909Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | skills: all 20 SKILL.md files exist | ✓ | 2 | ok |
+| 2 | skills: each SKILL.md has name, description, version, tags in frontmatter | ✓ | 3 | ok |
+| 3 | skills: each SKILL.md has a # H1 header | ✓ | 2 | ok |
+| 4 | skills: each SKILL.md has "When to Use" and "How to Use" sections | ✓ | 2 | ok |
+| 5 | skills: no SKILL.md contains security-blocked injection patterns | ✓ | 3 | ok |
+| 6 | skills: each SKILL.md is under 10 KB | ✓ | 1 | ok |
+| 7 | skills: AIDEN_CATALOG.md exists and references all 20 skills | ✓ | 1 | ok |
+| 8 | skills: package.json test:audit script includes prompt_15 | ✓ | 0 | ok |
+
+## 2026-04-18T09:34:12.719Z — 5/5 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | cleanup: all workspace/skills files pass structural validation | ✓ | 1 | ok |
+| 2 | cleanup: no duplicate skill names across learned/ and approved/ | ✓ | 1 | ok |
+| 3 | cleanup: known garbage skills have been deleted | ✓ | 0 | ok |
+| 4 | cleanup: skillTeacher.ts has header, origin:local, and size validation | ✓ | 1 | ok |
+| 5 | cleanup: all official skills/ pass structural validation | ✓ | 12 | ok |
+
+## 2026-04-18T09:34:16.504Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | mcp: McpServerConfig and McpTool interfaces exported from mcpClient | ✓ | 1 | ok |
+| 2 | mcp: named function exports connectMcpServer/disconnectMcpServer/listMcpServers/listMcpTools/callMcpTool | ✓ | 1 | ok |
+| 3 | mcp: mcpClient.ts contains JSON-RPC initialize, tools/list, tools/call | ✓ | 0 | ok |
+| 4 | mcp: workspace/config/mcp.json template exists with servers array | ✓ | 0 | ok |
+| 5 | shell-wedges: cmd/ps/wsl registered in toolRegistry.ts TOOLS and TOOL_DESCRIPTIONS | ✓ | 1 | ok |
+| 6 | mcp: toolRegistry.ts routes colon-prefix tool names to callMcpTool | ✓ | 0 | ok |
+| 7 | sdk: aidenSdk.ts has cmd/ps/wsl in shell and mcp namespace | ✓ | 1 | ok |
+| 8 | cli: /mcp /cmd /ps /wsl registered in COMMANDS and handled in handleCommand | ✓ | 1 | ok |
+
+## 2026-04-18T09:34:20.303Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | r2: cloudflare-worker/landing.js exists and is non-trivial | ✓ | 0 | ok |
+| 2 | r2: landing.js contains zero occurrences of 3.3.1 | ✓ | 1 | ok |
+| 3 | r2: nav badge contains v3.6.0 | ✓ | 1 | ok |
+| 4 | r2: hero "JUST UPDATED" badge shows v3.6.0 | ✓ | 0 | ok |
+| 5 | r2: download URL references v3.6.0/Aiden-Setup-3.6.0.exe | ✓ | 1 | ok |
+| 6 | r2: download section h2 reads "Download Aiden v3.6.0" | ✓ | 0 | ok |
+| 7 | r2: Razorpay integration preserved (≥1 occurrence) | ✓ | 1 | ok |
+| 8 | r2: exactly 5 occurrences of "3.6.0" in landing.js | ✓ | 0 | ok |
+
+## 2026-04-18T09:34:24.054Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | r3: electron-updater present in package.json dependencies | ✓ | 1 | ok |
+| 2 | r3: electron-builder publish config has github/taracodlabs/aiden-releases | ✓ | 0 | ok |
+| 3 | r3: electron/main.js requires electron-updater and calls checkForUpdatesAndNotify | ✓ | 0 | ok |
+| 4 | r3: electron/main.js has ipcMain.handle for install-update-now and check-for-update | ✓ | 0 | ok |
+| 5 | r3: electron/preload.js exposes aidenUpdater with installNow and checkNow | ✓ | 0 | ok |
+| 6 | r3: cli/aiden.ts /refresh handler references update-check function | ✓ | 1 | ok |
+| 7 | r3: no localhost/127.0.0.1 in update-related config in main.js | ✓ | 0 | ok |
+| 8 | r3: publish config structure is valid for electron-updater GitHub provider | ✓ | 0 | ok |
+
+## 2026-04-18T09:34:28.227Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | p16: ChannelAdapter interface has name, start, stop, send, isHealthy | ✓ | 0 | ok |
+| 2 | p16: Discord adapter has DISCORD_BOT_TOKEN, discord.js import, graceful degradation | ✓ | 0 | ok |
+| 3 | p16: Slack adapter has SLACK_BOT_TOKEN, @slack/bolt import, signing secret | ✓ | 1 | ok |
+| 4 | p16: Webhook adapter has WEBHOOK_SECRET, HMAC, and signature header check | ✓ | 0 | ok |
+| 5 | p16: ChannelManager class has register, startAll, getStatus | ✓ | 0 | ok |
+| 6 | p16: /channels command is in CLI COMMANDS array | ✓ | 1 | ok |
+| 7 | p16: no process.exit or uncaught throw in adapter config loading sections | ✓ | 1 | ok |
+| 8 | p16: ALLOWED_ env var used in discord, slack, and webhook adapters | ✓ | 0 | ok |
+
+## 2026-04-18T09:34:32.050Z — 10/10 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | p17: stt.ts exports transcribe(), SttResult, SttOptions, getSttProviders() | ✓ | 0 | ok |
+| 2 | p17: stt.ts has Groq, OpenAI, and local whisper-cli fallback chain | ✓ | 1 | ok |
+| 3 | p17: tts.ts exports synthesize(), TtsResult, TtsOptions, getTtsProviders() | ✓ | 0 | ok |
+| 4 | p17: tts.ts has Edge TTS, ElevenLabs, and SAPI fallback chain | ✓ | 0 | ok |
+| 5 | p17: tts.ts exports cleanForTTS() that strips markdown | ✓ | 0 | ok |
+| 6 | p17: audio.ts exports recordAudio(), playAudio(), checkAudioAvailable() | ✓ | 1 | ok |
+| 7 | p17: audio.ts recordAudio() takes durationSeconds and outputPath parameters | ✓ | 0 | ok |
+| 8 | p17: /voice /speak /listen commands registered in CLI COMMANDS array and handleCommand | ✓ | 1 | ok |
+| 9 | p17: CLI state has voiceMode flag; TTS called after AI reply when voiceMode is on | ✓ | 1 | ok |
+| 10 | p17: aidenSdk.ts has voice namespace; aiden-sdk.d.ts has AidenVoice interface | ✓ | 0 | ok |
+
+## 2026-04-18T09:35:24.056Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | panel(): no-title top/bottom border equals body row width | ✓ | 200 | ok |
+| 2 | panel(): titled top border equals body row width | ✓ | 0 | ok |
+| 3 | panel(): minimum outer width is 50 chars | ✓ | 0 | ok |
+| 4 | Skill interface: origin field present on parsed skills | ✓ | 97 | ok |
+| 5 | SkillLoader: origin inferred as aiden vs local from filePath | ✓ | 1 | ok |
+| 6 | parseLessons(): returns [] safely when LESSONS.md absent | ✓ | 15 | ok |
+| 7 | filterLessons(): keyword filter returns correct subset | ✓ | 0 | ok |
+| 8 | COMMAND_DETAIL: no section is named Hermes (renamed to Core) | ✓ | 2 | ok |
+
+## 2026-04-18T09:35:29.110Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | aidenSdk: exports getSdkMethods, getSdkNamespaces, buildSdkSurface, buildSdkRuntime | ✓ | 1172 | ok |
+| 2 | aidenSdk: getSdkMethods() covers all required namespaces | ✓ | 1 | ok |
+| 3 | aidenSdk: getSdkNamespaces() returns sorted array | ✓ | 0 | ok |
+| 4 | aidenSdk: buildSdkSurface() includes expected namespace headers | ✓ | 14 | ok |
+| 5 | aidenSdk: buildSdkRuntime() returns object with all namespace keys | ✓ | 1 | ok |
+| 6 | runSandbox: module exports runInSandbox function | ✓ | 12 | ok |
+| 7 | toolRegistry: run tool is registered + getToolsForCategories includes run | ✓ | 0 | ok |
+| 8 | scripts/: 5 Prompt-12 example scripts exist and use the aiden SDK | ✓ | 2 | ok |
+
+## 2026-04-18T09:35:34.834Z — 10/10 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | spawnManager: exports spawnSubagent, getActiveSpawns, killSpawn + interfaces | ✓ | 1759 | ok |
+| 2 | spawnManager: getActiveSpawns() returns an array (empty or otherwise) | ✓ | 1 | ok |
+| 3 | spawnManager: killSpawn("nonexistent") returns false | ✓ | 0 | ok |
+| 4 | spawnManager: IterationBudget shape used in budget inheritance formula | ✓ | 0 | ok |
+| 5 | swarmManager: exports swarmSubagents function + SwarmStrategy types | ✓ | 12 | ok |
+| 6 | swarmManager: source contains vote, merge, best strategy branches | ✓ | 0 | ok |
+| 7 | sessionSearch: exports searchSessions and getIndexSize | ✓ | 11 | ok |
+| 8 | sessionSearch: searchSessions("test") returns an array | ✓ | 35 | ok |
+| 9 | hybridSearch: exports hybridSearch function | ✓ | 11 | ok |
+| 10 | toolRegistry: spawn, swarm, search tools registered in TOOLS + TOOL_CATEGORIES | ✓ | 0 | ok |
+
+## 2026-04-18T09:35:38.749Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | release: package.json version === "3.6.0" | ✓ | 1 | ok |
+| 2 | release: CHANGELOG.md contains "## v3.5.0" header | ✓ | 0 | ok |
+| 3 | release: local git tag v3.5.0 exists | ✓ | 57 | ok |
+| 4 | release: no stale 3.1.0 or 3.4.0 version strings in source files | ✓ | 3 | ok |
+| 5 | release: CHANGELOG.md references "34 zero-cost audits across 4 suites" | ✓ | 0 | ok |
+| 6 | release: Aiden-Setup-3.5.0.exe exists in release/ and is > 100 MB | ✓ | 0 | ok |
+| 7 | release: package.json test:audit script includes prompt_r1 | ✓ | 1 | ok |
+| 8 | release: all 4 audit suite files exist (prompt_11 · 12 · 13 · r1) | ✓ | 0 | ok |
+
+## 2026-04-18T09:35:42.582Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | skills: all 20 SKILL.md files exist | ✓ | 2 | ok |
+| 2 | skills: each SKILL.md has name, description, version, tags in frontmatter | ✓ | 3 | ok |
+| 3 | skills: each SKILL.md has a # H1 header | ✓ | 3 | ok |
+| 4 | skills: each SKILL.md has "When to Use" and "How to Use" sections | ✓ | 2 | ok |
+| 5 | skills: no SKILL.md contains security-blocked injection patterns | ✓ | 3 | ok |
+| 6 | skills: each SKILL.md is under 10 KB | ✓ | 1 | ok |
+| 7 | skills: AIDEN_CATALOG.md exists and references all 20 skills | ✓ | 1 | ok |
+| 8 | skills: package.json test:audit script includes prompt_15 | ✓ | 0 | ok |
+
+## 2026-04-18T09:35:46.400Z — 5/5 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | cleanup: all workspace/skills files pass structural validation | ✓ | 1 | ok |
+| 2 | cleanup: no duplicate skill names across learned/ and approved/ | ✓ | 0 | ok |
+| 3 | cleanup: known garbage skills have been deleted | ✓ | 1 | ok |
+| 4 | cleanup: skillTeacher.ts has header, origin:local, and size validation | ✓ | 0 | ok |
+| 5 | cleanup: all official skills/ pass structural validation | ✓ | 13 | ok |
+
+## 2026-04-18T09:35:50.344Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | mcp: McpServerConfig and McpTool interfaces exported from mcpClient | ✓ | 1 | ok |
+| 2 | mcp: named function exports connectMcpServer/disconnectMcpServer/listMcpServers/listMcpTools/callMcpTool | ✓ | 0 | ok |
+| 3 | mcp: mcpClient.ts contains JSON-RPC initialize, tools/list, tools/call | ✓ | 0 | ok |
+| 4 | mcp: workspace/config/mcp.json template exists with servers array | ✓ | 0 | ok |
+| 5 | shell-wedges: cmd/ps/wsl registered in toolRegistry.ts TOOLS and TOOL_DESCRIPTIONS | ✓ | 1 | ok |
+| 6 | mcp: toolRegistry.ts routes colon-prefix tool names to callMcpTool | ✓ | 0 | ok |
+| 7 | sdk: aidenSdk.ts has cmd/ps/wsl in shell and mcp namespace | ✓ | 0 | ok |
+| 8 | cli: /mcp /cmd /ps /wsl registered in COMMANDS and handled in handleCommand | ✓ | 2 | ok |
+
+## 2026-04-18T09:35:54.472Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | r2: cloudflare-worker/landing.js exists and is non-trivial | ✓ | 1 | ok |
+| 2 | r2: landing.js contains zero occurrences of 3.3.1 | ✓ | 1 | ok |
+| 3 | r2: nav badge contains v3.6.0 | ✓ | 1 | ok |
+| 4 | r2: hero "JUST UPDATED" badge shows v3.6.0 | ✓ | 1 | ok |
+| 5 | r2: download URL references v3.6.0/Aiden-Setup-3.6.0.exe | ✓ | 1 | ok |
+| 6 | r2: download section h2 reads "Download Aiden v3.6.0" | ✓ | 0 | ok |
+| 7 | r2: Razorpay integration preserved (≥1 occurrence) | ✓ | 1 | ok |
+| 8 | r2: exactly 5 occurrences of "3.6.0" in landing.js | ✓ | 1 | ok |
+
+## 2026-04-18T09:35:58.383Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | r3: electron-updater present in package.json dependencies | ✓ | 1 | ok |
+| 2 | r3: electron-builder publish config has github/taracodlabs/aiden-releases | ✓ | 0 | ok |
+| 3 | r3: electron/main.js requires electron-updater and calls checkForUpdatesAndNotify | ✓ | 0 | ok |
+| 4 | r3: electron/main.js has ipcMain.handle for install-update-now and check-for-update | ✓ | 0 | ok |
+| 5 | r3: electron/preload.js exposes aidenUpdater with installNow and checkNow | ✓ | 1 | ok |
+| 6 | r3: cli/aiden.ts /refresh handler references update-check function | ✓ | 1 | ok |
+| 7 | r3: no localhost/127.0.0.1 in update-related config in main.js | ✓ | 0 | ok |
+| 8 | r3: publish config structure is valid for electron-updater GitHub provider | ✓ | 0 | ok |
+
+## 2026-04-18T09:36:02.231Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | p16: ChannelAdapter interface has name, start, stop, send, isHealthy | ✓ | 0 | ok |
+| 2 | p16: Discord adapter has DISCORD_BOT_TOKEN, discord.js import, graceful degradation | ✓ | 1 | ok |
+| 3 | p16: Slack adapter has SLACK_BOT_TOKEN, @slack/bolt import, signing secret | ✓ | 0 | ok |
+| 4 | p16: Webhook adapter has WEBHOOK_SECRET, HMAC, and signature header check | ✓ | 0 | ok |
+| 5 | p16: ChannelManager class has register, startAll, getStatus | ✓ | 0 | ok |
+| 6 | p16: /channels command is in CLI COMMANDS array | ✓ | 1 | ok |
+| 7 | p16: no process.exit or uncaught throw in adapter config loading sections | ✓ | 1 | ok |
+| 8 | p16: ALLOWED_ env var used in discord, slack, and webhook adapters | ✓ | 0 | ok |
+
+## 2026-04-18T09:36:06.150Z — 10/10 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | p17: stt.ts exports transcribe(), SttResult, SttOptions, getSttProviders() | ✓ | 0 | ok |
+| 2 | p17: stt.ts has Groq, OpenAI, and local whisper-cli fallback chain | ✓ | 0 | ok |
+| 3 | p17: tts.ts exports synthesize(), TtsResult, TtsOptions, getTtsProviders() | ✓ | 1 | ok |
+| 4 | p17: tts.ts has Edge TTS, ElevenLabs, and SAPI fallback chain | ✓ | 0 | ok |
+| 5 | p17: tts.ts exports cleanForTTS() that strips markdown | ✓ | 0 | ok |
+| 6 | p17: audio.ts exports recordAudio(), playAudio(), checkAudioAvailable() | ✓ | 0 | ok |
+| 7 | p17: audio.ts recordAudio() takes durationSeconds and outputPath parameters | ✓ | 0 | ok |
+| 8 | p17: /voice /speak /listen commands registered in CLI COMMANDS array and handleCommand | ✓ | 1 | ok |
+| 9 | p17: CLI state has voiceMode flag; TTS called after AI reply when voiceMode is on | ✓ | 0 | ok |
+| 10 | p17: aidenSdk.ts has voice namespace; aiden-sdk.d.ts has AidenVoice interface | ✓ | 1 | ok |
+
+## 2026-04-18T09:36:37.253Z — 9/10 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | timer: cli/aiden.ts renderActivity() shows elapsed seconds | ✓ | 1 | ok |
+| 2 | timer: cli/aiden.ts status bar passes startedAt-based elapsedMs | ✓ | 1 | ok |
+| 3 | timer: cli/aiden.ts uses VERSION from core/version for display | ✓ | 0 | ok |
+| 4 | timer: electron/preload.js has no hardcoded 3.5.0 | ✓ | 0 | ok |
+| 5 | timer: cloudflare-worker/license-server.js has no 3.5.0 references | ✓ | 0 | ok |
+| 6 | timer: index.ts startup log fallback is not 3.5.0 | ✗ | 0 | ENOENT: no such file or directory, open 'C:\Users\shiva\DevOS\index.ts' |
+| 7 | timer: core/skillTeacher.ts min size gate is 200 bytes | ✓ | 0 | ok |
+| 8 | timer: core/skillTeacher.ts has SESSION_SKILL_LIMIT = 2 | ✓ | 0 | ok |
+| 9 | timer: core/skillTeacher.ts dedup includes BUNDLED_SKILLS_DIR | ✓ | 0 | ok |
+| 10 | timer: workspace/skills/learned/ and approved/ are empty | ✓ | 0 | ok |
+
+## 2026-04-18T09:36:47.551Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | panel(): no-title top/bottom border equals body row width | ✓ | 196 | ok |
+| 2 | panel(): titled top border equals body row width | ✓ | 0 | ok |
+| 3 | panel(): minimum outer width is 50 chars | ✓ | 0 | ok |
+| 4 | Skill interface: origin field present on parsed skills | ✓ | 100 | ok |
+| 5 | SkillLoader: origin inferred as aiden vs local from filePath | ✓ | 0 | ok |
+| 6 | parseLessons(): returns [] safely when LESSONS.md absent | ✓ | 16 | ok |
+| 7 | filterLessons(): keyword filter returns correct subset | ✓ | 0 | ok |
+| 8 | COMMAND_DETAIL: no section is named Hermes (renamed to Core) | ✓ | 1 | ok |
+
+## 2026-04-18T09:36:52.669Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | aidenSdk: exports getSdkMethods, getSdkNamespaces, buildSdkSurface, buildSdkRuntime | ✓ | 1156 | ok |
+| 2 | aidenSdk: getSdkMethods() covers all required namespaces | ✓ | 1 | ok |
+| 3 | aidenSdk: getSdkNamespaces() returns sorted array | ✓ | 0 | ok |
+| 4 | aidenSdk: buildSdkSurface() includes expected namespace headers | ✓ | 14 | ok |
+| 5 | aidenSdk: buildSdkRuntime() returns object with all namespace keys | ✓ | 1 | ok |
+| 6 | runSandbox: module exports runInSandbox function | ✓ | 12 | ok |
+| 7 | toolRegistry: run tool is registered + getToolsForCategories includes run | ✓ | 1 | ok |
+| 8 | scripts/: 5 Prompt-12 example scripts exist and use the aiden SDK | ✓ | 1 | ok |
+
+## 2026-04-18T09:36:58.238Z — 10/10 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | spawnManager: exports spawnSubagent, getActiveSpawns, killSpawn + interfaces | ✓ | 1684 | ok |
+| 2 | spawnManager: getActiveSpawns() returns an array (empty or otherwise) | ✓ | 0 | ok |
+| 3 | spawnManager: killSpawn("nonexistent") returns false | ✓ | 0 | ok |
+| 4 | spawnManager: IterationBudget shape used in budget inheritance formula | ✓ | 0 | ok |
+| 5 | swarmManager: exports swarmSubagents function + SwarmStrategy types | ✓ | 12 | ok |
+| 6 | swarmManager: source contains vote, merge, best strategy branches | ✓ | 1 | ok |
+| 7 | sessionSearch: exports searchSessions and getIndexSize | ✓ | 11 | ok |
+| 8 | sessionSearch: searchSessions("test") returns an array | ✓ | 34 | ok |
+| 9 | hybridSearch: exports hybridSearch function | ✓ | 9 | ok |
+| 10 | toolRegistry: spawn, swarm, search tools registered in TOOLS + TOOL_CATEGORIES | ✓ | 1 | ok |
+
+## 2026-04-18T09:37:02.188Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | release: package.json version === "3.6.0" | ✓ | 1 | ok |
+| 2 | release: CHANGELOG.md contains "## v3.5.0" header | ✓ | 0 | ok |
+| 3 | release: local git tag v3.5.0 exists | ✓ | 57 | ok |
+| 4 | release: no stale 3.1.0 or 3.4.0 version strings in source files | ✓ | 2 | ok |
+| 5 | release: CHANGELOG.md references "34 zero-cost audits across 4 suites" | ✓ | 0 | ok |
+| 6 | release: Aiden-Setup-3.5.0.exe exists in release/ and is > 100 MB | ✓ | 0 | ok |
+| 7 | release: package.json test:audit script includes prompt_r1 | ✓ | 0 | ok |
+| 8 | release: all 4 audit suite files exist (prompt_11 · 12 · 13 · r1) | ✓ | 1 | ok |
+
+## 2026-04-18T09:37:06.046Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | skills: all 20 SKILL.md files exist | ✓ | 2 | ok |
+| 2 | skills: each SKILL.md has name, description, version, tags in frontmatter | ✓ | 3 | ok |
+| 3 | skills: each SKILL.md has a # H1 header | ✓ | 2 | ok |
+| 4 | skills: each SKILL.md has "When to Use" and "How to Use" sections | ✓ | 3 | ok |
+| 5 | skills: no SKILL.md contains security-blocked injection patterns | ✓ | 3 | ok |
+| 6 | skills: each SKILL.md is under 10 KB | ✓ | 1 | ok |
+| 7 | skills: AIDEN_CATALOG.md exists and references all 20 skills | ✓ | 0 | ok |
+| 8 | skills: package.json test:audit script includes prompt_15 | ✓ | 1 | ok |
+
+## 2026-04-18T09:37:09.921Z — 5/5 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | cleanup: all workspace/skills files pass structural validation | ✓ | 1 | ok |
+| 2 | cleanup: no duplicate skill names across learned/ and approved/ | ✓ | 1 | ok |
+| 3 | cleanup: known garbage skills have been deleted | ✓ | 1 | ok |
+| 4 | cleanup: skillTeacher.ts has header, origin:local, and size validation | ✓ | 1 | ok |
+| 5 | cleanup: all official skills/ pass structural validation | ✓ | 13 | ok |
+
+## 2026-04-18T09:37:13.752Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | mcp: McpServerConfig and McpTool interfaces exported from mcpClient | ✓ | 1 | ok |
+| 2 | mcp: named function exports connectMcpServer/disconnectMcpServer/listMcpServers/listMcpTools/callMcpTool | ✓ | 0 | ok |
+| 3 | mcp: mcpClient.ts contains JSON-RPC initialize, tools/list, tools/call | ✓ | 0 | ok |
+| 4 | mcp: workspace/config/mcp.json template exists with servers array | ✓ | 0 | ok |
+| 5 | shell-wedges: cmd/ps/wsl registered in toolRegistry.ts TOOLS and TOOL_DESCRIPTIONS | ✓ | 1 | ok |
+| 6 | mcp: toolRegistry.ts routes colon-prefix tool names to callMcpTool | ✓ | 1 | ok |
+| 7 | sdk: aidenSdk.ts has cmd/ps/wsl in shell and mcp namespace | ✓ | 0 | ok |
+| 8 | cli: /mcp /cmd /ps /wsl registered in COMMANDS and handled in handleCommand | ✓ | 1 | ok |
+
+## 2026-04-18T09:37:17.589Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | r2: cloudflare-worker/landing.js exists and is non-trivial | ✓ | 1 | ok |
+| 2 | r2: landing.js contains zero occurrences of 3.3.1 | ✓ | 1 | ok |
+| 3 | r2: nav badge contains v3.6.0 | ✓ | 0 | ok |
+| 4 | r2: hero "JUST UPDATED" badge shows v3.6.0 | ✓ | 1 | ok |
+| 5 | r2: download URL references v3.6.0/Aiden-Setup-3.6.0.exe | ✓ | 0 | ok |
+| 6 | r2: download section h2 reads "Download Aiden v3.6.0" | ✓ | 1 | ok |
+| 7 | r2: Razorpay integration preserved (≥1 occurrence) | ✓ | 0 | ok |
+| 8 | r2: exactly 5 occurrences of "3.6.0" in landing.js | ✓ | 1 | ok |
+
+## 2026-04-18T09:37:21.520Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | r3: electron-updater present in package.json dependencies | ✓ | 0 | ok |
+| 2 | r3: electron-builder publish config has github/taracodlabs/aiden-releases | ✓ | 0 | ok |
+| 3 | r3: electron/main.js requires electron-updater and calls checkForUpdatesAndNotify | ✓ | 0 | ok |
+| 4 | r3: electron/main.js has ipcMain.handle for install-update-now and check-for-update | ✓ | 0 | ok |
+| 5 | r3: electron/preload.js exposes aidenUpdater with installNow and checkNow | ✓ | 0 | ok |
+| 6 | r3: cli/aiden.ts /refresh handler references update-check function | ✓ | 0 | ok |
+| 7 | r3: no localhost/127.0.0.1 in update-related config in main.js | ✓ | 1 | ok |
+| 8 | r3: publish config structure is valid for electron-updater GitHub provider | ✓ | 0 | ok |
+
+## 2026-04-18T09:37:26.028Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | p16: ChannelAdapter interface has name, start, stop, send, isHealthy | ✓ | 0 | ok |
+| 2 | p16: Discord adapter has DISCORD_BOT_TOKEN, discord.js import, graceful degradation | ✓ | 0 | ok |
+| 3 | p16: Slack adapter has SLACK_BOT_TOKEN, @slack/bolt import, signing secret | ✓ | 0 | ok |
+| 4 | p16: Webhook adapter has WEBHOOK_SECRET, HMAC, and signature header check | ✓ | 1 | ok |
+| 5 | p16: ChannelManager class has register, startAll, getStatus | ✓ | 0 | ok |
+| 6 | p16: /channels command is in CLI COMMANDS array | ✓ | 1 | ok |
+| 7 | p16: no process.exit or uncaught throw in adapter config loading sections | ✓ | 0 | ok |
+| 8 | p16: ALLOWED_ env var used in discord, slack, and webhook adapters | ✓ | 0 | ok |
+
+## 2026-04-18T09:37:29.879Z — 10/10 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | p17: stt.ts exports transcribe(), SttResult, SttOptions, getSttProviders() | ✓ | 0 | ok |
+| 2 | p17: stt.ts has Groq, OpenAI, and local whisper-cli fallback chain | ✓ | 0 | ok |
+| 3 | p17: tts.ts exports synthesize(), TtsResult, TtsOptions, getTtsProviders() | ✓ | 1 | ok |
+| 4 | p17: tts.ts has Edge TTS, ElevenLabs, and SAPI fallback chain | ✓ | 0 | ok |
+| 5 | p17: tts.ts exports cleanForTTS() that strips markdown | ✓ | 0 | ok |
+| 6 | p17: audio.ts exports recordAudio(), playAudio(), checkAudioAvailable() | ✓ | 0 | ok |
+| 7 | p17: audio.ts recordAudio() takes durationSeconds and outputPath parameters | ✓ | 1 | ok |
+| 8 | p17: /voice /speak /listen commands registered in CLI COMMANDS array and handleCommand | ✓ | 1 | ok |
+| 9 | p17: CLI state has voiceMode flag; TTS called after AI reply when voiceMode is on | ✓ | 0 | ok |
+| 10 | p17: aidenSdk.ts has voice namespace; aiden-sdk.d.ts has AidenVoice interface | ✓ | 1 | ok |
+
+## 2026-04-18T09:38:00.689Z — 9/10 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | timer: cli/aiden.ts renderActivity() shows elapsed seconds | ✓ | 0 | ok |
+| 2 | timer: cli/aiden.ts status bar passes startedAt-based elapsedMs | ✓ | 0 | ok |
+| 3 | timer: cli/aiden.ts uses VERSION from core/version for display | ✓ | 1 | ok |
+| 4 | timer: electron/preload.js has no hardcoded 3.5.0 | ✓ | 0 | ok |
+| 5 | timer: cloudflare-worker/license-server.js has no 3.5.0 references | ✓ | 0 | ok |
+| 6 | timer: index.ts startup log fallback is not 3.5.0 | ✗ | 1 | ENOENT: no such file or directory, open 'C:\Users\shiva\DevOS\index.ts' |
+| 7 | timer: core/skillTeacher.ts min size gate is 200 bytes | ✓ | 0 | ok |
+| 8 | timer: core/skillTeacher.ts has SESSION_SKILL_LIMIT = 2 | ✓ | 0 | ok |
+| 9 | timer: core/skillTeacher.ts dedup includes BUNDLED_SKILLS_DIR | ✓ | 0 | ok |
+| 10 | timer: workspace/skills/learned/ and approved/ are empty | ✓ | 1 | ok |
+
+## 2026-04-18T09:38:11.135Z — 44/44 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | cli-prod: package.json has build:cli script | ✓ | 1 | ok |
+| 2 | cli-prod: build:cli entry point is cli/aiden.ts | ✓ | 0 | ok |
+| 3 | cli-prod: build:cli outputs to dist-bundle/cli.js | ✓ | 1 | ok |
+| 4 | cli-prod: build:cli marks electron as external dependency | ✓ | 0 | ok |
+| 5 | cli-prod: main build script invokes build:cli | ✓ | 0 | ok |
+| 6 | cli-prod: electron-builder ships dist-bundle via extraResources | ✓ | 0 | ok |
+| 7 | cli-prod: bin/aiden.cmd handles "tui" subcommand | ✓ | 0 | ok |
+| 8 | cli-prod: bin/aiden.cmd handles "pc" subcommand | ✓ | 0 | ok |
+| 9 | cli-prod: bin/aiden.cmd uses Aiden.exe --cli (not node) for tui | ✓ | 0 | ok |
+| 10 | cli-prod: bin/aiden (bash) handles tui and pc subcommands | ✓ | 0 | ok |
+| 11 | cli-prod: electron/main.js detects --cli flag via process.argv | ✓ | 1 | ok |
+| 12 | cli-prod: --cli mode sets ELECTRON_RUN_AS_NODE=1 on spawned child | ✓ | 0 | ok |
+| 13 | cli-prod: --cli mode path does not call createMainWindow() | ✓ | 0 | ok |
+| 14 | cli-prod: --cli mode spawns API server as isolated child process | ✓ | 0 | ok |
+| 15 | cli-prod: --cli mode hides macOS dock icon | ✓ | 1 | ok |
+| 16 | cli-prod: build:api script exists and targets api/entry.ts | ✓ | 0 | ok |
+| 17 | cli-prod: dist-bundle/index.js contains API server code | ✓ | 179 | ok |
+| 18 | cli-prod: dist-bundle/index.js must not contain legacy v1.0 CLI banner | ✓ | 234 | ok |
+| 19 | cli-prod: API spawn in --cli mode passes ELECTRON_RUN_AS_NODE=1 | ✓ | 0 | ok |
+| 20 | cli-prod: root index.ts has been moved to legacy/ (not present at repo root) | ✓ | 0 | ok |
+| 21 | cli-prod: package.json dev script does not reference legacy/ | ✓ | 1 | ok |
+| 22 | cli-prod: no package.json script references legacy/index | ✓ | 0 | ok |
+| 23 | cli-prod: package.json dev script launches Electron (contains "electron .") | ✓ | 0 | ok |
+| 24 | cli-prod: literal grep of package.json contains no "legacy/index" string | ✓ | 0 | ok |
+| 25 | cli-prod: legacy/ directory exists but live source files do not import it | ✓ | 35 | ok |
+| 26 | cli-prod: /api/health endpoint is registered in api/server.ts | ✓ | 1 | ok |
+| 27 | cli-prod: ollama execSync in modelRouter uses stdio pipe to suppress Windows errors | ✓ | 0 | ok |
+| 28 | cli-prod: electron/main.js --cli branch awaits waitForApi before spawning CLI | ✓ | 0 | ok |
+| 29 | cli-prod: waitForApi function accepts a timeoutMs parameter | ✓ | 0 | ok |
+| 30 | cli-prod: --cli mode error path does not show "set AIDEN_API env var" message | ✓ | 1 | ok |
+| 31 | cli-prod: waitForApi checks res.ok before treating response as success | ✓ | 0 | ok |
+| 32 | cli-prod: waitForApi validates health response body has status ok | ✓ | 1 | ok |
+| 33 | cli-prod: --cli block injects AIDEN_CLI_MODE=1 into CLI child env | ✓ | 0 | ok |
+| 34 | cli-prod: --cli block injects AIDEN_USER_DATA into API child spawn env | ✓ | 0 | ok |
+| 35 | cli-prod: dist-bundle/cli.js has AIDEN_CLI_MODE branch for error messages | ✓ | 85 | ok |
+| 36 | cli-prod: dist-bundle/cli.js CLI-mode error branch excludes "AIDEN_API env var" | ✓ | 68 | ok |
+| 37 | cli-prod: providers/index.ts CONFIG_PATH respects AIDEN_CONFIG_DIR env var | ✓ | 1 | ok |
+| 38 | cli-prod: no source file contains bare require("../package.json") outside electron/preload.js | ✓ | 4 | ok |
+| 39 | cli-prod: prebuild:api and prebuild:cli scripts exist, and core/version.ts is present | ✓ | 1 | ok |
+| 40 | cli-prod: dist-bundle/index.js contains version literal, no require(package.json) | ✓ | 180 | ok |
+| 41 | cli-prod: electron/main.js CLI spawn uses explicit stdio array not "inherit" | ✓ | 0 | ok |
+| 42 | cli-prod: cli/aiden.ts has Windows VT/ANSI init in main() | ✓ | 8 | ok |
+| 43 | cli-prod: bin/aiden.cmd has help/--help/?? routing and unknown-command message | ✓ | 1 | ok |
+| 44 | cli-prod: electron/main.js before-quit and will-quit are not top-level | ✓ | 0 | ok |
+
+## 2026-04-18T09:47:31.656Z — 45/45 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | cli-prod: package.json has build:cli script | ✓ | 0 | ok |
+| 2 | cli-prod: build:cli entry point is cli/aiden.ts | ✓ | 0 | ok |
+| 3 | cli-prod: build:cli outputs to dist-bundle/cli.js | ✓ | 1 | ok |
+| 4 | cli-prod: build:cli marks electron as external dependency | ✓ | 0 | ok |
+| 5 | cli-prod: main build script invokes build:cli | ✓ | 0 | ok |
+| 6 | cli-prod: electron-builder ships dist-bundle via extraResources | ✓ | 0 | ok |
+| 7 | cli-prod: bin/aiden.cmd handles "tui" subcommand | ✓ | 1 | ok |
+| 8 | cli-prod: bin/aiden.cmd handles "pc" subcommand | ✓ | 0 | ok |
+| 9 | cli-prod: bin/aiden.cmd uses Aiden.exe --cli (not node) for tui | ✓ | 0 | ok |
+| 10 | cli-prod: bin/aiden (bash) handles tui and pc subcommands | ✓ | 0 | ok |
+| 11 | cli-prod: electron/main.js detects --cli flag via process.argv | ✓ | 1 | ok |
+| 12 | cli-prod: --cli mode sets ELECTRON_RUN_AS_NODE=1 on spawned child | ✓ | 1 | ok |
+| 13 | cli-prod: --cli mode path does not call createMainWindow() | ✓ | 0 | ok |
+| 14 | cli-prod: --cli mode spawns API server as isolated child process | ✓ | 0 | ok |
+| 15 | cli-prod: --cli mode hides macOS dock icon | ✓ | 1 | ok |
+| 16 | cli-prod: build:api script exists and targets api/entry.ts | ✓ | 0 | ok |
+| 17 | cli-prod: dist-bundle/index.js contains API server code | ✓ | 183 | ok |
+| 18 | cli-prod: dist-bundle/index.js must not contain legacy v1.0 CLI banner | ✓ | 237 | ok |
+| 19 | cli-prod: API spawn in --cli mode passes ELECTRON_RUN_AS_NODE=1 | ✓ | 1 | ok |
+| 20 | cli-prod: root index.ts has been moved to legacy/ (not present at repo root) | ✓ | 0 | ok |
+| 21 | cli-prod: package.json dev script does not reference legacy/ | ✓ | 0 | ok |
+| 22 | cli-prod: no package.json script references legacy/index | ✓ | 0 | ok |
+| 23 | cli-prod: package.json dev script launches Electron (contains "electron .") | ✓ | 0 | ok |
+| 24 | cli-prod: literal grep of package.json contains no "legacy/index" string | ✓ | 0 | ok |
+| 25 | cli-prod: legacy/ directory exists but live source files do not import it | ✓ | 33 | ok |
+| 26 | cli-prod: /api/health endpoint is registered in api/server.ts | ✓ | 1 | ok |
+| 27 | cli-prod: ollama execSync in modelRouter uses stdio pipe to suppress Windows errors | ✓ | 0 | ok |
+| 28 | cli-prod: electron/main.js --cli branch awaits waitForApi before spawning CLI | ✓ | 0 | ok |
+| 29 | cli-prod: waitForApi function accepts a timeoutMs parameter | ✓ | 0 | ok |
+| 30 | cli-prod: --cli mode error path does not show "set AIDEN_API env var" message | ✓ | 1 | ok |
+| 31 | cli-prod: waitForApi checks res.ok before treating response as success | ✓ | 0 | ok |
+| 32 | cli-prod: waitForApi validates health response body has status ok | ✓ | 1 | ok |
+| 33 | cli-prod: --cli block injects AIDEN_CLI_MODE=1 into CLI child env | ✓ | 0 | ok |
+| 34 | cli-prod: --cli block injects AIDEN_USER_DATA into API child spawn env | ✓ | 0 | ok |
+| 35 | cli-prod: dist-bundle/cli.js has AIDEN_CLI_MODE branch for error messages | ✓ | 82 | ok |
+| 36 | cli-prod: dist-bundle/cli.js CLI-mode error branch excludes "AIDEN_API env var" | ✓ | 123 | ok |
+| 37 | cli-prod: providers/index.ts CONFIG_PATH respects AIDEN_CONFIG_DIR env var | ✓ | 0 | ok |
+| 38 | cli-prod: no source file contains bare require("../package.json") outside electron/preload.js | ✓ | 7 | ok |
+| 39 | cli-prod: prebuild:api and prebuild:cli scripts exist, and core/version.ts is present | ✓ | 1 | ok |
+| 40 | cli-prod: dist-bundle/index.js contains version literal, no require(package.json) | ✓ | 197 | ok |
+| 41 | cli-prod: electron/main.js CLI spawn uses stdio inherit | ✓ | 0 | ok |
+| 42 | cli-prod: cli/aiden.ts has Windows VT/ANSI init in main() | ✓ | 10 | ok |
+| 43 | cli-prod: bin/aiden.cmd has help/--help/?? routing and unknown-command message | ✓ | 2 | ok |
+| 44 | cli-prod: electron/main.js before-quit and will-quit are not top-level | ✓ | 0 | ok |
+| 45 | cli-prod: no unguarded onReady() calls outside callback-function bodies | ✓ | 0 | ok |
+
+## 2026-04-18T10:12:35.498Z — 46/46 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | cli-prod: package.json has build:cli script | ✓ | 1 | ok |
+| 2 | cli-prod: build:cli entry point is cli/aiden.ts | ✓ | 0 | ok |
+| 3 | cli-prod: build:cli outputs to dist-bundle/cli.js | ✓ | 0 | ok |
+| 4 | cli-prod: build:cli marks electron as external dependency | ✓ | 0 | ok |
+| 5 | cli-prod: main build script invokes build:cli | ✓ | 0 | ok |
+| 6 | cli-prod: electron-builder ships dist-bundle via extraResources | ✓ | 1 | ok |
+| 7 | cli-prod: bin/aiden.cmd handles "tui" subcommand | ✓ | 0 | ok |
+| 8 | cli-prod: bin/aiden.cmd handles "pc" subcommand | ✓ | 1 | ok |
+| 9 | cli-prod: bin/aiden.cmd uses Aiden.exe --cli (not node) for tui | ✓ | 0 | ok |
+| 10 | cli-prod: bin/aiden (bash) handles tui and pc subcommands | ✓ | 0 | ok |
+| 11 | cli-prod: electron/main.js detects --cli flag via process.argv | ✓ | 0 | ok |
+| 12 | cli-prod: --cli mode sets ELECTRON_RUN_AS_NODE=1 on spawned child | ✓ | 1 | ok |
+| 13 | cli-prod: --cli mode path does not call createMainWindow() | ✓ | 0 | ok |
+| 14 | cli-prod: --cli mode spawns API server as isolated child process | ✓ | 0 | ok |
+| 15 | cli-prod: --cli mode hides macOS dock icon | ✓ | 1 | ok |
+| 16 | cli-prod: build:api script exists and targets api/entry.ts | ✓ | 0 | ok |
+| 17 | cli-prod: dist-bundle/index.js contains API server code | ✓ | 177 | ok |
+| 18 | cli-prod: dist-bundle/index.js must not contain legacy v1.0 CLI banner | ✓ | 253 | ok |
+| 19 | cli-prod: API spawn in --cli mode passes ELECTRON_RUN_AS_NODE=1 | ✓ | 0 | ok |
+| 20 | cli-prod: root index.ts has been moved to legacy/ (not present at repo root) | ✓ | 0 | ok |
+| 21 | cli-prod: package.json dev script does not reference legacy/ | ✓ | 0 | ok |
+| 22 | cli-prod: no package.json script references legacy/index | ✓ | 0 | ok |
+| 23 | cli-prod: package.json dev script launches Electron (contains "electron .") | ✓ | 1 | ok |
+| 24 | cli-prod: literal grep of package.json contains no "legacy/index" string | ✓ | 0 | ok |
+| 25 | cli-prod: legacy/ directory exists but live source files do not import it | ✓ | 37 | ok |
+| 26 | cli-prod: /api/health endpoint is registered in api/server.ts | ✓ | 1 | ok |
+| 27 | cli-prod: ollama execSync in modelRouter uses stdio pipe to suppress Windows errors | ✓ | 0 | ok |
+| 28 | cli-prod: electron/main.js --cli branch awaits waitForApi before spawning CLI | ✓ | 0 | ok |
+| 29 | cli-prod: waitForApi function accepts a timeoutMs parameter | ✓ | 0 | ok |
+| 30 | cli-prod: --cli mode error path does not show "set AIDEN_API env var" message | ✓ | 1 | ok |
+| 31 | cli-prod: waitForApi checks res.ok before treating response as success | ✓ | 1 | ok |
+| 32 | cli-prod: waitForApi validates health response body has status ok | ✓ | 0 | ok |
+| 33 | cli-prod: --cli block injects AIDEN_CLI_MODE=1 into CLI child env | ✓ | 1 | ok |
+| 34 | cli-prod: --cli block injects AIDEN_USER_DATA into API child spawn env | ✓ | 0 | ok |
+| 35 | cli-prod: dist-bundle/cli.js has AIDEN_CLI_MODE branch for error messages | ✓ | 88 | ok |
+| 36 | cli-prod: dist-bundle/cli.js CLI-mode error branch excludes "AIDEN_API env var" | ✓ | 77 | ok |
+| 37 | cli-prod: providers/index.ts CONFIG_PATH respects AIDEN_CONFIG_DIR env var | ✓ | 0 | ok |
+| 38 | cli-prod: no source file contains bare require("../package.json") outside electron/preload.js | ✓ | 3 | ok |
+| 39 | cli-prod: prebuild:api and prebuild:cli scripts exist, and core/version.ts is present | ✓ | 1 | ok |
+| 40 | cli-prod: dist-bundle/index.js contains version literal, no require(package.json) | ✓ | 192 | ok |
+| 41 | cli-prod: electron/main.js CLI runs in-process via require(CLI_BUNDLE) | ✓ | 1 | ok |
+| 42 | cli-prod: cli/aiden.ts has Windows VT/ANSI init in main() | ✓ | 10 | ok |
+| 43 | cli-prod: bin/aiden.cmd has help/--help/?? routing and unknown-command message | ✓ | 1 | ok |
+| 44 | cli-prod: electron/main.js before-quit and will-quit are not top-level | ✓ | 0 | ok |
+| 45 | cli-prod: electron/main.js CLI sets process.env.AIDEN_CLI_MODE before require | ✓ | 0 | ok |
+| 46 | cli-prod: no unguarded onReady() calls outside callback-function bodies | ✓ | 1 | ok |
+
+## 2026-04-18T10:26:19.408Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | panel(): no-title top/bottom border equals body row width | ✓ | 216 | ok |
+| 2 | panel(): titled top border equals body row width | ✓ | 0 | ok |
+| 3 | panel(): minimum outer width is 50 chars | ✓ | 0 | ok |
+| 4 | Skill interface: origin field present on parsed skills | ✓ | 98 | ok |
+| 5 | SkillLoader: origin inferred as aiden vs local from filePath | ✓ | 1 | ok |
+| 6 | parseLessons(): returns [] safely when LESSONS.md absent | ✓ | 16 | ok |
+| 7 | filterLessons(): keyword filter returns correct subset | ✓ | 1 | ok |
+| 8 | COMMAND_DETAIL: no section is named Hermes (renamed to Core) | ✓ | 1 | ok |
+
+## 2026-04-18T10:26:24.481Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | aidenSdk: exports getSdkMethods, getSdkNamespaces, buildSdkSurface, buildSdkRuntime | ✓ | 1197 | ok |
+| 2 | aidenSdk: getSdkMethods() covers all required namespaces | ✓ | 0 | ok |
+| 3 | aidenSdk: getSdkNamespaces() returns sorted array | ✓ | 0 | ok |
+| 4 | aidenSdk: buildSdkSurface() includes expected namespace headers | ✓ | 16 | ok |
+| 5 | aidenSdk: buildSdkRuntime() returns object with all namespace keys | ✓ | 0 | ok |
+| 6 | runSandbox: module exports runInSandbox function | ✓ | 14 | ok |
+| 7 | toolRegistry: run tool is registered + getToolsForCategories includes run | ✓ | 0 | ok |
+| 8 | scripts/: 5 Prompt-12 example scripts exist and use the aiden SDK | ✓ | 2 | ok |
+
+## 2026-04-18T10:26:30.147Z — 10/10 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | spawnManager: exports spawnSubagent, getActiveSpawns, killSpawn + interfaces | ✓ | 1692 | ok |
+| 2 | spawnManager: getActiveSpawns() returns an array (empty or otherwise) | ✓ | 0 | ok |
+| 3 | spawnManager: killSpawn("nonexistent") returns false | ✓ | 0 | ok |
+| 4 | spawnManager: IterationBudget shape used in budget inheritance formula | ✓ | 0 | ok |
+| 5 | swarmManager: exports swarmSubagents function + SwarmStrategy types | ✓ | 11 | ok |
+| 6 | swarmManager: source contains vote, merge, best strategy branches | ✓ | 0 | ok |
+| 7 | sessionSearch: exports searchSessions and getIndexSize | ✓ | 12 | ok |
+| 8 | sessionSearch: searchSessions("test") returns an array | ✓ | 33 | ok |
+| 9 | hybridSearch: exports hybridSearch function | ✓ | 11 | ok |
+| 10 | toolRegistry: spawn, swarm, search tools registered in TOOLS + TOOL_CATEGORIES | ✓ | 0 | ok |
+
+## 2026-04-18T10:26:34.039Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | release: package.json version === "3.6.0" | ✓ | 1 | ok |
+| 2 | release: CHANGELOG.md contains "## v3.5.0" header | ✓ | 0 | ok |
+| 3 | release: local git tag v3.5.0 exists | ✓ | 56 | ok |
+| 4 | release: no stale 3.1.0 or 3.4.0 version strings in source files | ✓ | 3 | ok |
+| 5 | release: CHANGELOG.md references "34 zero-cost audits across 4 suites" | ✓ | 1 | ok |
+| 6 | release: Aiden-Setup-3.5.0.exe exists in release/ and is > 100 MB | ✓ | 0 | ok |
+| 7 | release: package.json test:audit script includes prompt_r1 | ✓ | 1 | ok |
+| 8 | release: all 4 audit suite files exist (prompt_11 · 12 · 13 · r1) | ✓ | 0 | ok |
+
+## 2026-04-18T10:26:37.864Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | skills: all 20 SKILL.md files exist | ✓ | 2 | ok |
+| 2 | skills: each SKILL.md has name, description, version, tags in frontmatter | ✓ | 2 | ok |
+| 3 | skills: each SKILL.md has a # H1 header | ✓ | 4 | ok |
+| 4 | skills: each SKILL.md has "When to Use" and "How to Use" sections | ✓ | 2 | ok |
+| 5 | skills: no SKILL.md contains security-blocked injection patterns | ✓ | 2 | ok |
+| 6 | skills: each SKILL.md is under 10 KB | ✓ | 2 | ok |
+| 7 | skills: AIDEN_CATALOG.md exists and references all 20 skills | ✓ | 0 | ok |
+| 8 | skills: package.json test:audit script includes prompt_15 | ✓ | 0 | ok |
+
+## 2026-04-18T10:26:41.686Z — 5/5 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | cleanup: all workspace/skills files pass structural validation | ✓ | 1 | ok |
+| 2 | cleanup: no duplicate skill names across learned/ and approved/ | ✓ | 0 | ok |
+| 3 | cleanup: known garbage skills have been deleted | ✓ | 1 | ok |
+| 4 | cleanup: skillTeacher.ts has header, origin:local, and size validation | ✓ | 0 | ok |
+| 5 | cleanup: all official skills/ pass structural validation | ✓ | 12 | ok |
+
+## 2026-04-18T10:26:45.654Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | mcp: McpServerConfig and McpTool interfaces exported from mcpClient | ✓ | 1 | ok |
+| 2 | mcp: named function exports connectMcpServer/disconnectMcpServer/listMcpServers/listMcpTools/callMcpTool | ✓ | 0 | ok |
+| 3 | mcp: mcpClient.ts contains JSON-RPC initialize, tools/list, tools/call | ✓ | 0 | ok |
+| 4 | mcp: workspace/config/mcp.json template exists with servers array | ✓ | 0 | ok |
+| 5 | shell-wedges: cmd/ps/wsl registered in toolRegistry.ts TOOLS and TOOL_DESCRIPTIONS | ✓ | 0 | ok |
+| 6 | mcp: toolRegistry.ts routes colon-prefix tool names to callMcpTool | ✓ | 1 | ok |
+| 7 | sdk: aidenSdk.ts has cmd/ps/wsl in shell and mcp namespace | ✓ | 0 | ok |
+| 8 | cli: /mcp /cmd /ps /wsl registered in COMMANDS and handled in handleCommand | ✓ | 1 | ok |
+
+## 2026-04-18T10:26:49.465Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | r2: cloudflare-worker/landing.js exists and is non-trivial | ✓ | 0 | ok |
+| 2 | r2: landing.js contains zero occurrences of 3.3.1 | ✓ | 1 | ok |
+| 3 | r2: nav badge contains v3.6.0 | ✓ | 1 | ok |
+| 4 | r2: hero "JUST UPDATED" badge shows v3.6.0 | ✓ | 0 | ok |
+| 5 | r2: download URL references v3.6.0/Aiden-Setup-3.6.0.exe | ✓ | 1 | ok |
+| 6 | r2: download section h2 reads "Download Aiden v3.6.0" | ✓ | 0 | ok |
+| 7 | r2: Razorpay integration preserved (≥1 occurrence) | ✓ | 1 | ok |
+| 8 | r2: exactly 5 occurrences of "3.6.0" in landing.js | ✓ | 0 | ok |
+
+## 2026-04-18T10:26:53.232Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | r3: electron-updater present in package.json dependencies | ✓ | 0 | ok |
+| 2 | r3: electron-builder publish config has github/taracodlabs/aiden-releases | ✓ | 0 | ok |
+| 3 | r3: electron/main.js requires electron-updater and calls checkForUpdatesAndNotify | ✓ | 0 | ok |
+| 4 | r3: electron/main.js has ipcMain.handle for install-update-now and check-for-update | ✓ | 0 | ok |
+| 5 | r3: electron/preload.js exposes aidenUpdater with installNow and checkNow | ✓ | 0 | ok |
+| 6 | r3: cli/aiden.ts /refresh handler references update-check function | ✓ | 0 | ok |
+| 7 | r3: no localhost/127.0.0.1 in update-related config in main.js | ✓ | 1 | ok |
+| 8 | r3: publish config structure is valid for electron-updater GitHub provider | ✓ | 0 | ok |
+
+## 2026-04-18T10:26:56.984Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | p16: ChannelAdapter interface has name, start, stop, send, isHealthy | ✓ | 0 | ok |
+| 2 | p16: Discord adapter has DISCORD_BOT_TOKEN, discord.js import, graceful degradation | ✓ | 0 | ok |
+| 3 | p16: Slack adapter has SLACK_BOT_TOKEN, @slack/bolt import, signing secret | ✓ | 0 | ok |
+| 4 | p16: Webhook adapter has WEBHOOK_SECRET, HMAC, and signature header check | ✓ | 0 | ok |
+| 5 | p16: ChannelManager class has register, startAll, getStatus | ✓ | 0 | ok |
+| 6 | p16: /channels command is in CLI COMMANDS array | ✓ | 1 | ok |
+| 7 | p16: no process.exit or uncaught throw in adapter config loading sections | ✓ | 1 | ok |
+| 8 | p16: ALLOWED_ env var used in discord, slack, and webhook adapters | ✓ | 0 | ok |
+
+## 2026-04-18T10:27:00.751Z — 10/10 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | p17: stt.ts exports transcribe(), SttResult, SttOptions, getSttProviders() | ✓ | 0 | ok |
+| 2 | p17: stt.ts has Groq, OpenAI, and local whisper-cli fallback chain | ✓ | 0 | ok |
+| 3 | p17: tts.ts exports synthesize(), TtsResult, TtsOptions, getTtsProviders() | ✓ | 0 | ok |
+| 4 | p17: tts.ts has Edge TTS, ElevenLabs, and SAPI fallback chain | ✓ | 0 | ok |
+| 5 | p17: tts.ts exports cleanForTTS() that strips markdown | ✓ | 0 | ok |
+| 6 | p17: audio.ts exports recordAudio(), playAudio(), checkAudioAvailable() | ✓ | 1 | ok |
+| 7 | p17: audio.ts recordAudio() takes durationSeconds and outputPath parameters | ✓ | 0 | ok |
+| 8 | p17: /voice /speak /listen commands registered in CLI COMMANDS array and handleCommand | ✓ | 1 | ok |
+| 9 | p17: CLI state has voiceMode flag; TTS called after AI reply when voiceMode is on | ✓ | 1 | ok |
+| 10 | p17: aidenSdk.ts has voice namespace; aiden-sdk.d.ts has AidenVoice interface | ✓ | 0 | ok |
+
+## 2026-04-18T10:27:31.408Z — 9/10 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | timer: cli/aiden.ts renderActivity() shows elapsed seconds | ✓ | 2 | ok |
+| 2 | timer: cli/aiden.ts status bar passes startedAt-based elapsedMs | ✓ | 1 | ok |
+| 3 | timer: cli/aiden.ts uses VERSION from core/version for display | ✓ | 1 | ok |
+| 4 | timer: electron/preload.js has no hardcoded 3.5.0 | ✓ | 0 | ok |
+| 5 | timer: cloudflare-worker/license-server.js has no 3.5.0 references | ✓ | 1 | ok |
+| 6 | timer: index.ts startup log fallback is not 3.5.0 | ✗ | 0 | ENOENT: no such file or directory, open 'C:\Users\shiva\DevOS\index.ts' |
+| 7 | timer: core/skillTeacher.ts min size gate is 200 bytes | ✓ | 0 | ok |
+| 8 | timer: core/skillTeacher.ts has SESSION_SKILL_LIMIT = 2 | ✓ | 0 | ok |
+| 9 | timer: core/skillTeacher.ts dedup includes BUNDLED_SKILLS_DIR | ✓ | 1 | ok |
+| 10 | timer: workspace/skills/learned/ and approved/ are empty | ✓ | 0 | ok |
+
+## 2026-04-18T10:27:39.852Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | panel(): no-title top/bottom border equals body row width | ✓ | 201 | ok |
+| 2 | panel(): titled top border equals body row width | ✓ | 0 | ok |
+| 3 | panel(): minimum outer width is 50 chars | ✓ | 0 | ok |
+| 4 | Skill interface: origin field present on parsed skills | ✓ | 100 | ok |
+| 5 | SkillLoader: origin inferred as aiden vs local from filePath | ✓ | 1 | ok |
+| 6 | parseLessons(): returns [] safely when LESSONS.md absent | ✓ | 17 | ok |
+| 7 | filterLessons(): keyword filter returns correct subset | ✓ | 0 | ok |
+| 8 | COMMAND_DETAIL: no section is named Hermes (renamed to Core) | ✓ | 1 | ok |
+
+## 2026-04-18T10:27:44.888Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | aidenSdk: exports getSdkMethods, getSdkNamespaces, buildSdkSurface, buildSdkRuntime | ✓ | 1170 | ok |
+| 2 | aidenSdk: getSdkMethods() covers all required namespaces | ✓ | 0 | ok |
+| 3 | aidenSdk: getSdkNamespaces() returns sorted array | ✓ | 0 | ok |
+| 4 | aidenSdk: buildSdkSurface() includes expected namespace headers | ✓ | 14 | ok |
+| 5 | aidenSdk: buildSdkRuntime() returns object with all namespace keys | ✓ | 0 | ok |
+| 6 | runSandbox: module exports runInSandbox function | ✓ | 11 | ok |
+| 7 | toolRegistry: run tool is registered + getToolsForCategories includes run | ✓ | 0 | ok |
+| 8 | scripts/: 5 Prompt-12 example scripts exist and use the aiden SDK | ✓ | 1 | ok |
+
+## 2026-04-18T10:27:50.632Z — 10/10 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | spawnManager: exports spawnSubagent, getActiveSpawns, killSpawn + interfaces | ✓ | 1714 | ok |
+| 2 | spawnManager: getActiveSpawns() returns an array (empty or otherwise) | ✓ | 0 | ok |
+| 3 | spawnManager: killSpawn("nonexistent") returns false | ✓ | 0 | ok |
+| 4 | spawnManager: IterationBudget shape used in budget inheritance formula | ✓ | 0 | ok |
+| 5 | swarmManager: exports swarmSubagents function + SwarmStrategy types | ✓ | 14 | ok |
+| 6 | swarmManager: source contains vote, merge, best strategy branches | ✓ | 0 | ok |
+| 7 | sessionSearch: exports searchSessions and getIndexSize | ✓ | 15 | ok |
+| 8 | sessionSearch: searchSessions("test") returns an array | ✓ | 35 | ok |
+| 9 | hybridSearch: exports hybridSearch function | ✓ | 14 | ok |
+| 10 | toolRegistry: spawn, swarm, search tools registered in TOOLS + TOOL_CATEGORIES | ✓ | 1 | ok |
+
+## 2026-04-18T10:27:54.538Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | release: package.json version === "3.6.0" | ✓ | 1 | ok |
+| 2 | release: CHANGELOG.md contains "## v3.5.0" header | ✓ | 0 | ok |
+| 3 | release: local git tag v3.5.0 exists | ✓ | 56 | ok |
+| 4 | release: no stale 3.1.0 or 3.4.0 version strings in source files | ✓ | 3 | ok |
+| 5 | release: CHANGELOG.md references "34 zero-cost audits across 4 suites" | ✓ | 0 | ok |
+| 6 | release: Aiden-Setup-3.5.0.exe exists in release/ and is > 100 MB | ✓ | 0 | ok |
+| 7 | release: package.json test:audit script includes prompt_r1 | ✓ | 0 | ok |
+| 8 | release: all 4 audit suite files exist (prompt_11 · 12 · 13 · r1) | ✓ | 1 | ok |
+
+## 2026-04-18T10:27:58.413Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | skills: all 20 SKILL.md files exist | ✓ | 2 | ok |
+| 2 | skills: each SKILL.md has name, description, version, tags in frontmatter | ✓ | 2 | ok |
+| 3 | skills: each SKILL.md has a # H1 header | ✓ | 2 | ok |
+| 4 | skills: each SKILL.md has "When to Use" and "How to Use" sections | ✓ | 3 | ok |
+| 5 | skills: no SKILL.md contains security-blocked injection patterns | ✓ | 2 | ok |
+| 6 | skills: each SKILL.md is under 10 KB | ✓ | 2 | ok |
+| 7 | skills: AIDEN_CATALOG.md exists and references all 20 skills | ✓ | 0 | ok |
+| 8 | skills: package.json test:audit script includes prompt_15 | ✓ | 0 | ok |
+
+## 2026-04-18T10:28:02.262Z — 5/5 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | cleanup: all workspace/skills files pass structural validation | ✓ | 1 | ok |
+| 2 | cleanup: no duplicate skill names across learned/ and approved/ | ✓ | 0 | ok |
+| 3 | cleanup: known garbage skills have been deleted | ✓ | 1 | ok |
+| 4 | cleanup: skillTeacher.ts has header, origin:local, and size validation | ✓ | 0 | ok |
+| 5 | cleanup: all official skills/ pass structural validation | ✓ | 12 | ok |
+
+## 2026-04-18T10:28:06.135Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | mcp: McpServerConfig and McpTool interfaces exported from mcpClient | ✓ | 1 | ok |
+| 2 | mcp: named function exports connectMcpServer/disconnectMcpServer/listMcpServers/listMcpTools/callMcpTool | ✓ | 0 | ok |
+| 3 | mcp: mcpClient.ts contains JSON-RPC initialize, tools/list, tools/call | ✓ | 0 | ok |
+| 4 | mcp: workspace/config/mcp.json template exists with servers array | ✓ | 1 | ok |
+| 5 | shell-wedges: cmd/ps/wsl registered in toolRegistry.ts TOOLS and TOOL_DESCRIPTIONS | ✓ | 0 | ok |
+| 6 | mcp: toolRegistry.ts routes colon-prefix tool names to callMcpTool | ✓ | 1 | ok |
+| 7 | sdk: aidenSdk.ts has cmd/ps/wsl in shell and mcp namespace | ✓ | 0 | ok |
+| 8 | cli: /mcp /cmd /ps /wsl registered in COMMANDS and handled in handleCommand | ✓ | 1 | ok |
+
+## 2026-04-18T10:28:10.015Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | r2: cloudflare-worker/landing.js exists and is non-trivial | ✓ | 0 | ok |
+| 2 | r2: landing.js contains zero occurrences of 3.3.1 | ✓ | 1 | ok |
+| 3 | r2: nav badge contains v3.6.0 | ✓ | 0 | ok |
+| 4 | r2: hero "JUST UPDATED" badge shows v3.6.0 | ✓ | 0 | ok |
+| 5 | r2: download URL references v3.6.0/Aiden-Setup-3.6.0.exe | ✓ | 0 | ok |
+| 6 | r2: download section h2 reads "Download Aiden v3.6.0" | ✓ | 1 | ok |
+| 7 | r2: Razorpay integration preserved (≥1 occurrence) | ✓ | 0 | ok |
+| 8 | r2: exactly 5 occurrences of "3.6.0" in landing.js | ✓ | 0 | ok |
+
+## 2026-04-18T10:28:13.890Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | r3: electron-updater present in package.json dependencies | ✓ | 0 | ok |
+| 2 | r3: electron-builder publish config has github/taracodlabs/aiden-releases | ✓ | 0 | ok |
+| 3 | r3: electron/main.js requires electron-updater and calls checkForUpdatesAndNotify | ✓ | 1 | ok |
+| 4 | r3: electron/main.js has ipcMain.handle for install-update-now and check-for-update | ✓ | 0 | ok |
+| 5 | r3: electron/preload.js exposes aidenUpdater with installNow and checkNow | ✓ | 0 | ok |
+| 6 | r3: cli/aiden.ts /refresh handler references update-check function | ✓ | 1 | ok |
+| 7 | r3: no localhost/127.0.0.1 in update-related config in main.js | ✓ | 0 | ok |
+| 8 | r3: publish config structure is valid for electron-updater GitHub provider | ✓ | 0 | ok |
+
+## 2026-04-18T10:28:17.812Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | p16: ChannelAdapter interface has name, start, stop, send, isHealthy | ✓ | 1 | ok |
+| 2 | p16: Discord adapter has DISCORD_BOT_TOKEN, discord.js import, graceful degradation | ✓ | 0 | ok |
+| 3 | p16: Slack adapter has SLACK_BOT_TOKEN, @slack/bolt import, signing secret | ✓ | 0 | ok |
+| 4 | p16: Webhook adapter has WEBHOOK_SECRET, HMAC, and signature header check | ✓ | 0 | ok |
+| 5 | p16: ChannelManager class has register, startAll, getStatus | ✓ | 1 | ok |
+| 6 | p16: /channels command is in CLI COMMANDS array | ✓ | 0 | ok |
+| 7 | p16: no process.exit or uncaught throw in adapter config loading sections | ✓ | 0 | ok |
+| 8 | p16: ALLOWED_ env var used in discord, slack, and webhook adapters | ✓ | 0 | ok |
+
+## 2026-04-18T10:28:21.687Z — 10/10 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | p17: stt.ts exports transcribe(), SttResult, SttOptions, getSttProviders() | ✓ | 0 | ok |
+| 2 | p17: stt.ts has Groq, OpenAI, and local whisper-cli fallback chain | ✓ | 0 | ok |
+| 3 | p17: tts.ts exports synthesize(), TtsResult, TtsOptions, getTtsProviders() | ✓ | 1 | ok |
+| 4 | p17: tts.ts has Edge TTS, ElevenLabs, and SAPI fallback chain | ✓ | 0 | ok |
+| 5 | p17: tts.ts exports cleanForTTS() that strips markdown | ✓ | 0 | ok |
+| 6 | p17: audio.ts exports recordAudio(), playAudio(), checkAudioAvailable() | ✓ | 0 | ok |
+| 7 | p17: audio.ts recordAudio() takes durationSeconds and outputPath parameters | ✓ | 0 | ok |
+| 8 | p17: /voice /speak /listen commands registered in CLI COMMANDS array and handleCommand | ✓ | 2 | ok |
+| 9 | p17: CLI state has voiceMode flag; TTS called after AI reply when voiceMode is on | ✓ | 0 | ok |
+| 10 | p17: aidenSdk.ts has voice namespace; aiden-sdk.d.ts has AidenVoice interface | ✓ | 0 | ok |
+
+## 2026-04-18T10:28:53.962Z — 9/10 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | timer: cli/aiden.ts renderActivity() shows elapsed seconds | ✓ | 2 | ok |
+| 2 | timer: cli/aiden.ts status bar passes startedAt-based elapsedMs | ✓ | 1 | ok |
+| 3 | timer: cli/aiden.ts uses VERSION from core/version for display | ✓ | 1 | ok |
+| 4 | timer: electron/preload.js has no hardcoded 3.5.0 | ✓ | 1 | ok |
+| 5 | timer: cloudflare-worker/license-server.js has no 3.5.0 references | ✓ | 0 | ok |
+| 6 | timer: index.ts startup log fallback is not 3.5.0 | ✗ | 0 | ENOENT: no such file or directory, open 'C:\Users\shiva\DevOS\index.ts' |
+| 7 | timer: core/skillTeacher.ts min size gate is 200 bytes | ✓ | 0 | ok |
+| 8 | timer: core/skillTeacher.ts has SESSION_SKILL_LIMIT = 2 | ✓ | 0 | ok |
+| 9 | timer: core/skillTeacher.ts dedup includes BUNDLED_SKILLS_DIR | ✓ | 0 | ok |
+| 10 | timer: workspace/skills/learned/ and approved/ are empty | ✓ | 0 | ok |
+
+## 2026-04-18T10:29:02.700Z — 44/48 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | cli-prod: package.json has build:cli script | ✓ | 0 | ok |
+| 2 | cli-prod: build:cli entry point is cli/aiden.ts | ✓ | 1 | ok |
+| 3 | cli-prod: build:cli outputs to dist-bundle/cli.js | ✓ | 0 | ok |
+| 4 | cli-prod: build:cli marks electron as external dependency | ✓ | 0 | ok |
+| 5 | cli-prod: main build script invokes build:cli | ✓ | 0 | ok |
+| 6 | cli-prod: electron-builder ships dist-bundle via extraResources | ✓ | 0 | ok |
+| 7 | cli-prod: bin/aiden.cmd handles "tui" subcommand | ✓ | 0 | ok |
+| 8 | cli-prod: bin/aiden.cmd handles "pc" subcommand | ✓ | 0 | ok |
+| 9 | cli-prod: bin/aiden.cmd uses Aiden.exe --cli (not node) for tui | ✓ | 0 | ok |
+| 10 | cli-prod: bin/aiden (bash) handles tui and pc subcommands | ✓ | 0 | ok |
+| 11 | cli-prod: electron/main.js detects --cli flag via process.argv | ✓ | 0 | ok |
+| 12 | cli-prod: --cli mode sets ELECTRON_RUN_AS_NODE=1 on spawned child | ✓ | 0 | ok |
+| 13 | cli-prod: --cli mode path does not call createMainWindow() | ✗ | 1 | isCliMode block must exist in main.js |
+| 14 | cli-prod: --cli mode spawns API server as isolated child process | ✓ | 0 | ok |
+| 15 | cli-prod: --cli mode hides macOS dock icon | ✗ | 0 | --cli mode must call app.dock.hide() to suppress macOS dock icon |
+| 16 | cli-prod: build:api script exists and targets api/entry.ts | ✓ | 0 | ok |
+| 17 | cli-prod: dist-bundle/index.js contains API server code | ✓ | 174 | ok |
+| 18 | cli-prod: dist-bundle/index.js must not contain legacy v1.0 CLI banner | ✓ | 239 | ok |
+| 19 | cli-prod: API spawn in --cli mode passes ELECTRON_RUN_AS_NODE=1 | ✓ | 1 | ok |
+| 20 | cli-prod: root index.ts has been moved to legacy/ (not present at repo root) | ✓ | 0 | ok |
+| 21 | cli-prod: package.json dev script does not reference legacy/ | ✓ | 0 | ok |
+| 22 | cli-prod: no package.json script references legacy/index | ✓ | 1 | ok |
+| 23 | cli-prod: package.json dev script launches Electron (contains "electron .") | ✓ | 0 | ok |
+| 24 | cli-prod: literal grep of package.json contains no "legacy/index" string | ✓ | 0 | ok |
+| 25 | cli-prod: legacy/ directory exists but live source files do not import it | ✓ | 33 | ok |
+| 26 | cli-prod: /api/health endpoint is registered in api/server.ts | ✓ | 1 | ok |
+| 27 | cli-prod: ollama execSync in modelRouter uses stdio pipe to suppress Windows errors | ✓ | 0 | ok |
+| 28 | cli-prod: electron/main.js --cli branch awaits waitForApi before spawning CLI | ✗ | 1 | --cli block must AWAIT waitForApi (not fire-and-forget) |
+| 29 | cli-prod: waitForApi function accepts a timeoutMs parameter | ✓ | 0 | ok |
+| 30 | cli-prod: --cli mode error path does not show "set AIDEN_API env var" message | ✓ | 1 | ok |
+| 31 | cli-prod: waitForApi checks res.ok before treating response as success | ✓ | 0 | ok |
+| 32 | cli-prod: waitForApi validates health response body has status ok | ✓ | 0 | ok |
+| 33 | cli-prod: --cli block injects AIDEN_CLI_MODE=1 into CLI child env | ✓ | 0 | ok |
+| 34 | cli-prod: --cli block injects AIDEN_USER_DATA into API child spawn env | ✓ | 1 | ok |
+| 35 | cli-prod: dist-bundle/cli.js has AIDEN_CLI_MODE branch for error messages | ✓ | 92 | ok |
+| 36 | cli-prod: dist-bundle/cli.js CLI-mode error branch excludes "AIDEN_API env var" | ✓ | 70 | ok |
+| 37 | cli-prod: providers/index.ts CONFIG_PATH respects AIDEN_CONFIG_DIR env var | ✓ | 1 | ok |
+| 38 | cli-prod: no source file contains bare require("../package.json") outside electron/preload.js | ✓ | 2 | ok |
+| 39 | cli-prod: prebuild:api and prebuild:cli scripts exist, and core/version.ts is present | ✓ | 0 | ok |
+| 40 | cli-prod: dist-bundle/index.js contains version literal, no require(package.json) | ✓ | 192 | ok |
+| 41 | cli-prod: electron/main.js Node-mode CLI branch uses require(CLI_BUNDLE) | ✓ | 1 | ok |
+| 42 | cli-prod: cli/aiden.ts has Windows VT/ANSI init in main() | ✓ | 6 | ok |
+| 43 | cli-prod: bin/aiden.cmd has help/--help/?? routing and unknown-command message | ✓ | 1 | ok |
+| 44 | cli-prod: electron/main.js before-quit and will-quit are not top-level | ✓ | 0 | ok |
+| 45 | cli-prod: electron/main.js Node-mode branch sets process.env.AIDEN_CLI_MODE | ✓ | 0 | ok |
+| 46 | cli-prod: no unguarded onReady() calls outside callback-function bodies | ✓ | 1 | ok |
+| 47 | cli-prod: bin/aiden.cmd sets ELECTRON_RUN_AS_NODE=1 in tui branch | ✓ | 0 | ok |
+| 48 | cli-prod: electron/main.js node-mode branch appears before require("electron") | ✗ | 0 | electron/main.js node-mode branch must appear BEFORE require('electron') so Electron APIs are not called in Node mode |
+
+## 2026-04-18T10:29:49.318Z — 45/48 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | cli-prod: package.json has build:cli script | ✓ | 0 | ok |
+| 2 | cli-prod: build:cli entry point is cli/aiden.ts | ✓ | 1 | ok |
+| 3 | cli-prod: build:cli outputs to dist-bundle/cli.js | ✓ | 0 | ok |
+| 4 | cli-prod: build:cli marks electron as external dependency | ✓ | 0 | ok |
+| 5 | cli-prod: main build script invokes build:cli | ✓ | 1 | ok |
+| 6 | cli-prod: electron-builder ships dist-bundle via extraResources | ✓ | 0 | ok |
+| 7 | cli-prod: bin/aiden.cmd handles "tui" subcommand | ✓ | 0 | ok |
+| 8 | cli-prod: bin/aiden.cmd handles "pc" subcommand | ✓ | 0 | ok |
+| 9 | cli-prod: bin/aiden.cmd uses Aiden.exe --cli (not node) for tui | ✓ | 0 | ok |
+| 10 | cli-prod: bin/aiden (bash) handles tui and pc subcommands | ✓ | 0 | ok |
+| 11 | cli-prod: electron/main.js detects --cli flag via process.argv | ✓ | 0 | ok |
+| 12 | cli-prod: --cli mode sets ELECTRON_RUN_AS_NODE=1 on spawned child | ✓ | 0 | ok |
+| 13 | cli-prod: --cli mode path does not call createMainWindow() | ✗ | 0 | isCliMode block must exist in main.js |
+| 14 | cli-prod: --cli mode spawns API server as isolated child process | ✓ | 1 | ok |
+| 15 | cli-prod: --cli mode hides macOS dock icon | ✗ | 0 | --cli mode must call app.dock.hide() to suppress macOS dock icon |
+| 16 | cli-prod: build:api script exists and targets api/entry.ts | ✓ | 0 | ok |
+| 17 | cli-prod: dist-bundle/index.js contains API server code | ✓ | 200 | ok |
+| 18 | cli-prod: dist-bundle/index.js must not contain legacy v1.0 CLI banner | ✓ | 250 | ok |
+| 19 | cli-prod: API spawn in --cli mode passes ELECTRON_RUN_AS_NODE=1 | ✓ | 1 | ok |
+| 20 | cli-prod: root index.ts has been moved to legacy/ (not present at repo root) | ✓ | 0 | ok |
+| 21 | cli-prod: package.json dev script does not reference legacy/ | ✓ | 0 | ok |
+| 22 | cli-prod: no package.json script references legacy/index | ✓ | 0 | ok |
+| 23 | cli-prod: package.json dev script launches Electron (contains "electron .") | ✓ | 1 | ok |
+| 24 | cli-prod: literal grep of package.json contains no "legacy/index" string | ✓ | 0 | ok |
+| 25 | cli-prod: legacy/ directory exists but live source files do not import it | ✓ | 32 | ok |
+| 26 | cli-prod: /api/health endpoint is registered in api/server.ts | ✓ | 1 | ok |
+| 27 | cli-prod: ollama execSync in modelRouter uses stdio pipe to suppress Windows errors | ✓ | 0 | ok |
+| 28 | cli-prod: electron/main.js Node-mode branch polls API before starting CLI | ✓ | 1 | ok |
+| 29 | cli-prod: waitForApi function accepts a timeoutMs parameter | ✓ | 0 | ok |
+| 30 | cli-prod: --cli mode error path does not show "set AIDEN_API env var" message | ✓ | 1 | ok |
+| 31 | cli-prod: waitForApi checks res.ok before treating response as success | ✓ | 1 | ok |
+| 32 | cli-prod: waitForApi validates health response body has status ok | ✓ | 0 | ok |
+| 33 | cli-prod: --cli block injects AIDEN_CLI_MODE=1 into CLI child env | ✓ | 0 | ok |
+| 34 | cli-prod: --cli block injects AIDEN_USER_DATA into API child spawn env | ✓ | 1 | ok |
+| 35 | cli-prod: dist-bundle/cli.js has AIDEN_CLI_MODE branch for error messages | ✓ | 82 | ok |
+| 36 | cli-prod: dist-bundle/cli.js CLI-mode error branch excludes "AIDEN_API env var" | ✓ | 67 | ok |
+| 37 | cli-prod: providers/index.ts CONFIG_PATH respects AIDEN_CONFIG_DIR env var | ✓ | 1 | ok |
+| 38 | cli-prod: no source file contains bare require("../package.json") outside electron/preload.js | ✓ | 2 | ok |
+| 39 | cli-prod: prebuild:api and prebuild:cli scripts exist, and core/version.ts is present | ✓ | 1 | ok |
+| 40 | cli-prod: dist-bundle/index.js contains version literal, no require(package.json) | ✓ | 180 | ok |
+| 41 | cli-prod: electron/main.js Node-mode CLI branch uses require(CLI_BUNDLE) | ✓ | 0 | ok |
+| 42 | cli-prod: cli/aiden.ts has Windows VT/ANSI init in main() | ✓ | 9 | ok |
+| 43 | cli-prod: bin/aiden.cmd has help/--help/?? routing and unknown-command message | ✓ | 1 | ok |
+| 44 | cli-prod: electron/main.js before-quit and will-quit are not top-level | ✓ | 0 | ok |
+| 45 | cli-prod: electron/main.js Node-mode branch sets process.env.AIDEN_CLI_MODE | ✓ | 0 | ok |
+| 46 | cli-prod: no unguarded onReady() calls outside callback-function bodies | ✓ | 1 | ok |
+| 47 | cli-prod: bin/aiden.cmd sets ELECTRON_RUN_AS_NODE=1 in tui branch | ✓ | 0 | ok |
+| 48 | cli-prod: electron/main.js node-mode branch appears before require("electron") | ✗ | 0 | electron/main.js node-mode branch must appear BEFORE require('electron') so Electron APIs are not called in Node mode |
+
+## 2026-04-18T10:29:57.952Z — 45/48 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | cli-prod: package.json has build:cli script | ✓ | 1 | ok |
+| 2 | cli-prod: build:cli entry point is cli/aiden.ts | ✓ | 0 | ok |
+| 3 | cli-prod: build:cli outputs to dist-bundle/cli.js | ✓ | 1 | ok |
+| 4 | cli-prod: build:cli marks electron as external dependency | ✓ | 0 | ok |
+| 5 | cli-prod: main build script invokes build:cli | ✓ | 0 | ok |
+| 6 | cli-prod: electron-builder ships dist-bundle via extraResources | ✓ | 0 | ok |
+| 7 | cli-prod: bin/aiden.cmd handles "tui" subcommand | ✓ | 0 | ok |
+| 8 | cli-prod: bin/aiden.cmd handles "pc" subcommand | ✓ | 1 | ok |
+| 9 | cli-prod: bin/aiden.cmd uses Aiden.exe --cli (not node) for tui | ✓ | 0 | ok |
+| 10 | cli-prod: bin/aiden (bash) handles tui and pc subcommands | ✓ | 0 | ok |
+| 11 | cli-prod: electron/main.js detects --cli flag via process.argv | ✓ | 0 | ok |
+| 12 | cli-prod: --cli mode sets ELECTRON_RUN_AS_NODE=1 on spawned child | ✓ | 1 | ok |
+| 13 | cli-prod: --cli mode path does not call createMainWindow() | ✗ | 0 | isCliMode block must exist in main.js |
+| 14 | cli-prod: --cli mode spawns API server as isolated child process | ✓ | 0 | ok |
+| 15 | cli-prod: --cli mode hides macOS dock icon | ✗ | 0 | --cli mode must call app.dock.hide() to suppress macOS dock icon |
+| 16 | cli-prod: build:api script exists and targets api/entry.ts | ✓ | 1 | ok |
+| 17 | cli-prod: dist-bundle/index.js contains API server code | ✓ | 175 | ok |
+| 18 | cli-prod: dist-bundle/index.js must not contain legacy v1.0 CLI banner | ✓ | 229 | ok |
+| 19 | cli-prod: API spawn in --cli mode passes ELECTRON_RUN_AS_NODE=1 | ✓ | 1 | ok |
+| 20 | cli-prod: root index.ts has been moved to legacy/ (not present at repo root) | ✓ | 0 | ok |
+| 21 | cli-prod: package.json dev script does not reference legacy/ | ✓ | 0 | ok |
+| 22 | cli-prod: no package.json script references legacy/index | ✓ | 1 | ok |
+| 23 | cli-prod: package.json dev script launches Electron (contains "electron .") | ✓ | 0 | ok |
+| 24 | cli-prod: literal grep of package.json contains no "legacy/index" string | ✓ | 0 | ok |
+| 25 | cli-prod: legacy/ directory exists but live source files do not import it | ✓ | 34 | ok |
+| 26 | cli-prod: /api/health endpoint is registered in api/server.ts | ✓ | 1 | ok |
+| 27 | cli-prod: ollama execSync in modelRouter uses stdio pipe to suppress Windows errors | ✓ | 0 | ok |
+| 28 | cli-prod: electron/main.js Node-mode branch polls API before starting CLI | ✓ | 0 | ok |
+| 29 | cli-prod: waitForApi function accepts a timeoutMs parameter | ✓ | 0 | ok |
+| 30 | cli-prod: --cli mode error path does not show "set AIDEN_API env var" message | ✓ | 1 | ok |
+| 31 | cli-prod: waitForApi checks res.ok before treating response as success | ✓ | 0 | ok |
+| 32 | cli-prod: waitForApi validates health response body has status ok | ✓ | 1 | ok |
+| 33 | cli-prod: --cli block injects AIDEN_CLI_MODE=1 into CLI child env | ✓ | 0 | ok |
+| 34 | cli-prod: --cli block injects AIDEN_USER_DATA into API child spawn env | ✓ | 0 | ok |
+| 35 | cli-prod: dist-bundle/cli.js has AIDEN_CLI_MODE branch for error messages | ✓ | 84 | ok |
+| 36 | cli-prod: dist-bundle/cli.js CLI-mode error branch excludes "AIDEN_API env var" | ✓ | 69 | ok |
+| 37 | cli-prod: providers/index.ts CONFIG_PATH respects AIDEN_CONFIG_DIR env var | ✓ | 1 | ok |
+| 38 | cli-prod: no source file contains bare require("../package.json") outside electron/preload.js | ✓ | 2 | ok |
+| 39 | cli-prod: prebuild:api and prebuild:cli scripts exist, and core/version.ts is present | ✓ | 1 | ok |
+| 40 | cli-prod: dist-bundle/index.js contains version literal, no require(package.json) | ✓ | 188 | ok |
+| 41 | cli-prod: electron/main.js Node-mode CLI branch uses require(CLI_BUNDLE) | ✓ | 0 | ok |
+| 42 | cli-prod: cli/aiden.ts has Windows VT/ANSI init in main() | ✓ | 7 | ok |
+| 43 | cli-prod: bin/aiden.cmd has help/--help/?? routing and unknown-command message | ✓ | 1 | ok |
+| 44 | cli-prod: electron/main.js before-quit and will-quit are not top-level | ✓ | 0 | ok |
+| 45 | cli-prod: electron/main.js Node-mode branch sets process.env.AIDEN_CLI_MODE | ✓ | 1 | ok |
+| 46 | cli-prod: no unguarded onReady() calls outside callback-function bodies | ✓ | 0 | ok |
+| 47 | cli-prod: bin/aiden.cmd sets ELECTRON_RUN_AS_NODE=1 in tui branch | ✓ | 0 | ok |
+| 48 | cli-prod: electron/main.js node-mode branch appears before require("electron") | ✗ | 0 | electron/main.js node-mode branch must appear BEFORE require('electron') so Electron APIs are not called in Node mode |
+
+## 2026-04-18T10:30:58.784Z — 47/48 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | cli-prod: package.json has build:cli script | ✓ | 0 | ok |
+| 2 | cli-prod: build:cli entry point is cli/aiden.ts | ✓ | 1 | ok |
+| 3 | cli-prod: build:cli outputs to dist-bundle/cli.js | ✓ | 0 | ok |
+| 4 | cli-prod: build:cli marks electron as external dependency | ✓ | 0 | ok |
+| 5 | cli-prod: main build script invokes build:cli | ✓ | 0 | ok |
+| 6 | cli-prod: electron-builder ships dist-bundle via extraResources | ✓ | 0 | ok |
+| 7 | cli-prod: bin/aiden.cmd handles "tui" subcommand | ✓ | 0 | ok |
+| 8 | cli-prod: bin/aiden.cmd handles "pc" subcommand | ✓ | 0 | ok |
+| 9 | cli-prod: bin/aiden.cmd uses Aiden.exe --cli (not node) for tui | ✓ | 0 | ok |
+| 10 | cli-prod: bin/aiden (bash) handles tui and pc subcommands | ✓ | 1 | ok |
+| 11 | cli-prod: electron/main.js detects --cli flag via process.argv | ✓ | 0 | ok |
+| 12 | cli-prod: --cli mode sets ELECTRON_RUN_AS_NODE=1 on spawned child | ✓ | 0 | ok |
+| 13 | cli-prod: --cli mode path does not call createMainWindow() | ✗ | 0 | Node-mode CLI branch must NOT call createMainWindow() — no window in CLI mode |
+| 14 | cli-prod: --cli mode spawns API server as isolated child process | ✓ | 1 | ok |
+| 15 | cli-prod: Node-mode CLI branch does not call Electron app.dock or app.exit | ✓ | 0 | ok |
+| 16 | cli-prod: build:api script exists and targets api/entry.ts | ✓ | 1 | ok |
+| 17 | cli-prod: dist-bundle/index.js contains API server code | ✓ | 176 | ok |
+| 18 | cli-prod: dist-bundle/index.js must not contain legacy v1.0 CLI banner | ✓ | 245 | ok |
+| 19 | cli-prod: API spawn in --cli mode passes ELECTRON_RUN_AS_NODE=1 | ✓ | 1 | ok |
+| 20 | cli-prod: root index.ts has been moved to legacy/ (not present at repo root) | ✓ | 0 | ok |
+| 21 | cli-prod: package.json dev script does not reference legacy/ | ✓ | 0 | ok |
+| 22 | cli-prod: no package.json script references legacy/index | ✓ | 0 | ok |
+| 23 | cli-prod: package.json dev script launches Electron (contains "electron .") | ✓ | 0 | ok |
+| 24 | cli-prod: literal grep of package.json contains no "legacy/index" string | ✓ | 0 | ok |
+| 25 | cli-prod: legacy/ directory exists but live source files do not import it | ✓ | 34 | ok |
+| 26 | cli-prod: /api/health endpoint is registered in api/server.ts | ✓ | 0 | ok |
+| 27 | cli-prod: ollama execSync in modelRouter uses stdio pipe to suppress Windows errors | ✓ | 1 | ok |
+| 28 | cli-prod: electron/main.js Node-mode branch polls API before starting CLI | ✓ | 0 | ok |
+| 29 | cli-prod: waitForApi function accepts a timeoutMs parameter | ✓ | 0 | ok |
+| 30 | cli-prod: --cli mode error path does not show "set AIDEN_API env var" message | ✓ | 1 | ok |
+| 31 | cli-prod: waitForApi checks res.ok before treating response as success | ✓ | 0 | ok |
+| 32 | cli-prod: waitForApi validates health response body has status ok | ✓ | 0 | ok |
+| 33 | cli-prod: --cli block injects AIDEN_CLI_MODE=1 into CLI child env | ✓ | 0 | ok |
+| 34 | cli-prod: --cli block injects AIDEN_USER_DATA into API child spawn env | ✓ | 1 | ok |
+| 35 | cli-prod: dist-bundle/cli.js has AIDEN_CLI_MODE branch for error messages | ✓ | 81 | ok |
+| 36 | cli-prod: dist-bundle/cli.js CLI-mode error branch excludes "AIDEN_API env var" | ✓ | 71 | ok |
+| 37 | cli-prod: providers/index.ts CONFIG_PATH respects AIDEN_CONFIG_DIR env var | ✓ | 0 | ok |
+| 38 | cli-prod: no source file contains bare require("../package.json") outside electron/preload.js | ✓ | 4 | ok |
+| 39 | cli-prod: prebuild:api and prebuild:cli scripts exist, and core/version.ts is present | ✓ | 1 | ok |
+| 40 | cli-prod: dist-bundle/index.js contains version literal, no require(package.json) | ✓ | 183 | ok |
+| 41 | cli-prod: electron/main.js Node-mode CLI branch uses require(CLI_BUNDLE) | ✓ | 0 | ok |
+| 42 | cli-prod: cli/aiden.ts has Windows VT/ANSI init in main() | ✓ | 8 | ok |
+| 43 | cli-prod: bin/aiden.cmd has help/--help/?? routing and unknown-command message | ✓ | 0 | ok |
+| 44 | cli-prod: electron/main.js before-quit and will-quit are not top-level | ✓ | 1 | ok |
+| 45 | cli-prod: electron/main.js Node-mode branch sets process.env.AIDEN_CLI_MODE | ✓ | 0 | ok |
+| 46 | cli-prod: no unguarded onReady() calls outside callback-function bodies | ✓ | 1 | ok |
+| 47 | cli-prod: bin/aiden.cmd sets ELECTRON_RUN_AS_NODE=1 in tui branch | ✓ | 0 | ok |
+| 48 | cli-prod: electron/main.js node-mode branch appears before require("electron") | ✓ | 0 | ok |
+
+## 2026-04-18T10:31:07.750Z — 47/48 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | cli-prod: package.json has build:cli script | ✓ | 0 | ok |
+| 2 | cli-prod: build:cli entry point is cli/aiden.ts | ✓ | 1 | ok |
+| 3 | cli-prod: build:cli outputs to dist-bundle/cli.js | ✓ | 0 | ok |
+| 4 | cli-prod: build:cli marks electron as external dependency | ✓ | 0 | ok |
+| 5 | cli-prod: main build script invokes build:cli | ✓ | 0 | ok |
+| 6 | cli-prod: electron-builder ships dist-bundle via extraResources | ✓ | 1 | ok |
+| 7 | cli-prod: bin/aiden.cmd handles "tui" subcommand | ✓ | 0 | ok |
+| 8 | cli-prod: bin/aiden.cmd handles "pc" subcommand | ✓ | 0 | ok |
+| 9 | cli-prod: bin/aiden.cmd uses Aiden.exe --cli (not node) for tui | ✓ | 0 | ok |
+| 10 | cli-prod: bin/aiden (bash) handles tui and pc subcommands | ✓ | 1 | ok |
+| 11 | cli-prod: electron/main.js detects --cli flag via process.argv | ✓ | 0 | ok |
+| 12 | cli-prod: --cli mode sets ELECTRON_RUN_AS_NODE=1 on spawned child | ✓ | 0 | ok |
+| 13 | cli-prod: --cli mode path does not call createMainWindow() | ✗ | 0 | Node-mode CLI branch must NOT call createMainWindow() — no window in CLI mode |
+| 14 | cli-prod: --cli mode spawns API server as isolated child process | ✓ | 1 | ok |
+| 15 | cli-prod: Node-mode CLI branch does not call Electron app.dock or app.exit | ✓ | 0 | ok |
+| 16 | cli-prod: build:api script exists and targets api/entry.ts | ✓ | 1 | ok |
+| 17 | cli-prod: dist-bundle/index.js contains API server code | ✓ | 173 | ok |
+| 18 | cli-prod: dist-bundle/index.js must not contain legacy v1.0 CLI banner | ✓ | 225 | ok |
+| 19 | cli-prod: API spawn in --cli mode passes ELECTRON_RUN_AS_NODE=1 | ✓ | 0 | ok |
+| 20 | cli-prod: root index.ts has been moved to legacy/ (not present at repo root) | ✓ | 1 | ok |
+| 21 | cli-prod: package.json dev script does not reference legacy/ | ✓ | 0 | ok |
+| 22 | cli-prod: no package.json script references legacy/index | ✓ | 0 | ok |
+| 23 | cli-prod: package.json dev script launches Electron (contains "electron .") | ✓ | 1 | ok |
+| 24 | cli-prod: literal grep of package.json contains no "legacy/index" string | ✓ | 0 | ok |
+| 25 | cli-prod: legacy/ directory exists but live source files do not import it | ✓ | 34 | ok |
+| 26 | cli-prod: /api/health endpoint is registered in api/server.ts | ✓ | 1 | ok |
+| 27 | cli-prod: ollama execSync in modelRouter uses stdio pipe to suppress Windows errors | ✓ | 0 | ok |
+| 28 | cli-prod: electron/main.js Node-mode branch polls API before starting CLI | ✓ | 0 | ok |
+| 29 | cli-prod: waitForApi function accepts a timeoutMs parameter | ✓ | 0 | ok |
+| 30 | cli-prod: --cli mode error path does not show "set AIDEN_API env var" message | ✓ | 1 | ok |
+| 31 | cli-prod: waitForApi checks res.ok before treating response as success | ✓ | 0 | ok |
+| 32 | cli-prod: waitForApi validates health response body has status ok | ✓ | 1 | ok |
+| 33 | cli-prod: --cli block injects AIDEN_CLI_MODE=1 into CLI child env | ✓ | 0 | ok |
+| 34 | cli-prod: --cli block injects AIDEN_USER_DATA into API child spawn env | ✓ | 0 | ok |
+| 35 | cli-prod: dist-bundle/cli.js has AIDEN_CLI_MODE branch for error messages | ✓ | 84 | ok |
+| 36 | cli-prod: dist-bundle/cli.js CLI-mode error branch excludes "AIDEN_API env var" | ✓ | 69 | ok |
+| 37 | cli-prod: providers/index.ts CONFIG_PATH respects AIDEN_CONFIG_DIR env var | ✓ | 0 | ok |
+| 38 | cli-prod: no source file contains bare require("../package.json") outside electron/preload.js | ✓ | 2 | ok |
+| 39 | cli-prod: prebuild:api and prebuild:cli scripts exist, and core/version.ts is present | ✓ | 1 | ok |
+| 40 | cli-prod: dist-bundle/index.js contains version literal, no require(package.json) | ✓ | 190 | ok |
+| 41 | cli-prod: electron/main.js Node-mode CLI branch uses require(CLI_BUNDLE) | ✓ | 1 | ok |
+| 42 | cli-prod: cli/aiden.ts has Windows VT/ANSI init in main() | ✓ | 7 | ok |
+| 43 | cli-prod: bin/aiden.cmd has help/--help/?? routing and unknown-command message | ✓ | 0 | ok |
+| 44 | cli-prod: electron/main.js before-quit and will-quit are not top-level | ✓ | 1 | ok |
+| 45 | cli-prod: electron/main.js Node-mode branch sets process.env.AIDEN_CLI_MODE | ✓ | 0 | ok |
+| 46 | cli-prod: no unguarded onReady() calls outside callback-function bodies | ✓ | 1 | ok |
+| 47 | cli-prod: bin/aiden.cmd sets ELECTRON_RUN_AS_NODE=1 in tui branch | ✓ | 0 | ok |
+| 48 | cli-prod: electron/main.js node-mode branch appears before require("electron") | ✓ | 0 | ok |
+
+## 2026-04-18T10:32:23.232Z — 48/48 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | cli-prod: package.json has build:cli script | ✓ | 1 | ok |
+| 2 | cli-prod: build:cli entry point is cli/aiden.ts | ✓ | 0 | ok |
+| 3 | cli-prod: build:cli outputs to dist-bundle/cli.js | ✓ | 0 | ok |
+| 4 | cli-prod: build:cli marks electron as external dependency | ✓ | 0 | ok |
+| 5 | cli-prod: main build script invokes build:cli | ✓ | 0 | ok |
+| 6 | cli-prod: electron-builder ships dist-bundle via extraResources | ✓ | 0 | ok |
+| 7 | cli-prod: bin/aiden.cmd handles "tui" subcommand | ✓ | 0 | ok |
+| 8 | cli-prod: bin/aiden.cmd handles "pc" subcommand | ✓ | 1 | ok |
+| 9 | cli-prod: bin/aiden.cmd uses Aiden.exe --cli (not node) for tui | ✓ | 0 | ok |
+| 10 | cli-prod: bin/aiden (bash) handles tui and pc subcommands | ✓ | 1 | ok |
+| 11 | cli-prod: electron/main.js detects --cli flag via process.argv | ✓ | 0 | ok |
+| 12 | cli-prod: --cli mode sets ELECTRON_RUN_AS_NODE=1 on spawned child | ✓ | 0 | ok |
+| 13 | cli-prod: --cli mode path does not call createMainWindow() | ✓ | 1 | ok |
+| 14 | cli-prod: --cli mode spawns API server as isolated child process | ✓ | 0 | ok |
+| 15 | cli-prod: Node-mode CLI branch does not call Electron app.dock or app.exit | ✓ | 0 | ok |
+| 16 | cli-prod: build:api script exists and targets api/entry.ts | ✓ | 1 | ok |
+| 17 | cli-prod: dist-bundle/index.js contains API server code | ✓ | 169 | ok |
+| 18 | cli-prod: dist-bundle/index.js must not contain legacy v1.0 CLI banner | ✓ | 237 | ok |
+| 19 | cli-prod: API spawn in --cli mode passes ELECTRON_RUN_AS_NODE=1 | ✓ | 0 | ok |
+| 20 | cli-prod: root index.ts has been moved to legacy/ (not present at repo root) | ✓ | 0 | ok |
+| 21 | cli-prod: package.json dev script does not reference legacy/ | ✓ | 1 | ok |
+| 22 | cli-prod: no package.json script references legacy/index | ✓ | 0 | ok |
+| 23 | cli-prod: package.json dev script launches Electron (contains "electron .") | ✓ | 0 | ok |
+| 24 | cli-prod: literal grep of package.json contains no "legacy/index" string | ✓ | 0 | ok |
+| 25 | cli-prod: legacy/ directory exists but live source files do not import it | ✓ | 35 | ok |
+| 26 | cli-prod: /api/health endpoint is registered in api/server.ts | ✓ | 0 | ok |
+| 27 | cli-prod: ollama execSync in modelRouter uses stdio pipe to suppress Windows errors | ✓ | 0 | ok |
+| 28 | cli-prod: electron/main.js Node-mode branch polls API before starting CLI | ✓ | 1 | ok |
+| 29 | cli-prod: waitForApi function accepts a timeoutMs parameter | ✓ | 0 | ok |
+| 30 | cli-prod: --cli mode error path does not show "set AIDEN_API env var" message | ✓ | 2 | ok |
+| 31 | cli-prod: waitForApi checks res.ok before treating response as success | ✓ | 1 | ok |
+| 32 | cli-prod: waitForApi validates health response body has status ok | ✓ | 0 | ok |
+| 33 | cli-prod: --cli block injects AIDEN_CLI_MODE=1 into CLI child env | ✓ | 0 | ok |
+| 34 | cli-prod: --cli block injects AIDEN_USER_DATA into API child spawn env | ✓ | 0 | ok |
+| 35 | cli-prod: dist-bundle/cli.js has AIDEN_CLI_MODE branch for error messages | ✓ | 83 | ok |
+| 36 | cli-prod: dist-bundle/cli.js CLI-mode error branch excludes "AIDEN_API env var" | ✓ | 65 | ok |
+| 37 | cli-prod: providers/index.ts CONFIG_PATH respects AIDEN_CONFIG_DIR env var | ✓ | 1 | ok |
+| 38 | cli-prod: no source file contains bare require("../package.json") outside electron/preload.js | ✓ | 2 | ok |
+| 39 | cli-prod: prebuild:api and prebuild:cli scripts exist, and core/version.ts is present | ✓ | 1 | ok |
+| 40 | cli-prod: dist-bundle/index.js contains version literal, no require(package.json) | ✓ | 176 | ok |
+| 41 | cli-prod: electron/main.js Node-mode CLI branch uses require(CLI_BUNDLE) | ✓ | 0 | ok |
+| 42 | cli-prod: cli/aiden.ts has Windows VT/ANSI init in main() | ✓ | 9 | ok |
+| 43 | cli-prod: bin/aiden.cmd has help/--help/?? routing and unknown-command message | ✓ | 0 | ok |
+| 44 | cli-prod: electron/main.js before-quit and will-quit are not top-level | ✓ | 0 | ok |
+| 45 | cli-prod: electron/main.js Node-mode branch sets process.env.AIDEN_CLI_MODE | ✓ | 0 | ok |
+| 46 | cli-prod: no unguarded onReady() calls outside callback-function bodies | ✓ | 1 | ok |
+| 47 | cli-prod: bin/aiden.cmd sets ELECTRON_RUN_AS_NODE=1 in tui branch | ✓ | 0 | ok |
+| 48 | cli-prod: electron/main.js node-mode branch appears before require("electron") | ✓ | 0 | ok |
+
+## 2026-04-18T10:41:25.921Z — 48/48 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | cli-prod: package.json has build:cli script | ✓ | 0 | ok |
+| 2 | cli-prod: build:cli entry point is cli/aiden.ts | ✓ | 0 | ok |
+| 3 | cli-prod: build:cli outputs to dist-bundle/cli.js | ✓ | 1 | ok |
+| 4 | cli-prod: build:cli marks electron as external dependency | ✓ | 0 | ok |
+| 5 | cli-prod: main build script invokes build:cli | ✓ | 0 | ok |
+| 6 | cli-prod: electron-builder ships dist-bundle via extraResources | ✓ | 0 | ok |
+| 7 | cli-prod: bin/aiden.cmd handles "tui" subcommand | ✓ | 0 | ok |
+| 8 | cli-prod: bin/aiden.cmd handles "pc" subcommand | ✓ | 0 | ok |
+| 9 | cli-prod: bin/aiden.cmd uses Aiden.exe --cli (not node) for tui | ✓ | 0 | ok |
+| 10 | cli-prod: bin/aiden (bash) handles tui and pc subcommands | ✓ | 1 | ok |
+| 11 | cli-prod: electron/main.js detects --cli flag via process.argv | ✓ | 0 | ok |
+| 12 | cli-prod: --cli mode sets ELECTRON_RUN_AS_NODE=1 on spawned child | ✓ | 0 | ok |
+| 13 | cli-prod: --cli mode path does not call createMainWindow() | ✓ | 1 | ok |
+| 14 | cli-prod: --cli mode spawns API server as isolated child process | ✓ | 0 | ok |
+| 15 | cli-prod: Node-mode CLI branch does not call Electron app.dock or app.exit | ✓ | 0 | ok |
+| 16 | cli-prod: build:api script exists and targets api/entry.ts | ✓ | 1 | ok |
+| 17 | cli-prod: dist-bundle/index.js contains API server code | ✓ | 175 | ok |
+| 18 | cli-prod: dist-bundle/index.js must not contain legacy v1.0 CLI banner | ✓ | 234 | ok |
+| 19 | cli-prod: API spawn in --cli mode passes ELECTRON_RUN_AS_NODE=1 | ✓ | 1 | ok |
+| 20 | cli-prod: root index.ts has been moved to legacy/ (not present at repo root) | ✓ | 0 | ok |
+| 21 | cli-prod: package.json dev script does not reference legacy/ | ✓ | 0 | ok |
+| 22 | cli-prod: no package.json script references legacy/index | ✓ | 1 | ok |
+| 23 | cli-prod: package.json dev script launches Electron (contains "electron .") | ✓ | 0 | ok |
+| 24 | cli-prod: literal grep of package.json contains no "legacy/index" string | ✓ | 0 | ok |
+| 25 | cli-prod: legacy/ directory exists but live source files do not import it | ✓ | 35 | ok |
+| 26 | cli-prod: /api/health endpoint is registered in api/server.ts | ✓ | 2 | ok |
+| 27 | cli-prod: ollama execSync in modelRouter uses stdio pipe to suppress Windows errors | ✓ | 1 | ok |
+| 28 | cli-prod: electron/main.js Node-mode branch polls API before starting CLI | ✓ | 0 | ok |
+| 29 | cli-prod: waitForApi function accepts a timeoutMs parameter | ✓ | 0 | ok |
+| 30 | cli-prod: --cli mode error path does not show "set AIDEN_API env var" message | ✓ | 1 | ok |
+| 31 | cli-prod: waitForApi checks res.ok before treating response as success | ✓ | 1 | ok |
+| 32 | cli-prod: waitForApi validates health response body has status ok | ✓ | 0 | ok |
+| 33 | cli-prod: --cli block injects AIDEN_CLI_MODE=1 into CLI child env | ✓ | 0 | ok |
+| 34 | cli-prod: --cli block injects AIDEN_USER_DATA into API child spawn env | ✓ | 0 | ok |
+| 35 | cli-prod: dist-bundle/cli.js has AIDEN_CLI_MODE branch for error messages | ✓ | 89 | ok |
+| 36 | cli-prod: dist-bundle/cli.js CLI-mode error branch excludes "AIDEN_API env var" | ✓ | 70 | ok |
+| 37 | cli-prod: providers/index.ts CONFIG_PATH respects AIDEN_CONFIG_DIR env var | ✓ | 0 | ok |
+| 38 | cli-prod: no source file contains bare require("../package.json") outside electron/preload.js | ✓ | 2 | ok |
+| 39 | cli-prod: prebuild:api and prebuild:cli scripts exist, and core/version.ts is present | ✓ | 1 | ok |
+| 40 | cli-prod: dist-bundle/index.js contains version literal, no require(package.json) | ✓ | 190 | ok |
+| 41 | cli-prod: electron/main.js Node-mode CLI branch uses require(CLI_BUNDLE) | ✓ | 1 | ok |
+| 42 | cli-prod: cli/aiden.ts has Windows VT/ANSI init in main() | ✓ | 7 | ok |
+| 43 | cli-prod: bin/aiden.cmd has help/--help/?? routing and unknown-command message | ✓ | 0 | ok |
+| 44 | cli-prod: electron/main.js before-quit and will-quit are not top-level | ✓ | 1 | ok |
+| 45 | cli-prod: electron/main.js Node-mode branch sets process.env.AIDEN_CLI_MODE | ✓ | 0 | ok |
+| 46 | cli-prod: no unguarded onReady() calls outside callback-function bodies | ✓ | 1 | ok |
+| 47 | cli-prod: bin/aiden.cmd sets ELECTRON_RUN_AS_NODE=1 in tui branch | ✓ | 0 | ok |
+| 48 | cli-prod: electron/main.js node-mode branch appears before require("electron") | ✓ | 0 | ok |
+
+## 2026-04-18T11:13:54.998Z — 48/48 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | cli-prod: package.json has build:cli script | ✓ | 0 | ok |
+| 2 | cli-prod: build:cli entry point is cli/aiden.ts | ✓ | 1 | ok |
+| 3 | cli-prod: build:cli outputs to dist-bundle/cli.js | ✓ | 0 | ok |
+| 4 | cli-prod: build:cli marks electron as external dependency | ✓ | 0 | ok |
+| 5 | cli-prod: main build script invokes build:cli | ✓ | 0 | ok |
+| 6 | cli-prod: electron-builder ships dist-bundle via extraResources | ✓ | 1 | ok |
+| 7 | cli-prod: bin/aiden.cmd handles "tui" subcommand | ✓ | 0 | ok |
+| 8 | cli-prod: bin/aiden.cmd handles "pc" subcommand | ✓ | 0 | ok |
+| 9 | cli-prod: bin/aiden.cmd uses Aiden.exe --cli (not node) for tui | ✓ | 0 | ok |
+| 10 | cli-prod: bin/aiden (bash) handles tui and pc subcommands | ✓ | 0 | ok |
+| 11 | cli-prod: electron/main.js detects --cli flag via process.argv | ✓ | 0 | ok |
+| 12 | cli-prod: --cli mode sets ELECTRON_RUN_AS_NODE=1 on spawned child | ✓ | 0 | ok |
+| 13 | cli-prod: --cli mode path does not call createMainWindow() | ✓ | 0 | ok |
+| 14 | cli-prod: --cli mode spawns API server as isolated child process | ✓ | 0 | ok |
+| 15 | cli-prod: Node-mode CLI branch does not call Electron app.dock or app.exit | ✓ | 1 | ok |
+| 16 | cli-prod: build:api script exists and targets api/entry.ts | ✓ | 0 | ok |
+| 17 | cli-prod: dist-bundle/index.js contains API server code | ✓ | 170 | ok |
+| 18 | cli-prod: dist-bundle/index.js must not contain legacy v1.0 CLI banner | ✓ | 240 | ok |
+| 19 | cli-prod: API spawn in --cli mode passes ELECTRON_RUN_AS_NODE=1 | ✓ | 1 | ok |
+| 20 | cli-prod: root index.ts has been moved to legacy/ (not present at repo root) | ✓ | 0 | ok |
+| 21 | cli-prod: package.json dev script does not reference legacy/ | ✓ | 0 | ok |
+| 22 | cli-prod: no package.json script references legacy/index | ✓ | 1 | ok |
+| 23 | cli-prod: package.json dev script launches Electron (contains "electron .") | ✓ | 0 | ok |
+| 24 | cli-prod: literal grep of package.json contains no "legacy/index" string | ✓ | 0 | ok |
+| 25 | cli-prod: legacy/ directory exists but live source files do not import it | ✓ | 34 | ok |
+| 26 | cli-prod: /api/health endpoint is registered in api/server.ts | ✓ | 1 | ok |
+| 27 | cli-prod: ollama execSync in modelRouter uses stdio pipe to suppress Windows errors | ✓ | 0 | ok |
+| 28 | cli-prod: electron/main.js Node-mode branch polls API before starting CLI | ✓ | 1 | ok |
+| 29 | cli-prod: waitForApi function accepts a timeoutMs parameter | ✓ | 0 | ok |
+| 30 | cli-prod: --cli mode error path does not show "set AIDEN_API env var" message | ✓ | 1 | ok |
+| 31 | cli-prod: waitForApi checks res.ok before treating response as success | ✓ | 0 | ok |
+| 32 | cli-prod: waitForApi validates health response body has status ok | ✓ | 0 | ok |
+| 33 | cli-prod: --cli block injects AIDEN_CLI_MODE=1 into CLI child env | ✓ | 0 | ok |
+| 34 | cli-prod: --cli block injects AIDEN_USER_DATA into API child spawn env | ✓ | 0 | ok |
+| 35 | cli-prod: dist-bundle/cli.js has AIDEN_CLI_MODE branch for error messages | ✓ | 84 | ok |
+| 36 | cli-prod: dist-bundle/cli.js CLI-mode error branch excludes "AIDEN_API env var" | ✓ | 69 | ok |
+| 37 | cli-prod: providers/index.ts CONFIG_PATH respects AIDEN_CONFIG_DIR env var | ✓ | 0 | ok |
+| 38 | cli-prod: no source file contains bare require("../package.json") outside electron/preload.js | ✓ | 2 | ok |
+| 39 | cli-prod: prebuild:api and prebuild:cli scripts exist, and core/version.ts is present | ✓ | 2 | ok |
+| 40 | cli-prod: dist-bundle/index.js contains version literal, no require(package.json) | ✓ | 185 | ok |
+| 41 | cli-prod: electron/main.js Node-mode CLI branch uses require(CLI_BUNDLE) | ✓ | 1 | ok |
+| 42 | cli-prod: cli/aiden.ts has Windows VT/ANSI init in main() | ✓ | 6 | ok |
+| 43 | cli-prod: bin/aiden.cmd has help/--help/?? routing and unknown-command message | ✓ | 1 | ok |
+| 44 | cli-prod: electron/main.js before-quit and will-quit are not top-level | ✓ | 0 | ok |
+| 45 | cli-prod: electron/main.js Node-mode branch sets process.env.AIDEN_CLI_MODE | ✓ | 0 | ok |
+| 46 | cli-prod: no unguarded onReady() calls outside callback-function bodies | ✓ | 1 | ok |
+| 47 | cli-prod: bin/aiden.cmd sets ELECTRON_RUN_AS_NODE=1 in tui branch | ✓ | 0 | ok |
+| 48 | cli-prod: electron/main.js node-mode branch appears before require("electron") | ✓ | 0 | ok |
+
+## 2026-04-18T11:29:01.666Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | panel(): no-title top/bottom border equals body row width | ✓ | 221 | ok |
+| 2 | panel(): titled top border equals body row width | ✓ | 1 | ok |
+| 3 | panel(): minimum outer width is 50 chars | ✓ | 0 | ok |
+| 4 | Skill interface: origin field present on parsed skills | ✓ | 106 | ok |
+| 5 | SkillLoader: origin inferred as aiden vs local from filePath | ✓ | 0 | ok |
+| 6 | parseLessons(): returns [] safely when LESSONS.md absent | ✓ | 17 | ok |
+| 7 | filterLessons(): keyword filter returns correct subset | ✓ | 0 | ok |
+| 8 | COMMAND_DETAIL: no section is named Hermes (renamed to Core) | ✓ | 2 | ok |
+
+## 2026-04-18T11:29:06.934Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | aidenSdk: exports getSdkMethods, getSdkNamespaces, buildSdkSurface, buildSdkRuntime | ✓ | 1222 | ok |
+| 2 | aidenSdk: getSdkMethods() covers all required namespaces | ✓ | 1 | ok |
+| 3 | aidenSdk: getSdkNamespaces() returns sorted array | ✓ | 0 | ok |
+| 4 | aidenSdk: buildSdkSurface() includes expected namespace headers | ✓ | 15 | ok |
+| 5 | aidenSdk: buildSdkRuntime() returns object with all namespace keys | ✓ | 1 | ok |
+| 6 | runSandbox: module exports runInSandbox function | ✓ | 12 | ok |
+| 7 | toolRegistry: run tool is registered + getToolsForCategories includes run | ✓ | 0 | ok |
+| 8 | scripts/: 5 Prompt-12 example scripts exist and use the aiden SDK | ✓ | 1 | ok |
+
+## 2026-04-18T11:29:12.760Z — 10/10 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | spawnManager: exports spawnSubagent, getActiveSpawns, killSpawn + interfaces | ✓ | 1771 | ok |
+| 2 | spawnManager: getActiveSpawns() returns an array (empty or otherwise) | ✓ | 0 | ok |
+| 3 | spawnManager: killSpawn("nonexistent") returns false | ✓ | 0 | ok |
+| 4 | spawnManager: IterationBudget shape used in budget inheritance formula | ✓ | 1 | ok |
+| 5 | swarmManager: exports swarmSubagents function + SwarmStrategy types | ✓ | 10 | ok |
+| 6 | swarmManager: source contains vote, merge, best strategy branches | ✓ | 0 | ok |
+| 7 | sessionSearch: exports searchSessions and getIndexSize | ✓ | 12 | ok |
+| 8 | sessionSearch: searchSessions("test") returns an array | ✓ | 34 | ok |
+| 9 | hybridSearch: exports hybridSearch function | ✓ | 10 | ok |
+| 10 | toolRegistry: spawn, swarm, search tools registered in TOOLS + TOOL_CATEGORIES | ✓ | 1 | ok |
+
+## 2026-04-18T11:29:16.810Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | release: package.json version === "3.6.0" | ✓ | 0 | ok |
+| 2 | release: CHANGELOG.md contains "## v3.5.0" header | ✓ | 1 | ok |
+| 3 | release: local git tag v3.5.0 exists | ✓ | 57 | ok |
+| 4 | release: no stale 3.1.0 or 3.4.0 version strings in source files | ✓ | 4 | ok |
+| 5 | release: CHANGELOG.md references "34 zero-cost audits across 4 suites" | ✓ | 0 | ok |
+| 6 | release: Aiden-Setup-3.5.0.exe exists in release/ and is > 100 MB | ✓ | 0 | ok |
+| 7 | release: package.json test:audit script includes prompt_r1 | ✓ | 0 | ok |
+| 8 | release: all 4 audit suite files exist (prompt_11 · 12 · 13 · r1) | ✓ | 0 | ok |
+
+## 2026-04-18T11:29:20.816Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | skills: all 20 SKILL.md files exist | ✓ | 2 | ok |
+| 2 | skills: each SKILL.md has name, description, version, tags in frontmatter | ✓ | 3 | ok |
+| 3 | skills: each SKILL.md has a # H1 header | ✓ | 2 | ok |
+| 4 | skills: each SKILL.md has "When to Use" and "How to Use" sections | ✓ | 5 | ok |
+| 5 | skills: no SKILL.md contains security-blocked injection patterns | ✓ | 5 | ok |
+| 6 | skills: each SKILL.md is under 10 KB | ✓ | 2 | ok |
+| 7 | skills: AIDEN_CATALOG.md exists and references all 20 skills | ✓ | 2 | ok |
+| 8 | skills: package.json test:audit script includes prompt_15 | ✓ | 1 | ok |
+
+## 2026-04-18T11:29:24.846Z — 5/5 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | cleanup: all workspace/skills files pass structural validation | ✓ | 1 | ok |
+| 2 | cleanup: no duplicate skill names across learned/ and approved/ | ✓ | 0 | ok |
+| 3 | cleanup: known garbage skills have been deleted | ✓ | 1 | ok |
+| 4 | cleanup: skillTeacher.ts has header, origin:local, and size validation | ✓ | 0 | ok |
+| 5 | cleanup: all official skills/ pass structural validation | ✓ | 14 | ok |
+
+## 2026-04-18T11:29:28.859Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | mcp: McpServerConfig and McpTool interfaces exported from mcpClient | ✓ | 1 | ok |
+| 2 | mcp: named function exports connectMcpServer/disconnectMcpServer/listMcpServers/listMcpTools/callMcpTool | ✓ | 1 | ok |
+| 3 | mcp: mcpClient.ts contains JSON-RPC initialize, tools/list, tools/call | ✓ | 1 | ok |
+| 4 | mcp: workspace/config/mcp.json template exists with servers array | ✓ | 0 | ok |
+| 5 | shell-wedges: cmd/ps/wsl registered in toolRegistry.ts TOOLS and TOOL_DESCRIPTIONS | ✓ | 1 | ok |
+| 6 | mcp: toolRegistry.ts routes colon-prefix tool names to callMcpTool | ✓ | 1 | ok |
+| 7 | sdk: aidenSdk.ts has cmd/ps/wsl in shell and mcp namespace | ✓ | 1 | ok |
+| 8 | cli: /mcp /cmd /ps /wsl registered in COMMANDS and handled in handleCommand | ✓ | 1 | ok |
+
+## 2026-04-18T11:29:33.018Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | r2: cloudflare-worker/landing.js exists and is non-trivial | ✓ | 0 | ok |
+| 2 | r2: landing.js contains zero occurrences of 3.3.1 | ✓ | 1 | ok |
+| 3 | r2: nav badge contains v3.6.0 | ✓ | 1 | ok |
+| 4 | r2: hero "JUST UPDATED" badge shows v3.6.0 | ✓ | 0 | ok |
+| 5 | r2: download URL references v3.6.0/Aiden-Setup-3.6.0.exe | ✓ | 1 | ok |
+| 6 | r2: download section h2 reads "Download Aiden v3.6.0" | ✓ | 0 | ok |
+| 7 | r2: Razorpay integration preserved (≥1 occurrence) | ✓ | 1 | ok |
+| 8 | r2: exactly 5 occurrences of "3.6.0" in landing.js | ✓ | 0 | ok |
+
+## 2026-04-18T11:29:36.993Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | r3: electron-updater present in package.json dependencies | ✓ | 1 | ok |
+| 2 | r3: electron-builder publish config has github/taracodlabs/aiden-releases | ✓ | 0 | ok |
+| 3 | r3: electron/main.js requires electron-updater and calls checkForUpdatesAndNotify | ✓ | 1 | ok |
+| 4 | r3: electron/main.js has ipcMain.handle for install-update-now and check-for-update | ✓ | 0 | ok |
+| 5 | r3: electron/preload.js exposes aidenUpdater with installNow and checkNow | ✓ | 0 | ok |
+| 6 | r3: cli/aiden.ts /refresh handler references update-check function | ✓ | 0 | ok |
+| 7 | r3: no localhost/127.0.0.1 in update-related config in main.js | ✓ | 0 | ok |
+| 8 | r3: publish config structure is valid for electron-updater GitHub provider | ✓ | 0 | ok |
+
+## 2026-04-18T11:29:41.167Z — 8/8 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | p16: ChannelAdapter interface has name, start, stop, send, isHealthy | ✓ | 0 | ok |
+| 2 | p16: Discord adapter has DISCORD_BOT_TOKEN, discord.js import, graceful degradation | ✓ | 0 | ok |
+| 3 | p16: Slack adapter has SLACK_BOT_TOKEN, @slack/bolt import, signing secret | ✓ | 0 | ok |
+| 4 | p16: Webhook adapter has WEBHOOK_SECRET, HMAC, and signature header check | ✓ | 0 | ok |
+| 5 | p16: ChannelManager class has register, startAll, getStatus | ✓ | 0 | ok |
+| 6 | p16: /channels command is in CLI COMMANDS array | ✓ | 1 | ok |
+| 7 | p16: no process.exit or uncaught throw in adapter config loading sections | ✓ | 0 | ok |
+| 8 | p16: ALLOWED_ env var used in discord, slack, and webhook adapters | ✓ | 1 | ok |
+
+## 2026-04-18T11:29:45.473Z — 10/10 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | p17: stt.ts exports transcribe(), SttResult, SttOptions, getSttProviders() | ✓ | 0 | ok |
+| 2 | p17: stt.ts has Groq, OpenAI, and local whisper-cli fallback chain | ✓ | 0 | ok |
+| 3 | p17: tts.ts exports synthesize(), TtsResult, TtsOptions, getTtsProviders() | ✓ | 0 | ok |
+| 4 | p17: tts.ts has Edge TTS, ElevenLabs, and SAPI fallback chain | ✓ | 0 | ok |
+| 5 | p17: tts.ts exports cleanForTTS() that strips markdown | ✓ | 0 | ok |
+| 6 | p17: audio.ts exports recordAudio(), playAudio(), checkAudioAvailable() | ✓ | 1 | ok |
+| 7 | p17: audio.ts recordAudio() takes durationSeconds and outputPath parameters | ✓ | 0 | ok |
+| 8 | p17: /voice /speak /listen commands registered in CLI COMMANDS array and handleCommand | ✓ | 2 | ok |
+| 9 | p17: CLI state has voiceMode flag; TTS called after AI reply when voiceMode is on | ✓ | 1 | ok |
+| 10 | p17: aidenSdk.ts has voice namespace; aiden-sdk.d.ts has AidenVoice interface | ✓ | 1 | ok |
+
+## 2026-04-18T11:30:20.260Z — 9/10 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | timer: cli/aiden.ts renderActivity() shows elapsed seconds | ✓ | 2 | ok |
+| 2 | timer: cli/aiden.ts status bar passes startedAt-based elapsedMs | ✓ | 2 | ok |
+| 3 | timer: cli/aiden.ts uses VERSION from core/version for display | ✓ | 1 | ok |
+| 4 | timer: electron/preload.js has no hardcoded 3.5.0 | ✓ | 0 | ok |
+| 5 | timer: cloudflare-worker/license-server.js has no 3.5.0 references | ✓ | 0 | ok |
+| 6 | timer: index.ts startup log fallback is not 3.5.0 | ✗ | 0 | ENOENT: no such file or directory, open 'C:\Users\shiva\DevOS\index.ts' |
+| 7 | timer: core/skillTeacher.ts min size gate is 200 bytes | ✓ | 1 | ok |
+| 8 | timer: core/skillTeacher.ts has SESSION_SKILL_LIMIT = 2 | ✓ | 0 | ok |
+| 9 | timer: core/skillTeacher.ts dedup includes BUNDLED_SKILLS_DIR | ✓ | 1 | ok |
+| 10 | timer: workspace/skills/learned/ and approved/ are empty | ✓ | 0 | ok |
+
+## 2026-04-18T11:30:33.591Z — 41/41 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | cli-prod: package.json has build:cli script | ✓ | 1 | ok |
+| 2 | cli-prod: build:cli entry point is cli/aiden.ts | ✓ | 0 | ok |
+| 3 | cli-prod: build:cli outputs to dist-bundle/cli.js | ✓ | 0 | ok |
+| 4 | cli-prod: build:cli marks electron as external dependency | ✓ | 1 | ok |
+| 5 | cli-prod: main build script invokes build:cli | ✓ | 0 | ok |
+| 6 | cli-prod: electron-builder ships dist-bundle via extraResources | ✓ | 0 | ok |
+| 7 | cli-prod: bin/aiden.cmd handles "pc" subcommand | ✓ | 1 | ok |
+| 8 | cli-prod: bin/aiden.cmd help text documents TUI launch commands | ✓ | 0 | ok |
+| 9 | cli-prod: bin/aiden (bash) handles pc subcommand | ✓ | 0 | ok |
+| 10 | cli-prod: bin/aiden (bash) help text documents TUI launch commands | ✓ | 0 | ok |
+| 11 | cli-prod: electron/main.js does not contain ELECTRON_RUN_AS_NODE node-mode branch | ✓ | 1 | ok |
+| 12 | cli-prod: electron/main.js starts with Electron require at top level | ✓ | 0 | ok |
+| 13 | cli-prod: build:api script exists and targets api/entry.ts | ✓ | 0 | ok |
+| 14 | cli-prod: dist-bundle/index.js contains API server code | ✓ | 201 | ok |
+| 15 | cli-prod: dist-bundle/index.js must not contain legacy v1.0 CLI banner | ✓ | 368 | ok |
+| 16 | cli-prod: electron/main.js GUI mode spawns API server process | ✓ | 1 | ok |
+| 17 | cli-prod: root index.ts has been moved to legacy/ (not present at repo root) | ✓ | 1 | ok |
+| 18 | cli-prod: package.json dev script does not reference legacy/ | ✓ | 1 | ok |
+| 19 | cli-prod: no package.json script references legacy/index | ✓ | 1 | ok |
+| 20 | cli-prod: package.json dev script launches Electron (contains "electron .") | ✓ | 0 | ok |
+| 21 | cli-prod: literal grep of package.json contains no "legacy/index" string | ✓ | 0 | ok |
+| 22 | cli-prod: legacy/ directory exists but live source files do not import it | ✓ | 59 | ok |
+| 23 | cli-prod: /api/health endpoint is registered in api/server.ts | ✓ | 2 | ok |
+| 24 | cli-prod: ollama execSync in modelRouter uses stdio pipe to suppress Windows errors | ✓ | 1 | ok |
+| 25 | cli-prod: electron/main.js GUI mode calls waitForApiCallback before creating window | ✓ | 0 | ok |
+| 26 | cli-prod: waitForApi function accepts a timeoutMs parameter | ✓ | 1 | ok |
+| 27 | cli-prod: --cli mode error path does not show "set AIDEN_API env var" message | ✓ | 1 | ok |
+| 28 | cli-prod: waitForApi checks res.ok before treating response as success | ✓ | 1 | ok |
+| 29 | cli-prod: waitForApi validates health response body has status ok | ✓ | 0 | ok |
+| 30 | cli-prod: electron/main.js injects AIDEN_USER_DATA into API process env | ✓ | 1 | ok |
+| 31 | cli-prod: dist-bundle/cli.js has AIDEN_CLI_MODE branch for error messages | ✓ | 118 | ok |
+| 32 | cli-prod: dist-bundle/cli.js CLI-mode error branch excludes "AIDEN_API env var" | ✓ | 83 | ok |
+| 33 | cli-prod: providers/index.ts CONFIG_PATH respects AIDEN_CONFIG_DIR env var | ✓ | 0 | ok |
+| 34 | cli-prod: no source file contains bare require("../package.json") outside electron/preload.js | ✓ | 3 | ok |
+| 35 | cli-prod: prebuild:api and prebuild:cli scripts exist, and core/version.ts is present | ✓ | 0 | ok |
+| 36 | cli-prod: dist-bundle/index.js contains version literal, no require(package.json) | ✓ | 225 | ok |
+| 37 | cli-prod: electron/main.js defines CLI_BUNDLE path | ✓ | 1 | ok |
+| 38 | cli-prod: cli/aiden.ts has Windows VT/ANSI init in main() | ✓ | 27 | ok |
+| 39 | cli-prod: bin/aiden.cmd has help/--help/?? routing and unknown-command message | ✓ | 3 | ok |
+| 40 | cli-prod: electron/main.js has before-quit and will-quit app lifecycle handlers | ✓ | 1 | ok |
+| 41 | cli-prod: no unguarded onReady() calls outside callback-function bodies | ✓ | 1 | ok |
+
+## 2026-04-18T18:51:20.486Z — 41/41 passed
+
+| # | Test | Pass | Ms | Reason |
+|---|------|------|----|--------|
+| 1 | cli-prod: package.json has build:cli script | ✓ | 1 | ok |
+| 2 | cli-prod: build:cli entry point is cli/aiden.ts | ✓ | 1 | ok |
+| 3 | cli-prod: build:cli outputs to dist-bundle/cli.js | ✓ | 0 | ok |
+| 4 | cli-prod: build:cli marks electron as external dependency | ✓ | 0 | ok |
+| 5 | cli-prod: main build script invokes build:cli | ✓ | 1 | ok |
+| 6 | cli-prod: electron-builder ships dist-bundle via extraResources | ✓ | 0 | ok |
+| 7 | cli-prod: bin/aiden.cmd handles "pc" subcommand | ✓ | 15 | ok |
+| 8 | cli-prod: bin/aiden.cmd help text documents TUI launch commands | ✓ | 0 | ok |
+| 9 | cli-prod: bin/aiden (bash) handles pc subcommand | ✓ | 14 | ok |
+| 10 | cli-prod: bin/aiden (bash) help text documents TUI launch commands | ✓ | 0 | ok |
+| 11 | cli-prod: electron/main.js does not contain ELECTRON_RUN_AS_NODE node-mode branch | ✓ | 31 | ok |
+| 12 | cli-prod: electron/main.js starts with Electron require at top level | ✓ | 0 | ok |
+| 13 | cli-prod: build:api script exists and targets api/entry.ts | ✓ | 0 | ok |
+| 14 | cli-prod: dist-bundle/index.js contains API server code | ✓ | 205 | ok |
+| 15 | cli-prod: dist-bundle/index.js must not contain legacy v1.0 CLI banner | ✓ | 293 | ok |
+| 16 | cli-prod: electron/main.js GUI mode spawns API server process | ✓ | 1 | ok |
+| 17 | cli-prod: root index.ts has been moved to legacy/ (not present at repo root) | ✓ | 0 | ok |
+| 18 | cli-prod: package.json dev script does not reference legacy/ | ✓ | 1 | ok |
+| 19 | cli-prod: no package.json script references legacy/index | ✓ | 0 | ok |
+| 20 | cli-prod: package.json dev script launches Electron (contains "electron .") | ✓ | 0 | ok |
+| 21 | cli-prod: literal grep of package.json contains no "legacy/index" string | ✓ | 0 | ok |
+| 22 | cli-prod: legacy/ directory exists but live source files do not import it | ✓ | 144 | ok |
+| 23 | cli-prod: /api/health endpoint is registered in api/server.ts | ✓ | 2 | ok |
+| 24 | cli-prod: ollama execSync in modelRouter uses stdio pipe to suppress Windows errors | ✓ | 0 | ok |
+| 25 | cli-prod: electron/main.js GUI mode calls waitForApiCallback before creating window | ✓ | 0 | ok |
+| 26 | cli-prod: waitForApi function accepts a timeoutMs parameter | ✓ | 1 | ok |
+| 27 | cli-prod: --cli mode error path does not show "set AIDEN_API env var" message | ✓ | 1 | ok |
+| 28 | cli-prod: waitForApi checks res.ok before treating response as success | ✓ | 0 | ok |
+| 29 | cli-prod: waitForApi validates health response body has status ok | ✓ | 0 | ok |
+| 30 | cli-prod: electron/main.js injects AIDEN_USER_DATA into API process env | ✓ | 0 | ok |
+| 31 | cli-prod: dist-bundle/cli.js has AIDEN_CLI_MODE branch for error messages | ✓ | 117 | ok |
+| 32 | cli-prod: dist-bundle/cli.js CLI-mode error branch excludes "AIDEN_API env var" | ✓ | 95 | ok |
+| 33 | cli-prod: providers/index.ts CONFIG_PATH respects AIDEN_CONFIG_DIR env var | ✓ | 1 | ok |
+| 34 | cli-prod: no source file contains bare require("../package.json") outside electron/preload.js | ✓ | 3 | ok |
+| 35 | cli-prod: prebuild:api and prebuild:cli scripts exist, and core/version.ts is present | ✓ | 0 | ok |
+| 36 | cli-prod: dist-bundle/index.js contains version literal, no require(package.json) | ✓ | 275 | ok |
+| 37 | cli-prod: electron/main.js defines CLI_BUNDLE path | ✓ | 0 | ok |
+| 38 | cli-prod: cli/aiden.ts has Windows VT/ANSI init in main() | ✓ | 14 | ok |
+| 39 | cli-prod: bin/aiden.cmd has help/--help/?? routing and unknown-command message | ✓ | 2 | ok |
+| 40 | cli-prod: electron/main.js has before-quit and will-quit app lifecycle handlers | ✓ | 1 | ok |
+| 41 | cli-prod: no unguarded onReady() calls outside callback-function bodies | ✓ | 4 | ok |

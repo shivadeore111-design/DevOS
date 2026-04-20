@@ -114,20 +114,81 @@ export interface Skill {
   name:        string
   description: string
   version:     string
+  category?:   string   // parsed from frontmatter "category:" field
   tags:        string[]
   content:     string
   filePath:    string
   origin:      'aiden' | 'community' | 'local'
 }
 
-// Keywords that map skills to task categories
-const KEYWORD_MAP: Record<string, string[]> = {
-  web:      ['search', 'browse', 'fetch', 'scrape', 'website', 'url', 'internet', 'online', 'news', 'weather'],
-  file:     ['create', 'write', 'read', 'save', 'file', 'document', 'report', 'desktop', 'folder'],
-  code:     ['code', 'script', 'python', 'node', 'javascript', 'typescript', 'program', 'build', 'run', 'execute'],
-  research: ['research', 'analyze', 'compare', 'study', 'investigate', 'find', 'gather', 'information'],
-  deploy:   ['deploy', 'vercel', 'github', 'push', 'publish', 'release', 'launch'],
-  system:   ['system', 'computer', 'machine', 'disk', 'cpu', 'memory', 'process'],
+// ── Step 0 values — real categories found via:
+//   grep -h "^category:" skills/*/SKILL.md | sort -u
+//
+// category: agent-bridge
+// category: creative
+// category: developer
+// category: gaming
+// category: india
+// category: media
+// category: productivity
+// category: research
+// category: smart-home
+// category: social
+// category: windows
+//
+// Keyword buckets map trigger words → those actual category strings.
+// A bucket with no matching category was dropped (no invented names).
+
+const CATEGORY_KEYWORD_MAP: Record<string, string[]> = {
+  'productivity':  ['obsidian', 'notion', 'outlook', 'calendar', 'email', 'linear', 'todo', 'onenote', 'drive', 'sheets', 'docs'],
+  'developer':     ['git', 'github', 'docker', 'jupyter', 'code', 'debug', 'test', 'pr', 'repo', 'npm', 'node', 'python', 'typescript', 'deploy', 'vercel', 'ssh'],
+  'india':         ['nse', 'nifty', 'zerodha', 'upstox', 'sensex', 'bse', 'trading', 'trade', 'stock', 'fii', 'dii', 'portfolio', 'reliance', 'infy', 'options', 'derivatives', 'tax', 'itr'],
+  'research':      ['research', 'arxiv', 'paper', 'academic', 'pdf', 'ocr', 'rss', 'feed'],
+  'windows':       ['powershell', 'registry', 'services', 'wsl', 'windows', 'cpu', 'disk', 'network', 'process', 'clipboard', 'scheduler'],
+  'creative':      ['image', 'stable diffusion', 'generative', 'p5js', 'ascii', 'banner', 'art', 'draw'],
+  'media':         ['youtube', 'gif', 'audio', 'music', 'video', 'transcript', 'tenor', 'giphy'],
+  'social':        ['twitter', 'tweet', 'linkedin', 'social media'],
+  'smart-home':    ['hue', 'philips', 'smart home', 'iot', 'lights'],
+  'agent-bridge':  ['claude code', 'openai', 'codex', 'opencode'],
+  'gaming':        ['minecraft', 'pokemon', 'gameboy', 'emulator'],
+}
+
+// ── isSimpleMessage ────────────────────────────────────────────
+// Returns true for short conversational messages that need minimal context:
+// < 15 words, no tool keywords, no URLs/paths, no past-context references.
+
+export function isSimpleMessage(msg: string): boolean {
+  const words = msg.trim().split(/\s+/).length
+  if (words > 15) return false
+
+  const toolKeywords = [
+    'file', 'search', 'browse', 'run', 'execute', 'install',
+    'download', 'create', 'delete', 'open', 'screenshot',
+    'scan', 'analyze', 'deploy', 'commit', 'push', 'build',
+    'docker', 'git', 'npm', 'python', 'shell', 'terminal',
+    'outlook', 'email', 'calendar', 'notion', 'obsidian',
+    'trade', 'stock', 'nse', 'portfolio', 'backtest',
+    'remember', 'forgot', 'last time', 'we discussed',
+    'clone', 'voice', 'speak', 'listen', 'transcribe',
+  ]
+  const lower = msg.toLowerCase()
+  if (toolKeywords.some(kw => lower.includes(kw))) return false
+  if (/https?:\/\/|\.\w{2,4}(\s|$)|[\\\/]/.test(msg)) return false
+
+  return true
+}
+
+// ── needsMemory ────────────────────────────────────────────────
+// Returns true only when the message explicitly references past context.
+// Prevents dumping all memories into every prompt.
+
+export function needsMemory(msg: string): boolean {
+  const memoryKeywords = [
+    'remember', 'forgot', 'last time', 'we discussed',
+    'earlier', 'before', 'previous', 'you said', 'i told you',
+    'my name', 'my project', 'our', 'we were',
+  ]
+  return memoryKeywords.some(kw => msg.toLowerCase().includes(kw))
 }
 
 // ── SkillLoader ────────────────────────────────────────────────
@@ -248,12 +309,14 @@ export class SkillLoader {
         ? tagsRaw.split(',').map(t => t.trim().toLowerCase()).filter(Boolean)
         : []
 
-      const name = get('name') || path.basename(path.dirname(filePath))
+      const name     = get('name') || path.basename(path.dirname(filePath))
+      const category = get('category') || undefined
 
       return {
         name,
         description: get('description'),
         version:     get('version') || '1.0.0',
+        category,
         tags,
         content,
         filePath,
@@ -263,17 +326,19 @@ export class SkillLoader {
   }
 
   findRelevant(message: string, maxSkills = 3): Skill[] {
+    if (isSimpleMessage(message)) return []  // no skills for short conversational messages
+
     const skills = this.loadAll()
     if (skills.length === 0) return []
 
     const lower = message.toLowerCase()
     const words = lower.split(/\s+/)
 
-    // Detect categories from message text
+    // Detect matching categories from message text using real category strings
     const matchedCategories = new Set<string>()
-    for (const [category, keywords] of Object.entries(KEYWORD_MAP)) {
+    for (const [cat, keywords] of Object.entries(CATEGORY_KEYWORD_MAP)) {
       if (keywords.some(kw => lower.includes(kw))) {
-        matchedCategories.add(category)
+        matchedCategories.add(cat)
       }
     }
 
@@ -288,15 +353,17 @@ export class SkillLoader {
       const descWords = skill.description.toLowerCase().split(/\s+/)
       words.forEach(w => { if (w.length > 3 && descWords.includes(w)) score += 3 })
 
-      // Direct tag match
+      // Category field match (direct — highest priority)
+      if (skill.category && matchedCategories.has(skill.category)) score += 8
+
+      // Direct tag match against message text
       skill.tags.forEach(tag => {
         if (lower.includes(tag)) score += 5
-        if (matchedCategories.has(tag)) score += 4
       })
 
-      // Category match
-      matchedCategories.forEach(cat => {
-        if (skill.tags.includes(cat)) score += 6
+      // Tag matches a detected category name
+      skill.tags.forEach(tag => {
+        if (matchedCategories.has(tag)) score += 4
       })
 
       return { skill, score }
