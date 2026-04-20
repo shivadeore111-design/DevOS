@@ -1,0 +1,37 @@
+<svg width="100%" viewBox="0 0 1600 400" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Aiden">
+<title>Aiden</title>
+<desc>Aiden — local-first AI operating system for Windows</desc>
+<rect width="1600" height="400" fill="#0a0e1a"/>
+<g opacity="0.04">
+<line x1="0" y1="80" x2="1600" y2="80" stroke="#ffffff" stroke-width="0.5"/>
+<line x1="0" y1="160" x2="1600" y2="160" stroke="#ffffff" stroke-width="0.5"/>
+<line x1="0" y1="240" x2="1600" y2="240" stroke="#ffffff" stroke-width="0.5"/>
+<line x1="0" y1="320" x2="1600" y2="320" stroke="#ffffff" stroke-width="0.5"/>
+<line x1="200" y1="0" x2="200" y2="400" stroke="#ffffff" stroke-width="0.5"/>
+<line x1="400" y1="0" x2="400" y2="400" stroke="#ffffff" stroke-width="0.5"/>
+<line x1="600" y1="0" x2="600" y2="400" stroke="#ffffff" stroke-width="0.5"/>
+<line x1="800" y1="0" x2="800" y2="400" stroke="#ffffff" stroke-width="0.5"/>
+<line x1="1000" y1="0" x2="1000" y2="400" stroke="#ffffff" stroke-width="0.5"/>
+<line x1="1200" y1="0" x2="1200" y2="400" stroke="#ffffff" stroke-width="0.5"/>
+<line x1="1400" y1="0" x2="1400" y2="400" stroke="#ffffff" stroke-width="0.5"/>
+</g>
+<g transform="translate(160, 140)">
+<path d="M 0 120 L 50 0 L 100 120 M 18 80 L 82 80" stroke="#f97316" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+<path d="M 130 0 L 170 120" stroke="#f97316" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</g>
+<text x="400" y="220" font-family="Inter, Segoe UI, system-ui, sans-serif" font-size="120" font-weight="700" fill="#ffffff" letter-spacing="-4">Aiden</text>
+<text x="400" y="270" font-family="JetBrains Mono, Consolas, monospace" font-size="22" font-weight="400" fill="#94a3b8" letter-spacing="0.5">local-first AI operating system for Windows</text>
+<g transform="translate(400, 310)" font-family="JetBrains Mono, Consolas, monospace" font-size="16" font-weight="500">
+<circle cx="8" cy="-5" r="4" fill="#f97316"/>
+<text x="22" y="0" fill="#cbd5e1">56 skills</text>
+<circle cx="148" cy="-5" r="4" fill="#f97316"/>
+<text x="162" y="0" fill="#cbd5e1">60+ tools</text>
+<circle cx="298" cy="-5" r="4" fill="#f97316"/>
+<text x="312" y="0" fill="#cbd5e1">13 providers</text>
+<circle cx="478" cy="-5" r="4" fill="#f97316"/>
+<text x="492" y="0" fill="#cbd5e1">AGPL-3.0</text>
+<circle cx="638" cy="-5" r="4" fill="#f97316"/>
+<text x="652" y="0" fill="#cbd5e1">fully offline-capable</text>
+</g>
+<text x="1540" y="370" font-family="JetBrains Mono, Consolas, monospace" font-size="14" font-weight="400" fill="#475569" text-anchor="end">v3.7.0 — aiden.taracod.com</text>
+</svg>

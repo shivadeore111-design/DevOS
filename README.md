@@ -1,12 +1,5 @@
 <p align="center">
-  <img src="docs/images/logo.png" alt="Aiden" width="120" height="120" />
-</p>
-
-<h1 align="center">Aiden</h1>
-
-<p align="center">
-  <b>Local-first AI operating system for Windows.</b><br/>
-  56 skills · 60+ tools · 13 providers · AGPL-3.0 · fully offline-capable
+  <img src="docs/images/hero.png" alt="Aiden — local-first AI operating system for Windows" />
 </p>
 
 <p align="center">
