@@ -1,68 +1,66 @@
-```
-    ___   _    ___   ___  _  _
-   /   \ | |  |   \ | __|| \| |
-  / /\ / | |_ | |) || _| | .` |
- /_/\_\  |___||___/ |___||_|\_|
-  local-first AI OS for Windows
-```
+<p align="center">
+  <img src="docs/images/logo.png" alt="Aiden" width="120" height="120" />
+</p>
 
-**[aiden.taracod.com](https://aiden.taracod.com)** · **[Releases](https://github.com/taracodlabs/aiden-releases/releases)** · **[Contact](https://aiden.taracod.com/contact)**
+<h1 align="center">Aiden</h1>
 
-[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078d4)](https://github.com/taracodlabs/aiden-releases/releases/latest)
-[![Version](https://img.shields.io/badge/version-v3.7.0-f97316)](https://github.com/taracodlabs/aiden-releases/releases/latest)
-[![Skills](https://img.shields.io/badge/skills-56-22c55e)](skills/)
-[![Providers](https://img.shields.io/badge/providers-13-a855f7)](providers/)
+<p align="center">
+  <b>Local-first AI operating system for Windows.</b><br/>
+  56 skills · 60+ tools · 13 providers · AGPL-3.0 · fully offline-capable
+</p>
 
----
+<p align="center">
+  <a href="https://github.com/taracodlabs/aiden-releases/releases/latest"><img src="https://img.shields.io/github/v/release/taracodlabs/aiden-releases?color=f97316&label=version" alt="Latest version" /></a>
+  <a href="https://github.com/taracodlabs/aiden-releases/releases"><img src="https://img.shields.io/github/downloads/taracodlabs/aiden-releases/total?color=f97316&label=downloads" alt="Downloads" /></a>
+  <a href="https://discord.gg/gMZ3hUnQTm"><img src="https://img.shields.io/badge/chat-discord-7289da?logo=discord&logoColor=white" alt="Discord" /></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-orange" alt="License: AGPL-3.0" /></a>
+  <a href="https://github.com/shivadeore111-design/DevOS/stargazers"><img src="https://img.shields.io/github/stars/shivadeore111-design/DevOS?style=flat&color=f9d71c" alt="Stars" /></a>
+</p>
 
-Aiden is a local-first AI operating system for Windows. It runs entirely on your machine — no cloud account required, no telemetry, no data leaving your hardware unless you configure a cloud API key. At v3.7.0 it ships as a signed installer with auto-updates, 56 composable skills, 60+ autonomous tools, a 6-layer memory architecture, self-healing provider routing, and the ability to control your screen, browse the web, run code, send emails, manage files, and hold a full conversation — entirely offline via Ollama.
-
----
-
-## Quick links
-
-| | |
-|---|---|
-| **Install (one command)** | `irm aiden.taracod.com/install.ps1 \| iex` |
-| **Download installer** | [Aiden-Setup-3.7.0.exe](https://github.com/taracodlabs/aiden-releases/releases/download/v3.7.0/Aiden-Setup-3.7.0.exe) |
-| **Releases & changelog** | [github.com/taracodlabs/aiden-releases](https://github.com/taracodlabs/aiden-releases) |
-| **Landing page** | [aiden.taracod.com](https://aiden.taracod.com) |
-| **Contact / commercial** | [aiden.taracod.com/contact](https://aiden.taracod.com/contact) |
-| **Discord** | [discord.gg/gMZ3hUnQTm](https://discord.gg/gMZ3hUnQTm) |
-| **License** | AGPL-3.0 core · Apache-2.0 skills |
+<p align="center">
+  <a href="https://aiden.taracod.com"><b>Website</b></a> &nbsp;·&nbsp;
+  <a href="https://aiden.taracod.com/contact"><b>Contact</b></a> &nbsp;·&nbsp;
+  <a href="https://discord.gg/gMZ3hUnQTm"><b>Discord</b></a> &nbsp;·&nbsp;
+  <a href="https://github.com/taracodlabs/aiden-releases/releases/latest"><b>Download</b></a>
+</p>
 
 ---
+
+Aiden is a local-first AI operating system for Windows. It runs entirely on
+your machine — no cloud account required, no telemetry, no data leaving your
+hardware unless you configure a cloud provider. At v3.7.0 it ships as a signed
+installer with auto-updates, 56 composable skills, 60+ autonomous tools, a
+6-layer memory architecture, self-healing provider routing, and the ability
+to control your screen, browse the web, run code, send emails, manage files,
+and hold a full conversation — offline via Ollama.
 
 ## Install
-
-### One command (PowerShell 5.1+, Windows 10/11)
 
 ```powershell
 irm aiden.taracod.com/install.ps1 | iex
 ```
 
-Downloads and runs the signed installer, then places `aiden` on your PATH. Run `aiden pc` to launch.
+Or [download the installer](https://github.com/taracodlabs/aiden-releases/releases/latest) manually. Windows 10/11, 64-bit, ~500MB disk space.
 
-### Download the installer directly
+## Screenshots
 
-**[→ Aiden-Setup-3.7.0.exe](https://github.com/taracodlabs/aiden-releases/releases/download/v3.7.0/Aiden-Setup-3.7.0.exe)**
+### Terminal (TUI)
 
-Run the installer. Aiden auto-updates after first launch — install once, stay current.
+![TUI](docs/images/tui.png)
 
-### Build from source
+Full command palette, 56 skills, 80 tools, automatic provider routing (Groq → BOA → Ollama). Runs in any terminal.
 
-Requires: Node.js ≥ 18, Windows 10/11 (64-bit), [Ollama](https://ollama.com) installed and running.
+### Desktop app
 
-```bash
-git clone https://github.com/taracodlabs/aiden.git
-cd aiden
-npm install
-npm run build          # TypeScript compile + CLI + API bundle
-npm run dist           # Signed Windows installer → release/
-```
+![Desktop](docs/images/dashboard.png)
 
-Install the `.exe` in `release/`, then run `aiden` from any terminal.
+Full chat interface with live activity panel. Local-first, connects to Ollama or any of 13 cloud providers via your own API key.
+
+### Memory graph
+
+![Memory graph](docs/images/memory-graph.png)
+
+6-layer memory visualized — every conversation, task, and learned pattern becomes a node in the knowledge graph. Fully local, persisted to disk, searchable.
 
 ---
 
@@ -78,33 +76,6 @@ Install the `.exe` in `release/`, then run `aiden` from any terminal.
 | **Voice** | Speech-to-text (Groq → OpenAI → local Whisper.cpp) + text-to-speech (Edge TTS → ElevenLabs → Windows SAPI); full offline voice loop |
 | **Channel adapters** | Discord, Slack, Telegram, WhatsApp, Email, Webhook, Twilio — any channel triggers the same agent loop |
 | **Computer use** | Screenshots, screen state reader, GUI automation via keyboard/mouse when asked — full OS control mode |
-
----
-
-## Screenshots
-
-### Terminal (TUI)
-
-![TUI](docs/images/tui.png)
-
-Full command palette, 56 skills, 80 tools, automatic provider
-routing (Groq → BOA → Ollama). Runs in any terminal.
-
-### Desktop app
-
-![Desktop](docs/images/dashboard.png)
-
-Full chat interface with live activity panel. Local-first,
-connects to Ollama or any of 13 cloud providers via your
-own API key.
-
-### Memory graph
-
-![Memory graph](docs/images/memory-graph.png)
-
-6-layer memory visualized — every conversation, task, and
-learned pattern becomes a node in the knowledge graph. Fully
-local, persisted to disk, searchable.
 
 ---
 
@@ -176,6 +147,16 @@ Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the ful
 - All contributors sign the [CLA](.github/CLA.md) once via PR comment
 - Follow [Conventional Commits](https://www.conventionalcommits.org/)
 - Run `npx tsc --noEmit` before opening a PR
+
+---
+
+## Resources
+
+| | |
+|---|---|
+| **Download installer** | [Aiden-Setup-3.7.0.exe](https://github.com/taracodlabs/aiden-releases/releases/download/v3.7.0/Aiden-Setup-3.7.0.exe) |
+| **Releases & changelog** | [github.com/taracodlabs/aiden-releases](https://github.com/taracodlabs/aiden-releases) |
+| **License** | AGPL-3.0 core · Apache-2.0 skills |
 
 ---
 
