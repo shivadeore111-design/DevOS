@@ -9,6 +9,7 @@ dashboard-next/.env.local
 node_modules/
 dashboard-next/node_modules/
 ui/node_modules/
+native-modules/
 
 # ── Build artifacts ───────────────────────────────────────────────────────────
 dist/
