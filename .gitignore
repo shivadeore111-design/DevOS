@@ -50,3 +50,9 @@ secrets/
 .DS_Store
 Thumbs.db
 Desktop/
+
+# scratch files
+scratch/
+cloudflare-worker/probe*.js
+cloudflare-worker/patch_*.js
+fix_*.js
