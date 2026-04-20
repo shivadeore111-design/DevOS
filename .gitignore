@@ -56,3 +56,14 @@ scratch/
 cloudflare-worker/probe*.js
 cloudflare-worker/patch_*.js
 fix_*.js
+
+# OS artifacts
+desktop.ini
+.DS_Store
+Thumbs.db
+
+# WhatsApp web cache
+.wwebjs_cache/
+
+# Shell redirect artifact
+$null
