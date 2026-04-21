@@ -1,3 +1,25 @@
+## v3.7.1 — 2026-04-21
+
+**Patch release.** Four desktop stability fixes identified after v3.7.0 shipped.
+
+### Bug Fixes
+
+- **fix(desktop):** BrowserWindow URL changed from `localhost:3000` to
+  `127.0.0.1:3000` — Windows 11 22H2+ resolves `localhost` to IPv6 `::1` while
+  the dashboard server binds IPv4 only, causing a black screen on every launch
+- **fix(desktop):** Port 3000 is now freed before `startDashboard()` — a stale
+  dashboard process from a previous session held the port, crashing the app with
+  `EADDRINUSE` on the second launch
+- **fix(desktop):** API server spawn `cwd` changed from `USER_DATA` (AppData) to
+  the DevOS repo root — skills, `.env`, and `SOUL.md` were resolved relative to
+  AppData instead of the project directory, resulting in 0 skills loaded in
+  Electron mode
+- **fix(dashboard):** Static assets (CSS / JS / fonts) now copied into the
+  Next.js standalone tree via a `postbuild` npm hook — the standalone server
+  served HTML but every `/_next/static/*` request returned 404
+
+---
+
 ## v3.7.0 — 2026-04-18
 
 **The Desktop-Primary release.** Desktop app is now the primary Aiden experience.
