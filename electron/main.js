@@ -291,7 +291,7 @@ function loadDashboard () {
     )
   } catch { /* non-fatal */ }
 
-  const startUrl = isFirstRun ? 'http://localhost:3000/onboarding' : 'http://localhost:3000'
+  const startUrl = isFirstRun ? 'http://127.0.0.1:3000/onboarding' : 'http://127.0.0.1:3000'
   log(`Loading dashboard: ${startUrl}`)
   mainWindow.loadURL(startUrl)
 }
@@ -405,7 +405,7 @@ function startApiServer () {
     : path.join(__dirname, '..', 'node_modules')
 
   apiProcess = spawn(nodeBin, [indexJs, 'serve'], {
-    cwd:   IS_PACKAGED ? path.join(process.resourcesPath, 'dist') : USER_DATA,
+    cwd:   IS_PACKAGED ? path.join(process.resourcesPath, 'dist') : path.join(__dirname, '..'),
     env:   {
       ...process.env,
       AIDEN_USER_DATA: USER_DATA,
@@ -656,6 +656,14 @@ function createTray () {
       log('Port 4200 in use — freeing it')
       setStatus('Freeing port 4200...')
       await freePort(4200)
+    }
+
+    // Free port 3000 if occupied (stale dashboard from previous run)
+    const port3000free = await checkPort(3000)
+    if (!port3000free) {
+      log('Port 3000 in use — freeing it')
+      setStatus('Freeing port 3000...')
+      await freePort(3000)
     }
 
     // 5. Start API server in-process
