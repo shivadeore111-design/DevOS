@@ -67,3 +67,36 @@ Thumbs.db
 
 # Shell redirect artifact
 $null
+
+# ── Internal workflow — never commit to public repo ───────────────────────────
+CLAUDE.md
+SESSION_RULES.md
+SOUL.md
+GATE_*.md
+LAUNCH.md
+HANDOVER*.md
+WORK_LOG*.md
+PROMPT_*.md
+prompt_*.md
+_INTERNAL*
+_PRIVATE*
+SCRATCH*
+.claude/
+.cursor/
+.windsurf/
+.aider/
+
+# ── Vercel (replaced by Cloudflare) ──────────────────────────────────────────
+.vercel/
+vercel.json
+aiden-dist/
+
+# ── Build artifacts & binaries ────────────────────────────────────────────────
+*.zip
+*.tgz
+*.docx
+dev-*.log
+
+# ── Legacy launchers ─────────────────────────────────────────────────────────
+START_AIDEN*.bat
+install.bat
