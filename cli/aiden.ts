@@ -814,9 +814,10 @@ const COMMAND_DETAIL: Record<string, CmdDetail> = {
   '/budget':     { section: 'Info',      desc: 'Estimated token cost for this session.',                    usage: '/budget' },
   '/workspace':  { section: 'Info',      desc: 'Show current workspace path and contents.',                 usage: '/workspace' },
   '/model':      { section: 'Config',    desc: 'Switch the active LLM model.',                              usage: '/model <name>' },
-  '/provider':   { section: 'Config',    desc: 'Manage providers.',
-    subs:     ['<name>', 'add <name>', 'remove <name>', 'test'],
-    examples: ['/provider openai', '/provider add groq', '/provider test'],
+  '/provider':   { section: 'Config',    desc: 'Manage API providers — list, add, remove, test.',
+    usage:    '/provider [list|add|add-custom|remove|test]',
+    subs:     ['list', 'add <type> <key>', 'add-custom <name> <baseUrl> [key]', 'remove <id>', 'test <id>'],
+    examples: ['/provider list', '/provider add groq sk-xxx', '/provider add-custom myproxy https://... sk-xxx', '/provider remove groq-5', '/provider test groq-1'],
   },
   '/primary':    { section: 'Config',    desc: 'Pin a provider to front of the chain.',                     usage: '/primary [list|<name>|reset]' },
   '/theme':      { section: 'Config',    desc: 'Change color theme.',
@@ -1057,7 +1058,7 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       helpRow('/workspace',         `Current workspace  ${T.dim}(v3.6)${T.reset}`),
       helpSection('Config'),
       helpRow('/model <name>',      'Switch model'),
-      helpRow('/provider <name>',   'Switch provider  (add / remove / test)'),
+      helpRow('/provider',          'List / add / remove / test providers'),
       helpRow('/primary <name>',    'Pin provider to front of chain  (reset to clear)'),
       helpRow('/theme <name>',      'Change theme  (default mono slate ember)'),
       helpRow('/persona <name>',    'Change persona  (default concise technical)'),
@@ -3156,31 +3157,171 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
   if (command === '/provider') {
     const sub = parts[1]
 
-    // /provider add — interactive wizard for adding a custom provider
+    // Known named-provider registry (type → default model + base URL for tests)
+    const PROVIDER_INFO: Record<string, { defaultModel: string; baseUrl: string }> = {
+      groq:       { defaultModel: 'llama-3.3-70b-versatile',                        baseUrl: 'https://api.groq.com/openai/v1' },
+      gemini:     { defaultModel: 'gemini-2.0-flash',                               baseUrl: 'https://generativelanguage.googleapis.com/v1beta' },
+      openrouter: { defaultModel: 'openrouter/free',                                baseUrl: 'https://openrouter.ai/api/v1' },
+      boa:        { defaultModel: 'gpt-4o-mini',                                    baseUrl: 'https://api.bayofassets.com/v1' },
+      cerebras:   { defaultModel: 'llama3.1-8b',                                    baseUrl: 'https://api.cerebras.ai/v1' },
+      openai:     { defaultModel: 'gpt-4o-mini',                                    baseUrl: 'https://api.openai.com/v1' },
+      together:   { defaultModel: 'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo',   baseUrl: 'https://api.together.xyz/v1' },
+      deepseek:   { defaultModel: 'deepseek-chat',                                  baseUrl: 'https://api.deepseek.com/v1' },
+      nvidia:     { defaultModel: 'meta/llama-3.3-70b-instruct',                   baseUrl: 'https://integrate.api.nvidia.com/v1' },
+      anthropic:  { defaultModel: 'claude-3-5-haiku-20241022',                     baseUrl: 'https://api.anthropic.com/v1' },
+    }
+
+    // ── /provider  /  /provider list ───────────────────────────────────────────
+    if (!sub || sub === 'list') {
+      const cfg    = loadCfg()
+      const active = cfg?.model?.active || ''
+      const apis   = (cfg?.providers?.apis || []) as any[]
+      const custom = (cfg?.customProviders   || []) as any[]
+      console.log()
+      console.log(`  ${T.bold}Providers${T.reset}`)
+      console.log(`  ${T.dim}${hr()}${T.reset}`)
+      for (const a of apis) {
+        const rawKey  = a.key || ''
+        const hasKey  = rawKey.startsWith('env:')
+          ? !!(process.env[rawKey.replace('env:', '')])
+          : rawKey.length > 0
+        const isActive = a.name === active
+        const dot  = isActive ? `${T.success}●` : (a.enabled && hasKey ? `${T.reset}○` : `${T.error}○`)
+        const rl   = a.rateLimited ? ` ${T.warning}[rl]${T.reset}` : ''
+        const tag  = isActive    ? ` ${T.success}✓ active${T.reset}`
+                   : hasKey      ? ` ${T.dim}✓ configured${T.reset}`
+                   :               ` ${T.error}✗ no key${T.reset}`
+        console.log(`  ${dot}${T.reset} ${(a.name || '').padEnd(18)}${T.dim}${(a.model || '').padEnd(30)}${T.reset}${tag}${rl}`)
+      }
+      if (custom.length > 0) {
+        console.log(`\n  ${T.dim}Custom (OpenAI-compatible)${T.reset}`)
+        for (const cp of custom) {
+          const isActive = cp.id === active
+          const dot = isActive ? `${T.success}●` : `${T.reset}○`
+          const tag = isActive ? ` ${T.success}✓ active${T.reset}` : ` ${T.dim}✓ configured${T.reset}`
+          console.log(`  ${dot}${T.reset} ${(cp.id || '').padEnd(18)}${T.dim}${(cp.displayName || cp.id).padEnd(30)}${T.reset}${tag}`)
+        }
+      }
+      console.log(`\n  ${T.dim}Active: ${active || 'none'}  ·  /provider add <type> <key>  ·  /provider test <id>${T.reset}`)
+      console.log()
+      return true
+    }
+
+    // ── /provider add <type> <key> — inline non-interactive add ────────────────
+    if (sub === 'add' && parts.length >= 4) {
+      const provType = parts[2].toLowerCase()
+      const apiKey   = parts[3]
+      if (!PROVIDER_INFO[provType]) {
+        const known = Object.keys(PROVIDER_INFO).join(', ')
+        console.log(`  ${T.error}✗ Unknown provider type "${provType}".${T.reset}`)
+        console.log(`  ${T.dim}Known types: ${known}${T.reset}`)
+        console.log(`  ${T.dim}For a custom URL: /provider add-custom <name> <baseUrl> <key>${T.reset}\n`)
+        return true
+      }
+      const cfg = loadCfg()
+      if (!cfg.providers)      cfg.providers      = { ollama: { enabled: true, models: [] }, apis: [] }
+      if (!cfg.providers.apis) cfg.providers.apis = []
+      const existing = (cfg.providers.apis as any[]).filter((a: any) => a.provider === provType)
+      const slotNum  = existing.length + 1
+      const slotName = `${provType}-${slotNum}`
+      if ((cfg.providers.apis as any[]).find((a: any) => a.name === slotName)) {
+        console.log(`  ${T.error}✗ ${slotName} already exists. Use /provider remove ${slotName} first.${T.reset}\n`)
+        return true
+      }
+      ;(cfg.providers.apis as any[]).push({
+        name:        slotName,
+        provider:    provType,
+        key:         apiKey,
+        model:       PROVIDER_INFO[provType].defaultModel,
+        enabled:     true,
+        rateLimited: false,
+        usageCount:  0,
+      })
+      saveCfg(cfg)
+      console.log(`  ${T.success}✓ Added ${slotName} (${provType}). /switch ${slotName} to activate.${T.reset}\n`)
+      return true
+    }
+
+    // ── /provider add-custom <name> <baseUrl> [key] ────────────────────────────
+    if (sub === 'add-custom') {
+      const cName   = parts[2]
+      const baseUrl = parts[3]
+      const apiKey  = parts[4] || ''
+      if (!cName || !baseUrl) {
+        console.log(`  ${T.dim}Usage: /provider add-custom <name> <baseUrl> [key]${T.reset}\n`)
+        return true
+      }
+      // Validate by calling /models on the endpoint
+      process.stdout.write(`  ${T.dim}Validating ${baseUrl}/models...${T.reset}`)
+      let modelCount = 0
+      try {
+        const hdrs: Record<string, string> = {}
+        if (apiKey) hdrs['Authorization'] = `Bearer ${apiKey}`
+        const r = await fetch(`${baseUrl}/models`, { headers: hdrs })
+        if (r.ok) {
+          const d = await r.json() as any
+          modelCount = ((d.data || d.models || []) as any[]).length
+        }
+      } catch { /* validation is best-effort */ }
+      process.stdout.write('\r\x1b[K')
+      const cfg = loadCfg()
+      if (!cfg.customProviders) cfg.customProviders = []
+      if ((cfg.customProviders as any[]).find((c: any) => c.id === cName)) {
+        console.log(`  ${T.error}✗ "${cName}" already exists. Use /provider remove ${cName} first.${T.reset}\n`)
+        return true
+      }
+      ;(cfg.customProviders as any[]).push({
+        id: cName, displayName: cName, baseUrl, apiKey,
+        model: 'gpt-4o-mini', enabled: true, tier: 3,
+      })
+      saveCfg(cfg)
+      const modStr = modelCount > 0 ? ` (${modelCount} models)` : ''
+      console.log(`  ${T.success}✓ Added ${cName} (custom)${modStr}. /switch ${cName} to activate.${T.reset}\n`)
+      return true
+    }
+
+    // ── /provider add — interactive wizard (no inline args) ────────────────────
     if (sub === 'add') {
       const rl2 = readline.createInterface({ input: process.stdin, output: process.stdout })
       const ask = (q: string) => new Promise<string>(res => rl2.question(`  ${T.dim}${q}${T.reset} `, res))
       try {
-        console.log(`\n  ${T.bold}Add Custom Provider${T.reset}`)
-        console.log(`  ${T.dim}Any OpenAI-compatible chat/completions endpoint.${T.reset}\n`)
-        const displayName = await ask('Display name:')
-        const baseUrl     = await ask('Base URL (full endpoint):')
-        const apiKey      = await ask('API key (enter to skip):')
-        const model       = await ask('Model name:')
-        rl2.close()
-        if (!displayName.trim() || !baseUrl.trim() || !model.trim()) {
-          console.log(`  ${T.error}✗ display name, URL and model are required.${T.reset}\n`)
-          return true
-        }
-        const r = await fetch('http://localhost:4200/api/providers/custom', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ displayName, baseUrl, apiKey, model }),
-        })
-        if (r.ok) {
-          const d = await r.json() as any
-          console.log(`  ${T.success}✓ Added: ${d.entry?.id || displayName}${T.reset}\n`)
+        const known = Object.keys(PROVIDER_INFO).join(' | ')
+        console.log(`\n  ${T.bold}Add Provider${T.reset}`)
+        console.log(`  ${T.dim}Named: ${known}${T.reset}`)
+        console.log(`  ${T.dim}Custom: any OpenAI-compatible endpoint${T.reset}\n`)
+        const provType = (await ask('Provider type (or "custom"):')).toLowerCase().trim()
+        if (PROVIDER_INFO[provType]) {
+          const apiKey = (await ask('API key:')).trim()
+          rl2.close()
+          if (!apiKey) { console.log(`  ${T.error}✗ API key is required.${T.reset}\n`); return true }
+          const cfg      = loadCfg()
+          if (!cfg.providers?.apis) { cfg.providers = cfg.providers || { ollama: { enabled: true, models: [] }, apis: [] } }
+          const existing = (cfg.providers.apis as any[]).filter((a: any) => a.provider === provType)
+          const slotName = `${provType}-${existing.length + 1}`
+          ;(cfg.providers.apis as any[]).push({
+            name: slotName, provider: provType, key: apiKey,
+            model: PROVIDER_INFO[provType].defaultModel, enabled: true, rateLimited: false, usageCount: 0,
+          })
+          saveCfg(cfg)
+          console.log(`  ${T.success}✓ Added ${slotName}. /switch ${slotName} to activate.${T.reset}\n`)
         } else {
-          console.log(`  ${T.error}✗ Failed to add provider.${T.reset}\n`)
+          const baseUrl = (await ask('Base URL (e.g. https://api.example.com/v1):')).trim()
+          const apiKey  = (await ask('API key (enter to skip):')).trim()
+          const model   = (await ask('Default model:')).trim()
+          rl2.close()
+          if (!provType || !baseUrl || !model) {
+            console.log(`  ${T.error}✗ Name, URL and model are required.${T.reset}\n`); return true
+          }
+          const cfg = loadCfg()
+          if (!cfg.customProviders) cfg.customProviders = []
+          if ((cfg.customProviders as any[]).find((c: any) => c.id === provType)) {
+            console.log(`  ${T.error}✗ "${provType}" already exists.${T.reset}\n`); return true
+          }
+          ;(cfg.customProviders as any[]).push({
+            id: provType, displayName: provType, baseUrl, apiKey, model, enabled: true, tier: 3,
+          })
+          saveCfg(cfg)
+          console.log(`  ${T.success}✓ Added custom provider ${provType}. /switch ${provType} to activate.${T.reset}\n`)
         }
       } catch {
         rl2.close()
@@ -3189,29 +3330,77 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       return true
     }
 
-    // /provider remove <id>
+    // ── /provider remove <id> ───────────────────────────────────────────────────
     if (sub === 'remove') {
       const id = parts[2]
       if (!id) { console.log(`  ${T.dim}Usage: /provider remove <id>${T.reset}\n`); return true }
-      const r = await fetch(`http://localhost:4200/api/providers/custom/${id}`, { method: 'DELETE' })
-      if (r.ok) console.log(`  ${T.success}✓ Removed: ${id}${T.reset}\n`)
-      else      console.log(`  ${T.error}✗ Could not remove ${id}${T.reset}\n`)
+      const cfg    = loadCfg()
+      const active = cfg?.model?.active
+      if (active === id) {
+        console.log(`  ${T.error}✗ Cannot remove the active provider. /switch to another first.${T.reset}\n`)
+        return true
+      }
+      let removed = false
+      if (cfg.providers?.apis) {
+        const before = (cfg.providers.apis as any[]).length
+        cfg.providers.apis = (cfg.providers.apis as any[]).filter((a: any) => a.name !== id)
+        if ((cfg.providers.apis as any[]).length < before) removed = true
+      }
+      if (!removed && cfg.customProviders) {
+        const before = (cfg.customProviders as any[]).length
+        cfg.customProviders = (cfg.customProviders as any[]).filter((c: any) => c.id !== id)
+        if ((cfg.customProviders as any[]).length < before) removed = true
+      }
+      if (removed) { saveCfg(cfg); console.log(`  ${T.success}✓ Removed: ${id}${T.reset}\n`) }
+      else         { console.log(`  ${T.error}✗ Provider "${id}" not found.${T.reset}\n`) }
       return true
     }
 
-    // /provider test <id>
+    // ── /provider test <id> ─────────────────────────────────────────────────────
     if (sub === 'test') {
       const id = parts[2]
       if (!id) { console.log(`  ${T.dim}Usage: /provider test <id>${T.reset}\n`); return true }
       process.stdout.write(`  ${T.dim}Testing ${id}...${T.reset}`)
+      const cfg         = loadCfg()
+      const apiEntry    = ((cfg?.providers?.apis    || []) as any[]).find((a: any) => a.name === id)
+      const customEntry = ((cfg?.customProviders    || []) as any[]).find((c: any) => c.id   === id)
       try {
-        const r    = await fetch(`http://localhost:4200/api/providers/custom/${id}/test`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
-        })
-        const data = await r.json() as any
-        process.stdout.write('\r\x1b[K')
-        if (data.valid) console.log(`  ${T.success}✓ ${id}: ${data.reply || 'ok'}${T.reset}\n`)
-        else            console.log(`  ${T.error}✗ ${id}: ${data.error || 'failed'}${T.reset}\n`)
+        if (apiEntry) {
+          const rawKey = apiEntry.key || ''
+          const key    = rawKey.startsWith('env:') ? (process.env[rawKey.replace('env:', '')] || '') : rawKey
+          if (!key) {
+            process.stdout.write('\r\x1b[K')
+            console.log(`  ${T.error}✗ ${id}: no API key configured${T.reset}\n`)
+            return true
+          }
+          let ok = false; let detail = ''
+          if (apiEntry.provider === 'gemini') {
+            const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`)
+            ok = r.ok
+            detail = ok ? `${((await r.json() as any).models || []).length} models` : `HTTP ${r.status}`
+          } else {
+            const info    = PROVIDER_INFO[apiEntry.provider]
+            const baseUrl = info?.baseUrl || 'https://api.groq.com/openai/v1'
+            const r = await fetch(`${baseUrl}/models`, { headers: { Authorization: `Bearer ${key}` } })
+            ok = r.ok
+            detail = ok ? `${((await r.json() as any).data || []).length} models` : `HTTP ${r.status}`
+          }
+          process.stdout.write('\r\x1b[K')
+          if (ok) console.log(`  ${T.success}✓ ${id}: valid, ${detail}${T.reset}\n`)
+          else    console.log(`  ${T.error}✗ ${id}: ${detail}${T.reset}\n`)
+        } else if (customEntry) {
+          const hdrs: Record<string, string> = {}
+          if (customEntry.apiKey) hdrs['Authorization'] = `Bearer ${customEntry.apiKey}`
+          const r = await fetch(`${customEntry.baseUrl}/models`, { headers: hdrs })
+          const d = await r.json() as any
+          process.stdout.write('\r\x1b[K')
+          const cnt = ((d.data || d.models || []) as any[]).length
+          if (r.ok) console.log(`  ${T.success}✓ ${id}: valid, ${cnt} models${T.reset}\n`)
+          else      console.log(`  ${T.error}✗ ${id}: HTTP ${r.status}${T.reset}\n`)
+        } else {
+          process.stdout.write('\r\x1b[K')
+          console.log(`  ${T.error}✗ "${id}" not found in config.${T.reset}\n`)
+        }
       } catch (e: any) {
         process.stdout.write('\r\x1b[K')
         console.log(`  ${T.error}✗ ${id}: ${e.message}${T.reset}\n`)
@@ -3219,18 +3408,18 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       return true
     }
 
-    // /provider <name> — switch active provider (legacy behaviour)
-    const name = sub
-    if (!name) {
-      console.log(`  ${T.dim}Usage: /provider <name>  |  /provider add  |  /provider remove <id>  |  /provider test <id>${T.reset}\n`)
+    // ── /provider <name> — switch active provider (legacy) ──────────────────────
+    const providerName = sub
+    if (!providerName) {
+      console.log(`  ${T.dim}Usage: /provider list  |  /provider add <type> <key>  |  /provider add-custom <n> <url> <k>  |  /provider remove <id>  |  /provider test <id>${T.reset}\n`)
       return true
     }
-    const res = await apiPost('/api/providers/active', { provider: name })
+    const res = await apiPost('/api/providers/active', { provider: providerName })
     if (res) {
-      state.lastProvider = name
-      console.log(`  ${T.success}✓ Provider: ${name}${T.reset}\n`)
+      state.lastProvider = providerName
+      console.log(`  ${T.success}✓ Provider: ${providerName}${T.reset}\n`)
     } else {
-      console.log(`  ${T.error}✗ Could not switch to ${name}${T.reset}\n`)
+      console.log(`  ${T.error}✗ Could not switch to "${providerName}".${T.reset}\n`)
     }
     return true
   }

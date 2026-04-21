@@ -13,6 +13,8 @@ import { createGroqProvider } from './groq'
 import { createOpenRouterProvider } from './openrouter'
 import { createGeminiProvider } from './gemini'
 import { createBOAProvider } from './boa'
+import { createCerebrasProvider } from './cerebras'
+import { createCustomProvider } from './custom'
 
 // ── Config schema ─────────────────────────────────────────────
 
@@ -177,6 +179,12 @@ export function getActiveProvider(): { provider: Provider; model: string; userNa
       return { provider: createGeminiProvider(key), model: apiConfig.model || 'gemini-1.5-flash', userName }
     case 'boa':
       return { provider: createBOAProvider(key), model: apiConfig.model || 'llama-3.3-70b', userName }
+    case 'cerebras':
+      return { provider: createCerebrasProvider(key), model: apiConfig.model || 'llama3.1-8b', userName }
+    case 'custom': {
+      const baseUrl = apiConfig.baseUrl || 'http://localhost:11434/v1'
+      return { provider: createCustomProvider(baseUrl, key, apiConfig.name), model: apiConfig.model || 'gpt-4o-mini', userName }
+    }
     default:
       return { provider: ollamaProvider, model: config.model.activeModel || 'mistral:7b', userName }
   }
