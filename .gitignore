@@ -100,3 +100,20 @@ dev-*.log
 # ── Legacy launchers ─────────────────────────────────────────────────────────
 START_AIDEN*.bat
 install.bat
+
+# ── Internal test scripts ────────────────────────────────────────────────────
+tests/prompt_*.ts
+tests/reliability-sprint.ts
+tests/AUDIT_LOG.md
+
+# ── Cloudflare patch artifacts ────────────────────────────────────────────────
+cloudflare-worker/patch_*.js
+cloudflare-worker/contact_functions.js
+
+# ── Dashboard scratch ─────────────────────────────────────────────────────────
+dashboard-next/TERMINAL_PATCH.md
+dashboard-next/dev-out.log
+
+# ── Runtime config state (machine-specific) ───────────────────────────────────
+config/setup-complete.json
+config/model-selection.json
