@@ -63,6 +63,37 @@ export async function runSetupWizard(): Promise<void> {
   if (isSetupComplete()) return
 
   const hw = detectHardware()
+
+  // ── Ollama reachability check ─────────────────────────────────
+  let ollamaReachable = false
+  try {
+    const r = await fetch('http://127.0.0.1:11434/api/tags', {
+      signal: AbortSignal.timeout(3000),
+    })
+    ollamaReachable = r.ok
+  } catch {
+    // Ollama not running or not installed
+  }
+
+  if (!ollamaReachable) {
+    markComplete(hw, {})
+    console.log(`
+┌─────────────────────────────────────────┐
+│  DevOS — First Boot                     │
+└─────────────────────────────────────────┘
+
+  Ollama is not running on this machine.
+  Aiden will start in cloud-only mode — your configured API keys will be used.
+
+  To enable local models later:
+    1. Install Ollama: https://ollama.com/download
+    2. Run: ollama serve
+    3. Delete config/setup-complete.json and restart with: npm start
+
+`)
+    return
+  }
+
   modelRouter.syncWithOllama()
   const assessment = modelRouter.assessInstalledModels()
 
@@ -102,7 +133,7 @@ export async function runSetupWizard(): Promise<void> {
     if (answer === 'yes' || answer === 'y') {
       saveSelection(selection)
       markComplete(hw, selection)
-      console.log('  ✓ All set. DevOS is ready.\n  Run: devos serve\n')
+      console.log('  ✓ All set. DevOS is ready.\n  Run: npm start\n')
       return
     }
     // If no, fall through to show upgrade options
@@ -146,7 +177,7 @@ export async function runSetupWizard(): Promise<void> {
   if (!toPull.length) {
     saveSelection(selection)
     markComplete(hw, selection)
-    console.log('  ✓ Configuration saved. Run: devos serve\n')
+    console.log('  ✓ Configuration saved. Run: npm start\n')
     return
   }
 
@@ -200,7 +231,7 @@ export async function runSetupWizard(): Promise<void> {
 
   console.log(`
   ✓ DevOS is configured for your machine.
-  Run: devos serve
+  Run: npm start
 `)
 }
 

@@ -112,7 +112,7 @@ The system prompt injected when this skill is active.
 ### Testing a skill locally
 
 1. Place your skill directory under `skills/your-skill-name/`
-2. Start Aiden (`npm run serve` + `npm run cli`)
+2. Start Aiden (`npm start` + `npm run cli`)
 3. Type `/skills` to confirm it appears in the registry
 4. Test your trigger phrases in the chat
 

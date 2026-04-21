@@ -2,7 +2,7 @@
 
 **The Desktop-Primary release.** Desktop app is now the primary Aiden experience.
 The `aiden tui` launcher shortcut is removed pending a proper single-command
-terminal launcher in v3.8. TUI usage is documented via `npm run serve` +
+terminal launcher in v3.8. TUI usage is documented via `npm start` +
 `npm run cli`.
 
 ### Changes
@@ -13,7 +13,7 @@ terminal launcher in v3.8. TUI usage is documented via `npm run serve` +
   is stripped from `electron/main.js`; TUI launch instructions added to README
   and `aiden help` output
 - **README: Running Aiden section** — documents desktop and TUI launch paths,
-  including `npm run serve` + `npm run cli` workflow
+  including `npm start` + `npm run cli` workflow
 
 ---
 

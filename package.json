@@ -41,7 +41,7 @@
   "preferGlobal": true,
   "type": "commonjs",
   "scripts": {
-    "dev": "electron .",
+    "dev": "electron electron/main.js",
     "build": "tsc --outDir dist && npm run build:cli && npm run build:api",
     "prebuild:cli": "node scripts/inject-version.js",
     "build:cli": "esbuild cli/aiden.ts --bundle --platform=node --target=node18 --outfile=dist-bundle/cli.js --external:electron",
@@ -50,7 +50,7 @@
     "prepublishOnly": "npm run build",
     "postinstall": "node scripts/postinstall.js",
     "start": "node dist/index.js serve",
-    "electron": "electron .",
+    "electron": "electron electron/main.js",
     "dist": "node scripts/prepare-electron.js && electron-builder --win --publish never && node -e \"const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.main='./dist/index.js';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\\n');console.log('  main restored → ./dist/index.js')\"",
     "dist:dir": "node scripts/prepare-electron.js && electron-builder --win --dir --publish never",
     "build:win": "npm run dist",
