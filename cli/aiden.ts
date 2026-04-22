@@ -1472,6 +1472,138 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       return true
     }
 
+    // ── /skills explore <topic> ——— library search ─────────────────────────────
+    if (sub === 'explore') {
+      if (!arg) { console.log(`  ${T.dim}Usage: /skills explore <topic>${T.reset}\n`); return true }
+      console.log(`  ${T.dim}Searching library for "${arg}"…${T.reset}`)
+      const libData = await apiFetch<any>(`/api/skills/library?q=${encodeURIComponent(arg)}&limit=10`, null)
+      if (!libData) { console.log(`  ${T.error}Library fetch failed.${T.reset}\n`); return true }
+      const libResults = libData.results ?? []
+      if (libResults.length === 0) {
+        console.log(`  ${T.dim}No library skills matched "${arg}".${T.reset}\n`); return true
+      }
+      const libCols: ColDef[] = [
+        { header: '#',        width: 4,  align: 'right', color: COLORS.dim },
+        { header: 'ID',       width: 28, align: 'left'  },
+        { header: 'Description'                          },
+        { header: 'Platform', width: 10, align: 'left', color: COLORS.dim },
+      ]
+      const libRows = libResults.map((s: any, i: number) => [
+        String(i + 1), (s.id || s.name || '').substring(0, 26),
+        (s.description || '').substring(0, 50), (s.platform || 'any').substring(0, 8),
+      ])
+      console.log()
+      console.log(panel({ title: `${MARKS.TRI} Library — "${arg}"  (${libResults.length} match${libResults.length !== 1 ? 'es' : ''})`, lines: [''] }))
+      console.log(table(libCols, libRows))
+      console.log(`\n  ${T.dim}Install with: /skills install --library <id>${T.reset}\n`)
+      return true
+    }
+
+    // ── /skills install --library <id...> ——— from taracodlabs/aiden-skills ───
+    if (sub === 'install' && (parts[2] === '--library' || parts[2] === '--lib')) {
+      const ids = parts.slice(3)
+      if (ids.length === 0) {
+        console.log(`  ${T.dim}Usage: /skills install --library <id> [id2 ...]${T.reset}\n`); return true
+      }
+      for (const id of ids) {
+        process.stdout.write(`  ${T.dim}Installing "${id}"…${T.reset} `)
+        const libInst = await apiPost('/api/skills/library/install', { id })
+        if (!libInst?.success) {
+          process.stdout.write(`${T.error}✗ ${libInst?.error || 'failed'}${T.reset}\n`)
+        } else {
+          process.stdout.write(`${fg(COLORS.success)}✓ installed  ${T.dim}(disabled — /skills enable ${libInst.id} to activate)${T.reset}\n`)
+        }
+      }
+      console.log()
+      return true
+    }
+
+    // ── /skills enable <id> ─────────────────────────────────────────────────────
+    if (sub === 'enable') {
+      if (!arg) { console.log(`  ${T.dim}Usage: /skills enable <id>${T.reset}\n`); return true }
+      const enRes = await apiPost('/api/skills/enable', { id: arg })
+      if (!enRes?.success) {
+        console.log(`  ${T.error}Enable failed: ${enRes?.error || 'not found'}${T.reset}\n`); return true
+      }
+      console.log(`  ${fg(COLORS.success)}${MARKS.DOT}${RST} Enabled: ${fg(COLORS.orange)}${arg}${RST}\n`)
+      return true
+    }
+
+    // ── /skills disable <id> ────────────────────────────────────────────────────
+    if (sub === 'disable') {
+      if (!arg) { console.log(`  ${T.dim}Usage: /skills disable <id>${T.reset}\n`); return true }
+      const disRes = await apiPost('/api/skills/disable', { id: arg })
+      if (!disRes?.success) {
+        console.log(`  ${T.error}Disable failed: ${disRes?.error || 'not found'}${T.reset}\n`); return true
+      }
+      console.log(`  ${T.dim}${MARKS.DOT_O} Disabled: ${arg}${T.reset}\n`)
+      return true
+    }
+
+    // ── /skills review [id] ─────────────────────────────────────────────────────
+    if (sub === 'review') {
+      if (arg) {
+        const revData = await apiFetch<any>(`/api/skills/review/${encodeURIComponent(arg)}`, null)
+        if (!revData?.content) {
+          console.log(`  ${T.error}Skill "${arg}" not found.${T.reset}\n`); return true
+        }
+        console.log()
+        console.log(panel({
+          title: `${MARKS.TRI} Review — ${arg}  [${revData.status}]`,
+          lines: [
+            '',
+            ...revData.content.split('\n').slice(0, 30).map((l: string) => `  ${T.dim}${l}${T.reset}`),
+            '',
+            `  ${T.dim}Approve: /skills approve ${arg}   Reject: /skills reject ${arg}${T.reset}`,
+            '',
+          ],
+        }))
+        console.log()
+      } else {
+        const pendList = await apiFetch<any[]>('/api/skills/pending', [])
+        if (pendList.length === 0) {
+          console.log(`  ${T.dim}No pending skill drafts.${T.reset}\n`); return true
+        }
+        const pendCols: ColDef[] = [
+          { header: 'ID',      width: 28, align: 'left' },
+          { header: 'Name',    width: 22, align: 'left' },
+          { header: 'Source',  width: 16, align: 'left', color: COLORS.dim },
+          { header: 'Created', width: 20, align: 'left', color: COLORS.dim },
+        ]
+        const pendRows = pendList.map((p: any) => [
+          (p.id || '').substring(0, 26), (p.name || '').substring(0, 20),
+          (p.source || '').substring(0, 14), (p.createdAt || '').substring(0, 18),
+        ])
+        console.log()
+        console.log(panel({ title: `${MARKS.TRI} Pending Skill Drafts  (${pendList.length})`, lines: [''] }))
+        console.log(table(pendCols, pendRows))
+        console.log(`\n  ${T.dim}/skills review <id>  /skills approve <id>  /skills reject <id>${T.reset}\n`)
+      }
+      return true
+    }
+
+    // ── /skills approve <id> ────────────────────────────────────────────────────
+    if (sub === 'approve') {
+      if (!arg) { console.log(`  ${T.dim}Usage: /skills approve <id>${T.reset}\n`); return true }
+      const appRes = await apiPost('/api/skills/approve', { id: arg })
+      if (!appRes?.success) {
+        console.log(`  ${T.error}Approve failed: ${appRes?.error || 'error'}${T.reset}\n`); return true
+      }
+      console.log(`  ${fg(COLORS.success)}${MARKS.TRI}${RST} Approved and enabled: ${fg(COLORS.orange)}${arg}${RST}\n`)
+      return true
+    }
+
+    // ── /skills reject <id> ─────────────────────────────────────────────────────
+    if (sub === 'reject') {
+      if (!arg) { console.log(`  ${T.dim}Usage: /skills reject <id>${T.reset}\n`); return true }
+      const rejRes = await apiPost('/api/skills/reject', { id: arg })
+      if (!rejRes?.success) {
+        console.log(`  ${T.error}Reject failed: ${rejRes?.error || 'error'}${T.reset}\n`); return true
+      }
+      console.log(`  ${T.dim}${MARKS.DOT_O} Rejected and removed: ${arg}${T.reset}\n`)
+      return true
+    }
+
     // ── /skills install <name> ──────────────────────────────────────────────────
     if (sub === 'install') {
       if (!arg) { console.log(`  ${T.dim}Usage: /skills install <name>${T.reset}\n`); return true }
@@ -1810,6 +1942,49 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
     console.log()
     console.log(`  ${T.dim}${footerStats}${T.reset}`)
     console.log(`  ${T.dim}${footerNav}${T.reset}`)
+    console.log()
+    return true
+  }
+
+  // ── /learn ────────────────────────────────────────────────────────────────────
+  // A2: Save session's recent tool calls as a skill draft for review.
+  if (command === '/learn') {
+    const name = args.slice(0, 1).join(' ').trim()
+    const desc = args.slice(1).join(' ').trim()
+    if (!name) {
+      console.log(`  ${T.dim}Usage: /learn <name> [description]${T.reset}`)
+      console.log(`  ${T.dim}Saves the current session's tool calls as a pending skill draft.${T.reset}\n`)
+      return true
+    }
+    // Collect recent tool calls from session history
+    const toolHistory: Array<{ tool: string; params: Record<string, unknown> }> = []
+    for (const h of state.history.slice(-20)) {
+      if (h.role !== 'assistant') continue
+      try {
+        const parsed = JSON.parse(h.content)
+        if (parsed?.toolCalls?.length) toolHistory.push(...parsed.toolCalls)
+      } catch {}
+    }
+    const result = await apiPost('/api/skills/learn', {
+      name,
+      description: desc || `User-saved skill: ${name}`,
+      toolCalls: toolHistory,
+    })
+    if (!result?.success) {
+      const msg = result?.error || 'failed'
+      console.log(`  ${T.error}Could not save skill draft: ${msg}${T.reset}\n`); return true
+    }
+    console.log()
+    console.log(panel({
+      title: `${MARKS.TRI} Skill Draft Saved`,
+      lines: [
+        '',
+        `  ${fg(COLORS.success)}${MARKS.DOT}${RST} Saved as pending draft: ${fg(COLORS.orange)}${result.id}${RST}`,
+        `  ${T.dim}Review it with: /skills review ${result.id}${T.reset}`,
+        `  ${T.dim}Enable it with: /skills approve ${result.id}${T.reset}`,
+        '',
+      ],
+    }))
     console.log()
     return true
   }

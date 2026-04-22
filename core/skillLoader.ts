@@ -120,6 +120,7 @@ export interface Skill {
   content:     string
   filePath:    string
   origin:      'aiden' | 'community' | 'local'
+  enabled?:    boolean  // false = skip during normal load (auto-generated/installed)
 }
 
 // Maps frontmatter platform values → Node.js process.platform strings
@@ -208,12 +209,18 @@ export class SkillLoader {
   private cache: Skill[] | null = null
 
   constructor() {
-    // Check built-in skills, workspace skills, and self-learned/promoted skills
+    // Check built-in skills, workspace skills, and self-learned/promoted skills.
+    // NOTE: skills/learned/pending/ is intentionally excluded — pending skills
+    // are never auto-loaded; they require explicit /skills approve first.
     this.skillsDirs = [
       path.join(process.cwd(), 'skills'),
       path.join(process.cwd(), 'workspace', 'skills'),
       path.join(process.cwd(), 'workspace', 'skills', 'learned'),
       path.join(process.cwd(), 'workspace', 'skills', 'approved'),
+      // A2/A3 approved drafts
+      path.join(process.cwd(), 'skills', 'learned', 'approved'),
+      // A4 library-installed skills
+      path.join(process.cwd(), 'skills', 'installed'),
     ].filter(d => {
       try { return fs.existsSync(d) } catch { return false }
     })
@@ -252,6 +259,12 @@ export class SkillLoader {
             }
             const parsed = this.parse(sanitized, skillPath)
             if (!parsed) continue
+
+            // Enabled gate — skip skills with enabled: false unless caller wants all
+            if (!includeDisabled && parsed.enabled === false) {
+              console.debug(`[SkillLoader] Skipping "${parsed.name}" (disabled via frontmatter)`)
+              continue
+            }
 
             // Platform gate — skip skills that require a different OS
             if (parsed.platform && parsed.platform !== 'any') {
@@ -336,6 +349,10 @@ export class SkillLoader {
       const category = get('category') || undefined
       const platform = get('platform') || undefined
 
+      // Parse enabled — absent means enabled (legacy skills have no field)
+      const enabledRaw = get('enabled')
+      const enabled    = enabledRaw === '' ? undefined : enabledRaw === 'false' ? false : true
+
       return {
         name,
         description: get('description'),
@@ -346,6 +363,7 @@ export class SkillLoader {
         content,
         filePath,
         origin,
+        enabled,
       }
     } catch { return null }
   }

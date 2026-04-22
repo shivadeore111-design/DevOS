@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // DevOS â€” Autonomous AI Execution System
 // Copyright (c) 2026 Shiva Deore. All rights reserved.
 // ============================================================
@@ -78,6 +78,8 @@ import { scanAndRedact, containsSecret } from '../core/secretScanner'
 import { loadBriefingConfig, saveBriefingConfig, deliverBriefing } from '../core/morningBriefing'
 import { unifiedMemoryRecall, buildMemoryInjection } from '../core/memoryRecall'
 import { parseLessons, appendLesson, filterLessons } from '../core/lessonsBrowser'
+import { writeSkillDraft, approveDraft, rejectDraft, setSkillEnabled, listPending } from '../core/skillWriter'
+import { fetchIndex, scoreSkillsForTopic, installSkill as libraryInstallSkill } from '../core/skillLibrary'
 import { costTracker }   from '../core/costTracker'
 import { sessionMemory, getSessionLineage, loadSessionMetadata } from '../core/sessionMemory'
 import { memoryExtractor } from '../core/memoryExtractor'
@@ -4002,6 +4004,158 @@ export function createApiServer(): Express {
     }
   })
 
+  // ── A2/A3/A4 — Auto-skill-generation endpoints ───────────────────────────────
+
+  // GET /api/skills/library — search library index by topic
+  app.get('/api/skills/library', async (req: Request, res: Response) => {
+    try {
+      const topic = String(req.query.q || '').trim()
+      const idx   = await fetchIndex()
+      const limit = Math.min(parseInt(String(req.query.limit || '10'), 10), 30)
+      const results = topic
+        ? scoreSkillsForTopic(topic, idx).slice(0, limit)
+        : idx.skills.slice(0, limit).map(s => ({ ...s, score: 0 }))
+      res.json({ total: idx.skill_count, results })
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
+  // POST /api/skills/library/install — install a skill from the library
+  app.post('/api/skills/library/install', async (req: Request, res: Response) => {
+    try {
+      const { id } = req.body as { id?: string }
+      if (!id) { res.status(400).json({ error: 'id required' }); return }
+      const written = await libraryInstallSkill(id)
+      res.json({ success: true, id: written.id, filePath: written.filePath })
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
+  // POST /api/skills/learn — save session tool calls as a skill draft
+  app.post('/api/skills/learn', async (req: Request, res: Response) => {
+    try {
+      const { name, description, toolCalls, content } = req.body as {
+        name?: string; description?: string
+        toolCalls?: Array<{ tool: string; params: Record<string, unknown> }>
+        content?: string
+      }
+      if (!name) { res.status(400).json({ error: 'name required' }); return }
+
+      const desc = description || `User-saved skill: ${name}`
+      const body = content || (toolCalls?.length
+        ? `# ${name}\n\n## Tool Sequence\n\n${toolCalls.map(t => `  - ${t.tool}(${JSON.stringify(t.params)})`).join('\n')}\n`
+        : `# ${name}\n\nAdd skill instructions here.\n`)
+
+      const written = await writeSkillDraft({
+        name, description: desc, content: body, source: 'user_learn',
+        sourceDetails: { toolCalls: toolCalls ?? [] },
+      }, 'pending')
+
+      res.json({ success: true, id: written.id, filePath: written.filePath })
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
+  // GET /api/skills/pending — list all pending skill drafts
+  app.get('/api/skills/pending', (_req: Request, res: Response) => {
+    try {
+      res.json(listPending())
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
+  // POST /api/skills/approve — approve a pending draft (move to approved + enable)
+  app.post('/api/skills/approve', (req: Request, res: Response) => {
+    try {
+      const { id } = req.body as { id?: string }
+      if (!id) { res.status(400).json({ error: 'id required' }); return }
+      const dest = approveDraft(id)
+      skillLoader.refresh()
+      res.json({ success: true, id, dest })
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
+  // POST /api/skills/reject — delete a pending draft
+  app.post('/api/skills/reject', (req: Request, res: Response) => {
+    try {
+      const { id } = req.body as { id?: string }
+      if (!id) { res.status(400).json({ error: 'id required' }); return }
+      rejectDraft(id)
+      res.json({ success: true, id })
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
+  // POST /api/skills/enable — flip enabled:true in skill frontmatter
+  app.post('/api/skills/enable', (req: Request, res: Response) => {
+    try {
+      const { id } = req.body as { id?: string }
+      if (!id) { res.status(400).json({ error: 'id required' }); return }
+      // Search installed and approved dirs
+      const cwd = WORKSPACE_ROOT
+      const candidates = [
+        path.join(cwd, 'skills', 'installed', id, 'SKILL.md'),
+        path.join(cwd, 'skills', 'learned', 'approved', id, 'SKILL.md'),
+      ]
+      const target = candidates.find(p => fs.existsSync(p))
+      if (!target) { res.status(404).json({ error: `Skill "${id}" not found in installed/approved` }); return }
+      setSkillEnabled(target, true)
+      skillLoader.refresh()
+      res.json({ success: true, id, enabled: true })
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
+  // POST /api/skills/disable — flip enabled:false in skill frontmatter
+  app.post('/api/skills/disable', (req: Request, res: Response) => {
+    try {
+      const { id } = req.body as { id?: string }
+      if (!id) { res.status(400).json({ error: 'id required' }); return }
+      const cwd = WORKSPACE_ROOT
+      const candidates = [
+        path.join(cwd, 'skills', 'installed', id, 'SKILL.md'),
+        path.join(cwd, 'skills', 'learned', 'approved', id, 'SKILL.md'),
+      ]
+      const target = candidates.find(p => fs.existsSync(p))
+      if (!target) { res.status(404).json({ error: `Skill "${id}" not found in installed/approved` }); return }
+      setSkillEnabled(target, false)
+      skillLoader.refresh()
+      res.json({ success: true, id, enabled: false })
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
+  // GET /api/skills/review/:id — get raw SKILL.md of any pending/installed skill
+  app.get('/api/skills/review/:id', (req: Request, res: Response) => {
+    try {
+      const id  = String(req.params.id)
+      const cwd = WORKSPACE_ROOT
+      const candidates = [
+        path.join(cwd, 'skills', 'learned', 'pending',  id, 'SKILL.md'),
+        path.join(cwd, 'skills', 'learned', 'approved', id, 'SKILL.md'),
+        path.join(cwd, 'skills', 'installed',           id, 'SKILL.md'),
+      ]
+      const target = candidates.find(p => fs.existsSync(p))
+      if (!target) { res.status(404).json({ error: `Skill "${id}" not found` }); return }
+      const content = fs.readFileSync(target, 'utf-8')
+      // Determine status
+      const status = target.includes('pending') ? 'pending'
+        : target.includes('approved') ? 'approved' : 'installed'
+      res.json({ id, status, filePath: target, content })
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
   // GET /api/lessons — list all lesson rules (with optional ?q=&cat= filters)
   app.get('/api/lessons', (req: Request, res: Response) => {
     try {
@@ -5015,6 +5169,15 @@ export function startApiServer(portArg?: number): Express {
 
   // Run crash recovery on startup â€” non-blocking, finds 'running' tasks from prior session
   recoverTasks().catch(e => console.error('[Startup] Recovery error:', e.message))
+
+  // A3 u{2014} Passive skill observer (gated by AIDEN_PASSIVE_LEARNING env var)
+  try {
+    if (process.env.AIDEN_PASSIVE_LEARNING !== 'false') {
+      import('../core/passiveSkillObserver').then(m => m.start()).catch(e => console.error('[Startup] PassiveObserver:', e.message))
+    }
+  } catch (e: any) {
+    console.error('[Startup] PassiveObserver start failed:', e.message)
+  }
 
   // Phase 3: register read-only slash commands as callable agent tools
   try { registerSlashMirrorTools() } catch (e: any) {

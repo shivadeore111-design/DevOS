@@ -51,6 +51,15 @@ secrets/
 Thumbs.db
 Desktop/
 
+# ── Auto-generated skills (user-specific, not committed) ──────────────────────
+skills/learned/pending/*/
+skills/learned/approved/*/
+skills/installed/*/
+# Keep scaffold
+!skills/learned/pending/.gitkeep
+!skills/learned/approved/.gitkeep
+!skills/installed/.gitkeep
+
 # scratch files
 scratch/
 cloudflare-worker/probe*.js
