@@ -236,7 +236,11 @@ async function printBanner(): Promise<void> {
   const version   = VERSION || health.version || '3.7.0'
   const cfg       = loadCfg()
   const apis      = Array.isArray(provData.apis) ? provData.apis : []
-  const active    = apis.filter((a: any) => a.enabled && a.hasKey)
+  const active    = apis.filter((a: any) => {
+    if (!a.enabled) return false
+    const k = a.key || ''
+    return k.startsWith('env:') ? !!(process.env[k.replace('env:', '')]) : k.length > 0
+  })
   const provName  = cfg?.model?.active       || active[0]?.name  || 'local'
   const modelName = cfg?.model?.activeModel  || active[0]?.model || 'unknown'
   const skillArr  = Array.isArray(skillsData) ? skillsData : []
@@ -684,7 +688,7 @@ async function streamChat(message: string): Promise<void> {
 const COMMANDS = [
   '/new', '/reset', '/clear', '/history', '/stop',
   '/export', '/fork', '/checkpoint', '/help',
-  '/status', '/tools', '/kit', '/providers', '/models', '/model', '/primary',
+  '/status', '/tools', '/kit', '/providers', '/models', '/model', '/primary', '/switch',
   '/memory', '/goals', '/skills', '/lessons', '/teach',
   '/focus', '/explore', '/pulse',
   '/rewind', '/pin',
@@ -820,6 +824,7 @@ const COMMAND_DETAIL: Record<string, CmdDetail> = {
     examples: ['/provider list', '/provider add groq sk-xxx', '/provider add-custom myproxy https://... sk-xxx', '/provider remove groq-5', '/provider test groq-1'],
   },
   '/primary':    { section: 'Config',    desc: 'Pin a provider to front of the chain.',                     usage: '/primary [list|<name>|reset]' },
+  '/switch':     { section: 'Config',    desc: 'Alias for /primary — pin a provider to front of chain.',    usage: '/switch [list|<name>|reset]' },
   '/theme':      { section: 'Config',    desc: 'Change color theme.',
     usage:    '/theme <name>',
     examples: ['/theme default', '/theme mono', '/theme slate', '/theme ember'],
@@ -1348,8 +1353,10 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
     console.log(`\n  ${T.bold}Providers${T.reset}`)
     console.log(`  ${T.dim}${hr()}${T.reset}`)
     for (const a of apis) {
-      const dot = a.enabled && a.hasKey ? `${T.success}●` : `${T.dim}○`
-      const rl  = a.rateLimited ? ` ${T.warning}[rate-limited]${T.reset}` : ''
+      const rawKey  = a.key || ''
+      const hasKey  = rawKey.startsWith('env:') ? !!(process.env[rawKey.replace('env:', '')]) : rawKey.length > 0
+      const dot     = a.enabled && hasKey ? `${T.success}●` : `${T.dim}○`
+      const rl      = a.rateLimited ? ` ${T.warning}[rate-limited]${T.reset}` : ''
       console.log(`  ${dot}${T.reset} ${(a.name || '').padEnd(18)}${T.dim}${a.model || ''}${T.reset}${rl}`)
     }
     if (customs.length > 0) {
@@ -3430,8 +3437,8 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
     process.exit(0)
   }
 
-  // ── /primary [list|name|reset] ───────────────────────────────────────────────
-  if (command === '/primary') {
+  // ── /primary [list|name|reset] (also /switch) ───────────────────────────────
+  if (command === '/primary' || command === '/switch') {
     const arg = parts[1]
     try {
       if (!arg) {

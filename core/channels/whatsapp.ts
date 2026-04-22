@@ -47,6 +47,11 @@ export class WhatsAppAdapter implements ChannelAdapter {
   // ── Lifecycle ──────────────────────────────────────────────
 
   async start(): Promise<void> {
+    // Opt-in guard — silent unless WHATSAPP_ENABLED=true
+    if (!process.env.WHATSAPP_ENABLED || process.env.WHATSAPP_ENABLED.toLowerCase() !== 'true') {
+      return
+    }
+
     // Attempt dynamic import — graceful degradation if module not available
     let Client: any, LocalAuth: any
     try {

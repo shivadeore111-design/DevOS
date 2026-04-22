@@ -113,6 +113,26 @@ function bootstrapUserData () {
     }
   }
 
+  // ── Log rotation — delete files older than 7 days or larger than 10 MB ──
+  const MAX_LOG_AGE_MS = 7 * 24 * 60 * 60 * 1000   // 7 days
+  const MAX_LOG_SIZE   = 10 * 1024 * 1024           // 10 MB
+  const now            = Date.now()
+  try {
+    for (const f of fs.readdirSync(LOGS_DIR)) {
+      if (!f.endsWith('.log')) continue
+      const fp   = path.join(LOGS_DIR, f)
+      const stat = fs.statSync(fp)
+      if ((now - stat.mtimeMs) > MAX_LOG_AGE_MS || stat.size > MAX_LOG_SIZE) {
+        try { fs.unlinkSync(fp) } catch { /* ignore */ }
+      }
+    }
+  } catch { /* LOGS_DIR may not exist yet — ignore */ }
+  try {
+    if (fs.existsSync(LOG_FILE) && fs.statSync(LOG_FILE).size > MAX_LOG_SIZE) {
+      fs.unlinkSync(LOG_FILE)
+    }
+  } catch { /* ignore */ }
+
   try { process.chdir(USER_DATA) } catch { /* non-fatal */ }
 }
 
