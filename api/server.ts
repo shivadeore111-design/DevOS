@@ -4899,9 +4899,13 @@ export function startupCheck(): void {
 
 export function startApiServer(portArg?: number): Express {
 
-  // Read port from config/api.json with sensible fallback
+  // Read port from config/api.json with sensible fallback.
+  // Host defaults to 0.0.0.0 in headless/Linux mode so the API
+  // is reachable from the WSL2 host (Windows) and other LAN clients.
+  // Electron mode keeps 127.0.0.1 for security (loopback only).
   let port = portArg ?? 4200
-  let host = '127.0.0.1'
+  const isHeadless = process.env.AIDEN_HEADLESS === 'true'
+  let host = isHeadless ? '0.0.0.0' : '127.0.0.1'
   try {
     const cfgPath = path.join(process.cwd(), 'config', 'api.json')
     if (fs.existsSync(cfgPath)) {
