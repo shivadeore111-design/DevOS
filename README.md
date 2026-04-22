@@ -7,7 +7,7 @@
 ╚═╝  ╚═╝╚═╝╚═════╝ ╚══════╝╚═╝  ╚═══╝
 
 local-first AI operating system
-56 skills · 60+ tools · 13 providers · AGPL-3.0
+69+ skills · 80+ tools · 13 providers · AGPL-3.0
 Windows · Linux · WSL · macOS (API mode)
 ```
 
