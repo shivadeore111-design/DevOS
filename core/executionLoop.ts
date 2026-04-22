@@ -8,6 +8,7 @@
 
 import * as fs   from 'fs'
 import * as path from 'path'
+import * as os   from 'os'
 
 import { executor }         from './executor'
 import { truthCheck }       from './truthCheck'
@@ -83,7 +84,7 @@ async function generatePlan(goal: string, goalId: string): Promise<GoalPlan> {
     const fileName     = nameMatch?.[1] || 'devos-file.txt'
     const contentMatch = goal.match(/(?:with|containing|content)[:\s]+["']?(.+?)["']?$/i)
     const content      = contentMatch?.[1] || `Created by DevOS on ${new Date().toLocaleDateString()}`
-    const desktopPath  = `C:\\Users\\${process.env.USERNAME || 'shiva'}\\Desktop\\${fileName}`
+    const desktopPath  = path.join(os.homedir(), 'Desktop', fileName)
     return {
       goalId, goal, complete: false,
       steps: [{

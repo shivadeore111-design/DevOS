@@ -3,6 +3,7 @@ name: taskscheduler
 description: Create, list, enable, disable, and delete Windows Task Scheduler jobs using PowerShell ScheduledTasks module
 category: windows
 version: 1.0.0
+platform: windows
 tags: taskscheduler, scheduled, task, automation, cron, windows, powershell, trigger
 license: Apache-2.0
 ---

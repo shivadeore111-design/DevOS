@@ -3,6 +3,7 @@ name: onenote
 description: Read and write OneNote notebooks, sections, and pages via Microsoft Graph API or COM automation
 category: windows
 version: 1.0.0
+platform: windows
 tags: onenote, notes, notebook, microsoft, graph, pages, sections
 license: Apache-2.0
 ---

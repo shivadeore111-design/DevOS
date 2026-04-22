@@ -7,6 +7,7 @@ export default {
     if (pathname === '/terms')      return termsPage();
     if (pathname === '/disclaimer') return disclaimerPage();
     if (pathname === '/install.ps1')   return installPs1Route();
+    if (pathname === '/install.sh')    return installShRoute();
     if (pathname === '/contact' && request.method !== 'POST')         return contactPage(url);
     if (pathname === '/contact/success') return contactSuccessPage(url);
     if (pathname === '/api/contact' && request.method === 'POST') return contactApiHandler(request, env);
@@ -143,6 +144,26 @@ function disclaimerPage() {
   return new Response(legalHtml("Disclaimer", body), {
     status: 200, headers: { "Content-Type": "text/html;charset=UTF-8" }
   });
+}
+
+function installShRoute() {
+  // Proxy install.sh from the source repo raw URL.
+  const RAW_URL = 'https://raw.githubusercontent.com/taracodlabs/aiden-releases/main/install.sh'
+  return fetch(RAW_URL).then(res => {
+    if (!res.ok) {
+      return new Response('#!/usr/bin/env bash\necho "install.sh temporarily unavailable"\nexit 1\n', {
+        status: 503,
+        headers: { 'Content-Type': 'text/plain;charset=UTF-8' }
+      })
+    }
+    return res.text().then(body => new Response(body, {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/plain;charset=UTF-8',
+        'Cache-Control': 'public, max-age=300'
+      }
+    }))
+  })
 }
 
 function installPs1Route() {

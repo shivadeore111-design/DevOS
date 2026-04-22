@@ -6,8 +6,9 @@
 ██║  ██║██║██████╔╝███████╗██║ ╚████║
 ╚═╝  ╚═╝╚═╝╚═════╝ ╚══════╝╚═╝  ╚═══╝
 
-local-first AI operating system for Windows
+local-first AI operating system
 56 skills · 60+ tools · 13 providers · AGPL-3.0
+Windows · Linux · WSL · macOS (API mode)
 ```
 
 <p align="center">
@@ -27,21 +28,57 @@ local-first AI operating system for Windows
 
 ---
 
-Aiden is a local-first AI operating system for Windows. It runs entirely on
+Aiden is a local-first AI operating system. It runs entirely on
 your machine — no cloud account required, no telemetry, no data leaving your
-hardware unless you configure a cloud provider. At v3.7.0 it ships as a signed
-installer with auto-updates, 56 composable skills, 60+ autonomous tools, a
-6-layer memory architecture, self-healing provider routing, and the ability
-to control your screen, browse the web, run code, send emails, manage files,
-and hold a full conversation — offline via Ollama.
+hardware unless you configure a cloud provider. It ships with a signed Windows
+installer, and runs in headless API mode on Linux, WSL, and macOS. Features:
+56 composable skills, 60+ autonomous tools, a 6-layer memory architecture,
+self-healing provider routing, and the ability to control your screen, browse
+the web, run code, send emails, manage files, and hold a full conversation —
+offline via Ollama.
+
+## Platform support
+
+| Platform | GUI app | API + CLI | Skills available |
+|---|---|---|---|
+| **Windows 10/11** | ✅ signed installer | ✅ | All 56 (including Windows-only skills) |
+| **Linux** | — | ✅ headless | ~47 (Windows-only skills auto-skipped) |
+| **WSL 2** | — | ✅ headless | ~47 (Windows-only skills auto-skipped) |
+| **macOS** | — | ✅ headless | ~47 (Windows-only skills auto-skipped) |
+
+Windows-only skills (clipboard history, Defender, OneNote, Outlook COM, registry, etc.) are tagged `platform: windows` and are silently skipped on other platforms at load time.
 
 ## Install
+
+### Windows
 
 ```powershell
 irm aiden.taracod.com/install.ps1 | iex
 ```
 
-Or [download the installer](https://github.com/taracodlabs/aiden-releases/releases/latest) manually. Windows 10/11, 64-bit, ~500MB disk space.
+Or [download the installer](https://github.com/taracodlabs/aiden-releases/releases/latest) manually. Windows 10/11, 64-bit, ~500 MB disk space.
+
+### Linux / WSL / macOS
+
+```bash
+curl -fsSL aiden.taracod.com/install.sh | bash
+```
+
+Or install manually:
+
+```bash
+# Prerequisites: Node.js 20+, git, Ollama (recommended)
+git clone https://github.com/taracodlabs/aiden.git
+cd aiden
+cp .env.example .env          # configure OLLAMA_HOST, API keys, etc.
+npm install
+npm run build
+npm start                     # starts the API server (headless)
+# In a second terminal:
+npm run cli                   # interactive TUI
+```
+
+Set `AIDEN_HEADLESS=true` to suppress the Electron GUI when running the packaged app.
 
 ## Screenshots
 
@@ -155,7 +192,7 @@ Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the ful
 
 | | |
 |---|---|
-| **Download installer** | [Aiden-Setup-3.7.0.exe](https://github.com/taracodlabs/aiden-releases/releases/download/v3.7.0/Aiden-Setup-3.7.0.exe) |
+| **Download installer** | [Latest release](https://github.com/taracodlabs/aiden-releases/releases/latest) |
 | **Releases & changelog** | [github.com/taracodlabs/aiden-releases](https://github.com/taracodlabs/aiden-releases) |
 | **License** | AGPL-3.0 core · Apache-2.0 skills |
 

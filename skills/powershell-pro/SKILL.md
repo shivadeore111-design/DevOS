@@ -3,6 +3,7 @@ name: powershell-pro
 description: Expert PowerShell operations — process management, services, WMI queries, REST calls, scheduled tasks, and script automation
 category: windows
 version: 1.0.0
+platform: windows
 tags: powershell, process, wmi, service, automation, scripting, windows, rest
 license: Apache-2.0
 ---

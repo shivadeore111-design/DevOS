@@ -3,6 +3,7 @@ name: clipboard-history
 description: Read, write, and manage Windows clipboard content including text, HTML, images, and clipboard history via PowerShell
 category: windows
 version: 1.0.0
+platform: windows
 tags: clipboard, copy, paste, history, windows, powershell, text
 license: Apache-2.0
 ---

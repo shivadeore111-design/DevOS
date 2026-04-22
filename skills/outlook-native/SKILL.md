@@ -3,6 +3,7 @@ name: outlook-native
 description: Read and manage Outlook calendar and inbox via PowerShell COM interop or Microsoft Graph API
 category: windows
 version: 1.0.0
+platform: windows
 tags: outlook, calendar, email, inbox, meeting, schedule, microsoft
 license: Apache-2.0
 ---

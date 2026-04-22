@@ -3,6 +3,7 @@ name: defender-quickscan
 description: Trigger Windows Defender scans, check threat history, update signatures, and query protection status via PowerShell
 category: windows
 version: 1.0.0
+platform: windows
 tags: defender, antivirus, security, scan, threat, malware, windows, powershell
 license: Apache-2.0
 ---

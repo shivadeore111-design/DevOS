@@ -10,6 +10,7 @@ import { exec, spawn } from 'child_process'
 import { promisify } from 'util'
 import fs   from 'fs'
 import path from 'path'
+import { getUserDataDir } from './paths'
 
 import {
   moveMouse,
@@ -177,11 +178,7 @@ function isCommandAllowed(cmd: string): { allowed: boolean; needsApproval: boole
 // Each Aiden session uses a sandboxed Chromium profile — completely
 // separate from the user's real Chrome cookies and login state.
 
-const BROWSER_DATA_DIR = path.join(
-  process.env.APPDATA || '',
-  'devos-ai',
-  'browser-profiles',
-)
+const BROWSER_DATA_DIR = path.join(getUserDataDir(), 'browser-profiles')
 
 function getBrowserProfileDir(sessionId?: string): string {
   const id         = sessionId || `session_${Date.now()}`

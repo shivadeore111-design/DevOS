@@ -3,6 +3,7 @@ name: windows-registry
 description: Read, write, and query Windows Registry keys and values via PowerShell Registry provider
 category: windows
 version: 1.0.0
+platform: windows
 tags: registry, regedit, windows, powershell, hklm, hkcu, settings, config
 license: Apache-2.0
 ---

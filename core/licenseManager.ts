@@ -13,7 +13,7 @@
 
 import fs    from 'fs'
 import path  from 'path'
-import os    from 'os'
+import { getUserDataDir } from './paths'
 import https from 'https'
 import { getMachineId, getMachineName } from './machineId'
 
@@ -276,11 +276,7 @@ export async function registerEmail(email: string): Promise<{ success: boolean; 
 //  Cache stored at %APPDATA%/devos-ai/license.json (separate from old cache)
 // ══════════════════════════════════════════════════════════════
 
-const PRO_LICENSE_FILE  = path.join(
-  process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'),
-  'devos-ai',
-  'license.json',
-)
+const PRO_LICENSE_FILE  = path.join(getUserDataDir(), 'license.json')
 const PRO_CACHE_DURATION = 24 * 60 * 60 * 1000  // 24 hours
 const API_BASE           = LICENSE_SERVER         // already 'https://api.taracod.com'
 

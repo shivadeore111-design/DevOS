@@ -115,10 +115,20 @@ export interface Skill {
   description: string
   version:     string
   category?:   string   // parsed from frontmatter "category:" field
+  platform?:   string   // optional: "windows" | "linux" | "macos" | "any"
   tags:        string[]
   content:     string
   filePath:    string
   origin:      'aiden' | 'community' | 'local'
+}
+
+// Maps frontmatter platform values → Node.js process.platform strings
+const PLATFORM_MAP: Record<string, string> = {
+  windows: 'win32',
+  linux:   'linux',
+  macos:   'darwin',
+  darwin:  'darwin',
+  any:     'any',
 }
 
 // ── Step 0 values — real categories found via:
@@ -241,7 +251,18 @@ export class SkillLoader {
               continue
             }
             const parsed = this.parse(sanitized, skillPath)
-            if (parsed) skills.push(parsed)
+            if (!parsed) continue
+
+            // Platform gate — skip skills that require a different OS
+            if (parsed.platform && parsed.platform !== 'any') {
+              const required = PLATFORM_MAP[parsed.platform.toLowerCase()] ?? parsed.platform
+              if (required !== process.platform) {
+                console.debug(`[SkillLoader] Skipping "${parsed.name}" (platform: ${parsed.platform}, current: ${process.platform})`)
+                continue
+              }
+            }
+
+            skills.push(parsed)
           } catch {}
         }
       } catch {}
@@ -275,7 +296,9 @@ export class SkillLoader {
     if (!includeDisabled) {
       this.cache = filtered
       if (filtered.length > 0) {
-        console.log(`[SkillLoader] Loaded ${filtered.length} skills: ${filtered.map(s => s.name).join(', ')}`)
+        const platformSkipped = deduped.length - filtered.length - disabled.size
+        const skippedMsg = platformSkipped > 0 ? `, ${platformSkipped} platform-skipped` : ''
+        console.log(`[SkillLoader] Loaded ${filtered.length} skills${skippedMsg}: ${filtered.map(s => s.name).join(', ')}`)
       }
     }
 
@@ -311,12 +334,14 @@ export class SkillLoader {
 
       const name     = get('name') || path.basename(path.dirname(filePath))
       const category = get('category') || undefined
+      const platform = get('platform') || undefined
 
       return {
         name,
         description: get('description'),
         version:     get('version') || '1.0.0',
         category,
+        platform,
         tags,
         content,
         filePath,

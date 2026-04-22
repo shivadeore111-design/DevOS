@@ -4,6 +4,16 @@
 // ============================================================
 'use strict'
 
+// ── Headless mode gate ────────────────────────────────────────────
+// When AIDEN_HEADLESS=true or --headless is passed, skip the entire
+// Electron GUI bootstrap and run only the API server. This makes the
+// packaged .exe usable on Linux (via Wine) or in CI/server environments.
+if (process.env.AIDEN_HEADLESS === 'true' || process.argv.includes('--headless')) {
+  console.log('[Aiden] Headless mode — skipping Electron bootstrap')
+  require('./spawn-api-only')
+  return  // valid: Node wraps CJS modules in a function
+}
+
 // ── Electron GUI mode — full app/BrowserWindow/Tray APIs available ──
 const { app, BrowserWindow, Tray, Menu, nativeImage, dialog, shell, ipcMain } = require('electron')
 const { autoUpdater } = require('electron-updater')

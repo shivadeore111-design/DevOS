@@ -3,6 +3,7 @@ name: wsl-bridge
 description: Run Linux commands inside WSL from Windows, share files between Windows and WSL, and manage WSL distributions
 category: windows
 version: 1.0.0
+platform: windows
 tags: wsl, linux, ubuntu, bash, bridge, windows, distro, shell
 license: Apache-2.0
 ---

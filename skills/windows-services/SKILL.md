@@ -3,6 +3,7 @@ name: windows-services
 description: List, start, stop, restart, and configure Windows services via PowerShell Get-Service and Set-Service
 category: windows
 version: 1.0.0
+platform: windows
 tags: services, windows, powershell, daemon, startup, get-service, set-service
 license: Apache-2.0
 ---
