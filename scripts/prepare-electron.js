@@ -33,15 +33,12 @@ function copyDir (src, dst) {
   }
 }
 
-// ── Step 1: TypeScript build ──────────────────────────────────
-console.log('\n═══ Step 1: TypeScript build ═══')
-run('npx tsc --outDir dist', ROOT)
-console.log('  ✅ dist/ compiled')
-
-// ── Step 1.5: Bundle API server with esbuild ─────────────────
-console.log('\n═══ Step 1.5: Bundle API server (esbuild) ═══')
-run('node scripts/bundle-api.js', ROOT)
-console.log('  ✅ dist-bundle/index.js produced')
+// ── Step 1: Full build (tsc + esbuild CLI + esbuild API) ─────
+// Uses npm run build which: tsc → dist/, then esbuild api/entry.ts
+// → dist-bundle/index.js and esbuild cli/aiden.ts → dist-bundle/cli.js
+console.log('\n═══ Step 1: Full build (tsc + esbuild bundles) ═══')
+run('npm run build', ROOT)
+console.log('  ✅ dist/ compiled and dist-bundle/ produced')
 
 // ── Step 1.6: Copy native modules ────────────────────────────
 console.log('\n═══ Step 1.6: Copy native modules ═══')
