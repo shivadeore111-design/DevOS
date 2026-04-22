@@ -1,6 +1,6 @@
 {
   "name": "devos-ai",
-  "version": "3.7.3",
+  "version": "3.8.0",
   "description": "Autonomous AI Operating System — Local, Private, Free. Runs on your machine with Ollama.",
   "author": "Taracod <hello@taracod.com>",
   "license": "AGPL-3.0-only",
