@@ -1,5 +1,65 @@
 # DevOS Session Log
 
+## Phase 29 — Command Palette UX
+**Date:** 2026-04-23  
+**Commit:** dc45cf5  
+**Branch:** main
+
+### Summary
+Added an interactive `'/'` command palette to the Aiden CLI REPL.
+Pressing `/` on an empty line (or Tab on a partial `/cmd`) suspends
+readline, shows a searchable arrow-key menu of all 80 slash commands
+powered by `@inquirer/prompts`, then injects the chosen command back
+into the readline buffer. Non-TTY or `AIDEN_PALETTE=false` falls back
+to the existing inline hint silently.
+
+### Artifacts
+
+| File | Role |
+|---|---|
+| `cli/commandCatalog.ts` | New — single source of truth for all 80 commands (COMMANDS, COMMAND_DETAIL, getCatalog) |
+| `cli/commandPalette.ts` | New — showPalette() wrapper around @inquirer/prompts `search` |
+| `cli/aiden.ts` | Modified — inline COMMANDS/CmdDetail/COMMAND_DETAIL replaced by imports; keypress extended with palette triggers; paletteActive guard; AIDEN_PALETTE opt-out |
+
+### Changes
+
+#### cli/commandCatalog.ts (new, ~262 lines)
+- `CmdDetail` and `PaletteCommand` interfaces
+- `COMMAND_DETAIL` map: 80 commands with desc, usage, subs, examples, section
+- `COMMANDS: string[]` flat list (Tab completer source)
+- `getCatalog()` builder → `PaletteCommand[]` for the palette
+
+#### cli/commandPalette.ts (new, ~85 lines)
+- `showPalette(filter, commands): Promise<string | null>`
+- Lazy-loads `@inquirer/prompts` (zero start-up cost when palette unused)
+- Non-TTY guard → returns null immediately
+- `AIDEN_PALETTE=false` opt-out handled at call site
+- Handles `ExitPromptError` (Esc / Ctrl+C) → returns null
+- 14-item paged list, prefix-sorted results, two-column name/desc display
+
+#### cli/aiden.ts
+- Top-of-file import: `{ COMMANDS, COMMAND_DETAIL, getCatalog }` from `./commandCatalog`
+- Removed ~230-line inline COMMANDS array + CmdDetail interface + COMMAND_DETAIL map
+- `paletteActive` flag (prevents double-trigger)
+- `PALETTE_ON` constant (TTY check + `AIDEN_PALETTE !== 'false'`)
+- Keypress trigger 1: `'/'` on empty buffer → `showPalette('', getCatalog())`
+- Keypress trigger 2: Tab on partial `/cmd` → `showPalette(currentLine, getCatalog())`
+- Both triggers: pause rl → clear echoed char → async IIFE → inject result → resume rl
+
+### Verification Results
+
+| Check | Result |
+|---|---|
+| TypeScript build (`npm run build`) | 0 errors ✅ |
+| `tsc --noEmit` | 0 errors ✅ |
+| Catalog: COMMANDS count | 80 ✅ |
+| Catalog: /recipes present | true ✅ |
+| Catalog: /learn present | true ✅ |
+| API health | `{"status":"ok","version":"3.9.0"}` ✅ |
+| git push | dc45cf5 → main ✅ |
+
+---
+
 ## Phase 27 — Bulk Skill Import (69 → 1,104 via API / 1,445 installed)
 **Date:** 2026-04-23  
 **Branch:** main (no commit — skills/installed/ is gitignored)
