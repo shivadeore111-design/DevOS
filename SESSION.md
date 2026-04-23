@@ -1,5 +1,62 @@
 # DevOS Session Log
 
+## Phase 29C — Fix dead keypress emitter
+**Date:** 2026-04-23  
+**Commit:** ab4b008  
+**Branch:** main
+
+### Summary
+`rl.on('keypress', ...)` was silently dead — `readline.Interface` never emits
+`'keypress'`. All three features that depended on it (Phase 29 palette, Phase
+29B pager, history ↑/↓ nav) never fired. One-line fix: register on
+`process.stdin` instead.
+
+### Root Cause (from Phase 29B diagnosis)
+Node.js `readline.createInterface({ terminal: true })` registers its own
+internal keypress listener on `process.stdin` (1 listener confirmed
+empirically via `process.stdin.listenerCount('keypress')`). The `readline.Interface`
+itself emits 0 keypress events. Registering `rl.on('keypress', ...)` added a
+handler to an event that is never emitted.
+
+### Changes
+
+#### cli/aiden.ts (1-line change + comment)
+```diff
+-  rl.on('keypress', (_ch: any, key: any) => {
++  // readline.createInterface({ terminal: true }) internally calls
++  // readline.emitKeypressEvents(process.stdin) and setRawMode(true), so
++  // keypress events are emitted on process.stdin — NOT on the rl Interface.
++  // We must register here, not on rl.
++  process.stdin.on('keypress', (_ch: any, key: any) => {
+```
+
+No other changes. `emitKeypressEvents` and `setRawMode` are NOT added
+explicitly — `terminal: true` already handles both internally.
+
+Debug `console.error` logs from Phase 29B diagnosis are retained in this
+commit so the user can confirm the fix in a live terminal before cleanup.
+
+### Verification
+
+| Check | Result |
+|---|---|
+| `npm run build:cli` | 0 errors ✅ |
+| `process.stdin.on("keypress", ...)` in bundle | line 456505 ✅ |
+| `rl.on('keypress', ...)` in source | 0 matches ✅ |
+| git push | ab4b008 → main ✅ |
+
+> **USER VERIFICATION REQUIRED** — restart `npm start` + `npm run cli`, then:
+> 1. Type `/` on empty line → palette should appear (Phase 29)
+> 2. Type `/sk` + Tab → filtered palette (Phase 29)
+> 3. Press ↑ arrow → history navigation
+> 4. `/skills list` → press `n` → should paginate (Phase 29B)
+> 5. In pager, press `q` → should exit (Phase 29B)
+> 6. Check stderr for `[PAGER DEBUG]` on pager entry AND key presses — both should now appear
+>
+> Once confirmed, run follow-up to strip the debug logs.
+
+---
+
 ## Phase 29B — /skills list pager n/p/q keys
 **Date:** 2026-04-23  
 **Commit:** a5bf4cd  
