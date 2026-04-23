@@ -55,7 +55,7 @@ import type { Phase }                                   from '../core/planTool'
 import { taskStateManager }                             from '../core/taskState'
 import { taskQueue }                                    from '../core/taskQueue'
 import { recoverTasks }                                 from '../core/taskRecovery'
-import { skillLoader }                                  from '../core/skillLoader'
+import { skillLoader, getSkillCacheStats }              from '../core/skillLoader'
 import { conversationMemory }                           from '../core/conversationMemory'
 import { semanticMemory }                               from '../core/semanticMemory'
 import { entityGraph }                                  from '../core/entityGraph'
@@ -3640,6 +3640,84 @@ export function createApiServer(): Express {
         tasks,
         providers,
         ts:        Date.now(),
+      })
+    } catch (e: any) { res.status(500).json({ error: e.message }) }
+  })
+
+  // GET /api/pulse/metrics — context budget + lazy-load cache stats
+  app.get('/api/pulse/metrics', (_req: Request, res: Response) => {
+    try {
+      const mem      = process.memoryUsage()
+      const heapMB   = Math.round(mem.heapUsed  / 1024 / 1024)
+      const rssMB    = Math.round(mem.rss        / 1024 / 1024)
+      const extMB    = Math.round(mem.external   / 1024 / 1024)
+
+      const skillCount = (skillLoader.loadAllRaw ? skillLoader.loadAllRaw() : skillLoader.loadAll()).length
+      const cache      = getSkillCacheStats()
+
+      // Rough token estimates (1 token ≈ 4 chars)
+      // RAM footprint: only preview (500 chars) + frontmatter (~200 chars) per skill loaded
+      // vs legacy full-load: all 12MB loaded into heap
+      const legacyBytesEst  = skillCount * 7649  // observed avg SKILL.md size before lazy loading
+      const legacyTokensEst = Math.round(legacyBytesEst / 4)
+      const lazyBytesEst    = skillCount * (500 + 200)
+      const lazyTokensEst   = Math.round(lazyBytesEst / 4)
+      const savedTokensEst  = legacyTokensEst - lazyTokensEst
+
+      // Session I/O tokens — approximated from conversation store if available
+      // (context window budget — what actually goes into LLM prompts)
+      let sessionInTokens  = 0
+      let sessionOutTokens = 0
+      try {
+        const { conversationMemory } = require('../core/conversationMemory') as typeof import('../core/conversationMemory')
+        // conversationMemory.messages is the live buffer (array of {role, content})
+        const msgs: Array<{ role: string; content: string }> =
+          (conversationMemory as any).messages ?? (conversationMemory as any)._messages ?? []
+        for (const msg of msgs) {
+          const chars = String(msg.content || '').length
+          if (msg.role === 'user')      sessionInTokens  += Math.round(chars / 4)
+          if (msg.role === 'assistant') sessionOutTokens += Math.round(chars / 4)
+        }
+      } catch {}
+
+      // Context window budget is based on session tokens (not RAM footprint)
+      // Skills inject at most 3 × 500-char previews = ~375 tokens per request
+      const contextUsed = sessionInTokens + sessionOutTokens
+
+      // Budget thresholds: green < 80K, yellow < 150K, red ≥ 150K (128K–200K range)
+      const BUDGET_WARN  = 80_000
+      const BUDGET_LIMIT = 150_000
+      const budgetStatus = contextUsed < BUDGET_WARN ? 'green'
+        : contextUsed < BUDGET_LIMIT ? 'yellow' : 'red'
+
+      const readToOutputRatio = sessionOutTokens > 0
+        ? Math.round((sessionInTokens / sessionOutTokens) * 100) / 100
+        : null
+
+      res.json({
+        memory: { heapMB, rssMB, extMB },
+        skillCache: {
+          cachedItems: cache.size,
+          maxItems:    cache.max,
+          hitRate:     null,   // not tracked per-request — use logs
+        },
+        tokens: {
+          legacyBootEst:   legacyTokensEst,
+          lazyBootEst:     lazyTokensEst,
+          savedByLazy:     savedTokensEst,
+          sessionIn:       sessionInTokens,
+          sessionOut:      sessionOutTokens,
+          contextUsed:     contextUsed,
+          readToOutputRatio,
+        },
+        budget: {
+          status:      budgetStatus,
+          warnAt:      BUDGET_WARN,
+          limitAt:     BUDGET_LIMIT,
+          used:        contextUsed,
+          remaining:   Math.max(0, BUDGET_LIMIT - contextUsed),
+        },
+        ts: Date.now(),
       })
     } catch (e: any) { res.status(500).json({ error: e.message }) }
   })

@@ -9,6 +9,33 @@
 import fs   from 'fs'
 import path from 'path'
 
+// ── LRU cache for on-demand skill content loading ─────────────
+// lru-cache v6 (CommonJS). max = maximum number of items.
+// Full SKILL.md is loaded lazily on first access and evicted when
+// the 50-entry limit is reached (LRU eviction).
+const _LRUClass = require('lru-cache') as { new(opts: { max: number }): { get(k: string): string | undefined; set(k: string, v: string): void; itemCount: number } }
+const _contentCache = new _LRUClass({ max: 50 })
+
+/**
+ * Load full SKILL.md content on demand (LRU-cached, max 50 entries).
+ * Returns null if the file cannot be read.
+ */
+export function getSkillContent(filePath: string): string | null {
+  const hit = _contentCache.get(filePath)
+  if (hit !== undefined) return hit
+  try {
+    const raw = fs.readFileSync(filePath, 'utf-8')
+    _contentCache.set(filePath, raw)
+    return raw
+  } catch {
+    return null
+  }
+}
+
+export function getSkillCacheStats(): { size: number; max: number } {
+  return { size: _contentCache.itemCount, max: 50 }
+}
+
 // ── Skill injection guard ─────────────────────────────────────
 
 const SKILL_INJECTION_PATTERNS: RegExp[] = [
@@ -117,7 +144,10 @@ export interface Skill {
   category?:   string   // parsed from frontmatter "category:" field
   platform?:   string   // optional: "windows" | "linux" | "macos" | "any"
   tags:        string[]
-  content:     string
+  /** First 500 chars of the skill body — used for prompt injection (sync, always available). */
+  preview:     string
+  /** @deprecated Use getSkillContent(skill.filePath) for full content. Kept for compat. */
+  content?:    string
   filePath:    string
   origin:      'aiden' | 'community' | 'local'
   enabled?:    boolean  // false = skip during normal load (auto-generated/installed)
@@ -132,6 +162,11 @@ export interface Skill {
   hasAssets?:      boolean           // assets/ subdir detected
   source?:         string            // import source URL or "local" or "library"
   importedFrom?:   string            // original GitHub owner/repo or URL
+}
+
+/** Skill with full body loaded — returned by getSkillContent() consumers. */
+export interface SkillWithContent extends Skill {
+  content: string
 }
 
 // Maps frontmatter platform values → Node.js process.platform strings
@@ -339,12 +374,14 @@ export class SkillLoader {
 
       if (!match) {
         // No frontmatter — use directory name as skill name
-        const name = path.basename(path.dirname(filePath))
-        return { name, description: name, version: '1.0.0', tags: [name], content: raw.trim(), filePath, origin }
+        const name    = path.basename(path.dirname(filePath))
+        const preview = raw.trim().slice(0, 500)
+        return { name, description: name, version: '1.0.0', tags: [name], preview, filePath, origin }
       }
 
       const frontmatter = match[1]
-      const content     = match[2].trim()
+      const body        = match[2].trim()
+      const preview     = body.slice(0, 500)
 
       const get = (key: string): string => {
         const m = frontmatter.match(new RegExp(`^${key}:\\s*(.+)$`, 'm'))
@@ -408,7 +445,7 @@ export class SkillLoader {
         category,
         platform,
         tags,
-        content,
+        preview,
         filePath,
         origin,
         enabled,
@@ -480,7 +517,7 @@ export class SkillLoader {
     if (skills.length === 0) return ''
 
     const formatted = skills.map(s =>
-      `[SKILL: ${s.name}]\nDescription: ${s.description}\n${s.content.slice(0, 500)}`,
+      `[SKILL: ${s.name}]\nDescription: ${s.description}\n${s.preview}`,
     ).join('\n\n---\n\n')
 
     return `\n\nRELEVANT SKILLS FOR THIS TASK:\n${formatted}\n\nUse these skill instructions to guide your planning.\n`

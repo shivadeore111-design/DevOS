@@ -1965,7 +1965,10 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
 
   // ── /pulse ─────────────────────────────────────────────────────────────────────
   if (command === '/pulse') {
-    const snap = await apiFetch<any>('/api/pulse/snapshot', null)
+    const [snap, metrics] = await Promise.all([
+      apiFetch<any>('/api/pulse/snapshot', null),
+      apiFetch<any>('/api/pulse/metrics',  null).catch(() => null),
+    ])
     if (!snap) { console.log(`  ${T.error}Pulse unavailable.${T.reset}\n`); return true }
 
     const uptimeFmt = (() => {
@@ -1983,6 +1986,32 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       : (snap.tasks || []).map((t: any) =>
           `  ${T.dim}${(t.id || '').substring(0, 8)}  ${t.status.padEnd(10)}${t.prompt}${T.reset}`)
 
+    // ── Context Budget section (from /api/pulse/metrics) ─────────
+    const budgetLines: string[] = []
+    if (metrics?.budget) {
+      const b = metrics.budget
+      const t = metrics.tokens
+      const c = metrics.skillCache
+      const statusColor = b.status === 'green'  ? COLORS.success
+                        : b.status === 'yellow' ? COLORS.orange
+                        :                         COLORS.error
+      const pct  = b.limitAt > 0 ? Math.min(100, Math.round((b.used / b.limitAt) * 100)) : 0
+      const barW = 24
+      const fill = Math.round((pct / 100) * barW)
+      const bar  = fg(statusColor) + '█'.repeat(fill) + T.dim + '░'.repeat(barW - fill) + RST
+      const savedK = t.savedByLazy != null ? `${Math.round(t.savedByLazy / 1000)}K` : '?'
+      budgetLines.push(
+        '',
+        `  ${T.dim}Context Budget${T.reset}`,
+        `  ${bar}  ${fg(statusColor)}${pct}%${RST}  ${T.dim}${(b.used / 1000).toFixed(1)}K / ${(b.limitAt / 1000).toFixed(0)}K tokens${T.reset}`,
+        `  ${T.dim}${'session in'.padEnd(14)}${T.reset}${(t.sessionIn / 1000).toFixed(1)}K tokens`,
+        `  ${T.dim}${'session out'.padEnd(14)}${T.reset}${(t.sessionOut / 1000).toFixed(1)}K tokens`,
+        `  ${T.dim}${'lazy saving'.padEnd(14)}${T.reset}${fg(COLORS.success)}↓ ${savedK} tokens${RST}  ${T.dim}vs full-load baseline${T.reset}`,
+        `  ${T.dim}${'skill cache'.padEnd(14)}${T.reset}${c.cachedItems}/${c.maxItems} items  ${T.dim}(on-demand LRU)${T.reset}`,
+        `  ${T.dim}${'memory'.padEnd(14)}${T.reset}heap ${metrics.memory.heapMB} MB  rss ${metrics.memory.rssMB} MB`,
+      )
+    }
+
     const lines: string[] = [
       '',
       `  ${T.dim}${'Uptime'.padEnd(14)}${T.reset}${uptimeFmt}`,
@@ -1994,6 +2023,7 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       '',
       `  ${T.dim}Async Tasks${T.reset}`,
       ...taskLines,
+      ...budgetLines,
       '',
     ]
     console.log()
