@@ -3696,7 +3696,7 @@ export function createApiServer(): Express {
         ? Math.round((sessionInTokens / sessionOutTokens) * 100) / 100
         : null
 
-      const memoryCitations = getSessionCitations()
+      const memoryCitations = getSessionCitations() ?? []
 
       res.json({
         memory: { heapMB, rssMB, extMB },
@@ -5265,7 +5265,7 @@ export function startApiServer(portArg?: number): Express {
   const isHeadless = process.env.AIDEN_HEADLESS === 'true'
   let host = isHeadless ? '0.0.0.0' : '127.0.0.1'
   try {
-    const cfgPath = path.join(process.cwd(), 'config', 'api.json')
+    const cfgPath = path.join(WORKSPACE_ROOT, 'config', 'api.json')
     if (fs.existsSync(cfgPath)) {
       const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'))
       host = (cfg.host as string) || host
