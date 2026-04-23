@@ -17,6 +17,8 @@ import type { ColDef }                                       from '../core/panel
 import { SPINNER_FRAMES_RAW }                               from '../core/spinner'
 import { checkForUpdate, formatUpdateLine }                  from '../core/updateCheck'
 import { VERSION }                                           from '../core/version'
+import { COMMANDS, COMMAND_DETAIL, getCatalog }             from './commandCatalog'
+import type { CmdDetail }                                    from './commandCatalog'
 
 // ── Constants ────────────────────────────────────────────────────────────────────
 
@@ -683,243 +685,10 @@ async function streamChat(message: string): Promise<void> {
   }
 }
 
-// ── Commands ──────────────────────────────────────────────────────────────────────
-
-const COMMANDS = [
-  '/new', '/reset', '/clear', '/history', '/stop',
-  '/export', '/fork', '/checkpoint', '/help',
-  '/status', '/tools', '/kit', '/providers', '/models', '/model', '/primary', '/switch',
-  '/memory', '/goals', '/skills', '/lessons', '/teach',
-  '/focus', '/explore', '/pulse',
-  '/rewind', '/pin',
-  '/diff', '/trust', '/timeline',
-  '/garden', '/decision',
-  '/log', '/save', '/rerun', '/name', '/stack', '/halt', '/yolo', '/attach', '/changelog',
-  '/recipes', '/sessions',
-  '/analytics', '/budget', '/workspace',
-  '/quick', '/compact', '/async', '/security', '/debug', '/config',
-  '/theme', '/persona', '/detail', '/depth', '/provider',
-  '/private',
-  '/run',
-  '/spawn',
-  '/swarm',
-  '/search',
-  '/mcp',
-  '/cmd',
-  '/ps',
-  '/wsl',
-  '/refresh',
-  '/channels',
-  '/voice',
-  '/speak',
-  '/listen',
-  '/todo',
-  '/cron',
-  '/vision',
-  '/timing',
-  '/version',
-  '/quit', '/exit', '/q',
-]
-
-// ── Command detail registry ───────────────────────────────────────────────────
-
-interface CmdDetail {
-  desc:        string
-  usage?:      string
-  subs?:       string[]   // subcommands
-  examples?:   string[]
-  section?:    string
-}
-
-const COMMAND_DETAIL: Record<string, CmdDetail> = {
-  '/new':        { section: 'Session',   desc: 'Start a fresh session (clears local history).',                usage: '/new' },
-  '/reset':      { section: 'Session',   desc: 'Alias for /new.',                                             usage: '/reset' },
-  '/clear':      { section: 'Session',   desc: 'Clear the terminal screen.',                                  usage: '/clear' },
-  '/history':    { section: 'Session',   desc: 'Show conversation history for this session.',                 usage: '/history' },
-  '/stop':       { section: 'Session',   desc: 'Interrupt an in-flight LLM call.',                           usage: '/stop' },
-  '/export':     { section: 'Session',   desc: 'Export conversation as Markdown or JSON.',                   usage: '/export md|json' },
-  '/fork':       { section: 'Session',   desc: 'Branch current session under a new name.',                   usage: '/fork <name>' },
-  '/checkpoint': { section: 'Session',   desc: 'Save a state snapshot.',                                     usage: '/checkpoint' },
-  '/timing':     { section: 'Info',      desc: 'Show timing breakdown for the last response.',              usage: '/timing' },
-  '/version':    { section: 'Info',      desc: 'Show current version and check for updates.',                usage: '/version' },
-  '/status':     { section: 'Info',      desc: 'Show server health, uptime, RAM.',                           usage: '/status' },
-  '/tools':      { section: 'Info',      desc: 'All registered tools grouped by category.',                  usage: '/tools' },
-  '/kit':        { section: 'Info',      desc: 'Toolkit categories — enable or disable tool groups.',        usage: '/kit' },
-  '/providers':  { section: 'Info',      desc: 'Provider chain with rate-limit status.',                     usage: '/providers' },
-  '/models':     { section: 'Info',      desc: 'Model assignments for each task type.',                      usage: '/models' },
-  '/memory':     { section: 'Info',      desc: 'Conversation memory stats.',                                 usage: '/memory' },
-  '/goals':      { section: 'Info',      desc: 'Active goals queue.',                                        usage: '/goals' },
-  '/skills':     { section: 'Info',      desc: 'Skill lifecycle manager.',
-    subs:    ['search <q>', 'install <name>', 'list', 'check', 'update <name>', 'audit', 'remove <name>', 'publish <name>', 'export <name>', 'import <source>', 'import-repo <owner/repo>', 'validate [id]', 'source <name>', 'stats', 'recommend', 'test <name>'],
-    examples: ['/skills list', '/skills search http', '/skills validate', '/skills import owner/repo', '/skills import-repo anthropics/skills'],
-  },
-  '/lessons':    { section: 'Info',      desc: 'Browse permanent failure rules stored in LESSONS.md.',
-    subs:     ['search <q>', 'web|shell|files|planning|provider|memory|skills|errors|general'],
-    examples: ['/lessons', '/lessons search rate limit', '/lessons errors'],
-  },
-  '/teach':      { section: 'Info',      desc: 'Append a manual rule to LESSONS.md.',
-    usage:    '/teach <rule text>',
-    examples: ['/teach If rate limit hit, wait 60s before retry'],
-  },
-  '/focus':      { section: 'Info',      desc: 'Toggle zen mode — suppress tool traces and status output.',  usage: '/focus' },
-  '/explore':    { section: 'Info',      desc: 'Capability browser.',
-    subs:     ['tools', 'skills', 'providers'],
-    examples: ['/explore tools', '/explore skills'],
-  },
-  '/pulse':      { section: 'Info',      desc: 'Live system dashboard — uptime, RAM, providers, async tasks.', usage: '/pulse' },
-  '/rewind':     { section: 'Info',      desc: 'Time-travel undo — mark a restore point, then jump back.',
-    subs:     ['mark [label]', 'undo', '<n>'],
-    examples: ['/rewind mark safe', '/rewind undo', '/rewind 2'],
-  },
-  '/pin':        { section: 'Info',      desc: 'Pin an exchange so it is never compacted.',
-    subs:     ['[label]', 'list', 'unpin <idx>'],
-    examples: ['/pin important fact', '/pin list', '/pin unpin 0'],
-  },
-  '/diff':       { section: 'Info',      desc: 'Filesystem changes since last commit (git status).',         usage: '/diff' },
-  '/trust':      { section: 'Info',      desc: 'Per-tool approval levels.',
-    subs:     ['list', 'set <tool> <0|1|2|3>', 'reset <tool>'],
-    examples: ['/trust list', '/trust set web_search 2', '/trust reset web_search'],
-  },
-  '/timeline':   { section: 'Info',      desc: 'ASCII tree of all sessions with branching and message counts.', usage: '/timeline' },
-  '/garden':     { section: 'Info',      desc: 'Memory layer explorer — all 9 memory stores at a glance.',
-    subs:     ['semantic', 'entities', 'learning', 'facts'],
-    examples: ['/garden', '/garden semantic', '/garden entities'],
-  },
-  '/decision':   { section: 'Info',      desc: 'Per-turn reasoning trace from the decision log.',
-    subs:     ['[N]', 'last', 'clear'],
-    examples: ['/decision', '/decision 50', '/decision last', '/decision clear'],
-  },
-  '/log':        { section: 'Core',    desc: 'Show recent log buffer entries.',
-    usage:    '/log [N] [level]',
-    examples: ['/log', '/log 50', '/log 20 error'],
-  },
-  '/save':       { section: 'Core',    desc: 'Save conversation to workspace/exports/ as Markdown.',
-    usage:    '/save [filename]',
-    examples: ['/save', '/save my-session'],
-  },
-  '/rerun':      { section: 'Core',    desc: 'Re-send the last user message.',                             usage: '/rerun' },
-  '/name':       { section: 'Core',    desc: 'Give the current session a human-readable name.',
-    usage:    '/name <label>',
-    examples: ['/name debugging-auth-bug', '/name'],
-  },
-  '/stack':      { section: 'Core',    desc: 'Show active async task stack.',                              usage: '/stack' },
-  '/halt':       { section: 'Core',    desc: 'Hard-stop all execution and LLM calls immediately.',         usage: '/halt' },
-  '/yolo':       { section: 'Core',    desc: 'Toggle YOLO mode — auto-approve all tool calls.',           usage: '/yolo' },
-  '/attach':     { section: 'Core',    desc: 'Queue a file as context prepended to the next message.',
-    subs:     ['<path>', 'list', 'clear'],
-    examples: ['/attach ./notes.txt', '/attach list', '/attach clear'],
-  },
-  '/changelog':  { section: 'Core',    desc: 'Show recent git commits or workspace file changes.',
-    usage:    '/changelog [N]',
-    examples: ['/changelog', '/changelog 50'],
-  },
-  '/sessions':   { section: 'Info',      desc: 'List recent sessions.',                                      usage: '/sessions' },
-  '/analytics':  { section: 'Info',      desc: 'Token usage analytics over time.',                          usage: '/analytics' },
-  '/budget':     { section: 'Info',      desc: 'Estimated token cost for this session.',                    usage: '/budget' },
-  '/workspace':  { section: 'Info',      desc: 'Show current workspace path and contents.',                 usage: '/workspace' },
-  '/model':      { section: 'Config',    desc: 'Switch the active LLM model.',                              usage: '/model <name>' },
-  '/provider':   { section: 'Config',    desc: 'Manage API providers — list, add, remove, test.',
-    usage:    '/provider [list|add|add-custom|remove|test]',
-    subs:     ['list', 'add <type> <key>', 'add-custom <name> <baseUrl> [key]', 'remove <id>', 'test <id>'],
-    examples: ['/provider list', '/provider add groq sk-xxx', '/provider add-custom myproxy https://... sk-xxx', '/provider remove groq-5', '/provider test groq-1'],
-  },
-  '/primary':    { section: 'Config',    desc: 'Pin a provider to front of the chain.',                     usage: '/primary [list|<name>|reset]' },
-  '/switch':     { section: 'Config',    desc: 'Alias for /primary — pin a provider to front of chain.',    usage: '/switch [list|<name>|reset]' },
-  '/theme':      { section: 'Config',    desc: 'Change color theme.',
-    usage:    '/theme <name>',
-    examples: ['/theme default', '/theme mono', '/theme slate', '/theme ember'],
-  },
-  '/persona':    { section: 'Config',    desc: 'Switch response persona.',
-    usage:    '/persona <name>',
-    examples: ['/persona default', '/persona concise', '/persona technical'],
-  },
-  '/detail':     { section: 'Config',    desc: 'Cycle tool-trace detail level: off → tools → verbose.',     usage: '/detail' },
-  '/depth':      { section: 'Config',    desc: 'Cycle reasoning depth: low → medium → high.',               usage: '/depth' },
-  '/config':     { section: 'Config',    desc: 'Show current configuration snapshot.',                      usage: '/config' },
-  '/quick':      { section: 'Power',     desc: 'Quick side question — no history, no tools.',               usage: '/quick <question>' },
-  '/compact':    { section: 'Power',     desc: 'Manual context compression.',                               usage: '/compact' },
-  '/async':      { section: 'Power',     desc: 'Run a task in the background.',                             usage: '/async <task>' },
-  '/run':        { section: 'Power',     desc: 'Execute JS in the Aiden VM sandbox with full SDK access.',
-    subs:     ['<file.js>', '- [desc]', 'examples', 'help', 'help <ns>'],
-    examples: ['/run scripts/port_checker.js', '/run -', '/run examples', '/run help', '/run help web'],
-    usage:    '/run <file.js> | - | examples | help [ns]',
-  },
-  '/spawn':      { section: 'Power',     desc: 'Delegate a sub-task to an isolated subagent.',
-    subs:     ['<task>', 'list', 'kill <id>'],
-    examples: ['/spawn summarise the logs', '/spawn list', '/spawn kill spawn_1234_abc'],
-    usage:    '/spawn <task> | list | kill <id>',
-  },
-  '/swarm':      { section: 'Power',     desc: 'Run N parallel subagents and aggregate results.',
-    subs:     ['<task>', '<task> --n=<N>', '<task> --strategy=vote|merge|best'],
-    examples: ['/swarm research quantum computing', '/swarm write a haiku --n=5 --strategy=vote'],
-    usage:    '/swarm <task> [--n=3] [--strategy=vote|merge|best]',
-  },
-  '/search':     { section: 'Power',     desc: 'Hybrid BM25 + semantic search over sessions and memory.',
-    subs:     ['<query>', '<query> --top=N'],
-    examples: ['/search market research', '/search authentication bug --top=10'],
-    usage:    '/search <query> [--top=N]',
-  },
-  '/mcp':        { section: 'Power',     desc: 'Manage MCP (Model Context Protocol) server connections.',
-    subs:     ['list', 'tools [server]', 'connect <name> <cmd>', 'disconnect <name>', 'call <server:tool> [json]'],
-    examples: ['/mcp list', '/mcp tools github', '/mcp call github:list_issues {}'],
-    usage:    '/mcp <subcommand> [args]',
-  },
-  '/cmd':        { section: 'Power',     desc: 'Run a Windows cmd.exe command and show stdout/exitCode.',
-    examples: ['/cmd dir', '/cmd ipconfig /all'],
-    usage:    '/cmd <command>',
-  },
-  '/ps':         { section: 'Power',     desc: 'Run a PowerShell command directly (no temp file).',
-    examples: ['/ps Get-Process | Select-Object -First 5', '/ps $PSVersionTable'],
-    usage:    '/ps <command>',
-  },
-  '/wsl':        { section: 'Power',     desc: 'Run a bash command inside WSL (auto-translates C:\\ paths to /mnt/c/).',
-    examples: ['/wsl uname -a', '/wsl ls -la /mnt/c/Users'],
-    usage:    '/wsl <command> [--distro=<name>]',
-  },
-  '/refresh':    { section: 'Power',     desc: 'Check for Aiden updates and reload config.',                usage: '/refresh' },
-  '/channels':   { section: 'Power',     desc: 'Show all channel adapters and their status.',
-    subs:    ['restart <name>', 'test <name>'],
-    usage:   '/channels [restart <name>|test <name>]',
-    examples: ['/channels', '/channels restart discord', '/channels test slack'],
-  },
-  '/voice':      { section: 'Voice',     desc: 'Toggle voice mode — TTS reads every AI reply aloud.',
-    subs:    ['on', 'off', 'status', 'providers', 'design', 'clone', 'reset'],
-    usage:   '/voice [on|off|status|providers|design <desc>|clone <path>|reset]',
-    examples: ['/voice', '/voice on', '/voice off', '/voice providers', '/voice design "calm, deep male voice"', '/voice clone ./ref.wav', '/voice reset'],
-  },
-  '/speak':      { section: 'Voice',     desc: 'Speak text immediately using the TTS engine.',
-    usage:    '/speak <text>',
-    examples: ['/speak Hello, how can I help you today?'],
-  },
-  '/listen':     { section: 'Voice',     desc: 'Record microphone input, transcribe via STT, and send as message.',
-    usage:    '/listen [seconds]',
-    examples: ['/listen', '/listen 10'],
-  },
-  '/todo':       { section: 'Power',     desc: 'Manage a per-session task list. Survives the conversation, resets on restart.',
-    subs:    ['add <text>', 'done <id>', 'remove <id>', 'list [all|pending|done]', 'clear'],
-    usage:   '/todo [add <text>|done <id>|remove <id>|list [filter]|clear]',
-    examples: ['/todo add Write unit tests', '/todo done 1', '/todo list pending', '/todo clear'],
-  },
-  '/cron':       { section: 'Power',     desc: 'Schedule recurring shell commands. Persists across sessions.',
-    subs:    ['add <schedule> <command>', 'list', 'pause <id>', 'resume <id>', 'delete <id>', 'run <id>'],
-    usage:   '/cron [add <schedule> -- <command>|list|pause <id>|resume <id>|delete <id>|run <id>]',
-    examples: ['/cron add every 5 minutes -- echo heartbeat', '/cron list', '/cron pause 1', '/cron run 2'],
-  },
-  '/vision':     { section: 'Power',     desc: 'Analyze an image with AI vision (Anthropic → OpenAI → Ollama llava).',
-    usage:   '/vision <path|url> [prompt]',
-    examples: ['/vision screenshot.png', '/vision /tmp/photo.jpg What text is visible?', '/vision https://example.com/img.png'],
-  },
-  '/security':   { section: 'Power',     desc: 'Run AgentShield security scan.',                            usage: '/security' },
-  '/debug':      { section: 'Power',     desc: 'Recent server log entries.',                                usage: '/debug' },
-  '/private':    { section: 'Power',     desc: 'Toggle private mode — suppresses memory writes.',           usage: '/private' },
-  '/help':       { section: 'Meta',      desc: 'Show this help overview, or search commands.',
-    subs:     ['search <q>', '<command>'],
-    examples: ['/help', '/help search memory', '/help /skills'],
-  },
-  '/quit':       { section: 'Exit',      desc: 'Exit Aiden.',                                               usage: '/quit' },
-  '/exit':       { section: 'Exit',      desc: 'Alias for /quit.',                                          usage: '/exit' },
-  '/q':          { section: 'Exit',      desc: 'Alias for /quit.',                                          usage: '/q' },
-}
+// ── Commands / Command Detail Registry ───────────────────────────────────────
+// NOTE: COMMANDS and COMMAND_DETAIL are now imported from ./commandCatalog
+// (see top-of-file import). This keeps the palette, Tab completer, and /help
+// handler in sync from a single source of truth.
 
 /** Fuzzy-match: all chars of `needle` appear in order in `haystack`. */
 function fuzzyCmd(needle: string, haystack: string): boolean {
@@ -4874,11 +4643,88 @@ async function main(): Promise<void> {
     })
   })()
 
-  let histIdx   = -1
-  let lastCtrlC = 0
+  let histIdx      = -1
+  let lastCtrlC    = 0
+  let paletteActive = false
+
+  // Whether the command palette is enabled (opt-out: AIDEN_PALETTE=false)
+  const PALETTE_ON = process.env.AIDEN_PALETTE !== 'false'
+                  && process.stdout.isTTY
+                  && process.stdin.isTTY
 
   rl.on('keypress', (_ch: any, key: any) => {
     if (!key) return
+
+    // ── Command palette triggers ──────────────────────────────────────────────
+    if (PALETTE_ON && !paletteActive) {
+      // readline has already processed the key and updated rl.line by the time
+      // this handler fires (readline emits 'keypress' from _ttyWrite, after
+      // updating its internal buffer).
+      const currentLine: string = (rl as any).line || ''
+
+      // Trigger 1: '/' typed at start of an empty buffer  →  full palette
+      if (key.sequence === '/' && currentLine === '/') {
+        paletteActive = true
+        rl.pause()
+        // Erase the echoed '/' so the palette renders cleanly
+        process.stdout.write('\x1b[2K\r')
+        ;(rl as any).line   = ''
+        ;(rl as any).cursor = 0
+        ;(async () => {
+          let chosen: string | null = null
+          try {
+            const [{ showPalette }] = await Promise.all([
+              import('./commandPalette'),
+            ])
+            chosen = await showPalette('', getCatalog())
+            if (chosen !== null) {
+              ;(rl as any).line   = chosen
+              ;(rl as any).cursor = chosen.length
+            }
+          } catch { /* palette error — fall through silently */ }
+          finally {
+            paletteActive = false
+            rl.setPrompt(getPrompt())
+            rl.resume()
+            rl.prompt(true)
+            ;(rl as any)._refreshLine?.()
+          }
+        })()
+        return
+      }
+
+      // Trigger 2: Tab on a partial '/cmd'  →  palette pre-filtered to prefix
+      if (key.name === 'tab' && currentLine.startsWith('/') && currentLine.length > 1) {
+        paletteActive = true
+        const savedLine = currentLine
+        rl.pause()
+        process.stdout.write('\x1b[2K\r')
+        ;(rl as any).line   = ''
+        ;(rl as any).cursor = 0
+        ;(async () => {
+          let inject = savedLine
+          try {
+            const [{ showPalette }] = await Promise.all([
+              import('./commandPalette'),
+            ])
+            const chosen = await showPalette(savedLine, getCatalog())
+            if (chosen !== null) inject = chosen
+          } catch { /* fall through */ }
+          finally {
+            ;(rl as any).line   = inject
+            ;(rl as any).cursor = inject.length
+            paletteActive = false
+            rl.setPrompt(getPrompt())
+            rl.resume()
+            rl.prompt(true)
+            ;(rl as any)._refreshLine?.()
+          }
+        })()
+        return
+      }
+    }
+
+    // ── History navigation ────────────────────────────────────────────────────
     if (key.name === 'up') {
       if (histIdx < state.inputHistory.length - 1) {
         histIdx++
