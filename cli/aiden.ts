@@ -1828,6 +1828,7 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
     if (process.stdout.isTTY && process.stdin.isTTY && pages > 1) {
       pagerActive = true
       pagerState  = { skills, pageIndex: page, pageSize: PAGE_SIZE }
+      console.error(`[PAGER DEBUG] ENTERED pager mode with ${skills.length} skills, ${pages} pages`)
     }
     return true
   }
@@ -4669,11 +4670,16 @@ async function main(): Promise<void> {
                   && process.stdout.isTTY
                   && process.stdin.isTTY
 
-  rl.on('keypress', (_ch: any, key: any) => {
+  // readline.createInterface({ terminal: true }) internally calls
+  // readline.emitKeypressEvents(process.stdin) and setRawMode(true), so
+  // keypress events are emitted on process.stdin — NOT on the rl Interface.
+  // We must register here, not on rl.
+  process.stdin.on('keypress', (_ch: any, key: any) => {
     if (!key) return
 
     // ── Skill Store pager navigation ──────────────────────────────────────────
     if (pagerActive && pagerState) {
+      console.error(`[PAGER DEBUG] key=${JSON.stringify(_ch)} seq=${JSON.stringify(key?.sequence)} name=${JSON.stringify(key?.name)} pagerActive=${pagerActive}`)
       // Absorb whatever readline echoed before our handler fired
       process.stdout.write('\x1b[2K\r')
       ;(rl as any).line   = ''
