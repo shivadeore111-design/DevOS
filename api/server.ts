@@ -56,6 +56,8 @@ import { taskStateManager }                             from '../core/taskState'
 import { taskQueue }                                    from '../core/taskQueue'
 import { recoverTasks }                                 from '../core/taskRecovery'
 import { skillLoader, getSkillCacheStats, getSkillContent } from '../core/skillLoader'
+import { runMigrationIfNeeded }                             from '../core/memoryIds'
+import { memsearch, memtimeline, memget, getSessionCitations } from '../core/memoryQuery'
 import { conversationMemory }                           from '../core/conversationMemory'
 import { semanticMemory }                               from '../core/semanticMemory'
 import { entityGraph }                                  from '../core/entityGraph'
@@ -3694,6 +3696,8 @@ export function createApiServer(): Express {
         ? Math.round((sessionInTokens / sessionOutTokens) * 100) / 100
         : null
 
+      const memoryCitations = getSessionCitations()
+
       res.json({
         memory: { heapMB, rssMB, extMB },
         skillCache: {
@@ -3717,6 +3721,7 @@ export function createApiServer(): Express {
           used:        contextUsed,
           remaining:   Math.max(0, BUDGET_LIMIT - contextUsed),
         },
+        memoryCitations,
         ts: Date.now(),
       })
     } catch (e: any) { res.status(500).json({ error: e.message }) }
@@ -4951,9 +4956,49 @@ export function createApiServer(): Express {
     } catch (e: any) { res.status(500).json({ error: e.message }) }
   })
 
-  // GET /api/memory/sessions â€” list all session IDs
+  // GET /api/memory/sessions — list all session IDs
   app.get('/api/memory/sessions', (_req: Request, res: Response) => {
     res.json({ sessions: conversationMemory.getSessions() })
+  })
+
+  // ── Phase 12 — Progressive disclosure memory query ────────────────────────
+
+  // GET /api/memory/search?q=<query>&limit=<N>&type=<T>&since=<date>
+  // Layer 1 — returns [{id, summary, type, date, score}]  ~50 tok/hit
+  app.get('/api/memory/search', async (req: Request, res: Response) => {
+    try {
+      const q     = String(req.query.q ?? '')
+      const limit = Math.min(50, Number(req.query.limit ?? 10) || 10)
+      const type  = req.query.type  as string | undefined
+      const since = req.query.since as string | undefined
+      const hits  = await memsearch(q, { limit, type, since })
+      const bytes = JSON.stringify(hits).length
+      res.json({ hits, count: hits.length, approxTokens: Math.round(bytes / 4) })
+    } catch (e: any) { res.status(500).json({ error: e.message }) }
+  })
+
+  // GET /api/memory/timeline/:id?hours=<N>
+  // Layer 2 — chronological ±window around a memory record  ~200 tok
+  app.get('/api/memory/timeline/:id', async (req: Request, res: Response) => {
+    try {
+      const id          = String(req.params.id)
+      const windowHours = Number(req.query.hours ?? 6) || 6
+      const result      = await memtimeline(id, { windowHours })
+      if (!result) { res.status(404).json({ error: `Memory “${id}” not found` }); return }
+      res.json(result)
+    } catch (e: any) { res.status(500).json({ error: e.message }) }
+  })
+
+  // GET /api/memory/get?ids=<comma-separated>
+  // Layer 3 — full record bodies for selected IDs  ~500-1000 tok each
+  app.get('/api/memory/get', async (req: Request, res: Response) => {
+    try {
+      const raw = String(req.query.ids ?? '')
+      const ids = raw.split(',').map(s => s.trim()).filter(Boolean)
+      if (ids.length === 0) { res.status(400).json({ error: 'ids param required' }); return }
+      const results = await memget(ids)
+      res.json({ results })
+    } catch (e: any) { res.status(500).json({ error: e.message }) }
   })
 
   // GET /api/screenshot â€” serve latest screenshot from workspace/screenshots/
@@ -5335,8 +5380,16 @@ export function startApiServer(portArg?: number): Express {
   // Sprint 30: refresh Aiden identity on startup
   setTimeout(() => { try { refreshIdentity() } catch {} }, 2000)
 
-  // Run crash recovery on startup â€” non-blocking, finds 'running' tasks from prior session
+  // Run crash recovery on startup — non-blocking, finds 'running' tasks from prior session
   recoverTasks().catch(e => console.error('[Startup] Recovery error:', e.message))
+
+  // Phase 12: one-time memory ID migration (no-op if already done)
+  try {
+    const migrated = runMigrationIfNeeded()
+    if (migrated > 0) console.log(`[Memory] Migration: ${migrated} records backfilled with mem_NNNNNN IDs`)
+  } catch (e: any) {
+    console.error('[Memory] Migration error (non-fatal):', e.message)
+  }
 
   // A3 u{2014} Passive skill observer (gated by AIDEN_PASSIVE_LEARNING env var)
   try {

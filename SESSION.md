@@ -1,5 +1,52 @@
 # DevOS Session Log
 
+## Phase 12 — Progressive disclosure memory (3-layer query)
+**Date:** 2026-04-24
+**Commit:** TBD (pending)
+
+### What changed
+- `core/memoryIds.ts` — stable `mem_NNNNNN` IDs, append-only `records.jsonl`, one-time migration from legacy sources (memory.json, conversation-memory.json, MEMORY_INDEX.md)
+- `core/memoryQuery.ts` — Layer 1 `memsearch()` (word-match scoring), Layer 2 `memtimeline()` (±6h window), Layer 3 `memget()` (full bodies), session-scoped citation tracking
+- `api/server.ts` — migration runs at startup; 3 new endpoints: `GET /api/memory/search`, `GET /api/memory/timeline/:id`, `GET /api/memory/get`; `/api/pulse/metrics` now includes `memoryCitations[]`
+- `cli/aiden.ts` — `/memsearch`, `/memtimeline`, `/memget` commands; `/pulse` shows citation panel
+- `cli/commandCatalog.ts` — 3 new command entries with examples
+
+### Also in this batch: Phase 14b
+- Fixed `/skills review <id>` returning "Skill not found" for built-in skills
+- Two-stage lookup: learned/installed paths first, then full skills index fallback via `skillLoader`
+
+### Measurements (37 records migrated)
+| Metric | Layer 1 (search 10 hits) | Full dump (37 records) |
+|--------|--------------------------|------------------------|
+| Bytes  | 1,882 | 19,750 |
+| Approx tokens | ~470 | ~4,938 |
+| Token reduction | **90%** | — |
+
+### Migration
+- 37 records backfilled from legacy sources with `mem_000001`–`mem_000037`
+- `records.jsonl` is append-only; migration is a no-op once the file exists
+
+### Notes
+- Existing 6-layer memory (conversationMemory, semanticMemory, etc.) untouched
+- Citation tracking is session-scoped (in-process Map), reset on server restart
+- Word-match scoring: `hits / totalQueryWords`, ties broken by recency desc
+
+---
+
+## Phase 14b — Fix `/skills review <id>` for built-in skills
+**Date:** 2026-04-24
+**Commit:** `a04f587`
+
+### What changed
+- `api/server.ts` — review endpoint now does two-stage lookup: learned/installed paths first, then falls back to full `skillLoader` index with case-insensitive name/dir matching
+- `core/skillLoader.ts` — exported `getSkillContent()` for cache-backed full body reads
+
+### Verified
+- 11 automated tests passed (`tests/verify-review-fix.ts`)
+- Built-in skills, case-insensitive lookup, and learned skills all resolve correctly
+
+---
+
 ## Phase 14 — Lazy skill loading
 **Date:** 2026-04-24  
 **Commit:** `59465d0`  

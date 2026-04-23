@@ -845,6 +845,9 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       helpRow('/providers',         'Provider chain + rate limits'),
       helpRow('/models',            'Model assignments'),
       helpRow('/memory',            'Memory stats'),
+      helpRow('/memsearch',         'Search memories by keyword  — Layer 1 progressive disclosure'),
+      helpRow('/memtimeline',       'Chronological context around a memory ID  — Layer 2'),
+      helpRow('/memget',            'Full detail for specific memory IDs  — Layer 3'),
       helpRow('/goals',             'Active goals'),
       helpRow('/skills',            'Skill lifecycle  (search / install / list / check / update / audit / remove / publish / export / import / import-repo / validate / source / stats / recommend / test)'),
       helpRow('/lessons',           'Browse permanent failure rules  (search / <category>)'),
@@ -1230,6 +1233,129 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
     if (sem || ent) {
       console.log(`  ${'Semantic'.padEnd(16)}${num(sem)}`)
       console.log(`  ${'Entities'.padEnd(16)}${num(ent)}`)
+    }
+    console.log()
+    return true
+  }
+
+  // ── /memsearch ─────────────────────────────────────────────────────────────────
+  if (command === '/memsearch') {
+    const query = args.join(' ').trim()
+    if (!query) {
+      console.log(`  ${T.dim}Usage: /memsearch <query>   e.g. /memsearch archon provider${T.reset}\n`)
+      return true
+    }
+    const data = await apiFetch<any>(`/api/memory/search?q=${encodeURIComponent(query)}&limit=10`, null)
+    const hits: Array<{ id: string; summary: string; type: string; date: string; score: number }> =
+      data?.hits ?? []
+    console.log()
+    if (hits.length === 0) {
+      console.log(`  ${T.dim}No memories matching "${query}"${T.reset}\n`)
+      return true
+    }
+    const colDefs: ColDef[] = [
+      { header: 'ID',       width: 12, align: 'left',  color: COLORS.cyan  },
+      { header: 'Summary',  width: 52, align: 'left'                        },
+      { header: 'Type',     width: 12, align: 'left',  color: COLORS.dim   },
+      { header: 'Date',     width: 12, align: 'left',  color: COLORS.dim   },
+      { header: 'Score',    width: 6,  align: 'right', color: COLORS.dim   },
+    ]
+    const rows = hits.map(h => [
+      h.id,
+      h.summary.slice(0, 52),
+      h.type,
+      h.date,
+      String(Math.round(h.score * 100)) + '%',
+    ])
+    console.log(panel({ title: `${MARKS.TRI} Memory Search — "${query}"  (${hits.length} hit${hits.length !== 1 ? 's' : ''})`, lines: [''] }))
+    console.log(table(colDefs, rows))
+    if (data?.approxTokens != null) {
+      console.log(`  ${T.dim}~${data.approxTokens} tokens  ·  /memtimeline <id>  /memget <id1,id2>${T.reset}\n`)
+    } else {
+      console.log(`  ${T.dim}/memtimeline <id>  /memget <id1,id2>${T.reset}\n`)
+    }
+    return true
+  }
+
+  // ── /memtimeline ───────────────────────────────────────────────────────────────
+  if (command === '/memtimeline') {
+    const id = args[0]?.trim()
+    if (!id) {
+      console.log(`  ${T.dim}Usage: /memtimeline <mem_id>   e.g. /memtimeline mem_000001${T.reset}\n`)
+      return true
+    }
+    const data = await apiFetch<any>(`/api/memory/timeline/${encodeURIComponent(id)}`, null)
+    if (!data || data.error) {
+      console.log(`  ${T.error}Memory "${id}" not found.${T.reset}\n`)
+      return true
+    }
+    const { center, before, after } = data
+    const relDate = (ts: string) => {
+      const diffMs = Date.now() - new Date(ts).getTime()
+      const days = Math.floor(diffMs / 86400000)
+      if (days === 0) return 'today'
+      if (days === 1) return 'yesterday'
+      if (days < 7)  return `${days}d ago`
+      return ts.slice(0, 10)
+    }
+    console.log()
+    console.log(panel({
+      title: `${MARKS.TRI} Timeline — ${id}  [${center.type}]`,
+      lines: [
+        '',
+        `  ${T.dim}${relDate(center.timestamp)}  ·  ${center.type}${T.reset}`,
+        `  ${T.bold}${center.summary.slice(0, 90)}${T.reset}`,
+        '',
+        ...before.length === 0 ? [] : [`  ${T.dim}── Before ─────────────────────────────${T.reset}`],
+        ...before.map((b: any) => `  ${fg(COLORS.dim)}${b.id}${RST}  ${T.dim}${relDate(b.timestamp)}${T.reset}  ${b.summary.slice(0, 60)}`),
+        ...after.length === 0 ? [] : [`  ${T.dim}── After ──────────────────────────────${T.reset}`],
+        ...after.map((a: any) => `  ${fg(COLORS.dim)}${a.id}${RST}  ${T.dim}${relDate(a.timestamp)}${T.reset}  ${a.summary.slice(0, 60)}`),
+        '',
+        `  ${T.dim}/memget ${id}  to see full content${T.reset}`,
+        '',
+      ],
+    }))
+    console.log()
+    return true
+  }
+
+  // ── /memget ────────────────────────────────────────────────────────────────────
+  if (command === '/memget') {
+    const ids = args.join(' ').replace(/\s+/g, ',').replace(/,+/g, ',').trim()
+    if (!ids) {
+      console.log(`  ${T.dim}Usage: /memget <id1,id2,...>   e.g. /memget mem_000001,mem_000002${T.reset}\n`)
+      return true
+    }
+    const data = await apiFetch<any>(`/api/memory/get?ids=${encodeURIComponent(ids)}`, null)
+    const results: Array<{ id: string; record: any; found: boolean }> = data?.results ?? []
+    console.log()
+    for (const r of results) {
+      if (!r.found || !r.record) {
+        console.log(`  ${T.error}${r.id} — not found${T.reset}\n`)
+        continue
+      }
+      const rec = r.record
+      const relDate = (ts: string) => {
+        const diffMs = Date.now() - new Date(ts).getTime()
+        const days = Math.floor(diffMs / 86400000)
+        if (days < 7) return days === 0 ? 'today' : `${days}d ago`
+        return ts.slice(0, 10)
+      }
+      const bodyLines = (rec.content ?? '').split('\n').slice(0, 40)
+        .map((l: string) => `  ${T.dim}${l}${T.reset}`)
+      console.log(panel({
+        title: `${MARKS.TRI} ${rec.id}  [${rec.type}]`,
+        lines: [
+          '',
+          `  ${T.dim}${relDate(rec.timestamp)}  ·  ${rec.type}${rec.sessionId ? `  ·  session ${rec.sessionId.slice(0, 16)}` : ''}${T.reset}`,
+          `  ${T.bold}${rec.summary.slice(0, 90)}${T.reset}`,
+          '',
+          ...bodyLines,
+          '',
+          ...(rec.tags?.length ? [`  ${T.dim}tags: ${rec.tags.join(', ')}${T.reset}`] : []),
+          '',
+        ],
+      }))
     }
     console.log()
     return true
@@ -2012,6 +2138,19 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       )
     }
 
+    // Memory Citations section
+    const citationLines: string[] = []
+    const cits: Array<{ id: string; summary: string; refs: number }> = metrics?.memoryCitations ?? []
+    if (cits.length > 0) {
+      const totalRefs = cits.reduce((s, c) => s + c.refs, 0)
+      citationLines.push(
+        '',
+        `  ${T.dim}Memory Citations (this session)${T.reset}`,
+        ...cits.map(c => `  ${fg(COLORS.cyan)}${c.id}${RST}  ${T.dim}${c.summary.slice(0, 55).padEnd(55)}${T.reset}  ${fg(COLORS.dim)}${c.refs} ref${c.refs !== 1 ? 's' : ''}${RST}`),
+        `  ${T.dim}Total: ${cits.length} memor${cits.length !== 1 ? 'ies' : 'y'} consulted, ${totalRefs} refs${T.reset}`,
+      )
+    }
+
     const lines: string[] = [
       '',
       `  ${T.dim}${'Uptime'.padEnd(14)}${T.reset}${uptimeFmt}`,
@@ -2024,6 +2163,7 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       `  ${T.dim}Async Tasks${T.reset}`,
       ...taskLines,
       ...budgetLines,
+      ...citationLines,
       '',
     ]
     console.log()
