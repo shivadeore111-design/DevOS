@@ -1,5 +1,57 @@
 # DevOS Session Log
 
+## Phase 29F — Pager-only mode, palette disabled by default
+**Date:** 2026-04-23  
+**Commit:** d63303b  
+**Branch:** main
+
+### Summary
+After 5 rounds of palette+pager bug-fixing, the root problem became clear:
+both features sharing one keypress handler create cascading conflicts. Fix:
+palette disabled by default, pager logic cleaned up to be simple and reliable.
+
+### Changes
+
+#### Palette → opt-in beta
+```diff
+- const PALETTE_ON = process.env.AIDEN_PALETTE !== 'false'
++ const PALETTE_ON = process.env.AIDEN_PALETTE === 'true'
+```
+Palette code stays in `commandPalette.ts` and the keypress handler still
+has the triggers — they just never fire unless `AIDEN_PALETTE=true`.
+Future full TUI rewrite via Ink is the correct long-term path.
+
+#### Pager improvements
+- `(rl as any).line = ''` + `cursor = 0` cleared BEFORE key dispatch (not after)
+- `console.clear()` before each page render for clean display
+- Added `down` / `space` / `return` as next-page keys
+- Added `up` as prev-page key  
+- Exit keys: `q` / `Esc` / `Ctrl+C` (`key.ctrl && key.name === 'c'`)
+- All other keys absorbed while pager active
+- History nav (↑/↓) untouched — only fires in normal mode
+
+### Verification
+
+| Check | Result |
+|---|---|
+| `npm run build:cli` | 0 errors ✅ |
+| `showPalette` calls in source | 2 (both behind `PALETTE_ON` flag) ✅ |
+| pager refs in source | 9 ✅ |
+| `AIDEN_PALETTE === 'true'` opt-in | 1 match ✅ |
+| git push | d63303b → main ✅ |
+
+### User Verification (4 tests)
+1. `/skills list` → table appears with nav hint
+2. Press `n` or `↓` → page 2 of skills, screen clears and redraws cleanly
+3. Press `p` or `↑` → back to page 1
+4. Press `q` or `Esc` → exits, prompt returns, can type `/help` normally
+
+### Future
+- Full TUI via Ink migration: proper keybinding, no readline conflicts
+- Palette re-enable: wire to Ink layer when ready
+
+---
+
 ## Phase 29E — Fix pager nav + palette execute + cleanup debug logs
 **Date:** 2026-04-23  
 **Commit:** 789ff27  
