@@ -1,5 +1,57 @@
 # DevOS Session Log
 
+## Phase 29E — Fix pager nav + palette execute + cleanup debug logs
+**Date:** 2026-04-23  
+**Commit:** 789ff27  
+**Branch:** main
+
+### Summary
+Four UX bugs fixed in one pass. Palette now executes selected commands
+immediately (no second Enter required). Pager nav uses proper readline APIs
+and exits cleanly on q/Esc/Ctrl+C. All `[PAGER DEBUG]` logs removed.
+
+### Bugs Fixed
+
+#### 1. Pager navigation
+- Removed `[PAGER DEBUG]` console.error calls (lines 1831 and 4682)
+- Replaced raw `\x1b[2K\r` escape with `readline.clearLine` + `readline.cursorTo`
+- Flat `if/return` structure — no dangling else chains
+- Added Ctrl+C (`key.sequence === '\u0003'`) as additional exit key
+- Exit path now writes `'\n'` before `rl.prompt()` for clean rendering
+
+#### 2. Palette Trigger 1 (`/` on empty buffer)
+- Use `readline.clearLine` + `readline.cursorTo` to erase echoed char
+- Execute via `await handleCommand(chosen, rl)` — no more injecting text
+  into `rl.line` (previously required a second Enter press by the user)
+- `try/finally` guarantees `paletteActive = false` + `rl.resume()` + `rl.prompt()`
+
+#### 3. Palette Trigger 2 (Tab on partial `/cmd`)
+- Same `handleCommand` execution pattern as Trigger 1
+- Esc/no-selection restores partial input to buffer (UX improvement)
+- `try/finally` hardening mirrors Trigger 1
+
+#### 4. Defensive reset in `rl.on('line', ...)` handler
+- If Enter is pressed while pager is active (edge case), pager state
+  is cleared immediately before processing the line input
+
+### Verification
+
+| Check | Result |
+|---|---|
+| `npm run build:cli` | 0 errors ✅ |
+| `[PAGER DEBUG]` in bundle | 0 matches ✅ |
+| `pagerActive\|paletteActive\|renderSkillsPage\|handleCommand` in bundle | 22 matches ✅ |
+| git push | 789ff27 → main ✅ |
+
+> **USER VERIFICATION REQUIRED:**
+> 1. `/skills list` → `n` paginates, `p` goes back, `q` exits cleanly
+> 2. `/` on empty line → palette appears, Enter on selection runs command immediately
+> 3. `/sk` + Tab → filtered palette, selection runs command immediately
+> 4. ↑/↓ arrows → history navigation still works
+> 5. Ctrl+C in pager → exits pager cleanly (doesn't kill the CLI)
+
+---
+
 ## Phase 29C — Fix dead keypress emitter
 **Date:** 2026-04-23  
 **Commit:** ab4b008  
