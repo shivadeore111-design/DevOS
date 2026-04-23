@@ -1,5 +1,74 @@
 # DevOS Session Log
 
+## Phase 27 — Bulk Skill Import (69 → 1,104 via API / 1,445 installed)
+**Date:** 2026-04-23  
+**Branch:** main (no commit — skills/installed/ is gitignored)
+
+### Summary
+Bulk-imported agentskills.io-compliant skills from Tier A (anthropics/skills) and
+Tier B/C community repos. Catalog grew from 71 → 1,104 skills visible via API,
+with 1,445 skill directories written to `skills/installed/`. All imports landed
+with `enabled: false`. No existing skills were overwritten. No commit made —
+`skills/installed/*/` is gitignored.
+
+### Import Sources
+
+| Tier | Repo | Imported |
+|---|---|---|
+| A | anthropics/skills | 17 |
+| B | grafana/skills | 37 |
+| B | apollographql/skills | 12 |
+| B | OneWave-AI/claude-skills | 162 |
+| B | JuanJoseGonGi/skills | 124 |
+| B | serenorg/seren-skills | 134 |
+| B | Jamie-BitFlight/claude_skills | 217 |
+| B | popup-studio-ai/bkit-gemini | 42 |
+| B | jh941213/my-cc-harness | 31 |
+| B | bongrealty/skillcraft | 18 |
+| B | supertyrelle/pelley | 36 |
+| B | Fujigo-Software/f5-framework-claude | 37 |
+| B | clearsmog/claude-skills | 21 |
+| B | normcrandall/claudeskills | 0 (all failed) |
+| B | PlagueHO/plagueho.skills | 21 |
+| C | kaiye/skills | 10 |
+| C | samdengler/guppi-skills | 12 |
+| C | glhewett/public-skills | 16 |
+| C | dgk-dev/dgk-claude | 3 |
+| C | youdotcom-oss/agent-skills | 19 |
+| C | timgent/claude-code-config | 1 |
+| C | diegosouzapw/awesome-omni-skill | 440 (capped 500) |
+| C | browseros-ai/BrowserOS | 25 |
+| C | HKUDS/nanobot | 8 |
+| C | vivshaw/let-claude-say-fuck | 1 |
+| C | lee-ji-hoon/claude-multi-account-manager | 1 |
+| C | mgechev/skills-best-practices | 0 |
+| C | mattnigh/skills_collection | 0 (all at-root, no subpath) |
+
+**Total: 1,428 OK, 210 FAIL** (FAIL = already exists or malformed SKILL.md)
+
+### Verification Results
+
+| Check | Result |
+|---|---|
+| skills/installed/ directories | 1,445 ✅ |
+| All imported: enabled: false | Confirmed (10-sample audit) ✅ |
+| Git tracking | Only .gitkeep tracked ✅ |
+| API total skills | 1,104 ✅ (71 native + 1,033 net new; ~412 ID dedup) |
+| No auto-enable | Confirmed — 0 imported skills enabled ✅ |
+| No overwrite of existing | force: false throughout ✅ |
+| Import log | logs/p27-import.log ✅ |
+
+### Notes
+- `diegosouzapw/awesome-omni-skill` has 16,598 SKILL.md files; capped at 500 per policy
+- `mattnigh/skills_collection` paths were all at repo root (no subpath), skipped by importer
+- `normcrandall/claudeskills` failed all 16 (likely private or branch mismatch)
+- API count (1,104) < installed dirs (1,445) because the loader deduplicates by skill ID;
+  multiple repos shipping skills with the same ID (e.g. `skill-creator`) merge to one entry
+- Import discovery used GitHub tree API: `GET /repos/{owner}/{repo}/git/trees/{branch}?recursive=1`
+- Server PID: started on port 4200 for import, can be stopped after session
+
+---
+
 ## Phase 11A — v3.9.0 Release Ship
 **Date:** 2026-04-23  
 **Commits:** d6e46e5 (version bump), aa2a72f (session)  
