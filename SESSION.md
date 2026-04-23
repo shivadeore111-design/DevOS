@@ -1,5 +1,50 @@
 # DevOS Session Log
 
+## Phase 11A — v3.9.0 Release Ship
+**Date:** 2026-04-23  
+**Commits:** d6e46e5 (version bump), aa2a72f (session)  
+**Branch:** main  
+**Tag:** v3.9.0
+
+### Summary
+Shipped v3.9.0 bundling Phase 9 (production hardening) and Phase 11
+(agentskills.io spec adapter). Windows signed NSIS installer + Linux AppImage
++ .deb uploaded to taracodlabs/aiden-releases. Landing page auto-serves via
+releases/latest (no changes needed). aiden-releases README updated.
+
+### Artifacts
+
+| File | Size | SHA-256 |
+|---|---|---|
+| `Aiden Setup 3.9.0.exe` | 148 MB | `24B092D0A7240670ACCD6BF3A64395815E57542D11DC6135EC598AA907EC5D29` |
+| `Aiden-3.9.0.AppImage` | 197.5 MB | `6367B4D39996234F4C84520C5A916B390B0DD8C6D126AE5C960BBC1009C37474` |
+| `devos-ai_3.9.0_amd64.deb` | 144.6 MB | `ABA3B6EAE27828472BCE0233A254075879231816C4D5D99C09259A526095A7EC` |
+
+### Build notes
+- `prepare-electron.js` must run before `electron-builder` on both platforms
+  (sets `main` from `./dist/index.js` → `electron/main.js`; builds Next.js
+  standalone; copies native modules). The Phase 11A prompt said "skip
+  prepare-electron.js" — that was incorrect; it must run.
+- Version bump committed + pushed first so WSL can `git reset --hard origin/main`
+  and pick up 3.9.0 before the Linux build.
+- `main` restored to `./dist/index.js` in source control after each build.
+
+### Verification Results
+| Check | Result |
+|---|---|
+| TypeScript build | 0 errors ✅ |
+| Windows installer | `Aiden Setup 3.9.0.exe` 148 MB ✅ |
+| Windows smoke test | Fresh install, health `/api/health` → `{"version":"3.9.0"}` ✅ |
+| AppImage extract | `AppRun`, `devos-ai` binary, `devos-ai.desktop` present ✅ |
+| deb metadata | `Version: 3.9.0`, `Vendor: Taracod Labs`, `amd64` ✅ |
+| GitHub release | 3 artifacts uploaded, `releases/latest` → v3.9.0 ✅ |
+| aiden-releases README | Updated v3.8.1 → v3.9.0 (4 occurrences), pushed ✅ |
+
+### Release URL
+https://github.com/taracodlabs/aiden-releases/releases/tag/v3.9.0
+
+---
+
 ## Phase 11 — agentskills.io Spec Adapter (v3.8.1)
 **Date:** 2026-04-23  
 **Commit:** 86fab44  
