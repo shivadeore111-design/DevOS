@@ -1,5 +1,33 @@
 # DevOS Session Log
 
+## Phase 14 — Lazy skill loading
+**Date:** 2026-04-24  
+**Commit:** `59465d0`  
+
+### What changed
+- `core/skillLoader.ts` — `Skill.content` removed; replaced by `Skill.preview` (first 500 chars of body, stored at boot for `formatForPrompt`). Full content loaded on-demand via `getSkillContent(filePath)` backed by LRU cache (max 50 items, lru-cache v6).
+- `api/server.ts` — new `GET /api/pulse/metrics` endpoint exposing context budget (green/yellow/red), memory (heap/rss/ext MB), lazy vs legacy token estimates, session token tracking, and skill cache stats.
+- `cli/aiden.ts` — `/pulse` fetches metrics in parallel; displays "Context Budget" section with progress bar, lazy savings, and LRU cache status.
+
+### Measurements (1,104 skills, post-dedup/filtering)
+| Metric | Before | After |
+|--------|--------|-------|
+| SKILL.md files on disk | 1,602 | 1,602 |
+| Total bytes (disk) | 12.3 MB | 12.3 MB (unchanged) |
+| Boot token footprint (est) | ~2,111K tokens | ~193K tokens |
+| Token savings | — | **~1,918K tokens (91% reduction)** |
+| Heap at idle | 136 MB | 136 MB (Node runtime dominates) |
+| Skill cache at idle | n/a | 0/50 items (loads on demand) |
+| Context budget status | n/a | 🟢 green |
+
+### Notes
+- `Skill.content` field kept as optional (`content?`) for backward compat — any consumer still assigning it will compile without error.
+- `SkillWithContent` interface exported for full-body consumers.
+- Security validation (injection scan + structure check) still runs on full file at boot before preview is extracted.
+- lru-cache v6 API: `new LRU({ max: 50 })`, `cache.get(k)`, `cache.set(k,v)`, `cache.itemCount`.
+
+---
+
 ## Phase 29G — v3.9.1 ship
 **Date:** 2026-04-23  
 **Commits:** `98427a1` (version bump) → `e7cc04b` (landing)  
