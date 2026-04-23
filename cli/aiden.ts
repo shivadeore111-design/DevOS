@@ -1828,7 +1828,7 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
     if (process.stdout.isTTY && process.stdin.isTTY && pages > 1) {
       pagerActive = true
       pagerState  = { skills, pageIndex: page, pageSize: PAGE_SIZE }
-      console.error(`[PAGER DEBUG] ENTERED pager mode with ${skills.length} skills, ${pages} pages`)
+      // pager mode active — navigate with n/p/q
     }
     return true
   }
@@ -4679,28 +4679,44 @@ async function main(): Promise<void> {
 
     // ── Skill Store pager navigation ──────────────────────────────────────────
     if (pagerActive && pagerState) {
-      console.error(`[PAGER DEBUG] key=${JSON.stringify(_ch)} seq=${JSON.stringify(key?.sequence)} name=${JSON.stringify(key?.name)} pagerActive=${pagerActive}`)
       // Absorb whatever readline echoed before our handler fired
-      process.stdout.write('\x1b[2K\r')
+      readline.clearLine(process.stdout, 0)
+      readline.cursorTo(process.stdout, 0)
       ;(rl as any).line   = ''
       ;(rl as any).cursor = 0
 
       const { skills, pageIndex, pageSize } = pagerState
       const pages = Math.ceil(Math.max(skills.length, 1) / pageSize)
 
+      // Exit pager: q / Esc / Ctrl+C
+      if (
+        key.name === 'q' ||
+        key.name === 'escape' ||
+        key.sequence === '\u0003'
+      ) {
+        pagerActive = false
+        pagerState  = null
+        process.stdout.write('\n')
+        rl.prompt()
+        return
+      }
+
+      // Next page
       if ((key.name === 'n' || key.name === 'right') && pageIndex < pages - 1) {
         pagerState.pageIndex++
         renderSkillsPage(skills, pagerState.pageIndex, pageSize)
         rl.prompt()
-      } else if ((key.name === 'p' || key.name === 'left') && pageIndex > 0) {
+        return
+      }
+
+      // Previous page
+      if ((key.name === 'p' || key.name === 'left') && pageIndex > 0) {
         pagerState.pageIndex--
         renderSkillsPage(skills, pagerState.pageIndex, pageSize)
         rl.prompt()
-      } else if (key.name === 'q' || key.name === 'escape' || key.name === 'return') {
-        pagerActive = false
-        pagerState  = null
-        rl.prompt()
+        return
       }
+
       // Any other key: absorbed (buffer already cleared above)
       return
     }
@@ -4717,27 +4733,25 @@ async function main(): Promise<void> {
         paletteActive = true
         rl.pause()
         // Erase the echoed '/' so the palette renders cleanly
-        process.stdout.write('\x1b[2K\r')
+        readline.clearLine(process.stdout, 0)
+        readline.cursorTo(process.stdout, 0)
         ;(rl as any).line   = ''
         ;(rl as any).cursor = 0
         ;(async () => {
-          let chosen: string | null = null
           try {
-            const [{ showPalette }] = await Promise.all([
-              import('./commandPalette'),
-            ])
-            chosen = await showPalette('', getCatalog())
+            const { showPalette } = await import('./commandPalette')
+            const chosen = await showPalette('', getCatalog())
             if (chosen !== null) {
-              ;(rl as any).line   = chosen
-              ;(rl as any).cursor = chosen.length
+              paletteActive = false
+              rl.resume()
+              await handleCommand(chosen, rl)
             }
-          } catch { /* palette error — fall through silently */ }
+          } catch { /* ExitPromptError or palette error — fall through silently */ }
           finally {
             paletteActive = false
             rl.setPrompt(getPrompt())
             rl.resume()
-            rl.prompt(true)
-            ;(rl as any)._refreshLine?.()
+            rl.prompt()
           }
         })()
         return
@@ -4746,28 +4760,32 @@ async function main(): Promise<void> {
       // Trigger 2: Tab on a partial '/cmd'  →  palette pre-filtered to prefix
       if (key.name === 'tab' && currentLine.startsWith('/') && currentLine.length > 1) {
         paletteActive = true
-        const savedLine = currentLine
+        const partial = currentLine
         rl.pause()
-        process.stdout.write('\x1b[2K\r')
+        readline.clearLine(process.stdout, 0)
+        readline.cursorTo(process.stdout, 0)
         ;(rl as any).line   = ''
         ;(rl as any).cursor = 0
         ;(async () => {
-          let inject = savedLine
           try {
-            const [{ showPalette }] = await Promise.all([
-              import('./commandPalette'),
-            ])
-            const chosen = await showPalette(savedLine, getCatalog())
-            if (chosen !== null) inject = chosen
-          } catch { /* fall through */ }
+            const { showPalette } = await import('./commandPalette')
+            const chosen = await showPalette(partial, getCatalog())
+            if (chosen !== null) {
+              paletteActive = false
+              rl.resume()
+              await handleCommand(chosen, rl)
+            } else {
+              // Esc/no selection — restore partial input
+              ;(rl as any).line   = partial
+              ;(rl as any).cursor = partial.length
+              ;(rl as any)._refreshLine?.()
+            }
+          } catch { /* ExitPromptError — fall through silently */ }
           finally {
-            ;(rl as any).line   = inject
-            ;(rl as any).cursor = inject.length
             paletteActive = false
             rl.setPrompt(getPrompt())
             rl.resume()
-            rl.prompt(true)
-            ;(rl as any)._refreshLine?.()
+            rl.prompt()
           }
         })()
         return
@@ -4819,6 +4837,8 @@ async function main(): Promise<void> {
 
   rl.on('line', async (line: string) => {
     histIdx = -1
+    // Defensive: if Enter was pressed while pager was active, exit pager cleanly
+    if (pagerActive) { pagerActive = false; pagerState = null }
     const input = line.trim()
     if (!input) { rl.prompt(); return }
 
