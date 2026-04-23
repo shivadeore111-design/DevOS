@@ -4009,13 +4009,13 @@ export function createApiServer(): Express {
   // GET /api/skills/library — search library index by topic
   app.get('/api/skills/library', async (req: Request, res: Response) => {
     try {
-      const topic = String(req.query.q || '').trim()
+      const topic = String(req.query.q || req.query.topic || '').trim()
       const idx   = await fetchIndex()
       const limit = Math.min(parseInt(String(req.query.limit || '10'), 10), 30)
       const results = topic
         ? scoreSkillsForTopic(topic, idx).slice(0, limit)
         : idx.skills.slice(0, limit).map(s => ({ ...s, score: 0 }))
-      res.json({ total: idx.skill_count, results })
+      res.json({ total: idx.skill_count, results, skills: results })
     } catch (e: any) {
       res.status(500).json({ error: e.message })
     }
@@ -4024,7 +4024,7 @@ export function createApiServer(): Express {
   // POST /api/skills/library/install — install a skill from the library
   app.post('/api/skills/library/install', async (req: Request, res: Response) => {
     try {
-      const { id } = req.body as { id?: string }
+      const { id: _id, skillId: _sid } = req.body as { id?: string; skillId?: string }; const id = _id ?? _sid
       if (!id) { res.status(400).json({ error: 'id required' }); return }
       const written = await libraryInstallSkill(id)
       res.json({ success: true, id: written.id, filePath: written.filePath })
@@ -4071,7 +4071,7 @@ export function createApiServer(): Express {
   // POST /api/skills/approve — approve a pending draft (move to approved + enable)
   app.post('/api/skills/approve', (req: Request, res: Response) => {
     try {
-      const { id } = req.body as { id?: string }
+      const { id: _id, skillId: _sid } = req.body as { id?: string; skillId?: string }; const id = _id ?? _sid
       if (!id) { res.status(400).json({ error: 'id required' }); return }
       const dest = approveDraft(id)
       skillLoader.refresh()
@@ -4084,7 +4084,7 @@ export function createApiServer(): Express {
   // POST /api/skills/reject — delete a pending draft
   app.post('/api/skills/reject', (req: Request, res: Response) => {
     try {
-      const { id } = req.body as { id?: string }
+      const { id: _id, skillId: _sid } = req.body as { id?: string; skillId?: string }; const id = _id ?? _sid
       if (!id) { res.status(400).json({ error: 'id required' }); return }
       rejectDraft(id)
       res.json({ success: true, id })
@@ -4096,7 +4096,7 @@ export function createApiServer(): Express {
   // POST /api/skills/enable — flip enabled:true in skill frontmatter
   app.post('/api/skills/enable', (req: Request, res: Response) => {
     try {
-      const { id } = req.body as { id?: string }
+      const { id: _id, skillId: _sid } = req.body as { id?: string; skillId?: string }; const id = _id ?? _sid
       if (!id) { res.status(400).json({ error: 'id required' }); return }
       // Search installed and approved dirs
       const cwd = WORKSPACE_ROOT
@@ -4117,7 +4117,7 @@ export function createApiServer(): Express {
   // POST /api/skills/disable — flip enabled:false in skill frontmatter
   app.post('/api/skills/disable', (req: Request, res: Response) => {
     try {
-      const { id } = req.body as { id?: string }
+      const { id: _id, skillId: _sid } = req.body as { id?: string; skillId?: string }; const id = _id ?? _sid
       if (!id) { res.status(400).json({ error: 'id required' }); return }
       const cwd = WORKSPACE_ROOT
       const candidates = [
