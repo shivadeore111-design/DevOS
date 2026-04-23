@@ -1,6 +1,6 @@
 {
   "name": "devos-ai",
-  "version": "3.9.0",
+  "version": "3.9.1",
   "description": "Autonomous AI Operating System — Local, Private, Free. Runs on your machine with Ollama.",
   "author": "Taracod <hello@taracod.com>",
   "license": "AGPL-3.0-only",
@@ -194,6 +194,8 @@
     "asarUnpack": []
   },
   "dependencies": {
+    "@inquirer/core": "^11.1.9",
+    "@inquirer/prompts": "^8.4.2",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@slack/bolt": "^4.6.0",
     "@slack/web-api": "^7.15.0",
