@@ -1,5 +1,91 @@
 # DevOS Session Log
 
+## Phase 11 — agentskills.io Spec Adapter (v3.8.1)
+**Date:** 2026-04-23  
+**Commit:** 86fab44  
+**Branch:** main  
+**Tag:** v3.8.1
+
+### Summary
+Added an agentskills.io spec compatibility layer as a pure adapter — no existing
+SKILL.md files modified, no auto-execution of scripts. Implemented a validator,
+importer, 4 new API endpoints, and 3 new CLI subcommands.
+
+### Artifacts
+
+| File | Role |
+|---|---|
+| `core/skillValidator.ts` | New — agentskills.io spec validator (ValidationResult, scoring, batch validate) |
+| `core/skillImporter.ts` | New — security-gated importer (GitHub / HTTPS URL / local) |
+| `core/skillLoader.ts` | Modified — Skill interface + parse() extended with 9 spec fields |
+| `api/server.ts` | Modified — 4 new endpoints |
+| `cli/aiden.ts` | Modified — 3 new/upgraded subcommands |
+
+### Changes
+
+#### core/skillLoader.ts
+- Added 9 optional fields to `Skill` interface:
+  `license`, `compatibility`, `metadata`, `allowedTools`,
+  `hasScripts`, `hasReferences`, `hasAssets`, `source`, `importedFrom`
+- Updated `parse()` to read `license`, `compatibility`, `allowed-tools`,
+  `source`, `imported-from`; auto-detects `scripts/`, `references/`, `assets/` subdirs;
+  collects unknown frontmatter keys into `metadata` record
+
+#### core/skillValidator.ts (new, ~249 lines)
+- Validates any skill dir against agentskills.io spec
+- Error codes: `E_NO_SKILL_MD`, `E_EMPTY`, `E_NO_FRONTMATTER`, `E_NAME_MISSING`,
+  `E_NAME_FORMAT`, `E_DESC_MISSING`, `E_NO_BODY`, `E_SCRIPT_EXT`
+- Warning codes: `W_NAME_MISMATCH`, `W_DESC_SHORT`, `W_DESC_LONG`,
+  `W_VERSION_MISSING`, `W_VERSION_FORMAT`, `W_LICENSE_MISSING`,
+  `W_LICENSE_UNKNOWN`, `W_NO_HEADINGS`, `W_ALLOWED_TOOLS_EMPTY`
+- Score: 100 base − 15×errors − 5×warnings (clamped 0–100)
+- Exports: `validateSkillDir()`, `validateSkillByName()`, `validateAllSkills()`, `summariseResults()`
+
+#### core/skillImporter.ts (new, ~364 lines)
+Security gates (unconditional):
+- HTTPS only for remote imports
+- SKILL.md ≤ 100 KB; total package ≤ 10 MB
+- Scripts must live in `scripts/` subdir
+- Allowed script extensions: `.py .sh .js .ts .mjs` only
+- `enabled: false` always set on freshly imported skills
+- No overwrite of existing skill without `{ force: true }`
+
+Exports: `importFromUrl()`, `importFromGitHub()`, `importFromLocal()`, `importSkill()` (smart dispatcher)
+
+GitHub import strategy: tries `raw.githubusercontent.com` first, falls back to GitHub Contents API.
+Fetches `scripts/`, `references/`, `assets/` via tree API (best-effort, non-fatal).
+
+#### api/server.ts
+Added 4 endpoints (dynamic imports to avoid circular deps):
+| Endpoint | Method | Body |
+|---|---|---|
+| `/api/skills/validate` | POST | `{ id?: string }` — validates one skill or all |
+| `/api/skills/import-url` | POST | `{ url: string, force?: boolean }` |
+| `/api/skills/import-repo` | POST | `{ repo: string, subpath?: string, branch?: string, force?: boolean }` |
+| `/api/skills/import-smart` | POST | `{ source: string, force?: boolean }` |
+
+#### cli/aiden.ts
+- `/skills import <source>` — upgraded to smart import (GitHub shorthand / HTTPS URL / local path)
+- `/skills import-repo <owner/repo>` — new, optional `--branch` / `--subpath` flags
+- `/skills validate [id]` — new, validates one skill or all, shows scores + issue counts
+
+### Spec Compliance Audit (67 skills)
+- 5 skills with non-compliant names (underscores or dots): `code_execution`,
+  `file_operations`, `financial_research`, `web_research`, `crt-sh` (name `crt.sh`)
+- Majority already have `license: Apache-2.0`
+- No existing SKILL.md files were modified (adapter-only approach)
+
+### Verification Results
+| Check | Result |
+|---|---|
+| TypeScript build | 0 errors ✅ |
+| `/api/skills/validate` (all 67) | 200 OK, `total: 67` ✅ |
+| `/api/skills/import-repo` (anthropics/skills) | 400, HTTP 404 for missing SKILL.md — correct ✅ |
+| `enabled: false` on import | Confirmed in patched frontmatter ✅ |
+| `http://` import blocked | 400, `"Security: only HTTPS imports are allowed"` ✅ |
+
+---
+
 ## Phase 10 — Native Linux Packages (v3.8.1)
 **Date:** 2026-04-23  
 **Commits:** ac88a59 (package.json), cab5953 (landing)  
