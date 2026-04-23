@@ -750,8 +750,8 @@ const COMMAND_DETAIL: Record<string, CmdDetail> = {
   '/memory':     { section: 'Info',      desc: 'Conversation memory stats.',                                 usage: '/memory' },
   '/goals':      { section: 'Info',      desc: 'Active goals queue.',                                        usage: '/goals' },
   '/skills':     { section: 'Info',      desc: 'Skill lifecycle manager.',
-    subs:    ['search <q>', 'install <name>', 'list', 'check', 'update <name>', 'audit', 'remove <name>', 'publish <name>', 'export <name>', 'import <name>', 'source <name>', 'stats', 'recommend', 'test <name>'],
-    examples: ['/skills list', '/skills search http', '/skills install my-skill', '/skills stats'],
+    subs:    ['search <q>', 'install <name>', 'list', 'check', 'update <name>', 'audit', 'remove <name>', 'publish <name>', 'export <name>', 'import <source>', 'import-repo <owner/repo>', 'validate [id]', 'source <name>', 'stats', 'recommend', 'test <name>'],
+    examples: ['/skills list', '/skills search http', '/skills validate', '/skills import owner/repo', '/skills import-repo anthropics/skills'],
   },
   '/lessons':    { section: 'Info',      desc: 'Browse permanent failure rules stored in LESSONS.md.',
     subs:     ['search <q>', 'web|shell|files|planning|provider|memory|skills|errors|general'],
@@ -1033,7 +1033,7 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       helpRow('/models',            'Model assignments'),
       helpRow('/memory',            'Memory stats'),
       helpRow('/goals',             'Active goals'),
-      helpRow('/skills',            'Skill lifecycle  (search / install / list / check / update / audit / remove / publish / export / import / source / stats / recommend / test)'),
+      helpRow('/skills',            'Skill lifecycle  (search / install / list / check / update / audit / remove / publish / export / import / import-repo / validate / source / stats / recommend / test)'),
       helpRow('/lessons',           'Browse permanent failure rules  (search / <category>)'),
       helpRow('/teach',             'Add a manual rule to LESSONS.md'),
       helpRow('/focus',             'Toggle zen mode — suppress tool traces and status output'),
@@ -1795,17 +1795,117 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       return true
     }
 
-    // ── /skills import <path> ───────────────────────────────────────────────────
+    // ── /skills import <source> ─────────────────────────────────────────────────
+    // Supports: local path, https:// URL, owner/repo GitHub shorthand
     if (sub === 'import') {
-      if (!arg) { console.log(`  ${T.dim}Usage: /skills import <path-to-skill.md>${T.reset}\n`); return true }
-      let content: string
-      try { content = require('fs').readFileSync(arg, 'utf-8') }
-      catch { console.log(`  ${T.error}Cannot read "${arg}".${T.reset}\n`); return true }
-      const nameMatch = content.match(/^name:\s*(.+)$/m)
-      const name      = nameMatch ? nameMatch[1].trim() : require('path').basename(arg, '.md')
-      const result    = await apiPost('/api/skills/import', { name, content })
-      if (!result?.success) { console.log(`  ${T.error}Import failed.${T.reset}\n`); return true }
-      console.log(`  ${fg(COLORS.success)}${MARKS.TRI}${RST} imported ${fg(COLORS.orange)}${name}${RST}\n`)
+      if (!arg) {
+        console.log(`  ${T.dim}Usage: /skills import <source>${T.reset}`)
+        console.log(`  ${T.dim}       source: local path, https://... URL, or owner/repo (GitHub)${T.reset}\n`)
+        return true
+      }
+      // Route to smart import endpoint (agentskills.io adapter)
+      process.stdout.write(`  ${T.dim}Importing "${arg}"…${T.reset} `)
+      const smartRes = await apiPost('/api/skills/import-smart', { source: arg })
+      if (smartRes?.success) {
+        process.stdout.write(`${fg(COLORS.success)}✓ imported${RST}`)
+        if (smartRes.skillId) process.stdout.write(`  ${T.dim}id: ${smartRes.skillId}${T.reset}`)
+        process.stdout.write('\n')
+        if (smartRes.validation) {
+          const v = smartRes.validation
+          if (!v.valid) console.log(`  ${T.error}Validation errors: ${v.errors.map((e: any) => e.message).join('; ')}${T.reset}`)
+          else console.log(`  ${T.dim}Spec score: ${v.specScore}/100${T.reset}`)
+        }
+        console.log(`  ${T.dim}Disabled by default — run: /skills enable ${smartRes.skillId ?? arg}${T.reset}\n`)
+      } else {
+        process.stdout.write(`${fg(COLORS.error)}✗ failed${RST}\n`)
+        console.log(`  ${T.error}${smartRes?.error || 'Import failed'}${T.reset}\n`)
+      }
+      return true
+    }
+
+    // ── /skills import-repo <owner/repo> ────────────────────────────────────────
+    if (sub === 'import-repo') {
+      if (!arg) { console.log(`  ${T.dim}Usage: /skills import-repo <owner/repo> [--subpath <path>] [--branch <branch>]${T.reset}\n`); return true }
+      const ownerRepo  = parts[2] ?? arg
+      const subpathIdx = parts.indexOf('--subpath')
+      const branchIdx  = parts.indexOf('--branch')
+      const subpath    = subpathIdx !== -1 ? parts[subpathIdx + 1] : undefined
+      const branch     = branchIdx  !== -1 ? parts[branchIdx  + 1] : undefined
+      process.stdout.write(`  ${T.dim}Importing "${ownerRepo}"…${T.reset} `)
+      const repoRes = await apiPost('/api/skills/import-repo', { repo: ownerRepo, subpath, branch })
+      if (repoRes?.success) {
+        process.stdout.write(`${fg(COLORS.success)}✓ imported${RST}`)
+        if (repoRes.skillId) process.stdout.write(`  ${T.dim}id: ${repoRes.skillId}${T.reset}`)
+        process.stdout.write('\n')
+        if (repoRes.validation) {
+          const v = repoRes.validation
+          console.log(`  ${T.dim}Spec score: ${v.specScore}/100${T.reset}`)
+          if (!v.valid) console.log(`  ${T.error}Errors: ${v.errors.map((e: any) => e.message).join('; ')}${T.reset}`)
+        }
+        console.log(`  ${T.dim}Disabled by default — run: /skills enable ${repoRes.skillId ?? ownerRepo}${T.reset}\n`)
+      } else {
+        process.stdout.write(`${fg(COLORS.error)}✗ failed${RST}\n`)
+        console.log(`  ${T.error}${repoRes?.error || 'Import failed'}${T.reset}\n`)
+      }
+      return true
+    }
+
+    // ── /skills validate [id] ────────────────────────────────────────────────────
+    // Validates one or all skills against the agentskills.io spec
+    if (sub === 'validate') {
+      const body   = arg ? { id: arg } : {}
+      process.stdout.write(`  ${T.dim}Validating ${arg ? `"${arg}"` : 'all skills'}…${T.reset}\n`)
+      const data = await apiPost('/api/skills/validate', body)
+      if (!data) { console.log(`  ${T.error}Validation failed — server error${T.reset}\n`); return true }
+      const results  = (data.results  || []) as Array<{
+        skillId: string; valid: boolean; specScore: number
+        errors: Array<{ code: string; message: string }>
+        warnings: Array<{ code: string; message: string }>
+      }>
+      const summary  = data.summary  || {}
+      const lines: string[] = ['']
+
+      if (results.length === 0) {
+        lines.push(`  ${T.dim}No skills found to validate.${T.reset}`)
+      } else {
+        // Summary row
+        lines.push(
+          `  ${T.dim}Total: ${summary.total}  ` +
+          `${fg(COLORS.success)}Valid: ${summary.valid}${RST}  ` +
+          `${fg(COLORS.error)}Invalid: ${summary.invalid}${RST}  ` +
+          `${T.dim}Avg score: ${summary.avgScore}/100${T.reset}`
+        )
+        lines.push('')
+
+        // Per-skill rows (up to 20)
+        for (const r of results.slice(0, 20)) {
+          const statusDot = r.valid
+            ? `${fg(COLORS.success)}●${RST}`
+            : `${fg(COLORS.error)}●${RST}`
+          lines.push(`  ${statusDot} ${r.skillId.padEnd(28)} ${T.dim}${r.specScore}/100${T.reset}`)
+          for (const e of r.errors.slice(0, 2)) {
+            lines.push(`    ${fg(COLORS.error)}✗ ${e.message}${RST}`)
+          }
+          for (const w of r.warnings.slice(0, 2)) {
+            lines.push(`    ${T.dim}⚠ ${w.message}${T.reset}`)
+          }
+        }
+        if (results.length > 20) lines.push(`  ${T.dim}… and ${results.length - 20} more${T.reset}`)
+        lines.push('')
+
+        // Top error codes
+        if (summary.errorCounts && Object.keys(summary.errorCounts).length > 0) {
+          lines.push(`  ${T.dim}Top errors${T.reset}`)
+          for (const [code, cnt] of Object.entries(summary.errorCounts).slice(0, 5)) {
+            lines.push(`  ${T.dim}${code.padEnd(24)}${T.reset}${fg(COLORS.error)}${cnt}${RST}`)
+          }
+          lines.push('')
+        }
+      }
+
+      console.log()
+      console.log(panel({ title: `${MARKS.TRI} Skill Validation — agentskills.io spec`, lines }))
+      console.log()
       return true
     }
 

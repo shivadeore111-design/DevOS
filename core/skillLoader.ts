@@ -121,6 +121,17 @@ export interface Skill {
   filePath:    string
   origin:      'aiden' | 'community' | 'local'
   enabled?:    boolean  // false = skip during normal load (auto-generated/installed)
+
+  // ── agentskills.io spec fields ────────────────────────────────
+  license?:        string            // SPDX license identifier, e.g. "Apache-2.0"
+  compatibility?:  string[]          // runtime/platform compat strings
+  metadata?:       Record<string, string>  // arbitrary key-value pairs from frontmatter
+  allowedTools?:   string[]          // allowed-tools: list from spec
+  hasScripts?:     boolean           // scripts/ subdir detected
+  hasReferences?:  boolean           // references/ subdir detected
+  hasAssets?:      boolean           // assets/ subdir detected
+  source?:         string            // import source URL or "local" or "library"
+  importedFrom?:   string            // original GitHub owner/repo or URL
 }
 
 // Maps frontmatter platform values → Node.js process.platform strings
@@ -353,6 +364,43 @@ export class SkillLoader {
       const enabledRaw = get('enabled')
       const enabled    = enabledRaw === '' ? undefined : enabledRaw === 'false' ? false : true
 
+      // ── agentskills.io spec fields ────────────────────────────
+      const license      = get('license') || undefined
+      const source       = get('source') || undefined
+      const importedFrom = get('imported-from') || undefined
+
+      // compatibility: "compatibility: node18, linux" → string[]
+      const compatRaw = get('compatibility')
+      const compatibility = compatRaw
+        ? compatRaw.split(',').map(c => c.trim()).filter(Boolean)
+        : undefined
+
+      // allowed-tools: "allowed-tools: shell, browser" → string[]
+      const allowedToolsRaw = get('allowed-tools')
+      const allowedTools = allowedToolsRaw
+        ? allowedToolsRaw.split(',').map(t => t.trim()).filter(Boolean)
+        : undefined
+
+      // metadata: key: value pairs not captured by known fields
+      const KNOWN_FIELDS = new Set([
+        'name', 'description', 'version', 'category', 'platform', 'tags',
+        'origin', 'enabled', 'license', 'source', 'imported-from',
+        'compatibility', 'allowed-tools',
+      ])
+      const metadata: Record<string, string> = {}
+      for (const line of frontmatter.split('\n')) {
+        const kv = line.match(/^([a-zA-Z][\w-]*):\s*(.+)$/)
+        if (kv && !KNOWN_FIELDS.has(kv[1].toLowerCase())) {
+          metadata[kv[1]] = kv[2].trim().replace(/^['"]|['"]$/g, '')
+        }
+      }
+
+      // Detect optional subdirectories relative to the skill dir
+      const skillDir     = path.dirname(filePath)
+      const hasScripts   = fs.existsSync(path.join(skillDir, 'scripts'))
+      const hasReferences = fs.existsSync(path.join(skillDir, 'references'))
+      const hasAssets    = fs.existsSync(path.join(skillDir, 'assets'))
+
       return {
         name,
         description: get('description'),
@@ -364,6 +412,15 @@ export class SkillLoader {
         filePath,
         origin,
         enabled,
+        license,
+        compatibility:  compatibility?.length   ? compatibility  : undefined,
+        metadata:       Object.keys(metadata).length ? metadata : undefined,
+        allowedTools:   allowedTools?.length    ? allowedTools   : undefined,
+        hasScripts:     hasScripts   || undefined,
+        hasReferences:  hasReferences || undefined,
+        hasAssets:      hasAssets    || undefined,
+        source,
+        importedFrom,
       }
     } catch { return null }
   }

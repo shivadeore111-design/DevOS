@@ -4156,6 +4156,71 @@ export function createApiServer(): Express {
     }
   })
 
+  // ── agentskills.io spec endpoints ─────────────────────────────────────────
+
+  // POST /api/skills/validate — validate skill(s) against agentskills.io spec
+  // Body: { id?: string }  (omit id to validate all built-in skills)
+  app.post('/api/skills/validate', async (req: Request, res: Response) => {
+    try {
+      const { validateSkillByName, validateAllSkills, summariseResults } = await import('../core/skillValidator')
+      const id = req.body?.id as string | undefined
+      if (id) {
+        const result = validateSkillByName(id)
+        if (!result) { res.status(404).json({ error: `Skill "${id}" not found` }); return }
+        res.json({ results: [result], summary: summariseResults([result]) })
+      } else {
+        const results = validateAllSkills()
+        res.json({ results, summary: summariseResults(results) })
+      }
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
+  // POST /api/skills/import-url — import a skill from an HTTPS URL
+  // Body: { url: string, force?: boolean }
+  app.post('/api/skills/import-url', async (req: Request, res: Response) => {
+    try {
+      const { importFromUrl } = await import('../core/skillImporter')
+      const { url, force } = req.body as { url?: string; force?: boolean }
+      if (!url) { res.status(400).json({ error: 'url is required' }); return }
+      const result = await importFromUrl(url, { force: !!force })
+      res.status(result.success ? 200 : 400).json(result)
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
+  // POST /api/skills/import-repo — import a skill from a GitHub owner/repo
+  // Body: { repo: string, subpath?: string, branch?: string, force?: boolean }
+  app.post('/api/skills/import-repo', async (req: Request, res: Response) => {
+    try {
+      const { importFromGitHub } = await import('../core/skillImporter')
+      const { repo, subpath, branch, force } = req.body as {
+        repo?: string; subpath?: string; branch?: string; force?: boolean
+      }
+      if (!repo) { res.status(400).json({ error: 'repo is required (format: owner/repo)' }); return }
+      const result = await importFromGitHub(repo, { subpath, branch, force: !!force })
+      res.status(result.success ? 200 : 400).json(result)
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
+  // POST /api/skills/import-smart — smart import from URL / GitHub / local
+  // Body: { source: string, force?: boolean }
+  app.post('/api/skills/import-smart', async (req: Request, res: Response) => {
+    try {
+      const { importSkill } = await import('../core/skillImporter')
+      const { source, force } = req.body as { source?: string; force?: boolean }
+      if (!source) { res.status(400).json({ error: 'source is required' }); return }
+      const result = await importSkill(source, { force: !!force })
+      res.status(result.success ? 200 : 400).json(result)
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
   // GET /api/lessons — list all lesson rules (with optional ?q=&cat= filters)
   app.get('/api/lessons', (req: Request, res: Response) => {
     try {
