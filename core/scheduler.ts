@@ -20,18 +20,26 @@ const HEARTBEAT_PATH = path.join(process.cwd(), 'workspace', 'HEARTBEAT.md')
 // ── Feature 8: HEARTBEAT.md config loader ─────────────────────
 
 function loadHeartbeatConfig(): void {
+  const isDebug = (process.env.AIDEN_LOG_LEVEL || 'info') === 'debug'
   try {
     if (!fs.existsSync(HEARTBEAT_PATH)) return
     const content  = fs.readFileSync(HEARTBEAT_PATH, 'utf-8')
     const sections = content.split(/^## /m).slice(1)
+    let loaded = 0
     for (const section of sections) {
       const title = section.split('\n')[0]
       const scheduleMatch = title.match(/\((.+)\)/)
       if (!scheduleMatch) continue
-      console.log(`[Heartbeat] Loaded: ${title.split('(')[0].trim()}`)
+      loaded++
+      if (isDebug) {
+        console.log('[Heartbeat] Loaded: ' + title.split('(')[0].trim())
+      }
+    }
+    if (!isDebug && loaded > 0) {
+      console.log('[Heartbeat] Loaded ' + loaded + ' schedule(s) from HEARTBEAT.md')
     }
   } catch (e: any) {
-    console.warn(`[Heartbeat] Could not load HEARTBEAT.md: ${e.message}`)
+    console.warn('[Heartbeat] Could not load HEARTBEAT.md: ' + e.message)
   }
 }
 

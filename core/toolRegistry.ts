@@ -2003,7 +2003,9 @@ export function registerExternalTool(
     return { success: r.success, output: r.output }
   }
   externalToolsMeta[name] = { source }
-  console.log(`[ToolRegistry] Plugin "${source}" registered tool: ${name}`)
+  if ((process.env.AIDEN_LOG_LEVEL || 'info') === 'debug') {
+    console.log('[ToolRegistry] Plugin "' + source + '" registered tool: ' + name)
+  }
 }
 
 /** Returns a snapshot of all plugin-registered tool metadata (source, etc.). */

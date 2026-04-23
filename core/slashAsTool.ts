@@ -196,8 +196,14 @@ export const SLASH_MIRROR_TOOL_NAMES = MIRROR_TOOLS.map(t => t.name)
  * Call once at server startup.
  */
 export function registerSlashMirrorTools(): void {
+  const isDebug = (process.env.AIDEN_LOG_LEVEL || 'info') === 'debug'
   for (const { name, description, fn } of MIRROR_TOOLS) {
     registerExternalTool(name, fn, 'slash-mirror')
-    console.log(`[SlashAsTool] Registered mirror tool: ${name} — ${description}`)
+    if (isDebug) {
+      console.log('[SlashAsTool] Registered mirror tool: ' + name + ' — ' + description)
+    }
+  }
+  if (!isDebug) {
+    console.log('[SlashAsTool] Registered ' + MIRROR_TOOLS.length + ' mirror tools (AIDEN_LOG_LEVEL=debug for detail)')
   }
 }

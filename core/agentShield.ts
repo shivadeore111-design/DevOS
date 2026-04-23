@@ -34,6 +34,7 @@ export interface ScanResult {
     configs: number
   }
   riskScore: number   // 0–100
+  score:     number   // alias for riskScore (convenience)
 }
 
 // ── Injection patterns (aligned with skillLoader.ts) ──────────
@@ -60,6 +61,23 @@ const ENCODED_PATTERN = /\\x[0-9a-f]{2}/i
 
 // Raw API key patterns — keys that should use "env:" prefix in config
 const RAW_KEY_PATTERN = /["'](?:sk-|gsk_|AIza|ghp_|xai-|csk-)[a-zA-Z0-9]{20,}["']/
+
+// Large-file allowlist — system catalog / index files that are intentionally large
+const SIZE_ALLOWLIST = new Set([
+  'AIDEN_CATALOG.md',
+  'SKILL_INDEX.md',
+  'skills-index.md',
+])
+
+// ── stripQuotedStrings ────────────────────────────────────────
+// Removes double- and single-quoted strings from content before
+// injection testing to avoid false positives on defensive text
+// (e.g. SOUL.md quoting injection phrases as examples to resist).
+function stripQuotedStrings(text: string): string {
+  return text
+    .replace(/"[^"]*"/g, '""')
+    .replace(/'[^']*'/g, "''")
+}
 
 // ── Scoring weights ────────────────────────────────────────────
 const SEVERITY_WEIGHTS: Record<SecurityFinding['severity'], number> = {
@@ -136,7 +154,8 @@ export async function runSecurityScan(): Promise<ScanResult> {
       }
 
       // Unusually large skill (>10 KB — same threshold as skillLoader)
-      if (content.length > 10240) {
+      // Skip known large system catalog files (false positive for intentionally large indexes)
+      if (content.length > 10240 && !SIZE_ALLOWLIST.has(entry.name)) {
         findings.push({
           severity:       'medium',
           category:       'skill-size',
@@ -182,8 +201,12 @@ export async function runSecurityScan(): Promise<ScanResult> {
     try { content = fs.readFileSync(filePath, 'utf8') } catch { continue }
     toolsScanned++
 
+    // Strip quoted strings before injection testing — avoids false positives on
+    // defensive text (e.g. SOUL.md quoting injection phrases to tell the AI to resist them).
+    const contentForInjectionTest = stripQuotedStrings(content)
+
     // Identity injection in SOUL.md is the highest-severity possible
-    if (critical && /ignore\s+previous|you\s+are\s+now/i.test(content)) {
+    if (critical && /ignore\s+previous|you\s+are\s+now/i.test(contentForInjectionTest)) {
       findings.push({
         severity:       'critical',
         category:       'soul-injection',
@@ -195,7 +218,7 @@ export async function runSecurityScan(): Promise<ScanResult> {
 
     // General injection patterns in any sensitive file
     for (const check of INJECTION_PATTERNS) {
-      if (check.pattern.test(content)) {
+      if (check.pattern.test(contentForInjectionTest)) {
         findings.push({
           severity:       critical ? 'critical' : 'high',
           category:       'config-injection',
@@ -233,6 +256,7 @@ export async function runSecurityScan(): Promise<ScanResult> {
     findings,
     scanned:   { skills: skillsScanned, tools: toolsScanned, configs: configsScanned },
     riskScore,
+    score:     riskScore,   // alias
   }
 
   console.log(

@@ -285,31 +285,44 @@ export function incrementUsage(apiName: string): void {
 // ── Log which providers are active at startup ────────────────
 
 export function logProviderStatus(): void {
-  const config = loadConfig()
-  const apis   = mergeCustomProviders(config.providers.apis)
+  const config  = loadConfig()
+  const apis    = mergeCustomProviders(config.providers.apis)
+  const isDebug = (process.env.AIDEN_LOG_LEVEL || 'info') === 'debug'
 
   if (config.primaryProvider) {
-    console.log(`[Router] Primary provider: ${config.primaryProvider} (user override)`)
+    console.log('[Router] Primary provider: ' + config.primaryProvider + ' (user override)')
   } else {
     console.log('[Router] Primary provider: (default ordering)')
   }
-  console.log('[Router] Provider chain:')
-  let order = 1
+
+  let order  = 1
+  let active = 0
+  const lines: string[] = []
+
   for (const api of apis) {
     if (api.provider === 'custom') {
       const hasUrl = (api.baseUrl || '').trim().length > 0
-      const status = !api.enabled ? 'disabled' : !hasUrl ? 'SKIPPED (no url)' : `#${order++} active`
-      console.log(`  ${api.name} (custom/${api.model}) - [${hasUrl ? 'url OK' : 'NO URL'}] - ${status}`)
+      const status = !api.enabled ? 'disabled' : !hasUrl ? 'SKIPPED (no url)' : '#' + (order++) + ' active'
+      if (status.includes('active')) active++
+      lines.push('  ' + api.name + ' (custom/' + api.model + ') - [' + (hasUrl ? 'url OK' : 'NO URL') + '] - ' + status)
       continue
     }
     const resolvedKey = api.key.startsWith('env:')
       ? (process.env[api.key.replace('env:', '')] || '')
       : api.key
     const keyStatus = resolvedKey.length > 0 ? '[key OK]' : '[NO KEY]'
-    const status    = !api.enabled ? 'disabled' : api.rateLimited ? 'rate-limited' : resolvedKey.length === 0 ? 'SKIPPED (no key)' : `#${order++} active`
-    console.log(`  ${api.name} (${api.provider}/${api.model}) - ${keyStatus} - ${status}`)
+    const status    = !api.enabled ? 'disabled' : api.rateLimited ? 'rate-limited' : resolvedKey.length === 0 ? 'SKIPPED (no key)' : '#' + (order++) + ' active'
+    if (status.includes('active')) active++
+    lines.push('  ' + api.name + ' (' + api.provider + '/' + api.model + ') - ' + keyStatus + ' - ' + status)
   }
-  console.log(`  ollama (${OLLAMA_FALLBACK_MODEL}) - local - #${order} guaranteed fallback`)
+  lines.push('  ollama (' + OLLAMA_FALLBACK_MODEL + ') - local - #' + order + ' guaranteed fallback')
+
+  if (isDebug) {
+    console.log('[Router] Provider chain:')
+    lines.forEach(l => console.log(l))
+  } else {
+    console.log('[Router] Provider chain: ' + active + ' active + Ollama fallback (AIDEN_LOG_LEVEL=debug for detail)')
+  }
 }
 
 // ── Complexity scorer ─────────────────────────────────────────

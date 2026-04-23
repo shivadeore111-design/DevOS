@@ -5081,6 +5081,13 @@ export function startApiServer(portArg?: number): Express {
     // Do NOT exit â€” let the server keep running for other requests
   })
 
+    const isDebug   = (process.env.AIDEN_LOG_LEVEL || 'info') === 'debug'
+  const _logLines: string[] = []
+  function auditLog(line: string): void {
+    _logLines.push(line)
+    if (isDebug) console.log(line)
+  }
+
   const app    = createApiServer()
   const server = http.createServer(app)
 
@@ -5095,14 +5102,16 @@ export function startApiServer(portArg?: number): Express {
       console.log('[Startup] Seeded workspace/SOUL.md from root SOUL.md')
     } catch { /* non-fatal */ }
   }
-  console.log('[Startup] WORKSPACE_ROOT:', WORKSPACE_ROOT)
-  console.log('[Startup] AIDEN_USER_DATA:', process.env.AIDEN_USER_DATA || '(not set)')
-  console.log('[Startup] SOUL.md exists:', fs.existsSync(_wsSoulPath))
-  console.log('[Startup] USER.md exists:', fs.existsSync(path.join(WORKSPACE_ROOT, 'workspace', 'USER.md')))
-  console.log('[Startup] STANDING_ORDERS exists:', fs.existsSync(path.join(WORKSPACE_ROOT, 'workspace', 'STANDING_ORDERS.md')))
-  const _soulLen = fs.existsSync(_wsSoulPath) ? fs.readFileSync(_wsSoulPath, 'utf-8').length : 0
-  console.log('[Startup] SOUL length:', _soulLen, 'chars')
-  console.log('[Startup] Tool count:', Object.keys(TOOL_DESCRIPTIONS).length)
+  if (isDebug) {
+    console.log('[Startup] WORKSPACE_ROOT:', WORKSPACE_ROOT)
+    console.log('[Startup] AIDEN_USER_DATA:', process.env.AIDEN_USER_DATA || '(not set)')
+    console.log('[Startup] SOUL.md exists:', fs.existsSync(_wsSoulPath))
+    console.log('[Startup] USER.md exists:', fs.existsSync(path.join(WORKSPACE_ROOT, 'workspace', 'USER.md')))
+    console.log('[Startup] STANDING_ORDERS exists:', fs.existsSync(path.join(WORKSPACE_ROOT, 'workspace', 'STANDING_ORDERS.md')))
+    const _soulLen = fs.existsSync(_wsSoulPath) ? fs.readFileSync(_wsSoulPath, 'utf-8').length : 0
+    console.log('[Startup] SOUL length:', _soulLen, 'chars')
+    console.log('[Startup] Tool count:', Object.keys(TOOL_DESCRIPTIONS).length)
+  }
 
   // ── Startup health check ─────────────────────────────────────
   try { startupCheck() } catch (e: any) {
@@ -5198,112 +5207,155 @@ export function startApiServer(portArg?: number): Express {
   // Log provider chain before listening so it's visible in startup log
   try { logProviderStatus() } catch {}
 
-  // ── AUDIT 2: Tool Registry ────────────────────────────────────
-  try {
-    const toolNames = Object.keys(TOOL_DESCRIPTIONS)
-    console.log(`[Audit] Tool Registry: ${toolNames.length} tools registered`)
-    toolNames.forEach(n => console.log(`  - ${n}: ${TOOL_DESCRIPTIONS[n].slice(0, 70)}`))
-  } catch (e: any) { console.error('[Audit] Tool audit failed:', e.message) }
+  
+  // ── AUDIT 2-9: Verbose startup diagnostics (debug only) ──────
+  if (isDebug) {
+    // AUDIT 2: Tool Registry
+    try {
+      const toolNames = Object.keys(TOOL_DESCRIPTIONS)
+      auditLog('[Audit] Tool Registry: ' + toolNames.length + ' tools registered')
+      toolNames.forEach(n => auditLog('  - ' + n + ': ' + TOOL_DESCRIPTIONS[n].slice(0, 70)))
+    } catch (e: any) { console.error('[Audit] Tool audit failed:', e.message) }
 
-  // ── AUDIT 3: Agent Registry (specialist personas) ─────────────
-  const AGENT_PERSONAS: Record<string, string> = {
-    engineer:     'Senior TypeScript/JavaScript engineer — writes clean code with full error handling.',
-    security:     'Security auditor — analyzes for OWASP Top 10, provides specific fixes.',
-    data_analyst: 'Data analyst — statistical analysis, patterns, and visualizable insights.',
-    designer:     'UI/UX designer — design recommendations with color codes, typography, layout.',
-    researcher:   'Research specialist — extracts entities, compares systematically.',
-    debugger:     'Debugger — forms 3 hypotheses, eliminates systematically, provides fix.',
-  }
-  console.log(`[Audit] Agent Registry: ${Object.keys(AGENT_PERSONAS).length} specialist agents`)
-  Object.entries(AGENT_PERSONAS).forEach(([name, desc]) => console.log(`  - ${name}: ${desc.slice(0, 60)}`))
+    // AUDIT 3: Agent Registry
+    const AGENT_PERSONAS: Record<string, string> = {
+      engineer:     'Senior TypeScript/JavaScript engineer — writes clean code with full error handling.',
+      security:     'Security auditor — analyzes for OWASP Top 10, provides specific fixes.',
+      data_analyst: 'Data analyst — statistical analysis, patterns, and visualizable insights.',
+      designer:     'UI/UX designer — design recommendations with color codes, typography, layout.',
+      researcher:   'Research specialist — extracts entities, compares systematically.',
+      debugger:     'Debugger — forms 3 hypotheses, eliminates systematically, provides fix.',
+    }
+    auditLog('[Audit] Agent Registry: ' + Object.keys(AGENT_PERSONAS).length + ' specialist agents')
+    Object.entries(AGENT_PERSONAS).forEach(([name, desc]) => auditLog('  - ' + name + ': ' + desc.slice(0, 60)))
 
-  // ── AUDIT 4: Provider Chain (enhanced) ───────────────────────
-  try {
-    const cfg = loadConfig()
-    console.log('[Audit] Provider Chain:')
-    cfg.providers.apis.forEach((api, i) => {
-      const envKey = api.key?.startsWith('env:') ? (process.env[api.key.replace('env:', '')] || '') : api.key
-      const hasKey = (envKey || '').length > 0
-      console.log(`  ${i + 1}. ${api.name} (${api.provider}/${api.model}) — enabled: ${api.enabled}, hasKey: ${hasKey}, rateLimited: ${api.rateLimited}`)
+    // AUDIT 4: Provider Chain
+    try {
+      const cfg = loadConfig()
+      auditLog('[Audit] Provider Chain:')
+      cfg.providers.apis.forEach((api, i) => {
+        const envKey = api.key?.startsWith('env:') ? (process.env[api.key.replace('env:', '')] || '') : api.key
+        const hasKey = (envKey || '').length > 0
+        auditLog('  ' + (i + 1) + '. ' + api.name + ' (' + api.provider + '/' + api.model + ') — enabled: ' + api.enabled + ', hasKey: ' + hasKey + ', rateLimited: ' + api.rateLimited)
+      })
+      auditLog('[Audit] Ollama: model=' + cfg.ollama?.model + ', planner=' + cfg.ollama?.plannerModel + ', coder=' + cfg.ollama?.coderModel + ', fast=' + cfg.ollama?.fastModel)
+    } catch (e: any) { console.error('[Audit] Provider audit failed:', e.message) }
+
+    // AUDIT 5: Workspace Files
+    const WS = path.join(WORKSPACE_ROOT, 'workspace')
+    const WS_FILES = ['SOUL.md', 'USER.md', 'STANDING_ORDERS.md', 'GOALS.md', 'HEARTBEAT.md', 'instincts.json', 'identity.json', 'semantic.json', 'entity_graph.json', 'learning.json']
+    auditLog('[Audit] Workspace: ' + WS)
+    WS_FILES.forEach(f => {
+      const p = path.join(WS, f)
+      const exists = fs.existsSync(p)
+      const size   = exists ? fs.statSync(p).size : 0
+      auditLog('  ' + (exists ? '[OK]' : '[MISS]') + ' ' + f + (exists ? ' (' + (size / 1024).toFixed(1) + ' KB)' : ' — MISSING'))
     })
-    console.log(`[Audit] Ollama: model=${cfg.ollama?.model}, planner=${cfg.ollama?.plannerModel}, coder=${cfg.ollama?.coderModel}, fast=${cfg.ollama?.fastModel}`)
-  } catch (e: any) { console.error('[Audit] Provider audit failed:', e.message) }
 
-  // ── AUDIT 5: Workspace Files ──────────────────────────────────
-  const WS = path.join(WORKSPACE_ROOT, 'workspace')
-  const WS_FILES = ['SOUL.md', 'USER.md', 'STANDING_ORDERS.md', 'GOALS.md', 'HEARTBEAT.md', 'instincts.json', 'identity.json', 'semantic.json', 'entity_graph.json', 'learning.json']
-  console.log('[Audit] Workspace:', WS)
-  WS_FILES.forEach(f => {
-    const p = path.join(WS, f)
-    const exists = fs.existsSync(p)
-    const size   = exists ? fs.statSync(p).size : 0
-    console.log(`  ${exists ? '[OK]' : '[MISS]'} ${f}${exists ? ` (${(size / 1024).toFixed(1)} KB)` : ' — MISSING'}`)
+    // AUDIT 6: Memory System
+    try {
+      const semStats   = semanticMemory.getStats()
+      const egStats    = entityGraph.getStats()
+      const learnStats = learningMemory.getStats()
+      const skillStats = skillTeacher.getStats()
+      auditLog('[Audit] Memory System:')
+      auditLog('  Semantic memories: ' + semStats.total + ' (types: ' + JSON.stringify(semStats.byType) + ')')
+      auditLog('  Entity graph: ' + egStats.nodes + ' nodes, ' + egStats.edges + ' edges')
+      auditLog('  Learning experiences: ' + learnStats.total + ', success rate: ' + learnStats.successRate + '%, avg duration: ' + learnStats.avgDuration + 'ms')
+      auditLog('  Skills learned: ' + skillStats.learned + ', approved: ' + skillStats.approved)
+    } catch (e: any) { console.error('[Audit] Memory audit failed:', e.message) }
+
+    // AUDIT 7: Fast-Path Coverage
+    auditLog('[Audit] Fast-paths registered in /api/chat handler:')
+    auditLog('  Capability patterns:      5 (list tools, what can you do, etc.)')
+    auditLog('  Banned topics:            8 (GST, HSN, GSTIN, etc.)')
+    auditLog('  Jailbreak detection:      JAILBREAK_PATTERNS array')
+    auditLog('  Dangerous commands:       DANGEROUS_PATTERNS array')
+    auditLog('  Identity (name/who):      4 patterns')
+    auditLog('  Builder (who made you):   4 patterns')
+    auditLog('  Capabilities/learning:    7 patterns')
+    auditLog('  Local/offline:            5 patterns')
+    auditLog('  Date/time:                6 patterns (what year, what time, etc.)')
+    auditLog('  Goal create/show:         4 patterns')
+    auditLog('  Context questions:        2 patterns')
+    auditLog('  Hardware specs:           1 pattern (regex)')
+    auditLog('  File-read existence:      1 pattern (path detection)')
+    auditLog('  Search fast-paths:        16 regex patterns (YouTube/Spotify/Google/Wikipedia/GitHub)')
+    auditLog('  High-risk actions:        5 patterns (email/SMTP)')
+    auditLog('  Math eval:                1 pattern')
+    auditLog('  Total fast-paths:         ~80 patterns before planner runs')
+
+    // AUDIT 9: Scheduler
+    try {
+      const tasks = scheduler.list()
+      auditLog('[Audit] Scheduler: ' + tasks.length + ' task(s) loaded')
+      tasks.forEach(t => auditLog('  - [' + (t.enabled ? 'ON' : 'OFF') + '] ' + t.id + ': "' + t.description.slice(0, 50) + '" (' + t.schedule + ')'))
+      if (tasks.length === 0) auditLog('  (no tasks scheduled yet)')
+    } catch (e: any) { console.error('[Audit] Scheduler audit failed:', e.message) }
+  }
+
+  // ── PID file helpers ─────────────────────────────────────────
+  const _pidFile = path.join(WORKSPACE_ROOT, 'aiden.pid')
+  function writePid(): void {
+    try { fs.writeFileSync(_pidFile, String(process.pid), 'utf-8') } catch {}
+  }
+  function removePid(): void {
+    try { if (fs.existsSync(_pidFile)) fs.unlinkSync(_pidFile) } catch {}
+  }
+
+  // ── Clean shutdown: remove PID on signal ────────────────────
+  process.once('SIGINT',  () => { removePid(); process.exit(0) })
+  process.once('SIGTERM', () => { removePid(); process.exit(0) })
+
+  // ── EADDRINUSE: kill stale process, retry once ───────────────
+  server.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code !== 'EADDRINUSE') { console.error('[Server] Fatal error:', err.message); return }
+    console.warn('[Server] Port ' + port + ' in use — checking for stale PID file...')
+    try {
+      if (fs.existsSync(_pidFile)) {
+        const stalePid = parseInt(fs.readFileSync(_pidFile, 'utf-8').trim(), 10)
+        if (stalePid && stalePid !== process.pid) {
+          console.warn('[Server] Killing stale process PID ' + stalePid)
+          try { process.kill(stalePid, 'SIGTERM') } catch {}
+          removePid()
+          setTimeout(() => {
+            console.log('[Server] Retrying bind on port ' + port + '...')
+            server.listen(port, host)
+          }, 1500)
+          return
+        }
+      }
+    } catch {}
+    console.error('[Server] Port ' + port + ' is still in use. Startup failed.')
   })
 
-  // ── AUDIT 6: Memory System ────────────────────────────────────
-  try {
-    const semStats  = semanticMemory.getStats()
-    const egStats   = entityGraph.getStats()
-    const learnStats = learningMemory.getStats()
-    const skillStats = skillTeacher.getStats()
-    console.log('[Audit] Memory System:')
-    console.log(`  Semantic memories: ${semStats.total} (types: ${JSON.stringify(semStats.byType)})`)
-    console.log(`  Entity graph: ${egStats.nodes} nodes, ${egStats.edges} edges`)
-    console.log(`  Learning experiences: ${learnStats.total}, success rate: ${learnStats.successRate}%, avg duration: ${learnStats.avgDuration}ms`)
-    console.log(`  Skills learned: ${skillStats.learned}, approved: ${skillStats.approved}`)
-  } catch (e: any) { console.error('[Audit] Memory audit failed:', e.message) }
-
-  // ── AUDIT 7: Fast-Path Coverage ───────────────────────────────
-  console.log('[Audit] Fast-paths registered in /api/chat handler:')
-  console.log('  Capability patterns:      5 (list tools, what can you do, etc.)')
-  console.log('  Banned topics:            8 (GST, HSN, GSTIN, etc.)')
-  console.log('  Jailbreak detection:      JAILBREAK_PATTERNS array')
-  console.log('  Dangerous commands:       DANGEROUS_PATTERNS array')
-  console.log('  Identity (name/who):      4 patterns')
-  console.log('  Builder (who made you):   4 patterns')
-  console.log('  Capabilities/learning:    7 patterns')
-  console.log('  Local/offline:            5 patterns')
-  console.log('  Date/time:                6 patterns (what year, what time, etc.)')
-  console.log('  Goal create/show:         4 patterns')
-  console.log('  Context questions:        2 patterns')
-  console.log('  Hardware specs:           1 pattern (regex)')
-  console.log('  File-read existence:      1 pattern (path detection)')
-  console.log('  Search fast-paths:        16 regex patterns (YouTube/Spotify/Google/Wikipedia/GitHub)')
-  console.log('  High-risk actions:        5 patterns (email/SMTP)')
-  console.log('  Math eval:                1 pattern')
-  console.log('  Total fast-paths:         ~80 patterns before planner runs')
-
-  // ── AUDIT 9: Scheduler ────────────────────────────────────────
-  try {
-    const tasks = scheduler.list()
-    console.log(`[Audit] Scheduler: ${tasks.length} task(s) loaded`)
-    tasks.forEach(t => console.log(`  - [${t.enabled ? 'ON' : 'OFF'}] ${t.id}: "${t.description.slice(0, 50)}" (${t.schedule})`))
-    if (tasks.length === 0) console.log('  (no tasks scheduled yet)')
-  } catch (e: any) { console.error('[Audit] Scheduler audit failed:', e.message) }
-
   server.listen(port, host, () => {
-    // ── AUDIT 10: API Endpoints ───────────────────────────────────
-    try {
-      const routes: string[] = []
-      app._router.stack.forEach((r: any) => {
-        if (r.route) {
-          const methods = Object.keys(r.route.methods).join(',').toUpperCase()
-          routes.push(`${methods} ${r.route.path}`)
-        }
-      })
-      console.log(`[Audit] API Endpoints: ${routes.length} routes registered`)
-      routes.sort().forEach(r => console.log(`  ${r}`))
-    } catch (e: any) { console.error('[Audit] Route audit failed:', e.message) }
+    writePid()
 
-    // ── AUDIT 8: Hook System (after all hooks are registered) ────
-    console.log('[Audit] Hook Registry (post-registration):')
-    console.log(`  pre_compact:     ${getHookCount('pre_compact')} handler(s)`)
-    console.log(`  session_stop:    ${getHookCount('session_stop')} handler(s)`)
-    console.log(`  after_tool_call: ${getHookCount('after_tool_call')} handler(s)`)
+    if (isDebug) {
+      // AUDIT 10: API Endpoints
+      try {
+        const routes: string[] = []
+        app._router.stack.forEach((r: any) => {
+          if (r.route) {
+            const methods = Object.keys(r.route.methods).join(',').toUpperCase()
+            routes.push(methods + ' ' + r.route.path)
+          }
+        })
+        auditLog('[Audit] API Endpoints: ' + routes.length + ' routes registered')
+        routes.sort().forEach(r => auditLog('  ' + r))
+      } catch (e: any) { console.error('[Audit] Route audit failed:', e.message) }
 
-    console.log(`[API] DevOS v${VERSION} - Aiden running at http://${host}:${port}`)
-    console.log(`[API] Health: http://${host}:${port}/api/health`)
-    console.log(`[API] LivePulse WS: ws://${host}:${port}`)
+      // AUDIT 8: Hook System
+      auditLog('[Audit] Hook Registry (post-registration):')
+      auditLog('  pre_compact:     ' + getHookCount('pre_compact') + ' handler(s)')
+      auditLog('  session_stop:    ' + getHookCount('session_stop') + ' handler(s)')
+      auditLog('  after_tool_call: ' + getHookCount('after_tool_call') + ' handler(s)')
+    }
+
+    console.log('[API] DevOS v' + VERSION + ' - Aiden running at http://' + host + ':' + port)
+    console.log('[API] Health: http://' + host + ':' + port + '/api/health')
+    console.log('[API] LivePulse WS: ws://' + host + ':' + port)
   })
 
   // ── Gateway bootstrap ─────────────────────────────────────────
