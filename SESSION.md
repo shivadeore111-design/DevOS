@@ -1,5 +1,63 @@
 # DevOS Session Log
 
+## Phase 29B — /skills list pager n/p/q keys
+**Date:** 2026-04-23  
+**Commit:** a5bf4cd  
+**Branch:** main
+
+### Summary
+Fixed the `/skills list` pager: the "n → next  p → prev  q → quit" hint was
+purely cosmetic — no keypress handler existed. Phase 29B wires it up for real.
+
+### Root Cause
+`handleCommand()` rendered the Skill Store table once and returned.  No state
+was stored and no handler intercepted n / p / q, so those characters typed
+straight into the chat buffer.
+
+### Changes
+
+#### cli/aiden.ts
+- **Module-level state** — `pagerActive: boolean` + `pagerState` object hold
+  the active skills slice, current page index, and page size.
+- **`renderSkillsPage(skills, pageIndex, pageSize)`** — module-level helper
+  extracted from the inline rendering block; called by the `/skills` handler
+  and the keypress pager block (DRY).
+- **`/skills list` handler** — calls `renderSkillsPage()` then enters pager
+  mode (`pagerActive = true`, `pagerState = {...}`) when TTY and pages > 1.
+  Non-TTY falls back to a single full render with no pager.
+- **Keypress pager block** — fires at the TOP of `rl.on('keypress', ...)`
+  before the palette check.  While `pagerActive`:
+  - Clears readline echo (`\x1b[2K\r`, `rl.line = ''`, `cursor = 0`)
+  - `n` / `→` → advance page (if not at last), re-render, `rl.prompt()`
+  - `p` / `←` → back page (if not at first), re-render, `rl.prompt()`
+  - `q` / Escape / Enter → exit pager, `rl.prompt()`
+  - Any other key → absorbed (buffer cleared, no chat echo)
+  - Returns early — palette and history-nav checks never run while pager active
+
+### Constraints respected
+- Phase 29 palette (`/` and Tab triggers) unchanged
+- Regular chat input: n / p / q type normally when pager is NOT active
+- No branding changes
+
+### Verification
+
+| Check | Result |
+|---|---|
+| `npm run build:cli` | 0 errors ✅ |
+| pager symbols in dist-bundle/cli.js | 14 matches ✅ |
+| git push | a5bf4cd → main ✅ |
+
+> **User verification required** — interactive pager can only be tested in a
+> live terminal.  Suggested steps:
+> 1. Run `aiden` (or `npx ts-node cli/aiden.ts`)
+> 2. Type `/skills list` → confirm table renders with "n → next  p → prev  q → quit" footer
+> 3. Press `n` → second page renders, prompt reappears
+> 4. Press `p` → first page renders again
+> 5. Press `q` → pager exits, prompt returns to normal
+> 6. Type any letter (e.g. `h`) → it appears in the chat buffer (pager NOT active)
+
+---
+
 ## Phase 29 — Command Palette UX
 **Date:** 2026-04-23  
 **Commit:** dc45cf5  
