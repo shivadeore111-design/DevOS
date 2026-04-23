@@ -1,5 +1,41 @@
 # DevOS Session Log
 
+## Phase 29G — v3.9.1 ship
+**Date:** 2026-04-23  
+**Commits:** `98427a1` (version bump) → `e7cc04b` (landing)  
+**Tag:** `v3.9.1`  
+**Release:** https://github.com/taracodlabs/aiden-releases/releases/tag/v3.9.1
+
+### What shipped
+- Pager fix (Phase 29F) + palette opt-in (Phase 29F) + bulk import (Phase 27)
+- Version bump 3.9.0 → 3.9.1
+
+### Artifacts
+
+| File | Size | SHA-256 |
+|---|---|---|
+| `Aiden Setup 3.9.1.exe` | 149 MB | `DC1EEC9C3B34B5D3A0E9DDB61FDBC13DFBC70D833E3AA6B01284D0C90127A205` |
+| `Aiden-3.9.1.AppImage` | 198 MB | `27718258E3ECD8A9FB5425BBAF34468DD956CAD1ACF5EDDD6FF5972BF0C7FA7D` |
+| `devos-ai_3.9.1_amd64.deb` | 145 MB | `751B354D23D51DC81ABAD2F8AEDDCBA2A0EC680C0223DFEB652A49E951987A79` |
+
+### Smoke tests
+- Windows: fresh install → `GET /api/health` → `version: 3.9.1` ✅
+- AppImage: `--appimage-extract` → `AppRun` + `devos-ai` binary present ✅
+- deb: `dpkg-deb --info` → `Version: 3.9.1`, `Maintainer: Taracod Labs` ✅
+
+### Deployments
+- GitHub release: 3 assets, `v3.9.1` = `releases/latest` ✅
+- Cloudflare worker `devos-landing` deploy `87d2b1f4-1ac3-4d9b-b565-be0b5c2a1439` ✅
+- aiden.taracod.com: shows `3.9.1` ✅
+- aiden-releases README: bumped `ca37b11` ✅
+
+### Next candidates
+- **Phase 12** — persistent memory (SQLite long-term memory)
+- **Phase 28** — travel skills
+- **Phase 30** — proper TUI rewrite via Ink (when doing provider picker)
+
+---
+
 ## Phase 29F — Pager-only mode, palette disabled by default
 **Date:** 2026-04-23  
 **Commit:** d63303b  
