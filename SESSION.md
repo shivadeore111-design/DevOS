@@ -1,5 +1,40 @@
 # DevOS Session Log
 
+## Phase 12d — v3.10.0 Ship
+**Date:** 2026-04-24
+**Commits:** `50266af` (memoryCitations fix + api.json path) → `e0891e5` (landing bump)
+**Tag:** `v3.10.0`
+**Release:** https://github.com/taracodlabs/aiden-releases/releases/tag/v3.10.0
+
+### What shipped
+- 91% boot token reduction (lazy skill loading — Phase 14)
+- 3-layer progressive disclosure memory — `memsearch` / `memtimeline` / `memget` (Phase 12)
+- `/pulse` context budget tracker with lazy savings, session tokens, skill cache, memoryCitations
+- Fixed `/skills review <id>` for all 1,104 skills (Phase 14b)
+- Fixed Electron packaged app reading `api.json` from `resources/dist/` instead of user data dir
+- Fixed `memoryCitations` returning `null` on fresh boot — now returns `[]`
+
+### Artifacts & SHA-256
+| File | Size | SHA-256 |
+|------|------|---------|
+| `Aiden Setup 3.10.0.exe` | 148.2 MB | `6638728B74DDA1086E40FDCB53416A9F518AC323CDE200D1DC5BF3E4E88582F7` |
+| `Aiden-3.10.0.AppImage` | 197.8 MB | `67EC1B6788F2E488260F39D63FB5E703E3BB66BDC3702F30D708A2ED194CD179` |
+| `devos-ai_3.10.0_amd64.deb` | 144.7 MB | `518D2040A6BBEC97CBF19E490D8EC0DE0218790CD0818E1386178D1108CEDD74` |
+
+### Smoke tests (5/5 Windows, Linux metadata ✅)
+- `[1/5 OK]` Health 3.10.0
+- `[2/5 OK]` /skills review arxiv works
+- `[3/5 OK]` Context budget metrics present
+- `[4/5 OK]` /memsearch responded
+- `[5/5 OK]` memoryCitations is array (length 0)
+- AppImage: `AppRun` + `devos-ai` binary extracted ✅
+- deb: Version 3.10.0, Maintainer Taracod Labs ✅
+
+### Pending
+- Cloudflare landing deploy blocked — wrangler OAuth expired 2026-04-23. Run `npx wrangler login` then `npx wrangler deploy --config wrangler-landing.toml` from `cloudflare-worker/`.
+
+---
+
 ## Phase 12 — Progressive disclosure memory (3-layer query)
 **Date:** 2026-04-24
 **Commit:** `b0fb624`
