@@ -1,6 +1,6 @@
 {
   "name": "devos-ai",
-  "version": "3.8.0",
+  "version": "3.8.1",
   "description": "Autonomous AI Operating System — Local, Private, Free. Runs on your machine with Ollama.",
   "author": "Taracod <hello@taracod.com>",
   "license": "AGPL-3.0-only",
@@ -54,6 +54,7 @@
     "dist": "node scripts/prepare-electron.js && electron-builder --win --publish never && node -e \"const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.main='./dist/index.js';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\\n');console.log('  main restored → ./dist/index.js')\"",
     "dist:dir": "node scripts/prepare-electron.js && electron-builder --win --dir --publish never",
     "build:win": "npm run dist",
+    "dist:linux": "node scripts/prepare-electron.js && electron-builder --linux --x64 --publish never && node -e \"const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.main='./dist/index.js';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\\n');console.log('  main restored')\"",
     "test": "vitest run",
     "test:ui": "vitest --ui",
     "stress-test": "npx ts-node tests/stressTest.ts",
@@ -99,6 +100,35 @@
       "installerHeaderIcon": "assets/icon.ico",
       "deleteAppDataOnUninstall": false,
       "include": "build/installer.nsh"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "Development",
+      "synopsis": "Local-first AI operating system",
+      "description": "DevOS — Aiden is a local-first AI operating system with 69+ skills, 80+ tools, and self-healing provider routing across 13 LLM providers.",
+      "maintainer": "Taracod Labs <contact@taracod.com>",
+      "vendor": "Taracod Labs",
+      "desktop": {
+        "entry": {
+          "Name": "DevOS — Aiden",
+          "Comment": "Local-first AI operating system",
+          "Categories": "Development;Utility;"
+        }
+      },
+      "icon": "assets/icon.png"
     },
     "files": [
       "electron/**/*",
