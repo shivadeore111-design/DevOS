@@ -55,7 +55,7 @@ import type { Phase }                                   from '../core/planTool'
 import { taskStateManager }                             from '../core/taskState'
 import { taskQueue }                                    from '../core/taskQueue'
 import { recoverTasks }                                 from '../core/taskRecovery'
-import { skillLoader, getSkillCacheStats }              from '../core/skillLoader'
+import { skillLoader, getSkillCacheStats, getSkillContent } from '../core/skillLoader'
 import { conversationMemory }                           from '../core/conversationMemory'
 import { semanticMemory }                               from '../core/semanticMemory'
 import { entityGraph }                                  from '../core/entityGraph'
@@ -4212,23 +4212,39 @@ export function createApiServer(): Express {
     }
   })
 
-  // GET /api/skills/review/:id — get raw SKILL.md of any pending/installed skill
+  // GET /api/skills/review/:id — get raw SKILL.md of any skill (pending/installed/built-in)
   app.get('/api/skills/review/:id', (req: Request, res: Response) => {
     try {
       const id  = String(req.params.id)
       const cwd = WORKSPACE_ROOT
+
+      // 1. Check pending/approved/installed paths first (learned skills)
       const candidates = [
         path.join(cwd, 'skills', 'learned', 'pending',  id, 'SKILL.md'),
         path.join(cwd, 'skills', 'learned', 'approved', id, 'SKILL.md'),
         path.join(cwd, 'skills', 'installed',           id, 'SKILL.md'),
       ]
-      const target = candidates.find(p => fs.existsSync(p))
-      if (!target) { res.status(404).json({ error: `Skill "${id}" not found` }); return }
-      const content = fs.readFileSync(target, 'utf-8')
-      // Determine status
-      const status = target.includes('pending') ? 'pending'
-        : target.includes('approved') ? 'approved' : 'installed'
-      res.json({ id, status, filePath: target, content })
+      const learnedTarget = candidates.find(p => fs.existsSync(p))
+      if (learnedTarget) {
+        const content = fs.readFileSync(learnedTarget, 'utf-8')
+        const status  = learnedTarget.includes('pending') ? 'pending'
+          : learnedTarget.includes('approved') ? 'approved' : 'installed'
+        res.json({ id, status, filePath: learnedTarget, content })
+        return
+      }
+
+      // 2. Fall back to full skills index (built-in skills) — lazy-load content via LRU cache
+      const allSkills = skillLoader.loadAllRaw ? skillLoader.loadAllRaw() : skillLoader.loadAll()
+      const found = allSkills.find(s =>
+        s.name === id ||
+        path.basename(path.dirname(s.filePath)) === id ||
+        s.name.toLowerCase() === id.toLowerCase() ||
+        path.basename(path.dirname(s.filePath)).toLowerCase() === id.toLowerCase()
+      )
+      if (!found) { res.status(404).json({ error: `Skill "${id}" not found` }); return }
+      const content = getSkillContent(found.filePath)
+      if (!content) { res.status(404).json({ error: `Skill "${id}" file unreadable` }); return }
+      res.json({ id: found.name, status: 'built-in', filePath: found.filePath, content })
     } catch (e: any) {
       res.status(500).json({ error: e.message })
     }
