@@ -2,7 +2,7 @@
 
 ## Phase 12 — Progressive disclosure memory (3-layer query)
 **Date:** 2026-04-24
-**Commit:** TBD (pending)
+**Commit:** `b0fb624`
 
 ### What changed
 - `core/memoryIds.ts` — stable `mem_NNNNNN` IDs, append-only `records.jsonl`, one-time migration from legacy sources (memory.json, conversation-memory.json, MEMORY_INDEX.md)
