@@ -123,6 +123,10 @@ const state = {
 // ── Module-level rl reference for pause/resume during streaming ───────────────────
 let _rl: import('readline').Interface | null = null
 
+// ── Skill Store pager state (active while /skills list is in pager mode) ──────────
+let pagerActive = false
+let pagerState: { skills: any[]; pageIndex: number; pageSize: number } | null = null
+
 // ── Terminal helpers ──────────────────────────────────────────────────────────────
 
 const cols = (): number => Math.min(process.stdout.columns || 80, 100)
@@ -160,6 +164,46 @@ function sourceBadgeStr(source: string): string {
 function trustStars(score: number): string {
   const n = Math.max(0, Math.min(5, Math.round(score)))
   return `${fg(COLORS.orange)}${'★'.repeat(n)}${RST}${T.dim}${'☆'.repeat(5 - n)}${T.reset}`
+}
+
+/** Render one page of the Skill Store table. Used by /skills list and the pager. */
+function renderSkillsPage(skills: any[], pageIndex: number, pageSize: number): void {
+  const start = pageIndex * pageSize
+  const slice = skills.slice(start, start + pageSize)
+  const total = skills.length
+  const pages = Math.ceil(Math.max(total, 1) / pageSize)
+
+  const installed = skills.filter((s: any) => s.installed || s.enabled).length
+  const pro       = skills.filter((s: any) => s.tier === 'pro').length
+
+  const colDefs: ColDef[] = [
+    { header: '#',           width: 4,  align: 'right', color: COLORS.dim },
+    { header: 'Skill',       width: 20, align: 'left'  },
+    { header: 'Description'                             },
+    { header: 'Source',      width: 10, align: 'left'  },
+    { header: 'Trust',       width: 7,  align: 'left'  },
+  ]
+  const rows = slice.map((s: any, i: number) => [
+    String(start + i + 1),
+    (s.name || '').substring(0, 20),
+    (s.description || '').substring(0, 55),
+    sourceBadgeStr(s.origin || s.source || s.type || ''),
+    trustStars(s.trust ?? 3),
+  ])
+  const footerStats = `${total} skills · ${installed} installed${pro > 0 ? ` · ${pro} pro` : ''} · page ${pageIndex + 1}/${pages}`
+  const footerNav   = pages > 1
+    ? `${MARKS.TRI} /skills install <name>   n → next   p → prev   q → quit`
+    : `${MARKS.TRI} /skills install <name>   /skills inspect <n|name>`
+  console.log()
+  console.log(panel({
+    title: `${MARKS.TRI} Skill Store`,
+    lines: ['', ...slice.length === 0 ? [`  ${T.dim}No skills loaded.${T.reset}`] : []],
+  }))
+  console.log(table(colDefs, rows))
+  console.log()
+  console.log(`  ${T.dim}${footerStats}${T.reset}`)
+  console.log(`  ${T.dim}${footerNav}${T.reset}`)
+  console.log()
 }
 
 function ctxColor(pct: number): string {
@@ -1776,42 +1820,15 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
     // ── /skills list / /skills browse / /skills (default) ─────────────────────
     const PAGE_SIZE = 10
     const page  = (sub === 'browse' || sub === 'list') ? (parseInt(parts[2] ?? '1', 10) - 1) : 0
-    const start = page * PAGE_SIZE
-    const slice = skills.slice(start, start + PAGE_SIZE)
-    const total = skills.length
-    const pages = Math.ceil(Math.max(total, 1) / PAGE_SIZE)
+    const pages = Math.ceil(Math.max(skills.length, 1) / PAGE_SIZE)
 
-    const installed = skills.filter((s: any) => s.installed || s.enabled).length
-    const pro       = skills.filter((s: any) => s.tier === 'pro').length
+    renderSkillsPage(skills, page, PAGE_SIZE)
 
-    const colDefs: ColDef[] = [
-      { header: '#',           width: 4,  align: 'right', color: COLORS.dim },
-      { header: 'Skill',       width: 20, align: 'left'  },
-      { header: 'Description'                             },
-      { header: 'Source',      width: 10, align: 'left'  },
-      { header: 'Trust',       width: 7,  align: 'left'  },
-    ]
-    const rows = slice.map((s: any, i: number) => [
-      String(start + i + 1),
-      (s.name || '').substring(0, 20),
-      (s.description || '').substring(0, 55),
-      sourceBadgeStr(s.origin || s.source || s.type || ''),
-      trustStars(s.trust ?? 3),
-    ])
-    const footerStats = `${total} skills · ${installed} installed${pro > 0 ? ` · ${pro} pro` : ''} · page ${page + 1}/${pages}`
-    const footerNav   = pages > 1
-      ? `${MARKS.TRI} /skills install <name>   n → next   p → prev   q → quit`
-      : `${MARKS.TRI} /skills install <name>   /skills inspect <n|name>`
-    console.log()
-    console.log(panel({
-      title: `${MARKS.TRI} Skill Store`,
-      lines: ['', ...rows.length === 0 ? [`  ${T.dim}No skills loaded.${T.reset}`] : []],
-    }))
-    console.log(table(colDefs, rows))
-    console.log()
-    console.log(`  ${T.dim}${footerStats}${T.reset}`)
-    console.log(`  ${T.dim}${footerNav}${T.reset}`)
-    console.log()
+    // Enter interactive pager mode on TTY when there is more than one page
+    if (process.stdout.isTTY && process.stdin.isTTY && pages > 1) {
+      pagerActive = true
+      pagerState  = { skills, pageIndex: page, pageSize: PAGE_SIZE }
+    }
     return true
   }
 
@@ -4654,6 +4671,33 @@ async function main(): Promise<void> {
 
   rl.on('keypress', (_ch: any, key: any) => {
     if (!key) return
+
+    // ── Skill Store pager navigation ──────────────────────────────────────────
+    if (pagerActive && pagerState) {
+      // Absorb whatever readline echoed before our handler fired
+      process.stdout.write('\x1b[2K\r')
+      ;(rl as any).line   = ''
+      ;(rl as any).cursor = 0
+
+      const { skills, pageIndex, pageSize } = pagerState
+      const pages = Math.ceil(Math.max(skills.length, 1) / pageSize)
+
+      if ((key.name === 'n' || key.name === 'right') && pageIndex < pages - 1) {
+        pagerState.pageIndex++
+        renderSkillsPage(skills, pagerState.pageIndex, pageSize)
+        rl.prompt()
+      } else if ((key.name === 'p' || key.name === 'left') && pageIndex > 0) {
+        pagerState.pageIndex--
+        renderSkillsPage(skills, pagerState.pageIndex, pageSize)
+        rl.prompt()
+      } else if (key.name === 'q' || key.name === 'escape' || key.name === 'return') {
+        pagerActive = false
+        pagerState  = null
+        rl.prompt()
+      }
+      // Any other key: absorbed (buffer already cleared above)
+      return
+    }
 
     // ── Command palette triggers ──────────────────────────────────────────────
     if (PALETTE_ON && !paletteActive) {
