@@ -4665,8 +4665,8 @@ async function main(): Promise<void> {
   let lastCtrlC    = 0
   let paletteActive = false
 
-  // Whether the command palette is enabled (opt-out: AIDEN_PALETTE=false)
-  const PALETTE_ON = process.env.AIDEN_PALETTE !== 'false'
+  // Command palette is opt-in only (set AIDEN_PALETTE=true to enable beta)
+  const PALETTE_ON = process.env.AIDEN_PALETTE === 'true'
                   && process.stdout.isTTY
                   && process.stdin.isTTY
 
@@ -4678,22 +4678,19 @@ async function main(): Promise<void> {
     if (!key) return
 
     // ── Skill Store pager navigation ──────────────────────────────────────────
+    // Active only while /skills list is showing a multi-page table.
     if (pagerActive && pagerState) {
-      // Absorb whatever readline echoed before our handler fired
-      readline.clearLine(process.stdout, 0)
-      readline.cursorTo(process.stdout, 0)
+      // Erase whatever readline echoed before our handler fired
       ;(rl as any).line   = ''
       ;(rl as any).cursor = 0
+      readline.clearLine(process.stdout, 0)
+      readline.cursorTo(process.stdout, 0)
 
       const { skills, pageIndex, pageSize } = pagerState
-      const pages = Math.ceil(Math.max(skills.length, 1) / pageSize)
+      const totalPages = Math.ceil(Math.max(skills.length, 1) / pageSize)
 
-      // Exit pager: q / Esc / Ctrl+C
-      if (
-        key.name === 'q' ||
-        key.name === 'escape' ||
-        key.sequence === '\u0003'
-      ) {
+      // EXIT — q / Esc / Ctrl+C
+      if (key.name === 'q' || key.name === 'escape' || (key.ctrl && key.name === 'c')) {
         pagerActive = false
         pagerState  = null
         process.stdout.write('\n')
@@ -4701,38 +4698,44 @@ async function main(): Promise<void> {
         return
       }
 
-      // Next page
-      if ((key.name === 'n' || key.name === 'right') && pageIndex < pages - 1) {
-        pagerState.pageIndex++
-        renderSkillsPage(skills, pagerState.pageIndex, pageSize)
-        rl.prompt()
+      // NEXT PAGE — n / ↓ / → / Space / Enter
+      if (
+        key.name === 'n' ||
+        key.name === 'down' ||
+        key.name === 'right' ||
+        key.name === 'space' ||
+        key.name === 'return'
+      ) {
+        if (pageIndex < totalPages - 1) {
+          pagerState.pageIndex = pageIndex + 1
+          console.clear()
+          renderSkillsPage(skills, pagerState.pageIndex, pageSize)
+        }
         return
       }
 
-      // Previous page
-      if ((key.name === 'p' || key.name === 'left') && pageIndex > 0) {
-        pagerState.pageIndex--
-        renderSkillsPage(skills, pagerState.pageIndex, pageSize)
-        rl.prompt()
+      // PREV PAGE — p / ↑ / ←
+      if (key.name === 'p' || key.name === 'up' || key.name === 'left') {
+        if (pageIndex > 0) {
+          pagerState.pageIndex = pageIndex - 1
+          console.clear()
+          renderSkillsPage(skills, pagerState.pageIndex, pageSize)
+        }
         return
       }
 
-      // Any other key: absorbed (buffer already cleared above)
+      // Absorb all other keys while pager is active
       return
     }
 
-    // ── Command palette triggers ──────────────────────────────────────────────
+    // ── Command palette triggers (opt-in beta: AIDEN_PALETTE=true) ────────────
     if (PALETTE_ON && !paletteActive) {
-      // readline has already processed the key and updated rl.line by the time
-      // this handler fires (readline emits 'keypress' from _ttyWrite, after
-      // updating its internal buffer).
       const currentLine: string = (rl as any).line || ''
 
-      // Trigger 1: '/' typed at start of an empty buffer  →  full palette
+      // Trigger 1: '/' typed on an empty buffer  →  full palette
       if (key.sequence === '/' && currentLine === '/') {
         paletteActive = true
         rl.pause()
-        // Erase the echoed '/' so the palette renders cleanly
         readline.clearLine(process.stdout, 0)
         readline.cursorTo(process.stdout, 0)
         ;(rl as any).line   = ''
@@ -4746,7 +4749,7 @@ async function main(): Promise<void> {
               rl.resume()
               await handleCommand(chosen, rl)
             }
-          } catch { /* ExitPromptError or palette error — fall through silently */ }
+          } catch { /* ExitPromptError — fall through */ }
           finally {
             paletteActive = false
             rl.setPrompt(getPrompt())
@@ -4775,12 +4778,11 @@ async function main(): Promise<void> {
               rl.resume()
               await handleCommand(chosen, rl)
             } else {
-              // Esc/no selection — restore partial input
               ;(rl as any).line   = partial
               ;(rl as any).cursor = partial.length
               ;(rl as any)._refreshLine?.()
             }
-          } catch { /* ExitPromptError — fall through silently */ }
+          } catch { /* ExitPromptError — fall through */ }
           finally {
             paletteActive = false
             rl.setPrompt(getPrompt())
@@ -4792,7 +4794,7 @@ async function main(): Promise<void> {
       }
     }
 
-    // ── History navigation ────────────────────────────────────────────────────
+    // ── History navigation (↑/↓) ─────────────────────────────────────────────
     if (key.name === 'up') {
       if (histIdx < state.inputHistory.length - 1) {
         histIdx++
