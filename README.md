@@ -7,7 +7,7 @@
 ╚═╝  ╚═╝╚═╝╚═════╝ ╚══════╝╚═╝  ╚═══╝
 
 local-first AI operating system
-69+ skills · 80+ tools · 14+ providers · AGPL-3.0
+70+ skills · 80+ tools · 14+ providers · AGPL-3.0
 Windows · Linux · WSL · macOS (API mode)
 ```
 
@@ -37,7 +37,7 @@ Aiden is a local-first AI operating system. It runs entirely on
 your machine — no cloud account required, no telemetry, no data leaving your
 hardware unless you configure a cloud provider. It ships with a signed Windows
 installer, and runs in headless API mode on Linux, WSL, and macOS. Features:
-69+ composable skills, 80+ autonomous tools, a 6-layer memory architecture,
+70+ composable skills, 80+ autonomous tools, a 6-layer memory architecture,
 self-healing provider routing, and the ability to control your screen, browse
 the web, run code, send emails, manage files, and hold a full conversation —
 offline via Ollama.
