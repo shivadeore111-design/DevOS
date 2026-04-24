@@ -87,7 +87,14 @@ export async function buildGreetingPreamble(sessionId?: string): Promise<string 
       parts.push(`Frequent paths: ${facts.preferredPaths.slice(-2).join(', ')}`)
     }
     if (goals) {
-      parts.push(`Active goals: ${goals}`)
+      // getActiveGoalsSummary() returns "Active goals:\n- title [status]: action\n..."
+      // Extract compact single-line titles to avoid double-labeling and regex capture bugs
+      const goalLines = goals.split('\n').filter((l: string) => l.trim().startsWith('- '))
+      const goalTitles = goalLines.map((l: string) => {
+        const m = l.match(/^-\s+(.+?)\s+\[/)
+        return m ? m[1] : l.replace(/^-\s+/, '').split('[')[0].trim()
+      }).filter(Boolean).join(', ')
+      if (goalTitles) parts.push(`Active goals: ${goalTitles}`)
     }
 
     if (parts.length === 0) return null

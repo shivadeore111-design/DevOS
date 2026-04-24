@@ -2694,6 +2694,41 @@ export async function callLLM(
       } catch {}
       return d?.result?.response || ''
 
+    } else if (providerName === 'custom') {
+      // Custom provider — look up baseUrl from config by matching apiKey
+      const cfgCustom = loadConfig()
+      const cp = cfgCustom.customProviders?.find((c: any) => c.enabled && c.apiKey === apiKey)
+      if (!cp?.baseUrl) throw new Error(`callLLM: no baseUrl for custom provider (model=${model})`)
+      const r = await fetch(cp.baseUrl, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: 'You are Aiden, a local-first personal AI OS. Be concise and direct.' },
+            ...messages,
+          ],
+          stream:     false,
+          max_tokens: 2000,
+        }),
+        signal: AbortSignal.any([AbortSignal.timeout(12000), _ctrl.signal]),
+      })
+      if (r.status === 429) {
+        try { markRateLimited(providerName) } catch {}
+        throw new Error(`Rate limited (429): custom/${model}`)
+      }
+      if (!r.ok) throw new Error(`HTTP ${r.status} from custom/${model}`)
+      const d = await r.json() as any
+      try {
+        costTracker.trackUsage(
+          providerName, model,
+          d?.usage?.prompt_tokens    ?? 0,
+          d?.usage?.completion_tokens ?? 0,
+          opts?.traceId, opts?.isSystem ?? false,
+        )
+      } catch {}
+      return d?.choices?.[0]?.message?.content || ''
+
     } else {
       // OpenAI-compatible: groq, openrouter, cerebras, nvidia, github
       const url     = OPENAI_COMPAT_ENDPOINTS[providerName] || OPENAI_COMPAT_ENDPOINTS.groq

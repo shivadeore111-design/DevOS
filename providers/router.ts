@@ -145,9 +145,14 @@ function mergeCustomProviders(base: APIEntry[]): APIEntry[] {
   const config  = loadConfig()
   const customs = (config.customProviders || [])
     .filter(cp => cp.enabled && cp.baseUrl.trim().length > 0)
-    .sort((a, b) => a.tier - b.tier)
-    .map(customToAPIEntry)
-  return [...base, ...customs]
+  // Tier-sort the combined pool: customs use their tier, base entries default to tier 99.
+  // JS Array.sort is stable (ES2019+/Node 11+) — insertion order preserved within same tier.
+  const ranked = [
+    ...base.map(e => ({ entry: e, tier: 99 })),
+    ...customs.map(cp => ({ entry: customToAPIEntry(cp), tier: cp.tier ?? 99 })),
+  ]
+  ranked.sort((a, b) => a.tier - b.tier)
+  return ranked.map(r => r.entry)
 }
 
 // ── Auto-reset stale rate limits ──────────────────────────────

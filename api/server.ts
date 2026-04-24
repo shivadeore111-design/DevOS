@@ -1114,7 +1114,12 @@ export function createApiServer(): Express {
           if (lastMatch) {
             fullReply = `Hey${nameStr}! Picking up from "${lastMatch[1]}". What would you like to work on?`
           } else if (goalsMatch) {
-            fullReply = `Hey${nameStr}! Currently tracking: ${goalsMatch[1]}. What do you need?`
+            const goalText = goalsMatch[1]?.trim()
+            if (goalText) {
+              fullReply = `Hey${nameStr}! Tracking: ${goalText}. What do you need?`
+            } else {
+              fullReply = `Hey${nameStr}! What do you need?`
+            }
           } else {
             fullReply = `Hey${nameStr}! What do you need?`
           }
@@ -2024,7 +2029,9 @@ export function createApiServer(): Express {
     const config  = loadConfig()
     const health  = getProviderHealthState()
     const primary = config.primaryProvider || null
-    const providers = config.providers.apis.map(api => ({
+
+    // Build entries for providers.apis
+    const apisEntries = config.providers.apis.map(api => ({
       name:                api.name,
       provider:            api.provider,
       model:               api.model,
@@ -2035,6 +2042,28 @@ export function createApiServer(): Express {
       consecutiveFailures: health.consecutiveFailures[api.name] ?? 0,
       avgResponseMs:       health.responseTimesMs[api.name]     ?? null,
     }))
+
+    // Build entries for customProviders
+    const customEntries = (config.customProviders || []).map(cp => ({
+      name:                cp.id,
+      provider:            'custom' as const,
+      model:               cp.model,
+      enabled:             cp.enabled,
+      rateLimited:         false,
+      rateLimitedAt:       null as number | null,
+      isPrimary:           primary ? cp.id === primary : false,
+      consecutiveFailures: health.consecutiveFailures[cp.id] ?? 0,
+      avgResponseMs:       health.responseTimesMs[cp.id]     ?? null,
+    }))
+
+    // Tier-sort combined list (customs by their tier, apis default tier 99)
+    type ProvEntry = typeof apisEntries[0]
+    const ranked: { entry: ProvEntry; tier: number }[] = [
+      ...apisEntries.map(e => ({ entry: e, tier: 99 })),
+      ...(config.customProviders || []).map((cp, i) => ({ entry: customEntries[i], tier: cp.tier ?? 99 })),
+    ]
+    ranked.sort((a, b) => a.tier - b.tier)
+    const providers = ranked.map(r => r.entry)
     const currentChain = providers.filter(p => p.enabled && !p.rateLimited)
     res.json({ primary, providers, currentChain })
   })
@@ -5733,6 +5762,23 @@ async function fetchProviderResponse(
     const d = await resp.json() as any
     return { text: d?.message?.content || '', apiName: api.name, model }
 
+  } else if (providerType === 'custom') {
+    // Custom OpenAI-compatible endpoint — use the entry's own baseUrl directly
+    const endpoint = api.baseUrl || ''
+    if (!endpoint) throw new Error(`Custom provider "${api.name}" has no baseUrl configured`)
+    const resp = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${key}`,
+      },
+      body: JSON.stringify({ model, messages, stream: false, max_tokens: 2000 }),
+      signal,
+    })
+    if (!resp.ok) throw new Error(`custom:${api.name} ${resp.status}`)
+    const d = await resp.json() as any
+    return { text: d?.choices?.[0]?.message?.content || '', apiName: api.name, model }
+
   } else {
     const COMPAT_ENDPOINTS: Record<string, string> = {
       groq:       'https://api.groq.com/openai/v1/chat/completions',
@@ -5768,14 +5814,35 @@ async function raceProviders(
 
   // ── Pin-first: if primaryProvider is set, use it directly (no racing) ──────
   if (cfg.primaryProvider) {
-    const pinned = cfg.providers.apis.find(a =>
+    // Search providers.apis first, then customProviders
+    let pinned: import('../providers/index').APIEntry | undefined = cfg.providers.apis.find(a =>
       (a.name === cfg.primaryProvider || a.provider === cfg.primaryProvider) &&
       a.enabled && !a.rateLimited,
     )
+    if (!pinned) {
+      const cp = (cfg.customProviders || []).find(c =>
+        c.id === cfg.primaryProvider && c.enabled,
+      )
+      if (cp) {
+        pinned = {
+          name:        cp.id,
+          provider:    'custom',
+          key:         cp.apiKey,
+          model:       cp.model,
+          enabled:     cp.enabled,
+          rateLimited: false,
+          usageCount:  0,
+          baseUrl:     cp.baseUrl,
+        }
+      }
+    }
     if (pinned) {
-      const k = pinned.key.startsWith('env:')
-        ? (process.env[pinned.key.replace('env:', '')] || '')
-        : pinned.key
+      // Custom providers store the key directly; others may use env: prefix
+      const k = pinned.provider === 'custom'
+        ? pinned.key
+        : (pinned.key.startsWith('env:')
+            ? (process.env[pinned.key.replace('env:', '')] || '')
+            : pinned.key)
       if (k.length > 0) {
         const ctrl = new AbortController()
         try {
@@ -6150,6 +6217,46 @@ ${cognitionHint}${firstMessageContext}${memoryContext}${greetingPreamble}${sessi
         }
       }
       console.log(`[Router] Ollama responded in ${Date.now() - _streamStart}ms (${ollamaTokens} tokens)`)
+
+    } else if (providerType === 'custom') {
+      // ── Custom OpenAI-compatible endpoint — use the entry's own baseUrl ──
+      const customCp  = cfg.customProviders?.find(c => c.id === responderChat.apiName)
+      const endpoint  = customCp?.baseUrl || ''
+      if (!endpoint) throw new Error(`Custom provider "${responderChat.apiName}" has no baseUrl`)
+      const resp = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({ model: activeStreamModel, messages: msgs, stream: true }),
+      })
+      if (!resp.ok || !resp.body) {
+        const errText = await resp.text().catch(() => resp.statusText)
+        if (resp.status === 429) markRateLimited(responderChat.apiName)
+        throw new Error(`custom:${responderChat.apiName} ${resp.status}: ${errText}`)
+      }
+      const reader = resp.body.getReader()
+      const dec    = new TextDecoder()
+      let   buf    = ''
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+        buf += dec.decode(value, { stream: true })
+        const lines = buf.split('\n')
+        buf = lines.pop() ?? ''
+        for (const line of lines) {
+          const trimmed = line.trim()
+          if (!trimmed.startsWith('data:')) continue
+          const data = trimmed.slice(5).trim()
+          if (data === '[DONE]') break
+          try {
+            const parsed = JSON.parse(data)
+            const token  = parsed.choices?.[0]?.delta?.content
+            if (token) send({ token, done: false, provider: responderChat.apiName })
+          } catch { /* skip malformed chunks */ }
+        }
+      }
 
     } else {
       // ── OpenAI-compatible (Groq, OpenRouter, Cerebras, etc.) ──

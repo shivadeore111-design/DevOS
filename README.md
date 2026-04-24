@@ -7,7 +7,7 @@
 ╚═╝  ╚═╝╚═╝╚═════╝ ╚══════╝╚═╝  ╚═══╝
 
 local-first AI operating system
-69+ skills · 80+ tools · 13 providers · AGPL-3.0
+69+ skills · 80+ tools · 14+ providers · AGPL-3.0
 Windows · Linux · WSL · macOS (API mode)
 ```
 
@@ -28,11 +28,16 @@ Windows · Linux · WSL · macOS (API mode)
 
 ---
 
+> **v3.11 — Custom provider routing + Claude Haiku 4.5**
+> Full custom OpenAI-compatible provider support: plug in any endpoint via config with no code changes. BayOfAssets Claude Haiku 4.5 ships as the new default tier-1 provider. Fixes silent Groq fallback in `callLLM`, greeting memory double-label, and health endpoint missing custom providers. See [changelog](#changelog) below.
+
+---
+
 Aiden is a local-first AI operating system. It runs entirely on
 your machine — no cloud account required, no telemetry, no data leaving your
 hardware unless you configure a cloud provider. It ships with a signed Windows
 installer, and runs in headless API mode on Linux, WSL, and macOS. Features:
-56 composable skills, 60+ autonomous tools, a 6-layer memory architecture,
+69+ composable skills, 80+ autonomous tools, a 6-layer memory architecture,
 self-healing provider routing, and the ability to control your screen, browse
 the web, run code, send emails, manage files, and hold a full conversation —
 offline via Ollama.
@@ -106,7 +111,7 @@ Full chat interface with live activity panel. Local-first, connects to Ollama or
 
 | Category | What Aiden does |
 |---|---|
-| **Inference & providers** | Local Ollama (Llama 3, Mistral, Qwen, Gemma, Phi…) with optional cloud fallback to OpenAI, Anthropic, Groq, Cerebras, NVIDIA NIM, OpenRouter, and more — 13 providers total |
+| **Inference & providers** | Local Ollama (Llama 3, Mistral, Qwen, Gemma, Phi…) with optional cloud fallback to OpenAI, Anthropic, Groq, Cerebras, NVIDIA NIM, OpenRouter, and more — 14+ providers including custom OpenAI-compatible endpoints |
 | **60+ tools** | Web search, file read/write, shell execution, Playwright browser automation, screen capture & OCR, calendar, email (IMAP/SMTP), code execution sandbox, clipboard, system info |
 | **56 skills** | Composable plugins each with a `SKILL.md` prompt, tool implementations, and optional sandbox runner — install per-session or globally |
 | **Subagent swarm** | Spawn N parallel agents on any task; vote, merge, or pick the best result automatically |
@@ -195,6 +200,32 @@ Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the ful
 | **Download installer** | [Latest release](https://github.com/taracodlabs/aiden-releases/releases/latest) |
 | **Releases & changelog** | [github.com/taracodlabs/aiden-releases](https://github.com/taracodlabs/aiden-releases) |
 | **License** | AGPL-3.0 core · Apache-2.0 skills |
+
+---
+
+## Changelog
+
+### v3.11.0 — 2026-04-25
+
+**Custom provider routing**
+- Full support for custom OpenAI-compatible endpoints via `customProviders` in `devos.config.json` — add any endpoint with a `baseUrl`, `apiKey`, and `model`; no code changes required
+- Fixed silent Groq fallback bug in `callLLM`: custom providers now correctly route to their configured `baseUrl` instead of falling back to the Groq URL
+- Fixed `raceProviders` pin-first logic: `primaryProvider` is now resolved from `customProviders` list when not found in `providers.apis`
+- Fixed health/status endpoint (`/api/providers`) to include custom providers in the returned list, tier-sorted
+
+**BayOfAssets Claude Haiku 4.5 as default primary**
+- Swapped default primary provider to BayOfAssets Claude Haiku 4.5 (`claude-haiku-4-5`) at tier 1
+- Groq and Gemini remain as tier-2 fallback chain
+
+**Memory & greeting**
+- Fixed `buildGreetingPreamble` double-label bug: `"Active goals: Active goals:\n..."` → compact single-line goal titles
+- Added empty-string guard on greeting reply: blank preamble no longer produces `"Currently tracking: . What do you need?"`
+
+---
+
+### v3.10.0 — 2026-04-09
+
+See [releases page](https://github.com/taracodlabs/aiden-releases/releases) for older changelogs.
 
 ---
 
