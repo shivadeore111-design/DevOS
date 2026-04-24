@@ -46,10 +46,10 @@ offline via Ollama.
 
 | Platform | GUI app | API + CLI | Skills available |
 |---|---|---|---|
-| **Windows 10/11** | ✅ signed installer | ✅ | All 56 (including Windows-only skills) |
-| **Linux** | — | ✅ headless | ~47 (Windows-only skills auto-skipped) |
-| **WSL 2** | — | ✅ headless | ~47 (Windows-only skills auto-skipped) |
-| **macOS** | — | ✅ headless | ~47 (Windows-only skills auto-skipped) |
+| **Windows 10/11** | ✅ signed installer | ✅ | All 70+ (including Windows-only skills) |
+| **Linux** | — | ✅ headless | ~61 (Windows-only skills auto-skipped) |
+| **WSL 2** | — | ✅ headless | ~61 (Windows-only skills auto-skipped) |
+| **macOS** | — | ✅ headless | ~61 (Windows-only skills auto-skipped) |
 
 Windows-only skills (clipboard history, Defender, OneNote, Outlook COM, registry, etc.) are tagged `platform: windows` and are silently skipped on other platforms at load time.
 
@@ -91,13 +91,13 @@ Set `AIDEN_HEADLESS=true` to suppress the Electron GUI when running the packaged
 
 ![TUI](docs/images/tui.png)
 
-Full command palette, 56 skills, 80 tools, automatic provider routing (Groq → BOA → Ollama). Runs in any terminal.
+Full command palette, 70+ skills, 80+ tools, automatic provider routing (Groq → BOA → Ollama). Runs in any terminal.
 
 ### Desktop app
 
 ![Desktop](docs/images/dashboard.png)
 
-Full chat interface with live activity panel. Local-first, connects to Ollama or any of 13 cloud providers via your own API key.
+Full chat interface with live activity panel. Local-first, connects to Ollama or any of 14+ cloud providers via your own API key.
 
 ### Memory graph
 
@@ -113,7 +113,7 @@ Full chat interface with live activity panel. Local-first, connects to Ollama or
 |---|---|
 | **Inference & providers** | Local Ollama (Llama 3, Mistral, Qwen, Gemma, Phi…) with optional cloud fallback to OpenAI, Anthropic, Groq, Cerebras, NVIDIA NIM, OpenRouter, and more — 14+ providers including custom OpenAI-compatible endpoints |
 | **60+ tools** | Web search, file read/write, shell execution, Playwright browser automation, screen capture & OCR, calendar, email (IMAP/SMTP), code execution sandbox, clipboard, system info |
-| **56 skills** | Composable plugins each with a `SKILL.md` prompt, tool implementations, and optional sandbox runner — install per-session or globally |
+| **70+ skills** | Composable plugins each with a `SKILL.md` prompt, tool implementations, and optional sandbox runner — install per-session or globally |
 | **Subagent swarm** | Spawn N parallel agents on any task; vote, merge, or pick the best result automatically |
 | **6-layer memory** | Episodic (in-context), BM25 keyword, vector semantic, procedural (skill), goal tracking, and `LESSONS.md` permanent-failure moat that grows every session |
 | **Voice** | Speech-to-text (Groq → OpenAI → local Whisper.cpp) + text-to-speech (Edge TTS → ElevenLabs → Windows SAPI); full offline voice loop |
@@ -147,7 +147,7 @@ User input (any channel)
          │
          ▼
   ┌─────────────┐
-  │  Provider   │  ← self-healing chain, 13 providers
+  │  Provider   │  ← self-healing chain, 14+ providers
   │  router     │
   └─────────────┘
          │
