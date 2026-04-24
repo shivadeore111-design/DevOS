@@ -1,5 +1,34 @@
 # DevOS Session Log
 
+## Phase travel-routing-fix — Travel Skill Routing
+**Date:** 2026-04-24
+**Commit:** `0a01125`
+
+### What changed
+Five compounding failures prevented google-flights and google-hotels from ever being injected into skill context or having access to `shell_exec` / `agent-browser`. All five fixed:
+
+1. **`isSimpleMessage` missing travel keywords** (`core/skillLoader.ts`) — short queries like "search flights BOM to DXB" returned `isSimple=true`, causing `findRelevant()` to return `[]` immediately. Added `flight`, `flights`, `airfare`, `airline`, `airport`, `booking`, `hotel`, `hotels`, `travel`, `trip`, `itinerary`, `visa`, `pnr` to `toolKeywords`.
+
+2. **`detectToolCategories` never emitting 'code' for travel** (`core/toolRegistry.ts`) — without `'code'` in detected categories, `shell_exec` was absent from `plannerTools` and the LLM could not run `agent-browser` commands. Added travel-domain regex block that triggers `web + browser + code` categories.
+
+3. **`CATEGORY_KEYWORD_MAP` missing 'travel' entry** (`core/skillLoader.ts`) — skill scoring gives +8 bonus when skill category matches detected categories. Without the entry, the bonus never fired. Added `'travel'` → 13-keyword array.
+
+4. **SKILL.md files had no `category:` or `tags:` fields** — google-flights and google-hotels scored only via description word-overlap (~12 pts). Added `category: travel` + domain-appropriate tags to both SKILL.md files. Also enabled google-hotels (`enabled: false` → `true`).
+
+5. **`allowed-tools: Bash(agent-browser:*)` is inert** — added explanatory comment near `allowedTools` parse in `skillLoader.ts` documenting that actual tool access is controlled by `detectToolCategories` in agentLoop.ts, not this field.
+
+### Verification
+- `tmp-verify-routing.mjs` ran all 13 test queries (8 travel + 5 regression): **🟢 ALL CHECKS PASSED**
+- Build: 0 TypeScript errors
+
+### Files changed
+- `core/skillLoader.ts` — fixes 1, 3, 5
+- `core/toolRegistry.ts` — fix 2
+- `skills/installed/google-flights/SKILL.md` — fix 4a
+- `skills/installed/google-hotels/SKILL.md` — fix 4b (+ enabled)
+
+---
+
 ## Phase 12d — v3.10.0 Ship
 **Date:** 2026-04-24
 **Commits:** `50266af` (memoryCitations fix + api.json path) → `e0891e5` (landing bump)
