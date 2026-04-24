@@ -1391,6 +1391,26 @@ export function createApiServer(): Express {
         return
       }
 
+      // ── SSE fast-path: skip planner for knowledge-only / conversational msgs ──
+      // Mirrors the JSON-mode matchFastPath check. Saves 8-30s planner LLM call
+      // for questions that don't need tools (definitions, explanations, code gen).
+      if (mode !== 'plan' && matchFastPath(resolvedMessage)) {
+        send({ thinking: { stage: 'responding', message: 'Responding...' } })
+        const fpTokens: string[] = []
+        await streamChat(resolvedMessage, history, userName, provider, activeModel, apiName, (data: object) => {
+          const d = data as any
+          if (d.done === true) return
+          if (d.token !== undefined) fpTokens.push(d.token)
+          send(d)
+        }, sessionId)
+        const fpReply = fpTokens.join('').trim()
+        incrementUsage(apiName)
+        conversationMemory.addAssistantMessage(fpReply)
+        send({ done: true, provider: apiName })
+        res.end()
+        return
+      }
+
       // ── MULTI-QUESTION DETECTION (auto mode only) ────────────────────────────
       const mqQuestions = (mode !== 'plan' && shouldSplit(resolvedMessage))
         ? splitQuestions(resolvedMessage)
@@ -6036,41 +6056,11 @@ IDENTITY — you are NOT a static pre-trained model. You have active living syst
 When asked about capabilities or learning, be accurate. NEVER say you are just a pre-trained model that cannot learn.
 ${cognitionHint}${firstMessageContext}${memoryContext}${greetingPreamble}${sessionContext}${memoryIndex}${standingOrders}`
 
-  // ── AUDIT 1: System Prompt debug ─────────────────────────────
-  console.log('[DEBUG] === FULL SYSTEM PROMPT ===')
-  console.log('[DEBUG] Length:', chatPrompt.length, 'chars, ~', Math.round(chatPrompt.length / 4), 'tokens')
-  console.log('[DEBUG] Contains SOUL:', chatPrompt.includes('SOUL') || chatPrompt.includes('Aiden'))
-  console.log('[DEBUG] Contains USER:', chatPrompt.includes('Name:'))
-  console.log('[DEBUG] Contains STANDING_ORDERS:', chatPrompt.includes('STANDING ORDERS'))
-  console.log('[DEBUG] Contains tools:', chatPrompt.includes('file_read') || chatPrompt.includes('web_search'))
-  console.log('[DEBUG] Has userProfile:', userProfile.length > 0, `(${userProfile.length} chars)`)
-  console.log('[DEBUG] Has standingOrders:', standingOrders.length > 0, `(${standingOrders.length} chars)`)
-  console.log('[DEBUG] Has memoryContext:', memoryContext.length > 0, `(${memoryContext.length} chars)`)
-  console.log('[DEBUG] First 500 chars:', chatPrompt.slice(0, 500))
-  console.log('[DEBUG] Last 500 chars:', chatPrompt.slice(-500))
-  console.log('[DEBUG] === END SYSTEM PROMPT ===')
-
   const msgs = [
     { role: 'system', content: chatPrompt },
     ...history.slice(-8),
     { role: 'user', content: message },
   ]
-
-  // ── Sprint 5: Provider racing ─ fire top-2, stream winner's tokens ───────────
-  try {
-    const raceResult = await raceProviders(msgs)
-    if (raceResult) {
-      // Emit meta event BEFORE first token so the CLI status bar updates immediately
-      send({ event: 'meta', provider: raceResult.apiName, model: raceResult.model })
-      // Simulate streaming: send each word as a token for natural feel
-      const words = raceResult.text.split(' ')
-      for (let wi = 0; wi < words.length; wi++) {
-        const token = (wi === 0 ? '' : ' ') + words[wi]
-        send({ token, done: false, provider: raceResult.apiName })
-      }
-      return
-    }
-  } catch { /* racing failed — fall through to sequential */ }
 
   // Sprint 6: use responder tier for streamChat provider selection
   const cfg              = loadConfig()
