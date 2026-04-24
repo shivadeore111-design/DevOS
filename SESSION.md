@@ -1,5 +1,41 @@
 # DevOS Session Log
 
+## Phase fix-5-cascading-bugs — Fix 5 Cascading Bugs
+**Date:** 2026-04-24
+**Commit:** `(see below)`
+
+### Root causes fixed
+
+1. **Bug 1 — Playwright bundled by esbuild → `chromium.launchPersistentContext` undefined** (`package.json`)
+   `build:api` and `build:cli` esbuild commands lacked `--external:playwright --external:playwright-core`. esbuild was inlining playwright's JS, mangling its exports so `chromium` came back undefined. Fix: add both externals to both build scripts. Bundle shrank 49.3MB → 44.7MB as a side-effect.
+
+2. **Bug 2 — Provider rate-limit cascade → 45-125s per query** (`core/agentLoop.ts`)
+   `maxPlannerAttempts = Math.max(3, Math.min(chain.length, 12))` — with 12+ providers enabled, this looped through all 12 providers at ~5s + 1s wait each = 72s. `getModelForTask('planner')` already handles rotation; we only need 3 attempts. Fix: `maxPlannerAttempts = Math.min(3, _availableCount)` with zero-available short-circuit (skips cloud loop entirely when all rate-limited).
+
+3. **Bug 3 — PREVIOUS_OUTPUT passed as literal string for step 1** (`core/agentLoop.ts`)
+   LLM occasionally emitted `PREVIOUS_OUTPUT` for step 1 inputs (e.g. `web_search(query="PREVIOUS_OUTPUT")`). Runtime replaced it with empty string, tools failed with "No query provided". Two-layer fix:
+   - Planner prompt rule 7 now explicitly says "Step 1 CANNOT use PREVIOUS_OUTPUT — provide a literal concrete input value"
+   - Validation at line ~1445 now emits a specific error for step-1 PREVIOUS_OUTPUT
+   - `resolvePreviousOutput()` now logs a warning when step-1 placeholder is detected
+
+4. **Bug 4 — boa-2 configured with `gpt-4o-mini` (model BoA doesn't serve → 404)** (`config/devos.config.json`)
+   BoA endpoint (`bayofassets.com`) serves `gemini-3-flash`. boa-2 had `model: "gpt-4o-mini"` and was contributing a 404 failure on every planner rotation. Fixed: `enabled: false`. boa-1 (`gemini-3-flash`) remains active.
+
+### Note on BoA trial quota
+BoA trial credits are nearly exhausted (usageCount: 37 on boa-1). When trial expires, boa-1 will start 401-ing. At that point, disable `boa-1` as well (flip `enabled: false` in `config/devos.config.json`).
+
+### Verification
+- `hi`: **57ms** (was 125,000ms when cascading — 2,000× faster)
+- Browser task (open example.com): **27,993ms** ✅ — succeeded, returned page content
+- Build: 0 TypeScript errors; bundle 44.7MB (was 49.3MB, playwright now external)
+
+### Files changed
+- `package.json` — add `--external:playwright --external:playwright-core` to both build scripts
+- `core/agentLoop.ts` — cap maxPlannerAttempts at 3; step-1 PREVIOUS_OUTPUT warning; planner prompt clarification
+- `config/devos.config.json` — disable boa-2
+
+---
+
 ## Phase streaming-speed — Enable Real Streaming in Aiden CLI
 **Date:** 2026-04-24
 **Commit:** `(see below)`

@@ -863,6 +863,7 @@ CRITICAL RULES:
 5. Processing/analysis happens in your response — NOT as a tool step
 6. NEVER use placeholders like "{{result}}" or "{output}" — steps must have real concrete inputs
 7. For multi-step tasks: if step N+1 needs step N's output, use the literal string "PREVIOUS_OUTPUT"
+   CRITICAL: Step 1 CANNOT use "PREVIOUS_OUTPUT" — there is no previous step. Step 1 must always have a literal concrete input value (e.g. a real URL, search query, or file path).
 8. Output ONLY valid JSON — no text before or after
 
 WHEN TO USE TOOLS vs NOT:
@@ -1072,11 +1073,13 @@ Output ONLY valid JSON, nothing else:`
   let raw         = ''
   let parsed: any = null
 
-  // Use enough attempts to walk the FULL provider chain:
-  // groq-1..4 → gemini-1..4 → openrouter-* → boa → ollama
-  // Without this, the loop caps at 3 and never reaches Gemini or OpenRouter.
-  const _plannerChain     = loadConfig().providers.apis.filter(a => a.enabled && a.provider !== 'ollama')
-  const maxPlannerAttempts = Math.max(3, Math.min(_plannerChain.length, 12))
+  // Cap at 3 cloud attempts — getModelForTask() handles provider rotation automatically
+  // (marks failures → skips rate-limited → picks next tier). Walking all 12+ providers
+  // serially at 5s each caused 60-120s cascade when most were rate-limited.
+  // If all 3 fail, the Ollama fallback below catches it.
+  const _plannerChain      = loadConfig().providers.apis.filter(a => a.enabled && a.provider !== 'ollama')
+  const _availableCount    = _plannerChain.filter(a => !a.rateLimited).length
+  const maxPlannerAttempts = _availableCount === 0 ? 0 : Math.min(3, _availableCount)
 
   for (let attempt = 0; attempt < maxPlannerAttempts; attempt++) {
     raw = '' // reset each attempt so stale values don't bleed through
@@ -1440,7 +1443,11 @@ export function validatePlan(plan: AgentPlan): ValidationResult {
     // Reject residual placeholder patterns that were not caught by planner
     const inputStr = JSON.stringify(input)
     if (/\{\{|\{result|\{output|\bPREVIOUS_OUTPUT\b/.test(inputStr) && step.tool !== 'file_write') {
-      warnings.push(`Step ${step.step}: input contains placeholder — may fail at runtime`)
+      if (step.step === 1) {
+        warnings.push(`Step 1: PREVIOUS_OUTPUT is invalid for the first step (no prior output). Provide a literal input.`)
+      } else {
+        warnings.push(`Step ${step.step}: input contains placeholder — may fail at runtime`)
+      }
     }
   }
 
@@ -2278,6 +2285,16 @@ function resolvePreviousOutput(
 ): Record<string, any> {
   const resolved: Record<string, any> = {}
   const lastOutput = stepOutputs[currentStep - 1] || ''
+
+  // Step 1 with PREVIOUS_OUTPUT = planner bug. Log a warning and substitute with
+  // empty string so the tool fails with a clear "no input" error rather than
+  // passing the literal placeholder text to the API.
+  if (currentStep === 1) {
+    const inputStr = JSON.stringify(input)
+    if (inputStr.includes('PREVIOUS_OUTPUT')) {
+      console.warn('[Planner] Step 1 used PREVIOUS_OUTPUT — no previous output exists. Substituting empty string.')
+    }
+  }
 
   for (const [key, value] of Object.entries(input)) {
     if (typeof value === 'string') {
