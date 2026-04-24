@@ -30,8 +30,25 @@
 - AppImage: `AppRun` + `devos-ai` binary extracted ✅
 - deb: Version 3.10.0, Maintainer Taracod Labs ✅
 
-### Pending
-- Cloudflare landing deploy blocked — wrangler OAuth expired 2026-04-23. Run `npx wrangler login` then `npx wrangler deploy --config wrangler-landing.toml` from `cloudflare-worker/`.
+### Landing deploy ✅
+- Cloudflare version `28800dc9-4330-4c4a-9d93-58bdc6f2c14b` live at `aiden.taracod.com`
+- Commit: `02caa85` — `feat(landing): refresh content for v3.10.0`
+
+---
+
+## Phase landing-content-refresh — v3.10.0 Landing Page
+**Date:** 2026-04-24
+**Commit:** `02caa85`
+**CF Version:** `28800dc9-4330-4c4a-9d93-58bdc6f2c14b`
+
+### Changes
+- Stats: `56 skills` → `1,104+`, `60+ tools` → `80+`, `13 providers` → `14+`
+- Provider pills: added xAI, DeepSeek, Cerebras (14+ total)
+- Memory That Lasts card: 3-layer `/memsearch` / `/memtimeline` / `/memget`, 90% fewer tokens
+- New feature card: **Skill Library** — agentskills.io, `/skills import`, 91% boot token reduction
+- New feature card: **Context Budget** — `/pulse`, token budget, provider health
+- Title + meta description: added Linux
+- Live verification: 12/12 content checks passed
 
 ---
 
