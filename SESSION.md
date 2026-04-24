@@ -1,5 +1,39 @@
 # DevOS Session Log
 
+## Phase add-clawpack-provider — Add Neurometric ClawPack as Primary Provider
+**Date:** 2026-04-24
+
+### What was done
+Added Neurometric ClawPack (https://api.neurometric.ai/v1/chat/completions) as a new OpenAI-compatible custom provider in `config/devos.config.json`. No code changes — config-only.
+
+### Config changes
+- Added `clawpack` entry to `customProviders` array with `tier: 1` (preferred over bayofassets `tier: 2`)
+- Set `primaryProvider: "clawpack"` to pin it to front of routing chain
+- Updated `model.active: "clawpack"` and `model.activeModel: "neurometric/clawpack"`
+- `baseUrl` set to full endpoint: `https://api.neurometric.ai/v1/chat/completions` (required — `custom.ts` POSTs directly to baseUrl, not base + /chat/completions)
+
+### Provider details
+- Display name: ClawPack
+- Base URL: https://api.neurometric.ai/v1/chat/completions
+- Model: neurometric/clawpack (underlying: nova-2-lite per response headers)
+- Free tier: 100M tokens/month
+- API key: stored in gitignored `config/devos.config.json` — NOT committed
+
+### Verification
+- `/api/providers/custom/clawpack/test`: `valid: true, status: 200` in 2552ms ✅
+- Direct chat "2+2": responded "4" in 77ms ✅
+- Key NOT in any git-tracked file: confirmed ✅
+- `config/devos.config.json` is gitignored: confirmed ✅
+
+### Notes
+- `raceProviders()` and `fetchProviderResponse()` in server.ts do NOT support custom providers (no dynamic baseUrl lookup, hardcoded COMPAT_ENDPOINTS map). ClawPack is used via `getNextAvailableAPI()` → `buildProvider()` → `createCustomProvider()` in the agentLoop path. Fast-path responses may fall through to openrouter/groq.
+- If ClawPack rate-limits or exhausts tokens, set `"enabled": false` for the clawpack entry in `config/devos.config.json`.
+
+### Files changed
+- `config/devos.config.json` — added clawpack to customProviders, set primaryProvider (gitignored, not committed)
+
+---
+
 ## Phase fix-5-cascading-bugs — Fix 5 Cascading Bugs
 **Date:** 2026-04-24
 **Commit:** `(see below)`
