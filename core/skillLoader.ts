@@ -115,9 +115,10 @@ function validateSkillStructure(content: string): { valid: boolean; reason?: str
     return { valid: false, reason: 'More code than documentation — suspicious skill' }
   }
 
-  // Must be under 10 KB (skills should be concise)
-  if (content.length > 10240) {
-    return { valid: false, reason: 'Skill too large (>10KB) — possible payload' }
+  // Must be under 50 KB (agentskills.io skills legitimately run 10-30KB; injection
+  // patterns are caught above; blanket 10KB was too tight for real-world skills)
+  if (content.length > 51200) {
+    return { valid: false, reason: 'Skill too large (>50KB) — possible payload' }
   }
 
   return { valid: true }
@@ -386,7 +387,7 @@ export class SkillLoader {
 
       const frontmatter = match[1]
       const body        = match[2].trim()
-      const preview     = body.slice(0, 500)
+      const preview     = body.slice(0, 1500)
 
       const get = (key: string): string => {
         const m = frontmatter.match(new RegExp(`^${key}:\\s*(.+)$`, 'm'))
@@ -513,6 +514,11 @@ export class SkillLoader {
         if (matchedCategories.has(tag)) score += 4
       })
 
+      // Installed skills (origin: 'aiden') get a priority bonus over auto-generated
+      // learned/approved workspace skills. This prevents self-taught skills from
+      // outcompeting curated installed skills on the same domain.
+      if (skill.origin === 'aiden') score += 15
+
       return { skill, score }
     })
 
@@ -530,7 +536,7 @@ export class SkillLoader {
       `[SKILL: ${s.name}]\nDescription: ${s.description}\n${s.preview}`,
     ).join('\n\n---\n\n')
 
-    return `\n\nRELEVANT SKILLS FOR THIS TASK:\n${formatted}\n\nUse these skill instructions to guide your planning.\n`
+    return `\n\nRELEVANT SKILLS FOR THIS TASK — follow their workflows:\n${formatted}\n\nMANDATORY: Use the tool workflow defined in the skill above. For browser-based skills (agent-browser), use shell_exec — do NOT substitute web_search.\n`
   }
 
   // Invalidate cache — call after new skills are added at runtime

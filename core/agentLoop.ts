@@ -796,7 +796,6 @@ export async function planWithLLM(
   console.log(
     `[Tools] ${plannerTools.length}/${allTools.length} tools loaded for categories: ${categories.join(', ')}`
   )
-
   // Load any relevant skills to guide planning
   const relevantSkills = skillLoader.findRelevant(message)
   const skillContext   = skillLoader.formatForPrompt(relevantSkills)
