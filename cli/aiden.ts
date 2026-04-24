@@ -240,7 +240,7 @@ async function apiPost(p: string, body: any = {}): Promise<any> {
       headers: { 'Content-Type': 'application/json' },
       body   : JSON.stringify(body),
     })
-    return res.ok ? (await res.json().catch(() => null)) : null
+    return await res.json().catch(() => null)
   } catch { return null }
 }
 
@@ -991,7 +991,7 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
   if (command === '/fork') {
     const name = parts.slice(1).join(' ') || `fork-${Date.now()}`
     const res  = await apiPost('/api/sessions/fork', { name, sessionId: SESSION_ID })
-    if (res) {
+    if (res && !res.error) {
       console.log(`  ${T.success}✓ Forked as "${name}"${T.reset}\n`)
     } else {
       const fname = `aiden-fork-${name.replace(/\s+/g, '-')}-${Date.now()}.json`
@@ -1206,7 +1206,7 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
   if (command === '/model' && parts.length > 1) {
     const modelName = parts.slice(1).join(' ')
     const res = await apiPost('/api/models/active', { model: modelName })
-    if (res) {
+    if (res && !res.error) {
       state.lastModel = modelName
       console.log(`  ${T.success}✓ Model: ${modelName}${T.reset}\n`)
     } else {
@@ -1547,8 +1547,9 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
     if (sub === 'install') {
       if (!arg) { console.log(`  ${T.dim}Usage: /skills install <name>${T.reset}\n`); return true }
       const result = await apiPost('/api/skills/install', { name: arg })
-      if (!result) {
-        console.log(`  ${T.error}Install failed for "${arg}".${T.reset}\n`); return true
+      if (!result || result.error) {
+        const msg = result?.error || 'unknown error'
+        console.log(`  ${T.error}Install failed for "${arg}": ${msg}${T.reset}\n`); return true
       }
       if (result.alreadyInstalled) {
         console.log(`  ${T.dim}${MARKS.DOT} "${arg}" is already installed.${T.reset}\n`); return true
@@ -1572,7 +1573,10 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
     // ── /skills update ──────────────────────────────────────────────────────────
     if (sub === 'update') {
       const result = await apiPost('/api/skills/refresh')
-      if (!result) { console.log(`  ${T.error}Refresh failed.${T.reset}\n`); return true }
+      if (!result || result.error) {
+        const msg = result?.error || 'unknown error'
+        console.log(`  ${T.error}Refresh failed: ${msg}${T.reset}\n`); return true
+      }
       console.log(`  ${fg(COLORS.success)}${MARKS.TRI}${RST} reloaded ${fg(COLORS.orange)}${result.count}${RST} skill(s)\n`)
       return true
     }
@@ -3194,7 +3198,7 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
   if (command === '/compact') {
     console.log(`  ${T.dim}Compressing context…${T.reset}`)
     const res = await apiPost('/api/context/compact', { sessionId: SESSION_ID })
-    if (res) {
+    if (res && !res.error) {
       console.log(`  ${T.success}✓ Context compressed${T.reset}\n`)
     } else if (state.history.length > 10) {
       state.history = state.history.slice(-10)
@@ -3654,7 +3658,7 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       return true
     }
     const res = await apiPost('/api/providers/active', { provider: providerName })
-    if (res) {
+    if (res && !res.error) {
       state.lastProvider = providerName
       console.log(`  ${T.success}✓ Provider: ${providerName}${T.reset}\n`)
     } else {
@@ -3902,8 +3906,9 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
     const res = await apiPost('/api/run', { code, description })
     const ms  = Date.now() - t0
 
-    if (!res) {
-      console.log(`\n  ${T.error}✗ Could not reach server. Is Aiden running?${R}\n`)
+    if (!res || res.error) {
+      const serverMsg = res?.error ? ` (${res.error})` : ''
+      console.log(`\n  ${T.error}✗ Could not reach server. Is Aiden running?${serverMsg}${R}\n`)
       return
     }
 

@@ -340,6 +340,11 @@ export async function importFromLocal(
 export async function importSkill(source: string, opts: ImportOptions = {}): Promise<ImportResult> {
   source = source.trim()
 
+  // Strip explicit github: prefix (e.g. "github:owner/repo")
+  if (source.startsWith('github:')) {
+    source = source.slice(7)
+  }
+
   // GitHub shorthand: "owner/repo" or "owner/repo/subpath"
   if (/^[a-z0-9_.-]+\/[a-z0-9_.-]+(\/.*)?$/i.test(source) && !source.startsWith('http')) {
     const parts    = source.split('/')
