@@ -7,7 +7,7 @@
 ╚═╝  ╚═╝╚═╝╚═════╝ ╚══════╝╚═╝  ╚═══╝
 
 local-first AI operating system
-70+ skills · 80+ tools · 14+ providers · AGPL-3.0
+1500+ skills · 89+ tools · 14+ providers · AGPL-3.0
 Windows · Linux · WSL · macOS (API mode)
 ```
 
@@ -37,7 +37,7 @@ Aiden is a local-first AI operating system. It runs entirely on
 your machine — no cloud account required, no telemetry, no data leaving your
 hardware unless you configure a cloud provider. It ships with a signed Windows
 installer, and runs in headless API mode on Linux, WSL, and macOS. Features:
-70+ composable skills, 80+ autonomous tools, a 6-layer memory architecture,
+1500+ composable skills, 89+ autonomous tools, a 6-layer memory architecture,
 self-healing provider routing, and the ability to control your screen, browse
 the web, run code, send emails, manage files, and hold a full conversation —
 offline via Ollama.
@@ -46,10 +46,10 @@ offline via Ollama.
 
 | Platform | GUI app | API + CLI | Skills available |
 |---|---|---|---|
-| **Windows 10/11** | ✅ signed installer | ✅ | All 70+ (including Windows-only skills) |
-| **Linux** | — | ✅ headless | ~61 (Windows-only skills auto-skipped) |
-| **WSL 2** | — | ✅ headless | ~61 (Windows-only skills auto-skipped) |
-| **macOS** | — | ✅ headless | ~61 (Windows-only skills auto-skipped) |
+| **Windows 10/11** | ✅ signed installer | ✅ | All 1500+ (including Windows-only skills) |
+| **Linux** | — | ✅ headless | ~1491 (Windows-only skills auto-skipped) |
+| **WSL 2** | — | ✅ headless | ~1491 (Windows-only skills auto-skipped) |
+| **macOS** | — | ✅ headless | ~1491 (Windows-only skills auto-skipped) |
 
 Windows-only skills (clipboard history, Defender, OneNote, Outlook COM, registry, etc.) are tagged `platform: windows` and are silently skipped on other platforms at load time.
 
@@ -91,7 +91,7 @@ Set `AIDEN_HEADLESS=true` to suppress the Electron GUI when running the packaged
 
 ![TUI](docs/images/tui.png)
 
-Full command palette, 70+ skills, 80+ tools, automatic provider routing (Groq → BOA → Ollama). Runs in any terminal.
+Full command palette, 1500+ skills, 89+ tools, automatic provider routing (Groq → BOA → Ollama). Runs in any terminal.
 
 ### Desktop app
 
@@ -112,8 +112,8 @@ Full chat interface with live activity panel. Local-first, connects to Ollama or
 | Category | What Aiden does |
 |---|---|
 | **Inference & providers** | Local Ollama (Llama 3, Mistral, Qwen, Gemma, Phi…) with optional cloud fallback to OpenAI, Anthropic, Groq, Cerebras, NVIDIA NIM, OpenRouter, and more — 14+ providers including custom OpenAI-compatible endpoints |
-| **60+ tools** | Web search, file read/write, shell execution, Playwright browser automation, screen capture & OCR, calendar, email (IMAP/SMTP), code execution sandbox, clipboard, system info |
-| **70+ skills** | Composable plugins each with a `SKILL.md` prompt, tool implementations, and optional sandbox runner — install per-session or globally |
+| **89+ tools** | Web search, file read/write, shell execution, Playwright browser automation, screen capture & OCR, calendar, email (IMAP/SMTP), code execution sandbox, clipboard, system info |
+| **1500+ skills** | Composable plugins each with a `SKILL.md` prompt, tool implementations, and optional sandbox runner — install per-session or globally |
 | **Subagent swarm** | Spawn N parallel agents on any task; vote, merge, or pick the best result automatically |
 | **6-layer memory** | Episodic (in-context), BM25 keyword, vector semantic, procedural (skill), goal tracking, and `LESSONS.md` permanent-failure moat that grows every session |
 | **Voice** | Speech-to-text (Groq → OpenAI → local Whisper.cpp) + text-to-speech (Edge TTS → ElevenLabs → Windows SAPI); full offline voice loop |
@@ -134,7 +134,7 @@ User input (any channel)
          │
          ▼
   ┌─────────────┐     ┌──────────────────┐
-  │  Agent loop │────▶│  Tool dispatcher │──▶ 60+ tools
+  │  Agent loop │────▶│  Tool dispatcher │──▶ 89+ tools
   │  agentLoop  │     └──────────────────┘
   └──────┬──────┘
          │
