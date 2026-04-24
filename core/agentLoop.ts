@@ -800,7 +800,6 @@ export async function planWithLLM(
   // Load any relevant skills to guide planning
   const relevantSkills = skillLoader.findRelevant(message)
   const skillContext   = skillLoader.formatForPrompt(relevantSkills)
-
   // Append instinct context to memory (micro-patterns learned from past tool calls)
   const instinctCtx  = instinctSystem?.getRelevantInstincts(message) || ''
   const fullMemCtx   = (memoryContext || '') + (instinctCtx ? '\n\n' + instinctCtx : '')

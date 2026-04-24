@@ -208,6 +208,7 @@ const CATEGORY_KEYWORD_MAP: Record<string, string[]> = {
   'smart-home':    ['hue', 'philips', 'smart home', 'iot', 'lights'],
   'agent-bridge':  ['claude code', 'openai', 'codex', 'opencode'],
   'gaming':        ['minecraft', 'pokemon', 'gameboy', 'emulator'],
+  'travel':        ['flight', 'flights', 'airfare', 'airline', 'airport', 'booking', 'hotel', 'hotels', 'travel', 'trip', 'itinerary', 'visa', 'pnr', 'layover', 'nonstop', 'stopover'],
 }
 
 // ── isSimpleMessage ────────────────────────────────────────────
@@ -227,6 +228,10 @@ export function isSimpleMessage(msg: string): boolean {
     'trade', 'stock', 'nse', 'portfolio', 'backtest',
     'remember', 'forgot', 'last time', 'we discussed',
     'clone', 'voice', 'speak', 'listen', 'transcribe',
+    // Travel domain — must reach skill injection pipeline
+    'flight', 'flights', 'airfare', 'airline', 'airport',
+    'booking', 'hotel', 'hotels', 'travel', 'trip',
+    'itinerary', 'visa', 'pnr',
   ]
   const lower = msg.toLowerCase()
   if (toolKeywords.some(kw => lower.includes(kw))) return false
@@ -452,6 +457,11 @@ export class SkillLoader {
         license,
         compatibility:  compatibility?.length   ? compatibility  : undefined,
         metadata:       Object.keys(metadata).length ? metadata : undefined,
+        // Note: allowedTools is currently informational metadata. Actual tool access is
+        // controlled by the agent's plannerTools list in agentLoop.ts (detectToolCategories).
+        // Skill authors using Claude Code-style 'Bash(cmd:*)' declarations should ensure the
+        // underlying tool (e.g. shell_exec) is reachable via detectToolCategories() for the
+        // skill's intended query patterns.
         allowedTools:   allowedTools?.length    ? allowedTools   : undefined,
         hasScripts:     hasScripts   || undefined,
         hasReferences:  hasReferences || undefined,

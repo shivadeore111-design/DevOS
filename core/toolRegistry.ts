@@ -2435,6 +2435,14 @@ export function detectToolCategories(message: string): ToolCategory[] {
     categories.add('system')
   if (/analyze image|vision|describe image|what.*image|image.*show|photo|screenshot.*describe/i.test(msg))
     categories.add('screen')
+  // Travel queries need web (search), browser (agent-browser navigation), and code (shell_exec
+  // to invoke agent-browser CLI commands). Without 'code', shell_exec is absent from plannerTools
+  // and the LLM cannot execute agent-browser commands even when a travel skill is surfaced.
+  if (/flight|flights|airfare|airline|airport|booking|hotel|hotels|\btravel\b|itinerary|visa|pnr|layover|nonstop|stopover/i.test(msg)) {
+    categories.add('web')
+    categories.add('browser')
+    categories.add('code')
+  }
 
   return Array.from(categories)
 }
