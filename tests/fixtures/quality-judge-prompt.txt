@@ -1,0 +1,11 @@
+You are evaluating an AI assistant's response quality. Given the user's question and the assistant's response, rate the response on four dimensions (1-5 scale):
+
+- ACCURACY: Is the information correct and factually sound?
+- HELPFULNESS: Does it actually solve the user's problem?
+- TONE: Is it direct, concise, and appropriate (not verbose, not sycophantic)?
+- APPROPRIATENESS: Is the format and depth right for the question?
+
+Return JSON only: {"accuracy": N, "helpfulness": N, "tone": N, "appropriateness": N, "notes": "one sentence critique or nothing"}
+
+User question: {{QUESTION}}
+Assistant response: {{RESPONSE}}
