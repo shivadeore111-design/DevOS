@@ -41,7 +41,7 @@ import { discoverLocalModels, getOllamaTimeout } from '../core/modelDiscovery'
 import { detectTimezone } from '../core/userProfile'
 import { executeTool, getActiveBrowserPage } from '../core/toolRegistry'
 import { getScreenSize, takeScreenshot as captureScreen } from '../core/computerControl'
-import { planWithLLM, executePlan, respondWithResults, callLLM, surfaceRelevantMemories, interruptCurrentCall, getBudgetState } from '../core/agentLoop'
+import { planWithLLM, executePlan, respondWithResults, callLLM, surfaceRelevantMemories, interruptCurrentCall, getBudgetState, setStatusEmitter } from '../core/agentLoop'
 import { validateMultiGoalCoverage } from '../core/multiGoalValidator'
 import { TOOL_DESCRIPTIONS } from '../core/toolRegistry'
 import { runReActLoop, ReActStep }                                 from '../core/reactLoop'
@@ -947,7 +947,15 @@ export function createApiServer(): Express {
             console.warn('[FastPath] open_browser failed, trying shell:', e.message)
             try { await executeTool('shell_exec', { command: `start “” “${url}”` }) } catch {}
           }
-          fastReply(`Opening ${fp.label} — searching for **${query}**\n\n→ ${url}`)
+          let replyMsg: string
+          if (fp.label === 'YouTube') {
+            replyMsg = `Opening YouTube search for "${query}" — click the first result to play.\n→ ${url}`
+          } else if (fp.label === 'DuckDuckGo') {
+            replyMsg = `Searching DuckDuckGo for "${query}" — opening results in your browser.\n→ ${url}`
+          } else {
+            replyMsg = `Opening ${fp.label} in your browser.\n→ ${url}`
+          }
+          fastReply(replyMsg)
           return
         }
       }
@@ -1276,6 +1284,10 @@ export function createApiServer(): Express {
       }
     }
 
+    // ── Status emitter — forwards action events to the SSE stream ──
+    const emitStatus = (action: string, detail?: string) => send({ event: 'status', action, detail })
+    setStatusEmitter(emitStatus)
+
     // ── Callback system — additive layer alongside existing SSE sends ──
     const sid = (sessionId as string | undefined) || 'default'
     callbacks.emit('session_start', sid, { message }).catch(() => {})
@@ -1289,6 +1301,7 @@ export function createApiServer(): Express {
     })
     res.on('close', () => {
       interruptCurrentCall()
+      setStatusEmitter(null)
       unsubscribeSSE()
       callbacks.emit('session_end', sid, {}).catch(() => {})
     })
@@ -1511,6 +1524,7 @@ export function createApiServer(): Express {
       const proactiveMemory  = await surfaceRelevantMemories(resolvedMessage)
       const fullMemoryCtx    = memoryContext + proactiveMemory
       console.log(`[Timing] memory: ${Date.now() - _t0}ms`)
+      emitStatus('thinking')
       send({ thinking: { stage: 'planning', message: 'Planning approach...' } })
       callbacks.emit('planning_start', sid, { message: 'Planning approach...' }).catch(() => {})
       const _t1 = Date.now()
@@ -1623,6 +1637,7 @@ export function createApiServer(): Express {
       )
 
       // â”€â”€ STEP 3: RESPOND â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      emitStatus('writing')
       send({ activity: { icon: 'âœï¸', agent: 'Aiden', message: 'Writing response...', style: 'thinking' }, done: false })
 
       send({ thinking: { stage: 'reasoning', message: 'Thinking...' } })

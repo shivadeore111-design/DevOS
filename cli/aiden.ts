@@ -576,6 +576,15 @@ async function streamChat(message: string): Promise<void> {
           let evt: any
           try { evt = JSON.parse(raw) } catch { continue }
 
+          // ── Status action line ──
+          if (evt.event === 'status' && !boxOpen) {
+            if (renderTimer) { clearInterval(renderTimer); renderTimer = null }
+            clearRenderArea()
+            spinMsg = `▲ ${evt.action}${evt.detail ? ` · ${evt.detail}` : ''}`
+            renderActivity()
+            renderTimer = setInterval(renderActivity, 100)
+          }
+
           // ── Thinking phase — update spinner message ──
           if (!boxOpen && (evt.thinking || evt.event === 'thinking_start' || evt.event === 'planning_start' || evt.event === 'memory_read')) {
             const msg = evt.thinking?.message || evt.message || evt.data?.message

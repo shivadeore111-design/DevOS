@@ -62,6 +62,31 @@ export function interruptCurrentCall(): void {
   }
 }
 
+// ── Status emitter — set per-request by server.ts, cleared on close ──
+let _emitStatus: ((action: string, detail?: string) => void) | null = null
+export function setStatusEmitter(fn: ((action: string, detail?: string) => void) | null) { _emitStatus = fn }
+function emitStatus(action: string, detail?: string) { _emitStatus?.(action, detail) }
+
+const TOOL_ACTION: Record<string, string> = {
+  web_search: 'searching', fetch_url: 'searching', deep_research: 'searching', social_research: 'searching',
+  fetch_page: 'reading',   file_read:  'reading',  file_list: 'reading',
+  file_write: 'writing',
+  run_python: 'coding',    run_node:   'coding',   shell_exec: 'coding',
+  run_powershell: 'coding', code_interpreter_python: 'coding', code_interpreter_node: 'coding',
+  open_browser: 'browsing', browser_extract: 'browsing', browser_screenshot: 'browsing',
+  browser_click: 'browsing', browser_type: 'browsing',
+}
+
+function toolStatusDetail(tool: string, input: any): string | undefined {
+  if (!input) return undefined
+  if (input.query)   return String(input.query).slice(0, 60)
+  if (input.url)     return String(input.url).slice(0, 60)
+  if (input.path)    return String(input.path).slice(0, 60)
+  if (input.command) return String(input.command).slice(0, 60)
+  if (input.code)    return 'script'
+  return undefined
+}
+
 // ── Iteration budget ───────────────────────────────────────────
 interface IterationBudget {
   maxIterations:    number
@@ -554,31 +579,10 @@ function inferPlanFromKeywords(message: string): any | null {
     }
   }
 
-  // run_python — matches "Run Python: print(...)", "run python code ...", etc.
-  const pyMatch = message.match(/run\s+python\s*[:：]?\s*(.+)/i) ||
-                  message.match(/python\s+script\s+(?:to\s+)?(.+)/i) ||
-                  message.match(/execute\s+python\s*[:：]?\s*(.+)/i)
-  if (pyMatch) {
-    // Use the captured code portion directly as the script
-    const script = pyMatch[1].trim()
-    return {
-      goal: message, requires_execution: true,
-      plan: [{ step: 1, tool: 'run_python', input: { script }, description: 'Run Python' }],
-      phases: [],
-    }
-  }
-
-  // run_node — matches "Run Node.js: console.log(...)", "Run JavaScript: ...", etc.
-  const nodeMatch = message.match(/run\s+(?:node(?:\.js)?|javascript|js)\s*[:：]?\s*(.+)/i) ||
-                    message.match(/execute\s+(?:node(?:\.js)?|javascript|js)\s*[:：]?\s*(.+)/i)
-  if (nodeMatch) {
-    const code = nodeMatch[1].trim()
-    return {
-      goal: message, requires_execution: true,
-      plan: [{ step: 1, tool: 'run_node', input: { code }, description: 'Run Node.js' }],
-      phases: [],
-    }
-  }
+  // run_python / run_node fast-path intentionally removed.
+  // These tools require actual executable source code in their input, which we cannot
+  // fabricate from a natural-language description. If all LLMs are down we cannot
+  // generate code, so we fall through to null and let the caller handle gracefully.
 
   return null
 }
@@ -950,6 +954,15 @@ OUTPUT FORMAT (strict JSON only):
     { "step": 1, "tool": "web_search", "input": { "query": "weather London today" }, "description": "Get London weather" }
   ]
 }
+
+CODE TOOL RULES — the "code" / "script" field MUST contain executable source, NEVER a description:
+- run_python: { "tool": "run_python", "input": { "code": "def reverse(s):\n    return s[::-1]\n\nprint(reverse('hello'))" } }
+  NOT: { "input": { "code": "a python script that reverses a string" } }
+- run_node:   { "tool": "run_node",   "input": { "code": "console.log([1,2,3].map(x => x*2))" } }
+  NOT: { "input": { "code": "node script to double array elements" } }
+- shell_exec: { "tool": "shell_exec", "input": { "command": "echo hello" } }
+  NOT: { "input": { "command": "a command that prints hello" } }
+If the user says "write a python script that prints fibonacci numbers up to 10", the plan step must contain the actual working Python source code, not the user's English description.
 
 If requires_execution is false:
 { "goal": "...", "requires_execution": false, "reasoning": "...", "plan": [], "direct_response": "your answer here" }
@@ -1918,6 +1931,8 @@ async function executeSingleStep(
   // Mark step started in persistent state
   taskStateManager.startStep(state, step.step, step.tool, resolvedInput)
 
+  // Emit status before tool execution
+  emitStatus(TOOL_ACTION[step.tool] ?? 'tooling', toolStatusDetail(step.tool, resolvedInput))
   // Execute the tool (step-level retry + per-tool timeout)
   let toolResult = await executeToolWithRetry(step.tool, resolvedInput)
 
