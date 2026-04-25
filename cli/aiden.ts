@@ -4997,9 +4997,7 @@ async function main(): Promise<void> {
   rl.on('SIGINT', async () => {
     if (state.streaming) {
       state.abortCtrl?.abort()
-      await apiPost('/api/stop')
-      process.stdout.write(`\n  ${T.warning}Interrupted.${T.reset}\n\n`)
-      rl.prompt()
+      void apiPost('/api/stop')
       return
     }
     const now = Date.now()

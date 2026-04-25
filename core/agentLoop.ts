@@ -590,45 +590,49 @@ async function racePlannerAPIs(
   promptText: string,
   topN = 2,
 ): Promise<string | null> {
-  const cfg  = loadConfig()
-  const apis = cfg.providers.apis
-    .filter(a => {
-      if (!a.enabled || a.rateLimited) return false
-      const k = a.key.startsWith('env:') ? (process.env[a.key.replace('env:', '')] || '') : a.key
-      // Only race providers that use the OpenAI-compat format.
-      // Gemini and Cloudflare use different APIs — they'll be tried via callLLM in the main loop.
-      return k.length > 0 && OPENAI_COMPAT_ENDPOINTS[a.provider] !== undefined
-    })
-    .slice(0, topN)
+  const cfg = loadConfig()
 
-  if (apis.length < 2) return null
+  // Build unified candidate list: custom providers (tier 1) + OpenAI-compat apis
+  type RaceEntry = { provider: string; model: string; key: string; url: string; tier: number }
+  const candidates: RaceEntry[] = []
 
-  const controllers = apis.map(() => new AbortController())
+  for (const cp of (cfg.customProviders ?? [])) {
+    if (!cp.enabled || !cp.baseUrl) continue
+    candidates.push({ provider: 'custom', model: cp.model, key: cp.apiKey, url: cp.baseUrl, tier: cp.tier ?? 99 })
+  }
+  for (const a of cfg.providers.apis) {
+    if (!a.enabled || a.rateLimited) continue
+    const k = a.key.startsWith('env:') ? (process.env[a.key.replace('env:', '')] || '') : a.key
+    if (!k || !OPENAI_COMPAT_ENDPOINTS[a.provider]) continue
+    candidates.push({ provider: a.provider, model: a.model, key: k, url: OPENAI_COMPAT_ENDPOINTS[a.provider], tier: (a as any).tier ?? 50 })
+  }
 
-  const callOne = async (api: typeof apis[0], ctrl: AbortController): Promise<string> => {
-    const key = api.key.startsWith('env:')
-      ? (process.env[api.key.replace('env:', '')] || '')
-      : api.key
+  const pool = candidates.sort((a, b) => a.tier - b.tier).slice(0, topN)
+  if (pool.length < 1) return null
+
+  const controllers = pool.map(() => new AbortController())
+
+  const callOne = async (entry: RaceEntry, ctrl: AbortController): Promise<string> => {
     const messages = [{ role: 'user', content: promptText }]
-    // Use callLLM logic inline with abort support
-    const url     = OPENAI_COMPAT_ENDPOINTS[api.provider] || OPENAI_COMPAT_ENDPOINTS.groq
-    const headers = buildHeaders(api.provider, key)
-    const r = await fetch(url, {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${entry.key}` }
+    if (entry.provider !== 'custom') {
+      Object.assign(headers, buildHeaders(entry.provider, entry.key))
+    }
+    const r = await fetch(entry.url, {
       method:  'POST',
       headers,
-      body:    JSON.stringify({ model: api.model, messages, stream: false, max_tokens: 2000 }),
-      signal:  ctrl.signal,
+      body:    JSON.stringify({ model: entry.model, messages, stream: false, max_tokens: 2000 }),
+      signal:  AbortSignal.any([AbortSignal.timeout(45000), ctrl.signal]),
     })
-    if (!r.ok) throw new Error(`${api.provider} ${r.status}`)
+    if (!r.ok) throw new Error(`${entry.provider} ${r.status}`)
     const d = await r.json() as any
     const text = d?.choices?.[0]?.message?.content || ''
-    // Only return if it looks like valid JSON
     if (!text.trim() || !text.includes('{')) throw new Error('no JSON')
     return text
   }
 
-  const promises = apis.map((api, i) =>
-    callOne(api, controllers[i]).then(text => {
+  const promises = pool.map((entry, i) =>
+    callOne(entry, controllers[i]).then(text => {
       controllers.forEach((c, j) => { if (j !== i) { try { c.abort() } catch {} } })
       return text
     })
@@ -1077,8 +1081,15 @@ Output ONLY valid JSON, nothing else:`
   // (marks failures → skips rate-limited → picks next tier). Walking all 12+ providers
   // serially at 5s each caused 60-120s cascade when most were rate-limited.
   // If all 3 fail, the Ollama fallback below catches it.
-  const _plannerChain      = loadConfig().providers.apis.filter(a => a.enabled && a.provider !== 'ollama')
-  const _availableCount    = _plannerChain.filter(a => !a.rateLimited).length
+  const _cfg           = loadConfig()
+  const _customAsApi   = (_cfg.customProviders ?? [])
+    .filter((cp: any) => cp.enabled)
+    .map((cp: any) => ({ ...cp, provider: 'custom', key: cp.apiKey, rateLimited: false, tier: cp.tier ?? 99 }))
+  const _plannerChain  = [
+    ..._cfg.providers.apis.filter((a: any) => a.enabled && a.provider !== 'ollama'),
+    ..._customAsApi,
+  ].sort((a: any, b: any) => (a.tier ?? 99) - (b.tier ?? 99))
+  const _availableCount    = _plannerChain.filter((a: any) => !a.rateLimited).length
   const maxPlannerAttempts = _availableCount === 0 ? 0 : Math.min(3, _availableCount)
 
   for (let attempt = 0; attempt < maxPlannerAttempts; attempt++) {
@@ -1694,6 +1705,7 @@ const NO_RETRY_TOOLS = new Set([
   'shell_exec', 'run_python', 'run_node', 'notify',
   'mouse_click', 'keyboard_type', 'keyboard_press',
   'app_launch', 'app_close',
+  'open_browser', 'browser_extract', 'browser_screenshot', 'browser_click', 'browser_type',
 ])
 
 async function executeToolWithRetry(tool: string, input: any, maxRetries = 2): Promise<any> {
@@ -2711,7 +2723,7 @@ export async function callLLM(
           stream:     false,
           max_tokens: 2000,
         }),
-        signal: AbortSignal.any([AbortSignal.timeout(12000), _ctrl.signal]),
+        signal: AbortSignal.any([AbortSignal.timeout(45000), _ctrl.signal]),
       })
       if (r.status === 429) {
         try { markRateLimited(providerName) } catch {}

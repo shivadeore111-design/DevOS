@@ -753,7 +753,7 @@ export function createApiServer(): Express {
     }
 
     if (identityPatterns.some(p => p.test(message))) {
-      fastReply('I\'m Aiden \u2014 a personal AI OS built by Shiva Deore at Taracod. I run locally on your Windows machine using Ollama. Not ChatGPT, not Claude. Just Aiden.'); return
+      fastReply('I\'m Aiden \u2014 a personal AI OS built by Shiva Deore at Taracod. I run locally on your Windows machine, with cloud inference for reasoning. Just Aiden.'); return
     }
 
     // ── Capabilities / tool count fast-path ── overrides LLM's stale “23” knowledge ──
@@ -920,12 +920,12 @@ export function createApiServer(): Express {
       { regex: /play\s+(.+?)\s+on\s+spotify/i,                                                            url: q => `https://open.spotify.com/search/${encodeURIComponent(q)}`, label: 'Spotify' },
       { regex: /(?:search|find)\s+(?:for\s+)?(.+?)\s+on\s+spotify/i,                                     url: q => `https://open.spotify.com/search/${encodeURIComponent(q)}`, label: 'Spotify' },
       { regex: /spotify\s+(?:search\s+(?:for\s+)?|play\s+)?(.+)/i,                                       url: q => `https://open.spotify.com/search/${encodeURIComponent(q)}`, label: 'Spotify' },
-      // ── Google — specific “on google” patterns first, generic last ──
-      { regex: /open\s+google\s+(?:and\s+)?(?:search|look\s+up)\s+(?:for\s+)?(.+)/i,                     url: q => `https://www.google.com/search?q=${encodeURIComponent(q)}`, label: 'Google' },
-      { regex: /(?:search|look\s+up)\s+(?:for\s+)?(.+?)\s+on\s+google/i,                                 url: q => `https://www.google.com/search?q=${encodeURIComponent(q)}`, label: 'Google' },
-      { regex: /(?:search|find)\s+(?:for\s+)?(.+?)\s+online/i,                                           url: q => `https://www.google.com/search?q=${encodeURIComponent(q)}`, label: 'Google' },
-      { regex: /^(?:google\s+|search\s+google\s+(?:for\s+)?)(.+)/i,                                       url: q => `https://www.google.com/search?q=${encodeURIComponent(q)}`, label: 'Google' },
-      { regex: /^search\s+(?:for\s+)?(.+)/i,                                                              url: q => `https://www.google.com/search?q=${encodeURIComponent(q)}`, label: 'Google' },
+      // ── DuckDuckGo — specific “on google” patterns redirect to DDG to avoid captcha ──
+      { regex: /open\s+google\s+(?:and\s+)?(?:search|look\s+up)\s+(?:for\s+)?(.+)/i,                     url: q => `https://duckduckgo.com/?q=${encodeURIComponent(q)}`, label: 'DuckDuckGo' },
+      { regex: /(?:search|look\s+up)\s+(?:for\s+)?(.+?)\s+on\s+google/i,                                 url: q => `https://duckduckgo.com/?q=${encodeURIComponent(q)}`, label: 'DuckDuckGo' },
+      { regex: /(?:search|find)\s+(?:for\s+)?(.+?)\s+online/i,                                           url: q => `https://duckduckgo.com/?q=${encodeURIComponent(q)}`, label: 'DuckDuckGo' },
+      { regex: /^(?:google\s+|search\s+google\s+(?:for\s+)?)(.+)/i,                                       url: q => `https://duckduckgo.com/?q=${encodeURIComponent(q)}`, label: 'DuckDuckGo' },
+      { regex: /^search\s+(?:for\s+)?(.+)/i,                                                              url: q => `https://duckduckgo.com/?q=${encodeURIComponent(q)}`, label: 'DuckDuckGo' },
       // ── Wikipedia ──
       { regex: /(?:open|search|look\s+up)\s+(?:wikipedia\s+(?:for\s+)?)?(.+?)\s+on\s+wikipedia/i,        url: q => `https://en.wikipedia.org/wiki/${encodeURIComponent(q.replace(/ /g,'_'))}`, label: 'Wikipedia' },
       { regex: /wikipedia\s+(.+)/i,                                                                        url: q => `https://en.wikipedia.org/wiki/${encodeURIComponent(q.replace(/ /g,'_'))}`, label: 'Wikipedia' },
@@ -1288,6 +1288,7 @@ export function createApiServer(): Express {
       }
     })
     res.on('close', () => {
+      interruptCurrentCall()
       unsubscribeSSE()
       callbacks.emit('session_end', sid, {}).catch(() => {})
     })
