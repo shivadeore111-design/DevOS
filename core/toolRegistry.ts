@@ -350,7 +350,10 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
     if (!url) return { success: false, output: '', error: 'No URL provided' }
     try {
       const context = await getBrowserContext()
-      activeBrowserPage = await context.newPage()
+      // Reuse existing page if already on about:blank, else open new tab
+      const existingPages = context.pages() as any[]
+      const blankPage     = existingPages.find((pg: any) => pg.url() === 'about:blank')
+      activeBrowserPage   = blankPage ?? await context.newPage()
       await activeBrowserPage.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 })
       return { success: true, output: `Opened browser: ${url}` }
     } catch (e: any) {
@@ -378,8 +381,18 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
     } catch (e: any) { return { success: false, output: '', error: e.message } }
   },
 
+  // ── browser_click — reliable element click with readiness guards ──────────
+  //
+  // Semantic target shortcuts (pass target: 'first_result'):
+  //   YouTube search  → a#video-title  (waits for JS render)
+  //   Google search   → div.g a        (first organic result)
+  //   DuckDuckGo      → article[data-testid="result"] h2 a
+  //
+  // For all other selectors: waits for the element to be visible before clicking.
+  // For link clicks that navigate: uses Promise.all([waitForNavigation, click])
+  // so the tool resolves only after the new page has loaded.
   browser_click: async (p) => {
-    const selector = p.selector || p.text || p.command || ''
+    const rawTarget = p.target || p.selector || p.text || p.command || ''
     try {
       let page = activeBrowserPage
       if (!page) {
@@ -388,8 +401,100 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
         page = pages[pages.length - 1]
       }
       if (!page) return { success: false, output: '', error: 'No browser page open. Use open_browser first.' }
-      await page.click(selector).catch(() => page.click(`text=${selector}`))
-      return { success: true, output: `Clicked: ${selector}` }
+
+      // ── Site-specific first-result dispatcher ──────────────────────────────
+      if (rawTarget === 'first_result') {
+        const currentUrl = page.url() as string
+
+        // Site-specific config: { selectors (tried in order), navPattern }
+        type SiteConfig = { selectors: string[]; navPattern?: RegExp }
+        const SITE_CONFIGS: { pattern: RegExp; cfg: SiteConfig }[] = [
+          {
+            pattern: /youtube\.com\/results/,
+            cfg: {
+              selectors:  ['a#video-title', 'ytd-video-renderer a[href*="/watch"]', 'ytd-rich-item-renderer a#thumbnail'],
+              navPattern: /youtube\.com\/watch/,
+            },
+          },
+          {
+            pattern: /google\.com\/search/,
+            cfg: {
+              selectors:  ['div.g h3 a', 'div#search a[href]:not([href*="google.com/search"])', 'h3.LC20lb'],
+              navPattern: undefined,
+            },
+          },
+          {
+            pattern: /duckduckgo\.com/,
+            cfg: {
+              selectors:  ['article[data-testid="result"] h2 a', 'a.result__a', 'ol.react-results--main li a[data-testid="result-title-a"]'],
+              navPattern: undefined,
+            },
+          },
+          {
+            pattern: /bing\.com\/search/,
+            cfg: {
+              selectors:  ['li.b_algo h2 a', '#b_results .b_algo a'],
+              navPattern: undefined,
+            },
+          },
+        ]
+
+        // Find matching site config
+        const match = SITE_CONFIGS.find(s => s.pattern.test(currentUrl))
+        if (!match) {
+          return { success: false, output: '', error: `first_result not supported for ${currentUrl} — use an explicit CSS selector` }
+        }
+
+        const { selectors, navPattern } = match.cfg
+
+        // Wait for at least one selector to appear, then click the first visible match
+        let locator: any = null
+        for (const sel of selectors) {
+          try {
+            await page.waitForSelector(sel, { state: 'visible', timeout: 8000 })
+            locator = page.locator(sel).first()
+            break
+          } catch { /* try next selector */ }
+        }
+        if (!locator) {
+          return { success: false, output: '', error: `first_result: none of the selectors appeared on ${currentUrl}` }
+        }
+
+        if (navPattern) {
+          // Click + wait for navigation together
+          await Promise.all([
+            page.waitForURL(navPattern, { timeout: 12000 }),
+            locator.click({ timeout: 5000 }),
+          ])
+          const finalUrl = page.url()
+          activeBrowserPage = page
+          return { success: true, output: `Clicked first result → ${finalUrl}` }
+        } else {
+          await locator.click({ timeout: 5000 })
+          await page.waitForLoadState('domcontentloaded', { timeout: 8000 }).catch(() => {})
+          return { success: true, output: `Clicked first result on ${currentUrl}` }
+        }
+      }
+
+      // ── Generic selector click ─────────────────────────────────────────────
+      // Always wait for the element to be visible before clicking.
+      // Try exact selector first, then fall back to Playwright's text= matcher.
+      const tryClick = async (sel: string): Promise<boolean> => {
+        try {
+          await page.waitForSelector(sel, { state: 'visible', timeout: 5000 })
+          await page.locator(sel).first().click({ timeout: 5000 })
+          return true
+        } catch { return false }
+      }
+
+      const clicked = (await tryClick(rawTarget)) || (await tryClick(`text=${rawTarget}`))
+      if (!clicked) {
+        return { success: false, output: '', error: `Element not found or not visible: "${rawTarget}"` }
+      }
+
+      // Give the page a moment to react (navigation or JS update)
+      await page.waitForLoadState('domcontentloaded', { timeout: 5000 }).catch(() => {})
+      return { success: true, output: `Clicked: ${rawTarget}` }
     } catch (e: any) { return { success: false, output: '', error: e.message } }
   },
 
@@ -404,6 +509,8 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
         page = pages[pages.length - 1]
       }
       if (!page) return { success: false, output: '', error: 'No browser page open. Use open_browser first.' }
+      // Wait for the input to be visible before filling
+      await page.waitForSelector(selector, { state: 'visible', timeout: 5000 }).catch(() => {})
       await page.fill(selector, text)
       return { success: true, output: `Typed "${text}" into ${selector}` }
     } catch (e: any) { return { success: false, output: '', error: e.message } }

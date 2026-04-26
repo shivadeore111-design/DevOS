@@ -976,15 +976,21 @@ export function createApiServer(): Express {
 
     const autoClickYouTube = async (url: string): Promise<void> => {
       if (!url.includes('youtube.com/results')) return
-      await new Promise(r => setTimeout(r, 2500))
       try {
         const page = getActiveBrowserPage()
-        if (page) {
-          await page.click('ytd-video-renderer a#thumbnail', { timeout: 3000 })
-          console.log('[Music] Auto-clicked first YouTube result')
-        }
-      } catch {
-        console.log('[Music] Could not auto-click — user can click manually')
+        if (!page) return
+        // Wait for results to render (JS-driven) before clicking
+        await page.waitForSelector('a#video-title, ytd-video-renderer a[href*="/watch"]', {
+          state: 'visible', timeout: 8000,
+        })
+        const locator = page.locator('a#video-title').first()
+        await Promise.all([
+          page.waitForURL(/youtube\.com\/watch/, { timeout: 10000 }),
+          locator.click({ timeout: 5000 }),
+        ])
+        console.log('[Music] Auto-clicked first YouTube result →', page.url())
+      } catch (e: any) {
+        console.log('[Music] Could not auto-click —', e.message)
       }
     }
 

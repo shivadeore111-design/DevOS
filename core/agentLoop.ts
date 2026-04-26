@@ -1041,6 +1041,7 @@ TIER 2 (USE SECOND): file_write, file_read, file_list, shell_exec, run_powershel
 TIER 3 (USE THIRD): open_browser, browser_click, browser_type, browser_extract, browser_screenshot, window_list, window_focus, app_launch, app_close
   → ONLY when task requires interacting with a website UI
   → NEVER use browser when an API tool can do the same job
+  → browser_click CHAINING: after open_browser navigates to a search results page, use browser_click with target: "first_result" — this handles site-specific waiting and navigation automatically. Supported sites: youtube.com, google.com, duckduckgo.com, bing.com. For other selectors always pass selector: "<css selector>", never guess at element text.
 
 TIER 4 (LAST RESORT): mouse_move, mouse_click, keyboard_type, keyboard_press, screenshot, screen_read, vision_loop
   → ONLY when browser fails or for desktop apps with no API
