@@ -81,7 +81,7 @@ import { scanAndRedact, containsSecret } from '../core/secretScanner'
 import { loadBriefingConfig, saveBriefingConfig, deliverBriefing } from '../core/morningBriefing'
 import { unifiedMemoryRecall, buildMemoryInjection } from '../core/memoryRecall'
 import { parseLessons, appendLesson, filterLessons } from '../core/lessonsBrowser'
-import { writeSkillDraft, approveDraft, rejectDraft, setSkillEnabled, listPending } from '../core/skillWriter'
+import { writeSkillDraft, approveDraft, rejectDraft, setSkillEnabled, listPending, writeSkillFromTask } from '../core/skillWriter'
 import { fetchIndex, scoreSkillsForTopic, installSkill as libraryInstallSkill } from '../core/skillLibrary'
 import { costTracker }   from '../core/costTracker'
 import { sessionMemory, getSessionLineage, loadSessionMetadata } from '../core/sessionMemory'
@@ -1712,6 +1712,15 @@ export function createApiServer(): Express {
           sessionMemory.addExchange(_mainSid, resolvedMessage, fullReply, filesCreated)
           memoryExtractor.extractFromSession(_mainSid).catch(() => {})
           refreshIdentity()
+          // GEPA-lite: persist a reusable skill if ≥2 tools ran successfully
+          const taskSucceeded = results.some(r => r.success)
+          writeSkillFromTask({
+            userMessage: resolvedMessage,
+            aiReply:     fullReply,
+            toolsUsed,
+            sessionId:   _mainSid,
+            success:     taskSucceeded,
+          }).catch(() => {})
         }, 100)
 
         memoryLayers.write(`User: ${resolvedMessage}`, ['chat'])

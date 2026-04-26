@@ -208,6 +208,180 @@ export function setSkillEnabled(filePath: string, enabled: boolean): void {
   fs.writeFileSync(filePath, content, 'utf-8')
 }
 
+// ── writeSkillFromTask ────────────────────────────────────────
+// GEPA-lite: after any successful multi-tool exchange, distil what
+// happened into a reusable skill folder in workspace/skills/learned/.
+//
+// Rules:
+//  • Skip if toolsUsed < 2 or success is false
+//  • Skip if a skill with >80% token-overlap already exists
+//  • Writes directly to learned/ (not pending/) — low friction
+//  • Never throws; all errors are swallowed and logged
+
+export interface TaskSkillArgs {
+  userMessage: string
+  aiReply:     string
+  toolsUsed:   string[]
+  sessionId?:  string
+  success:     boolean
+}
+
+export interface TaskSkillResult {
+  skillName: string
+  path:      string
+}
+
+// Simple Dice-coefficient token similarity (BM25-lite, good enough for dedup)
+function tokenSimilarity(a: string, b: string): number {
+  const tok = (s: string) => new Set(
+    s.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(Boolean),
+  )
+  const sa = tok(a)
+  const sb = tok(b)
+  let intersect = 0
+  sa.forEach(t => { if (sb.has(t)) intersect++ })
+  return (2 * intersect) / (sa.size + sb.size + 0.001)
+}
+
+const STOP_WORDS = new Set([
+  'a','an','the','is','are','was','were','be','been','being',
+  'have','has','had','do','does','did','will','would','could',
+  'should','may','might','can','to','for','of','in','on','at',
+  'by','with','and','or','but','not','this','that','it','i',
+  'you','me','my','your','we','our','they','their','what',
+  'how','where','when','why','which','please','just','get',
+  'make','let','go','run','show','tell','find','open',
+])
+
+function skillNameFromMessage(msg: string): string {
+  const words = msg
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length > 2 && !STOP_WORDS.has(w))
+    .slice(0, 5)
+  return (words.join('_') || 'task').slice(0, 48)
+}
+
+function toTitleCase(s: string): string {
+  return s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+}
+
+export async function writeSkillFromTask(args: TaskSkillArgs): Promise<TaskSkillResult | null> {
+  const { userMessage, aiReply, toolsUsed, success } = args
+
+  // Gate: skip trivial or failed exchanges
+  if (!success || toolsUsed.length < 2) return null
+
+  try {
+    const cwd       = process.cwd()
+    const learnedDir = path.join(cwd, 'workspace', 'skills', 'learned')
+    fs.mkdirSync(learnedDir, { recursive: true })
+
+    const skillName = skillNameFromMessage(userMessage)
+
+    // Dedup: skip if a very similar skill already exists (Dice > 0.80)
+    if (fs.existsSync(learnedDir)) {
+      for (const entry of fs.readdirSync(learnedDir, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue
+        const existingName = entry.name.replace(/_/g, ' ')
+        if (tokenSimilarity(skillName.replace(/_/g, ' '), existingName) > 0.80) {
+          // Skill already exists — bump success count instead
+          const metaPath = path.join(learnedDir, entry.name, 'meta.json')
+          if (fs.existsSync(metaPath)) {
+            try {
+              const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'))
+              meta.successCount = (meta.successCount || 1) + 1
+              meta.lastUsed     = Date.now()
+              meta.confidence   = Math.min(0.99, (meta.successCount) / (meta.successCount + (meta.failCount || 0) + 1))
+              fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2) + '\n', 'utf-8')
+            } catch {}
+          }
+          return null
+        }
+      }
+    }
+
+    const skillDir  = path.join(learnedDir, skillName)
+
+    // If exact dir exists, just bump meta
+    if (fs.existsSync(skillDir)) {
+      const metaPath = path.join(skillDir, 'meta.json')
+      if (fs.existsSync(metaPath)) {
+        try {
+          const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'))
+          meta.successCount = (meta.successCount || 1) + 1
+          meta.lastUsed     = Date.now()
+          meta.confidence   = Math.min(0.99, (meta.successCount) / (meta.successCount + (meta.failCount || 0) + 1))
+          fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2) + '\n', 'utf-8')
+        } catch {}
+      }
+      return null
+    }
+
+    fs.mkdirSync(skillDir, { recursive: true })
+
+    const title       = toTitleCase(skillName)
+    const descSnippet = userMessage.slice(0, 100).replace(/\n/g, ' ')
+    const toolList    = toolsUsed.join(', ')
+    const exampleQ    = userMessage.slice(0, 200).replace(/\n/g, ' ')
+    const exampleA    = aiReply.slice(0, 200).replace(/\n/g, ' ')
+
+    // Build numbered steps from tool sequence
+    const stepsBlock = toolsUsed
+      .map((t, i) => `${i + 1}. [${t}] — execute ${t} step`)
+      .join('\n')
+
+    const skillMd = [
+      '---',
+      `name: ${skillName}`,
+      `description: ${descSnippet}`,
+      `version: 1.0.0`,
+      `origin: local`,
+      `confidence: medium`,
+      `trigger_phrase: "${userMessage.slice(0, 80).replace(/"/g, "'")}"`,
+      `tools_used: [${toolList}]`,
+      '---',
+      '',
+      `# ${title}`,
+      '',
+      '## When to use this skill',
+      `Use this when the user asks to ${descSnippet.toLowerCase().slice(0, 80)}.`,
+      '',
+      '## Steps',
+      stepsBlock,
+      '',
+      '## Example',
+      `User: "${exampleQ}"`,
+      `Result: "${exampleA}"`,
+      '',
+    ].join('\n')
+
+    const metaJson = {
+      name:         skillName,
+      taskPattern:  userMessage.slice(0, 200),
+      toolSequence: toolsUsed,
+      successCount: 1,
+      failCount:    0,
+      confidence:   0.5,
+      promoted:     false,
+      createdAt:    Date.now(),
+      lastUsed:     Date.now(),
+      avgDuration:  0,
+    }
+
+    fs.writeFileSync(path.join(skillDir, 'SKILL.md'),  skillMd,                              'utf-8')
+    fs.writeFileSync(path.join(skillDir, 'meta.json'), JSON.stringify(metaJson, null, 2) + '\n', 'utf-8')
+
+    console.log(`[SkillWriter] Wrote skill "${skillName}" → ${skillDir}`)
+    return { skillName, path: skillDir }
+
+  } catch (err: any) {
+    console.warn('[SkillWriter] writeSkillFromTask failed (non-fatal):', err?.message)
+    return null
+  }
+}
+
 // ── listPending ───────────────────────────────────────────────
 // Returns all pending skill IDs with their metadata.
 

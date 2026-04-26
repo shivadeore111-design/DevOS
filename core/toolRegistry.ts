@@ -1800,6 +1800,48 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
     }
   },
 
+  // ── lookup_skill — BM25-match a query against learned skills ─────
+  lookup_skill: async (p) => {
+    const query = (p.query || p.task || '').trim()
+    if (!query) return { success: false, output: '', error: 'No query provided' }
+
+    const cwd        = process.cwd()
+    const learnedDir = path.join(cwd, 'workspace', 'skills', 'learned')
+    if (!fs.existsSync(learnedDir)) return { success: false, output: '', error: 'No learned skills yet' }
+
+    // Token similarity (Dice coefficient)
+    const tok = (s: string) => new Set(
+      s.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(Boolean),
+    )
+    const dice = (a: string, b: string): number => {
+      const sa = tok(a); const sb = tok(b)
+      let n = 0; sa.forEach(t => { if (sb.has(t)) n++ })
+      return (2 * n) / (sa.size + sb.size + 0.001)
+    }
+
+    let best = { score: 0, dir: '', name: '' }
+    for (const entry of fs.readdirSync(learnedDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue
+      const metaPath = path.join(learnedDir, entry.name, 'meta.json')
+      let taskPattern = entry.name
+      try {
+        const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'))
+        taskPattern = meta.taskPattern || entry.name
+      } catch {}
+      const score = Math.max(dice(query, entry.name), dice(query, taskPattern))
+      if (score > best.score) best = { score, dir: path.join(learnedDir, entry.name), name: entry.name }
+    }
+
+    const THRESHOLD = 0.25
+    if (best.score < THRESHOLD) return { success: false, output: '', error: `No matching skill found (best: ${best.name} @ ${best.score.toFixed(2)})` }
+
+    const skillPath = path.join(best.dir, 'SKILL.md')
+    if (!fs.existsSync(skillPath)) return { success: false, output: '', error: `Skill "${best.name}" has no SKILL.md` }
+
+    const content = fs.readFileSync(skillPath, 'utf-8')
+    return { success: true, output: `[Skill: ${best.name} — match score ${best.score.toFixed(2)}]\n\n${content}` }
+  },
+
   // ── ▲ run — execute JavaScript/TypeScript in the Aiden SDK sandbox ──────
   run: async (p) => {
     const code        = p.code || p.script || ''
@@ -2361,6 +2403,7 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   read_email:              'Read recent unread emails from Gmail (requires App Password in Settings → Channels). Parameters: count (number, default 10), folder (string, default INBOX).',
   send_email:              'Send an email via Gmail (requires App Password in Settings → Channels). Parameters: to (string), subject (string), body (string).',
   compact_context:         'Summarize and compress the current conversation context. Saves session to disk and extracts durable memories. Call when context is getting long.',
+  lookup_skill:            'Search learned skills for a matching pattern. Returns the SKILL.md of the best match. Use before planning multi-step tasks to check if Aiden already knows how to do it.',
   get_natural_events:      'Fetch active natural events from NASA EONET API. Returns current earthquakes, wildfires, storms, floods, and other natural events worldwide.',
   voice_speak:             'Speak text aloud using the TTS provider chain (VoxCPM → Edge TTS → ElevenLabs → SAPI). Accepts text, voice, rate, volume, provider overrides.',
   voice_transcribe:        'Transcribe an audio file to text using the STT provider chain (Groq Whisper → OpenAI Whisper → Whisper.cpp). Returns { text, provider, durationMs }.',
@@ -2382,6 +2425,7 @@ const TOOL_TIERS: Record<string, ToolTier> = {
   respond:                 1,
   manage_goals:            1,
   compact_context:         1,
+  lookup_skill:            1,
   web_search:              1,
   fetch_url:               1,
   fetch_page:              1,
