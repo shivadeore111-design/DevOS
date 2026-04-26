@@ -1800,6 +1800,16 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
     }
   },
 
+  // ── lookup_tool_schema — return full description for a named tool ──
+  lookup_tool_schema: async (p) => {
+    const name = (p.toolName || p.name || '').trim()
+    if (!name) return { success: false, output: '', error: 'No toolName provided' }
+    const exists = (TOOLS as any)[name]
+    if (!exists) return { success: false, output: '', error: `Tool "${name}" not found` }
+    const desc = (TOOL_DESCRIPTIONS as Record<string, string>)[name] || '(no description)'
+    return { success: true, output: JSON.stringify({ name, description: desc }, null, 2) }
+  },
+
   // ── lookup_skill — BM25-match a query against learned skills ─────
   lookup_skill: async (p) => {
     const query = (p.query || p.task || '').trim()
@@ -2410,7 +2420,18 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   voice_clone:             'Clone a voice from a reference audio file and synthesize new text. Requires text and referenceAudioPath. Uses VoxCPM when USE_VOXCPM=1.',
   voice_design:            'Design a custom voice from a text description and synthesize text with it. Requires text and voiceDescription. Uses VoxCPM when USE_VOXCPM=1.',
   schedule_reminder:       'Schedule a desktop notification reminder. Params: message (string), delaySeconds or delayMs (number), recurring (\'hourly\'|\'daily\'|\'weekly\', optional). op=\'list\' to see pending reminders, op=\'cancel\' with id to cancel one.',
+  lookup_tool_schema:      'Get the full description for a named tool. Call before using an unfamiliar tool.',
 }
+
+// ── N+28: TOOL_NAMES_ONLY ──────────────────────────────────────
+// One-liner per tool — first sentence of TOOL_DESCRIPTIONS, truncated to 60 chars.
+// Used in the planner prompt to list available tools without bloating token count.
+export const TOOL_NAMES_ONLY: Record<string, string> = Object.fromEntries(
+  Object.entries(TOOL_DESCRIPTIONS).map(([name, desc]) => {
+    const first = desc.split(/[.,(]/)[0].trim()
+    return [name, first.length > 60 ? first.slice(0, 57) + '...' : first]
+  })
+)
 
 // ── Tool tier hierarchy ────────────────────────────────────────
 // Tier 1: APIs, data, search — fastest, most reliable, zero side effects
@@ -2426,6 +2447,7 @@ const TOOL_TIERS: Record<string, ToolTier> = {
   manage_goals:            1,
   compact_context:         1,
   lookup_skill:            1,
+  lookup_tool_schema:      1,
   web_search:              1,
   fetch_url:               1,
   fetch_page:              1,
@@ -2524,6 +2546,8 @@ const TOOL_CATEGORIES: Record<string, ToolCategory[]> = {
   manage_goals:            ['core'],
   compact_context:         ['core'],
   run_agent:               ['core'],
+  lookup_skill:            ['core'],
+  lookup_tool_schema:      ['core'],
   web_search:              ['web', 'data'],
   deep_research:           ['web'],
   fetch_url:               ['web'],

@@ -818,6 +818,7 @@ export async function planWithLLM(
     'respond',
     'clarify', 'todo', 'cronjob', 'vision_analyze',
     'voice_speak', 'voice_transcribe', 'voice_clone', 'voice_design',
+    'lookup_skill', 'lookup_tool_schema',
     ...SLASH_MIRROR_TOOL_NAMES,
   ]
 
@@ -979,19 +980,15 @@ Use run:
 - "What do you think about X" → just answer
 - Any question answerable from training knowledge
 
-TOOL INPUT RULES:
+TOOL INPUT RULES (Tier-0 examples — for all others call lookup_tool_schema first):
 - web_search: { "query": "specific search term" }
-- file_write:  { "path": "C:\\\\Users\\\\shiva\\\\Desktop\\\\filename.txt", "content": "actual content or PREVIOUS_OUTPUT" }
-- deep_research: { "topic": "what to research" }
-- shell_exec: { "command": "actual powershell command" }
-- fetch_page: { "url": "https://exact-url.com" }
-- get_stocks: { "market": "NSE", "type": "gainers" }  — type: gainers | losers | active
-- get_market_data: { "symbol": "RELIANCE" }  — real-time price, change%, volume for any stock (NSE/BSE/US)
-- get_company_info: { "symbol": "RELIANCE" }  — company profile, sector, P/E, EPS, revenue
-- git_status: { "path": "C:\\\\Users\\\\shiva\\\\DevOS" }  — show git branch, modified files, recent commits. Use for "git status", "show commits", "what changed in repo"
-- git_commit: { "message": "commit message" }  — stage all and commit
-- git_push: { "remote": "origin", "branch": "main" }  — push to remote
-- wait: { "ms": 2000 }  — Pause execution. Use ONLY after open_browser, after clicks, after any UI action that needs time to complete. Max 5000ms. NOT for reminders — use schedule_reminder for any time-delayed notification.
+- notify: { "message": "text to show", "title": "optional title" }
+- respond: { "message": "your reply text" }
+- lookup_skill: { "query": "task description" }
+- lookup_tool_schema: { "toolName": "tool_name" }  — returns full description for any tool
+- wait: { "ms": 2000 }  — ONLY after browser/UI actions. Max 5000ms. NOT for reminders.
+
+TOOL DISCOVERY: If you are unsure of a tool's parameters, call lookup_tool_schema FIRST (as step 1 of your plan) with the toolName, then use the returned description to build the real tool step.
 
 COMPUTER CONTROL RULES — follow strictly when controlling mouse/keyboard/browser:
 - ALWAYS use open_browser BEFORE keyboard_type or mouse_click on browser
@@ -1467,6 +1464,7 @@ const VALID_TOOLS = [
   'watch_folder', 'watch_folder_list',
   'clarify', 'todo', 'cronjob', 'vision_analyze',
   'voice_speak', 'voice_transcribe', 'voice_clone', 'voice_design',
+  'lookup_skill', 'lookup_tool_schema',
   ...SLASH_MIRROR_TOOL_NAMES,
 ]
 
