@@ -94,6 +94,7 @@ import { getHookCount } from '../core/hooks'
 import { TelegramBot, registerTelegramCallbacks } from '../core/telegramBot'
 import type { TelegramConfig } from '../core/telegramBot'
 import { callbacks } from '../core/callbackSystem'
+import { distillSession, distillAllActiveSessions } from '../core/memoryDistiller'
 import { gateway } from '../core/gateway'
 import type { IncomingMessage as GatewayMessage } from '../core/gateway'
 import { sessionRouter } from '../core/sessionRouter'
@@ -425,6 +426,20 @@ export function createApiServer(): Express {
 
   // â”€â”€ Middleware â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
+  // ── Idle-session distillation ────────────────────────────────
+  // Track last activity per session; distill after 30 min of inactivity.
+  const lastActivity: Record<string, number> = {}
+  setInterval(() => {
+    const now     = Date.now()
+    const IDLE_MS = 30 * 60 * 1000
+    for (const [sid, ts] of Object.entries(lastActivity)) {
+      if (now - ts > IDLE_MS) {
+        delete lastActivity[sid]
+        distillSession(sid).catch(() => {})
+      }
+    }
+  }, 5 * 60 * 1000).unref()
+
   // JSON body parsing (10 MB limit)
   app.use(express.json({ limit: '10mb' }))
 
@@ -624,6 +639,9 @@ export function createApiServer(): Express {
     }
 
     // â”€â”€ Sanitize input â€” strip null bytes and control chars â”€â”€â”€â”€
+    // Track activity for idle-distillation
+    if (sessionId) lastActivity[sessionId] = Date.now()
+
     let message = req.body?.message || ''
     message = message.replace(/\x00/g, '').replace(/[\x01-\x08\x0B\x0C\x0E-\x1F]/g, '')
 
@@ -1315,6 +1333,7 @@ export function createApiServer(): Express {
       setStatusEmitter(null)
       unsubscribeSSE()
       callbacks.emit('session_end', sid, {}).catch(() => {})
+      distillSession(sid).catch(() => {})
     })
 
     // Sprint 6: tiered model selection
@@ -2485,6 +2504,16 @@ export function createApiServer(): Express {
         depth:    loadSessionMetadata(s.id)?.depth ?? 0,
       }))
       res.json(enriched)
+    } catch (err: any) { res.status(500).json({ error: err.message }) }
+  })
+
+  // POST /api/sessions/distill — trigger memory distillation for a session (called by CLI on exit)
+  app.post('/api/sessions/distill', async (req: Request, res: Response) => {
+    try {
+      const { sessionId } = (req.body || {}) as { sessionId?: string }
+      const sid = sessionId || 'default'
+      const result = await distillSession(sid, 12_000)
+      res.json({ ok: true, ...result })
     } catch (err: any) { res.status(500).json({ error: err.message }) }
   })
 
@@ -5620,8 +5649,8 @@ export function startApiServer(portArg?: number): Express {
   }
 
   // ── Clean shutdown: remove PID on signal ────────────────────
-  process.once('SIGINT',  () => { removePid(); process.exit(0) })
-  process.once('SIGTERM', () => { removePid(); process.exit(0) })
+  process.once('SIGINT',  () => { removePid(); distillAllActiveSessions(8_000).finally(() => process.exit(0)) })
+  process.once('SIGTERM', () => { removePid(); distillAllActiveSessions(8_000).finally(() => process.exit(0)) })
 
   // ── EADDRINUSE: kill stale process, retry once ───────────────
   server.on('error', (err: NodeJS.ErrnoException) => {

@@ -3686,6 +3686,13 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
   // ── /quit / /exit / /q ─────────────────────────────────────────────────────────
   if (command === '/quit' || command === '/exit' || command === '/q') {
     printSessionSummary()
+    process.stdout.write('  Saving session memory...\n')
+    try {
+      await Promise.race([
+        apiPost('/api/sessions/distill', { sessionId: SESSION_ID }),
+        new Promise(r => setTimeout(r, 10_000)),
+      ])
+    } catch {}
     process.exit(0)
   }
 
@@ -5019,7 +5026,9 @@ async function main(): Promise<void> {
     const now = Date.now()
     if (now - lastCtrlC < 2000) {
       printSessionSummary()
-      process.exit(0)
+      apiPost('/api/sessions/distill', { sessionId: SESSION_ID }).catch(() => {})
+      setTimeout(() => process.exit(0), 5_000)
+      return
     }
     lastCtrlC = now
     process.stdout.write(`\n  ${T.dim}Press Ctrl+C again to exit.${T.reset}\n`)
