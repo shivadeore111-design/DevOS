@@ -2519,8 +2519,9 @@ CRITICAL RULES FOR YOUR RESPONSE:
       )
       if (!r.ok) {
         const errText = await r.text().catch(() => '')
-        if (r.status === 429) { try { markRateLimited(providerName) } catch {} }
-        throw new Error(`Responder ${r.status}: ${errText}`)
+        if (r.status === 429 || r.status === 503) { try { markRateLimited(providerName) } catch {} }
+        const capacityHint = errText.toLowerCase().includes('capacity') || errText.toLowerCase().includes('overloaded') ? ' capacity' : ''
+        throw new Error(`Responder ${r.status}${capacityHint}: ${errText.slice(0, 200)}`)
       }
       await streamGeminiResponse(r, onToken)
 
@@ -2561,8 +2562,9 @@ CRITICAL RULES FOR YOUR RESPONSE:
       })
       if (!r.ok) {
         const errText = await r.text().catch(() => '')
-        if (r.status === 429) { try { markRateLimited(providerName) } catch {} }
-        throw new Error(`Responder ${r.status}: ${errText}`)
+        if (r.status === 429 || r.status === 503) { try { markRateLimited(providerName) } catch {} }
+        const capacityHint = errText.toLowerCase().includes('capacity') || errText.toLowerCase().includes('overloaded') ? ' capacity' : ''
+        throw new Error(`Responder ${r.status}${capacityHint}: ${errText.slice(0, 200)}`)
       }
       await streamOpenAIResponse(r, onToken)
     }
@@ -2572,10 +2574,39 @@ CRITICAL RULES FOR YOUR RESPONSE:
     if (
       e.message?.includes('timeout') ||
       e.message?.includes('429') ||
+      e.message?.includes('503') ||
+      e.message?.includes('capacity') ||
+      e.message?.includes('overloaded') ||
       e.message?.includes('rate') ||
       e.message?.includes('aborted')
     ) {
       try { markRateLimited(providerName) } catch {}
+    }
+
+    // If cloud provider hit capacity, try next provider in chain before falling to Ollama
+    if (providerName !== 'ollama' && (
+      e.message?.includes('capacity') || e.message?.includes('503') || e.message?.includes('overloaded')
+    )) {
+      const nextCloud = getModelForTask('responder')
+      if (nextCloud.providerName !== 'ollama' && nextCloud.apiName !== providerName && nextCloud.apiKey) {
+        console.log(`[Responder] ${providerName} at capacity — trying ${nextCloud.providerName} (${nextCloud.model})`)
+        try {
+          const url     = OPENAI_COMPAT_ENDPOINTS[nextCloud.providerName] || OPENAI_COMPAT_ENDPOINTS.groq
+          const headers = buildHeaders(nextCloud.providerName, nextCloud.apiKey)
+          const r = await fetch(url, {
+            method:  'POST',
+            headers,
+            body:    JSON.stringify({ model: nextCloud.model, messages, stream: true }),
+            signal:  AbortSignal.timeout(30000),
+          })
+          if (r.ok) { await streamOpenAIResponse(r, onToken); return }
+          if (r.status === 429 || r.status === 503) {
+            try { markRateLimited(nextCloud.apiName) } catch {}
+          }
+        } catch (nextErr: any) {
+          console.error(`[Responder] ${nextCloud.providerName} fallback also failed: ${nextErr.message}`)
+        }
+      }
     }
 
     // If Ollama was primary and failed/timed out, fall back to best cloud provider
