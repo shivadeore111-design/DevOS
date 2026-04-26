@@ -404,12 +404,26 @@ function setupAutoUpdater () {
     })
   })
 
+  // Explicit GitHub release feed (mirrors build.publish in package.json; belt-and-suspenders)
+  autoUpdater.setFeedURL({
+    provider: 'github',
+    owner:    'taracodlabs',
+    repo:     'aiden-releases',
+  })
+
   // Auto-check 30s after launch — use checkForUpdatesAndNotify for native OS notification
   setTimeout(() => {
     if (!app.isPackaged) return
     log('[Update] Checking for updates...')
     autoUpdater.checkForUpdatesAndNotify().catch(err => log(`[Update] Check failed: ${err.message}`))
   }, 30000)
+
+  // Re-check every 6 hours while the app is running
+  setInterval(() => {
+    if (!app.isPackaged) return
+    log('[Update] Periodic 6-hour update check...')
+    autoUpdater.checkForUpdatesAndNotify().catch(err => log(`[Update] Periodic check failed: ${err.message}`))
+  }, 6 * 60 * 60 * 1000)
 }
 
 // Keep old name as alias so existing call site still works
