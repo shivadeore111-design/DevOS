@@ -46,7 +46,7 @@ import { getVerb } from '../core/statusVerbs'
 import { validateMultiGoalCoverage } from '../core/multiGoalValidator'
 import { TOOL_DESCRIPTIONS } from '../core/toolRegistry'
 import { runReActLoop, ReActStep }                                 from '../core/reactLoop'
-import { scheduler }                                              from '../core/scheduler'
+import { scheduler, initReminderScheduler }                        from '../core/scheduler'
 import { AIDEN_STREAM_SYSTEM, SOUL as AIDEN_SOUL }      from '../core/aidenPersonality'
 import { checkVoiceAvailable, recordAudio, transcribeAudio } from '../core/voiceInput'
 import { speak, checkTTSAvailable }                    from '../core/voiceOutput'
@@ -5390,6 +5390,11 @@ export function startApiServer(portArg?: number): Express {
       console.log('[Startup] Seeded workspace/SOUL.md from root SOUL.md')
     } catch { /* non-fatal */ }
   }
+  // ── Reminder scheduler ────────────────────────────────────────
+  try { initReminderScheduler() } catch (e: any) {
+    console.warn('[Startup] Reminder scheduler init failed:', e.message)
+  }
+
   if (isDebug) {
     console.log('[Startup] WORKSPACE_ROOT:', WORKSPACE_ROOT)
     console.log('[Startup] AIDEN_USER_DATA:', process.env.AIDEN_USER_DATA || '(not set)')

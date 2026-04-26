@@ -433,3 +433,149 @@ export class Scheduler {
 
 // ── Singleton ──────────────────────────────────────────────────
 export const scheduler = new Scheduler()
+
+// ══════════════════════════════════════════════════════════════════
+// ── One-shot / recurring REMINDER scheduler ───────────────────────
+//
+// Separate from the cron-based Scheduler above.  Uses setTimeout so
+// reminders fire in seconds, not minutes.  Persists to
+// ~/.aiden/scheduled.json and restores on boot via initReminderScheduler().
+// ══════════════════════════════════════════════════════════════════
+
+import * as os from 'os'
+
+export interface ScheduledReminder {
+  id:          string
+  message:     string
+  fireAt:      string               // ISO — absolute time of next fire
+  recurring?:  'hourly' | 'daily' | 'weekly'
+  intervalMs?: number
+  createdAt:   string
+  firedCount:  number
+}
+
+const _reminders: Map<string, ScheduledReminder>              = new Map()
+const _rtimers:   Map<string, ReturnType<typeof setTimeout>>  = new Map()
+let   _rseq = 1
+
+const _RDATA_DIR  = path.join(os.homedir(), '.aiden')
+const _RDATA_FILE = path.join(_RDATA_DIR, 'scheduled.json')
+
+function _rsave(): void {
+  try {
+    if (!fs.existsSync(_RDATA_DIR)) fs.mkdirSync(_RDATA_DIR, { recursive: true })
+    fs.writeFileSync(_RDATA_FILE, JSON.stringify(Array.from(_reminders.values()), null, 2), 'utf8')
+  } catch { /* silent */ }
+}
+
+async function _fireReminder(id: string): Promise<void> {
+  const r = _reminders.get(id)
+  if (!r) return
+
+  r.firedCount++
+  console.log(`[Reminders] Firing ${id}: ${r.message}`)
+
+  try {
+    const { executeTool } = await import('./toolRegistry')
+    await executeTool('notify', { message: r.message, title: 'Aiden Reminder' })
+  } catch (e: any) {
+    console.error(`[Reminders] notify failed for ${id}:`, e.message)
+  }
+
+  if (r.recurring && r.intervalMs) {
+    r.fireAt = new Date(Date.now() + r.intervalMs).toISOString()
+    _rsave()
+    _rtimers.set(id, setTimeout(() => _fireReminder(id), r.intervalMs))
+  } else {
+    _reminders.delete(id)
+    _rtimers.delete(id)
+    _rsave()
+  }
+}
+
+/**
+ * Schedule a desktop notification reminder.
+ * @param message   Text shown in the notification.
+ * @param delayMs   Milliseconds from now until first fire.
+ * @param recurring Optional: 'hourly' | 'daily' | 'weekly'
+ */
+export function scheduleReminder(
+  message:    string,
+  delayMs:    number,
+  recurring?: 'hourly' | 'daily' | 'weekly',
+): ScheduledReminder {
+  const id  = `r${_rseq++}`
+  const now = Date.now()
+
+  const intervalMs = recurring === 'hourly'  ? 3_600_000
+                   : recurring === 'daily'   ? 86_400_000
+                   : recurring === 'weekly'  ? 604_800_000
+                   : undefined
+
+  const reminder: ScheduledReminder = {
+    id,
+    message,
+    fireAt:     new Date(now + delayMs).toISOString(),
+    recurring,
+    intervalMs,
+    createdAt:  new Date(now).toISOString(),
+    firedCount: 0,
+  }
+
+  _reminders.set(id, reminder)
+  _rsave()
+  _rtimers.set(id, setTimeout(() => _fireReminder(id), delayMs))
+
+  const secs = Math.round(delayMs / 1000)
+  console.log(`[Reminders] Scheduled ${id} in ${secs}s${recurring ? ` (${recurring})` : ''}`)
+  return reminder
+}
+
+export function listReminders(): ScheduledReminder[] {
+  return Array.from(_reminders.values())
+}
+
+export function cancelReminder(id: string): boolean {
+  const t = _rtimers.get(id)
+  if (t !== undefined) clearTimeout(t)
+  _rtimers.delete(id)
+  const existed = _reminders.delete(id)
+  if (existed) _rsave()
+  return existed
+}
+
+/** Call once at server boot to restore any persisted reminders. */
+export function initReminderScheduler(): void {
+  try {
+    if (!fs.existsSync(_RDATA_FILE)) {
+      console.log('[Reminders] No saved reminders')
+      return
+    }
+
+    const stored: ScheduledReminder[] = JSON.parse(fs.readFileSync(_RDATA_FILE, 'utf8'))
+    const now  = Date.now()
+    let loaded = 0
+
+    for (const r of stored) {
+      const num = parseInt(r.id.replace(/^r/, ''), 10)
+      if (!isNaN(num) && num >= _rseq) _rseq = num + 1
+
+      // One-shot already fired: skip
+      if (!r.recurring && r.firedCount > 0) continue
+
+      const fireAt = new Date(r.fireAt).getTime()
+      const delay  = Math.max(0, fireAt - now)
+
+      _reminders.set(r.id, r)
+      _rtimers.set(r.id, setTimeout(() => _fireReminder(r.id), delay))
+
+      console.log(`[Reminders] Restored ${r.id} — fires in ${Math.round(delay / 1000)}s`)
+      loaded++
+    }
+
+    _rsave()  // purge stale one-shots
+    console.log(`[Reminders] ${loaded} reminder(s) restored`)
+  } catch (e: any) {
+    console.error('[Reminders] Init error:', e.message)
+  }
+}

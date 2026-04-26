@@ -1949,6 +1949,53 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
     }
   },
 
+  // ── schedule_reminder — one-shot or recurring desktop notification ──────────
+  schedule_reminder: async (p) => {
+    const message    = p.message || p.text || ''
+    const delayMs    = typeof p.delayMs    === 'number' ? p.delayMs
+                     : typeof p.delaySeconds === 'number' ? p.delaySeconds * 1_000
+                     : typeof p.delayMinutes === 'number' ? p.delayMinutes * 60_000
+                     : 0
+    const recurring  = p.recurring  // 'hourly' | 'daily' | 'weekly' | undefined
+    const op         = (p.op || 'schedule').toLowerCase()
+
+    try {
+      const { scheduleReminder, listReminders, cancelReminder } = await import('./scheduler')
+
+      if (op === 'list') {
+        const items = listReminders()
+        if (!items.length) return { success: true, output: 'No pending reminders.' }
+        const lines = items.map(r => {
+          const fireAt = new Date(r.fireAt).toLocaleString()
+          const rec    = r.recurring ? ` (${r.recurring})` : ''
+          return `[${r.id}] ${r.message} — fires at ${fireAt}${rec}`
+        })
+        return { success: true, output: lines.join('\n') }
+      }
+
+      if (op === 'cancel') {
+        const id  = String(p.id ?? '')
+        const ok  = cancelReminder(id)
+        return { success: ok, output: ok ? `Cancelled reminder ${id}` : `Reminder ${id} not found` }
+      }
+
+      // Default: schedule
+      if (!message) return { success: false, output: '', error: 'message is required' }
+      if (delayMs <= 0 && !recurring) return { success: false, output: '', error: 'delayMs (or delaySeconds / delayMinutes) must be > 0' }
+
+      const effectiveDelay = delayMs > 0 ? delayMs : (
+        recurring === 'hourly' ? 3_600_000 : recurring === 'daily' ? 86_400_000 : recurring === 'weekly' ? 604_800_000 : 60_000
+      )
+
+      const r    = scheduleReminder(message, effectiveDelay, recurring)
+      const when = new Date(r.fireAt).toLocaleString()
+      const rec  = recurring ? ` (repeats ${recurring})` : ''
+      return { success: true, output: `Reminder [${r.id}] set for ${when}${rec}: "${message}"` }
+    } catch (e: any) {
+      return { success: false, output: '', error: e.message }
+    }
+  },
+
   // ── voice_clone — clone a voice from reference audio (VoxCPM / ElevenLabs) ─
   voice_clone: async (p) => {
     const text               = p.text || ''
@@ -2212,6 +2259,7 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   voice_transcribe:        'Transcribe an audio file to text using the STT provider chain (Groq Whisper → OpenAI Whisper → Whisper.cpp). Returns { text, provider, durationMs }.',
   voice_clone:             'Clone a voice from a reference audio file and synthesize new text. Requires text and referenceAudioPath. Uses VoxCPM when USE_VOXCPM=1.',
   voice_design:            'Design a custom voice from a text description and synthesize text with it. Requires text and voiceDescription. Uses VoxCPM when USE_VOXCPM=1.',
+  schedule_reminder:       'Schedule a desktop notification reminder. Params: message (string), delaySeconds or delayMs (number), recurring (\'hourly\'|\'daily\'|\'weekly\', optional). op=\'list\' to see pending reminders, op=\'cancel\' with id to cancel one.',
 }
 
 // ── Tool tier hierarchy ────────────────────────────────────────
@@ -2237,6 +2285,7 @@ const TOOL_TIERS: Record<string, ToolTier> = {
   social_research:         1,
   system_info:             1,
   notify:                  1,
+  schedule_reminder:       1,
   wait:                    1,
   get_briefing:            1,
   get_natural_events:      1,
