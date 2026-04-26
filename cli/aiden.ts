@@ -449,6 +449,10 @@ async function streamChat(message: string): Promise<void> {
     lastRenderLines = 0
   }
 
+  function renderSpinner(msg: string): void {
+    process.stdout.write(`\r\x1b[K▲ ${msg}`)
+  }
+
   function onToolStart(name: string): void {
     pendingTools.set(name, { startTime: Date.now(), frame: 0 })
     // Next renderActivity tick will pick up the new entry automatically
@@ -578,12 +582,11 @@ async function streamChat(message: string): Promise<void> {
 
           // ── Status action line ──
           if (evt.event === 'status' && !boxOpen) {
-            if (renderTimer) { clearInterval(renderTimer); renderTimer = null }
-            clearRenderArea()
             const display = evt.display ?? evt.verb ?? evt.action
-            spinMsg = `▲ ${display}${evt.detail && !evt.display ? ` · ${evt.detail}` : ''}`
-            renderActivity()
-            renderTimer = setInterval(renderActivity, 100)
+            spinMsg = `${display}${evt.detail && !evt.display ? ` · ${evt.detail}` : ''}`
+            renderSpinner(spinMsg)
+            if (renderTimer) clearInterval(renderTimer)
+            renderTimer = setInterval(() => renderSpinner(spinMsg), 200)
           }
 
           // ── Thinking phase — update spinner message ──
@@ -661,7 +664,10 @@ async function streamChat(message: string): Promise<void> {
 
           // ── Text token — stop spinner, open response panel ──
           if (evt.token !== undefined) {
-            if (!boxOpen) stopActivityRender()
+            if (!boxOpen) {
+              if (renderTimer) { clearInterval(renderTimer); renderTimer = null; process.stdout.write('\r\x1b[K') }
+              stopActivityRender()
+            }
             writeToken(evt.token)
             fullReply += evt.token
             if (evt.provider) provider = evt.provider

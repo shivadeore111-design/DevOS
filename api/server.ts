@@ -2096,7 +2096,10 @@ export function createApiServer(): Express {
     ]
     ranked.sort((a, b) => a.tier - b.tier)
     const providers = ranked.map(r => r.entry)
-    const currentChain = providers.filter(p => p.enabled && !p.rateLimited)
+    const available   = providers.filter(p => p.enabled && !p.rateLimited)
+    const currentChain = primary
+      ? [...available.filter(p => p.isPrimary), ...available.filter(p => !p.isPrimary)]
+      : available
     res.json({ primary, providers, currentChain })
   })
 
