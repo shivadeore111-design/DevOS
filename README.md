@@ -246,4 +246,4 @@ For commercial licensing and enterprise deployments: **[aiden.taracod.com/contac
 
 ---
 
-Built by [Taracod](https://taracod.com) · Made in India · AGPL-3.0
+Built by [Taracod](https://taracod.com) · Built by Shiva Deore ·  AGPL-3.0
