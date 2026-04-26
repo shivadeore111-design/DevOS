@@ -819,6 +819,7 @@ export async function planWithLLM(
     'clarify', 'todo', 'cronjob', 'vision_analyze',
     'voice_speak', 'voice_transcribe', 'voice_clone', 'voice_design',
     'lookup_skill', 'lookup_tool_schema',
+    'spawn', 'spawn_subagent', 'swarm',
     ...SLASH_MIRROR_TOOL_NAMES,
   ]
 
@@ -941,6 +942,19 @@ SCHEDULER (CRITICAL): You have a real persistent scheduler. When the user asks f
 
 RUN_AGENT HONESTY: run_agent executes inline — the result comes directly in your next response. NEVER tell the user "your research is being processed", "the agent is working in background", or "results will be ready soon". If you use run_agent, the answer is available immediately in the same response turn.
 
+SUBAGENTS (CRITICAL):
+Use spawn_subagent when the user's task has independent parallel sub-questions (e.g., "research X AND summarize Y AND find Z"):
+- Each spawn_subagent call runs an isolated agent with its own context and half your remaining iteration budget
+- Spawn returns the subagent's synthesized answer — it is available immediately, not in the background
+- After spawning, synthesize all results into a unified final response, clearly attributing: "From a parallel research subagent: <result>"
+
+When NOT to use spawn_subagent:
+- Simple linear tasks (plan the steps yourself)
+- Single-tool questions (just call the tool)
+- Quick lookups (respond directly)
+
+NEVER say "the subagent is working in background" — spawn_subagent is synchronous and returns before your response.
+
 WHEN TO USE TOOLS vs NOT:
 ✅ Use tools for:
 - Weather, news, current prices → web_search
@@ -1062,7 +1076,7 @@ TIER 1 (USE FIRST): lookup_skill, respond, web_search, fetch_page, fetch_url, de
   → ALWAYS try these before anything else
   → If a task CAN be done via API/data tool, use that
 
-TIER 2 (USE SECOND): file_write, file_read, file_list, shell_exec, run_powershell, run_python, run_node, code_interpreter_python, code_interpreter_node, git_status, git_commit, git_push, clipboard_read, clipboard_write
+TIER 2 (USE SECOND): file_write, file_read, file_list, shell_exec, run_powershell, run_python, run_node, code_interpreter_python, code_interpreter_node, git_status, git_commit, git_push, clipboard_read, clipboard_write, spawn_subagent, swarm
   → Use when you need to read/write files, run scripts, or run git commands
 
 TIER 3 (USE THIRD): open_browser, browser_click, browser_type, browser_extract, browser_screenshot, window_list, window_focus, app_launch, app_close
@@ -1465,6 +1479,7 @@ const VALID_TOOLS = [
   'clarify', 'todo', 'cronjob', 'vision_analyze',
   'voice_speak', 'voice_transcribe', 'voice_clone', 'voice_design',
   'lookup_skill', 'lookup_tool_schema',
+  'spawn', 'spawn_subagent', 'swarm',
   ...SLASH_MIRROR_TOOL_NAMES,
 ]
 

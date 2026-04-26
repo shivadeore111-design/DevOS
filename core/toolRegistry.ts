@@ -1898,6 +1898,31 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
     }
   },
 
+  // ── spawn_subagent — spec-aligned alias for spawn ────────────────────────
+  spawn_subagent: async (p) => {
+    const task    = (p.task || '').trim()
+    const context = p.context ?? undefined
+    const timeout = typeof p.timeout_seconds === 'number' ? p.timeout_seconds * 1000
+                  : typeof p.timeout          === 'number' ? p.timeout
+                  : 60_000
+    if (!task) return { success: false, output: '', error: 'No task provided' }
+    try {
+      const { spawnSubagent }  = await import('./spawnManager')
+      const { getBudgetState } = await import('./agentLoop')
+      const budget = getBudgetState() ?? { current: 1, max: 10, remaining: 9 }
+      const result = await spawnSubagent({ task, context, timeout, parentBudget: budget })
+      if (!result.success) return { success: false, output: '', error: result.error || 'Subagent failed' }
+      const out = [
+        result.result ?? '',
+        `[spawn_subagent] iterations=${result.iterationsUsed}  duration=${result.duration}ms`,
+        result.providerChain.length ? `[providers] ${result.providerChain.join(' → ')}` : '',
+      ].filter(Boolean).join('\n')
+      return { success: true, output: out }
+    } catch (e: any) {
+      return { success: false, output: '', error: e.message }
+    }
+  },
+
   // ── ▲ swarm — run parallel subagents and aggregate results ───────────────
   swarm: async (p) => {
     const task     = p.task || p.prompt || ''
@@ -2421,6 +2446,9 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   voice_design:            'Design a custom voice from a text description and synthesize text with it. Requires text and voiceDescription. Uses VoxCPM when USE_VOXCPM=1.',
   schedule_reminder:       'Schedule a desktop notification reminder. Params: message (string), delaySeconds or delayMs (number), recurring (\'hourly\'|\'daily\'|\'weekly\', optional). op=\'list\' to see pending reminders, op=\'cancel\' with id to cancel one.',
   lookup_tool_schema:      'Get the full description for a named tool. Call before using an unfamiliar tool.',
+  spawn:                   'Delegate a sub-task to an isolated subagent with its own context and half the remaining iteration budget. Returns the subagent\'s synthesized answer.',
+  spawn_subagent:          'Spawn an isolated subagent to handle a parallel sub-task. The subagent runs in its own conversation context with half your remaining iteration budget. Use for: research that would bloat your context, parallel work where you need both results, sandboxed exploration. Returns the subagent\'s final reply text.',
+  swarm:                   'Run N isolated subagents on the same task in parallel and aggregate their answers via voting or synthesis. Use for high-confidence research where multiple independent perspectives reduce error.',
 }
 
 // ── N+28: TOOL_NAMES_ONLY ──────────────────────────────────────
@@ -2466,6 +2494,9 @@ const TOOL_TIERS: Record<string, ToolTier> = {
   read_email:              1,
   send_email:              1,
   run_agent:               1,
+  spawn:                   2,
+  spawn_subagent:          2,
+  swarm:                   2,
 
   // Tier 2 — File system, shell, code execution
   file_write:              2,
@@ -2612,8 +2643,9 @@ const TOOL_CATEGORIES: Record<string, ToolCategory[]> = {
   channels_status:         ['introspection'],
   goals:                   ['introspection', 'memory'],
   run:                     ['code'],
-  spawn:                   ['delegation', 'core'],
-  swarm:                   ['delegation', 'core'],
+  spawn:                   ['delegation'],
+  spawn_subagent:          ['delegation'],
+  swarm:                   ['delegation'],
   search:                  ['memory', 'introspection'],
   clarify:                 ['interaction', 'core'],
   todo:                    ['interaction', 'core'],

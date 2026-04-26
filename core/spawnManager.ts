@@ -14,7 +14,7 @@
 // Usage:
 //   const result = await spawnSubagent({ task, context, timeout, parentBudget })
 
-import { planWithLLM, executePlan } from './agentLoop'
+import { planWithLLM, executePlan, callLLM } from './agentLoop'
 import { getNextAvailableAPI }       from '../providers/router'
 import { loadConfig }                from '../providers/index'
 
@@ -168,23 +168,62 @@ export async function spawnSubagent(opts: SpawnOptions): Promise<SpawnResult> {
 
     if (abortFlag) throw new Error('Spawn aborted after planning')
 
+    // Direct answer — no tools needed
+    if (!plan.requires_execution || plan.plan.length === 0) {
+      const directAnswer = (plan.reason || plan.goal || 'Task complete.').trim()
+      return {
+        success:        true,
+        result:         directAnswer,
+        iterationsUsed: 0,
+        duration:       Date.now() - t0,
+        providerChain,
+      }
+    }
+
     // Execute plan (isolated — no workspace memory propagation)
     let iterationsUsed = 0
-    const stepOutputs: string[] = []
-
-    await executePlan(
+    const stepResults = await executePlan(
       plan,
-      (_step, result) => {
-        iterationsUsed++
-        if (result.output) stepOutputs.push(result.output)
-      },
+      (_step, _result) => { iterationsUsed++ },
     )
 
-    const output = stepOutputs.join('\n\n').trim() || 'Subagent completed with no output.'
+    if (abortFlag) throw new Error('Spawn aborted during execution')
+
+    // Synthesize step outputs into a real LLM answer
+    const stepSummary = stepResults
+      .filter(r => r.success && r.output)
+      .map(r => `[${r.tool}]: ${String(r.output).slice(0, 2000)}`)
+      .join('\n\n')
+
+    if (!stepSummary.trim()) {
+      return {
+        success:        false,
+        error:          'Subagent steps produced no output',
+        iterationsUsed,
+        duration:       Date.now() - t0,
+        providerChain,
+      }
+    }
+
+    const synthesisPrompt = [
+      'You are completing a sub-task. Synthesize the tool results into a clear, concise answer.',
+      '',
+      `Task: ${taskMessage}`,
+      '',
+      'Tool Results:',
+      stepSummary,
+      '',
+      'Provide a direct answer:',
+    ].join('\n')
+
+    let synthesized = ''
+    try {
+      synthesized = await callLLM(synthesisPrompt, apiKey, next.entry.model, next.entry.provider)
+    } catch {}
 
     return {
       success:        true,
-      result:         output,
+      result:         synthesized.trim() || stepSummary,
       iterationsUsed,
       duration:       Date.now() - t0,
       providerChain,
