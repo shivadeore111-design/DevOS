@@ -42,6 +42,7 @@ import { detectTimezone } from '../core/userProfile'
 import { executeTool, getActiveBrowserPage } from '../core/toolRegistry'
 import { getScreenSize, takeScreenshot as captureScreen } from '../core/computerControl'
 import { planWithLLM, executePlan, respondWithResults, callLLM, surfaceRelevantMemories, interruptCurrentCall, getBudgetState, setStatusEmitter } from '../core/agentLoop'
+import { getVerb } from '../core/statusVerbs'
 import { validateMultiGoalCoverage } from '../core/multiGoalValidator'
 import { TOOL_DESCRIPTIONS } from '../core/toolRegistry'
 import { runReActLoop, ReActStep }                                 from '../core/reactLoop'
@@ -1285,7 +1286,11 @@ export function createApiServer(): Express {
     }
 
     // ── Status emitter — forwards action events to the SSE stream ──
-    const emitStatus = (action: string, detail?: string) => send({ event: 'status', action, detail })
+    const emitStatus = (action: string, detail?: string) => {
+      const verb    = getVerb(action)
+      const display = detail ? `${verb} ${detail}` : verb
+      send({ event: 'status', action, verb, display, detail })
+    }
     setStatusEmitter(emitStatus)
 
     // ── Callback system — additive layer alongside existing SSE sends ──

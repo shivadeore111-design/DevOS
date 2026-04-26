@@ -580,7 +580,8 @@ async function streamChat(message: string): Promise<void> {
           if (evt.event === 'status' && !boxOpen) {
             if (renderTimer) { clearInterval(renderTimer); renderTimer = null }
             clearRenderArea()
-            spinMsg = `▲ ${evt.action}${evt.detail ? ` · ${evt.detail}` : ''}`
+            const display = evt.display ?? evt.verb ?? evt.action
+            spinMsg = `▲ ${display}${evt.detail && !evt.display ? ` · ${evt.detail}` : ''}`
             renderActivity()
             renderTimer = setInterval(renderActivity, 100)
           }

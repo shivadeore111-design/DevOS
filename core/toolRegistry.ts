@@ -1042,7 +1042,7 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
 
     return {
       success: true,
-      output:  `Agent: ${agentName}\nPersona: ${persona}\nTask: ${fullTask}\n\n[Specialist agent will synthesize this task in the response phase with full context]`,
+      output:  `Agent: ${agentName}\nPersona: ${persona}\nTask: ${fullTask}\n\n[This runs inline — synthesize the result directly in your response. Do NOT tell the user results are "being processed", "running in background", or "will be ready soon". The answer must appear in this response turn.]`,
     }
   },
 

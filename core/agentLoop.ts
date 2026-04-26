@@ -79,12 +79,45 @@ const TOOL_ACTION: Record<string, string> = {
 
 function toolStatusDetail(tool: string, input: any): string | undefined {
   if (!input) return undefined
-  if (input.query)   return String(input.query).slice(0, 60)
-  if (input.url)     return String(input.url).slice(0, 60)
-  if (input.path)    return String(input.path).slice(0, 60)
-  if (input.command) return String(input.command).slice(0, 60)
-  if (input.code)    return 'script'
-  return undefined
+  switch (tool) {
+    case 'web_search':
+    case 'deep_research':
+    case 'social_research':
+      return input.query ? String(input.query).slice(0, 60) : undefined
+    case 'run_python':
+    case 'code_interpreter_python':
+      return 'Python script'
+    case 'run_node':
+    case 'code_interpreter_node':
+      return 'Node script'
+    case 'open_browser':
+      return input.url ? String(input.url).slice(0, 60) : 'browser'
+    case 'browser_extract':
+    case 'browser_screenshot':
+    case 'fetch_page':
+    case 'fetch_url':
+      return input.url ? String(input.url).slice(0, 60) : 'page'
+    case 'file_read':
+    case 'file_write':
+    case 'file_list': {
+      const p = input.path || input.directory || ''
+      return p ? (String(p).split(/[/\\]/).pop() || String(p).slice(0, 40)) : undefined
+    }
+    case 'shell_exec':
+    case 'run_powershell':
+      return input.command ? String(input.command).slice(0, 30) : undefined
+    case 'get_stocks':
+      return input.symbol ?? (input.type ? `${input.market ?? ''} ${input.type}`.trim() : 'stocks')
+    case 'get_market_data':
+    case 'get_company_info':
+      return input.symbol ? String(input.symbol) : undefined
+    default:
+      if (input.query)   return String(input.query).slice(0, 60)
+      if (input.url)     return String(input.url).slice(0, 60)
+      if (input.path)    return String(input.path).slice(0, 40)
+      if (input.command) return String(input.command).slice(0, 30)
+      return undefined
+  }
 }
 
 // ── Iteration budget ───────────────────────────────────────────
@@ -873,6 +906,10 @@ CRITICAL RULES:
 7. For multi-step tasks: if step N+1 needs step N's output, use the literal string "PREVIOUS_OUTPUT"
    CRITICAL: Step 1 CANNOT use "PREVIOUS_OUTPUT" — there is no previous step. Step 1 must always have a literal concrete input value (e.g. a real URL, search query, or file path).
 8. Output ONLY valid JSON — no text before or after
+
+SCHEDULER HONESTY: When the user requests a time-delayed action (reminders, alarms, "in N seconds/minutes/hours", scheduled tasks, recurring tasks), you MUST plan a single respond step with this exact message: "I can't truly schedule yet — I don't have a persistent timer system. I'll send this now instead. Real scheduling is coming in a future update." Then optionally add a notify step to fire immediately. NEVER use wait to simulate a delay. NEVER pretend a future timed action will happen.
+
+RUN_AGENT HONESTY: run_agent executes inline — the result comes directly in your next response. NEVER tell the user "your research is being processed", "the agent is working in background", or "results will be ready soon". If you use run_agent, the answer is available immediately in the same response turn.
 
 WHEN TO USE TOOLS vs NOT:
 ✅ Use tools for:
