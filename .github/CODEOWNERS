@@ -1,0 +1,17 @@
+# CODEOWNERS — GitHub auto-requests review from these users when the listed
+# paths are changed in a PR. See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Global fallback — you review everything
+* @shivayxa
+
+# Core runtime files — always require your review
+/api/server.ts @shivayxa
+/core/agentLoop.ts @shivayxa
+/core/toolRegistry.ts @shivayxa
+/workspace/SOUL.md @shivayxa
+/cloudflare-worker/ @shivayxa
+/package.json @shivayxa
+/LICENSE @shivayxa
+/LICENSE-SKILLS.md @shivayxa
+
+# Note: replace @shivayxa with your actual GitHub username if different

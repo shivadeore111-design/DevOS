@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    name: Build & Type Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript type check
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify build output exists
+        run: |
+          test -f dist-bundle/index.js && echo "✅ index.js present" || exit 1
+          test -f dist-bundle/cli.js && echo "✅ cli.js present" || exit 1
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+      - name: Check for secrets in code
+        run: |
+          # Fail if any real API keys accidentally committed
+          if grep -r "sk-ant-\|sk-proj-\|gsk_\|AIza" \
+            --include="*.ts" --include="*.js" \
+            --exclude-dir=node_modules \
+            --exclude-dir=dist-bundle \
+            --exclude-dir=.git .; then
+            echo "❌ Possible API key found in source code"
+            exit 1
+          fi
+          echo "✅ No API keys detected"

@@ -1,0 +1,35 @@
+"core":
+  - changed-files:
+    - any-glob-to-any-file:
+      - "core/**"
+      - "api/**"
+
+"skills":
+  - changed-files:
+    - any-glob-to-any-file:
+      - "skills/**"
+      - "workspace-templates/**"
+
+"cli":
+  - changed-files:
+    - any-glob-to-any-file:
+      - "cli/**"
+
+"security":
+  - changed-files:
+    - any-glob-to-any-file:
+      - "SOUL.md"
+      - "security/**"
+      - "cloudflare-worker/**"
+
+"dependencies":
+  - changed-files:
+    - any-glob-to-any-file:
+      - "package.json"
+      - "package-lock.json"
+
+"documentation":
+  - changed-files:
+    - any-glob-to-any-file:
+      - "*.md"
+      - "docs/**"
