@@ -868,6 +868,7 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       helpRow('/skills',            'Skill lifecycle  (search / registry / install / list / check / update / audit / remove / publish / export / import / stats)'),
       helpRow('/install <name>',    'Install a skill from the public registry  (skills.taracod.com)'),
       helpRow('/publish <name>',    'Publish a skill to the public registry  (Pro — requires license)'),
+      helpRow('/failed [reason]',    'Signal last exchange failed — triggers failure trace analysis + lesson'),
       helpRow('/lessons',           'Browse permanent failure rules  (search / <category>)'),
       helpRow('/teach',             'Add a manual rule to LESSONS.md'),
       helpRow('/focus',             'Toggle zen mode — suppress tool traces and status output'),
@@ -4287,6 +4288,40 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
   }
 
   // ── /mcp ─────────────────────────────────────────────────────────────────────
+  // ── /failed [reason] ─────────────────────────────────────────────────────────
+  // Manually signals that the last exchange failed and triggers failure trace analysis.
+  if (command === '/failed') {
+    const manualReason = parts.slice(1).join(' ').trim()
+    try {
+      const { analyzeFailureTrace } = await import('../core/failureAnalyzer')
+      const { sessionMemory }       = await import('../core/sessionMemory')
+      const sidFailed               = SESSION_ID
+
+      // Retrieve the last exchange from sessionMemory
+      const sessions = sessionMemory.getSessions?.() ?? []
+      const thisSess = sessions.find((s: any) => s.id === sidFailed)
+      const exchanges = thisSess?.exchanges ?? []
+      const last = exchanges[exchanges.length - 1]
+
+      const userMsg  = last?.userMessage ?? manualReason ?? '(unknown)'
+      const aiReply  = last?.aiReply     ?? ''
+      const tools    = last?.toolsUsed   ?? []
+
+      await analyzeFailureTrace({
+        userMessage: userMsg,
+        aiReply,
+        toolsUsed:   tools,
+        errors:      manualReason ? [manualReason] : [],
+        signal:      'manual',
+        sessionId:   sidFailed,
+      })
+
+      console.log(`\n  ${fg(COLORS.success)}${MARKS.TRI}${T.reset} Lesson recorded. Check ${T.dim}workspace/LESSONS.md${T.reset} for details.\n`)
+    } catch (e: any) {
+      console.log(`\n  ${T.error}✗ Analysis failed: ${e?.message}${T.reset}\n`)
+    }
+    return true
+  }
   if (command === '/mcp') {
     const O = fg(COLORS.orange)
     const D = T.dim

@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 // DevOS â€” Autonomous AI Execution System
 // Copyright (c) 2026 Shiva Deore. All rights reserved.
 // ============================================================
@@ -95,6 +95,7 @@ import { TelegramBot, registerTelegramCallbacks } from '../core/telegramBot'
 import type { TelegramConfig } from '../core/telegramBot'
 import { callbacks } from '../core/callbackSystem'
 import { distillSession, distillAllActiveSessions } from '../core/memoryDistiller'
+import { analyzeFailureTrace, detectFailureSignal, FailureTrace } from '../core/failureAnalyzer'
 import { gateway } from '../core/gateway'
 import type { IncomingMessage as GatewayMessage } from '../core/gateway'
 import { sessionRouter } from '../core/sessionRouter'
@@ -118,6 +119,15 @@ import { EmailAdapter }      from '../core/channels/email'
 // —— Sprint 25: module-level WebSocket clients registry (shared between createApiServer routes and startApiServer WS setup)
 let wsBroadcastClients   = new Set<any>()
 let activeTelegramBot: TelegramBot | null = null
+
+// N+32: per-session last exchange — used by failure trace analysis
+interface LastExchange {
+  userMessage: string
+  aiReply:     string
+  toolsUsed:   string[]
+  errors:      string[]
+}
+const lastExchangeBySession = new Map<string, LastExchange>()
 
 // ── Bookmarklet — clip selected text from any page ────────────
 const BOOKMARKLET = `javascript:void(fetch('http://localhost:4200/api/clip',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:window.getSelection().toString()||document.title,source:window.location.href,title:document.title})}).then(()=>alert('Clipped!')))`
@@ -1421,6 +1431,21 @@ export function createApiServer(): Express {
       const resolvedMessage = conversationMemory.addUserMessage(message)
       conversationMemory.recordUserTurn(resolvedMessage)
 
+      // N+32: failure signal detection — if this message signals the last exchange failed, analyze it
+      const _mainSidFD = sessionId || 'default'
+      const _prevExch  = lastExchangeBySession.get(_mainSidFD)
+      if (_prevExch && detectFailureSignal(resolvedMessage)) {
+        const _trace: FailureTrace = {
+          userMessage: _prevExch.userMessage,
+          aiReply:     _prevExch.aiReply,
+          toolsUsed:   _prevExch.toolsUsed,
+          errors:      _prevExch.errors,
+          signal:      'keyword',
+          sessionId:   _mainSidFD,
+        }
+        analyzeFailureTrace(_trace).catch(() => {})
+      }
+
       // â”€â”€ FORCE CHAT MODE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       if (mode === 'chat') {
         await streamChat(resolvedMessage, history, userName, provider, activeModel, apiName, send, sessionId)
@@ -1741,6 +1766,30 @@ export function createApiServer(): Express {
             success:     taskSucceeded,
           }).catch(() => {})
         }, 100)
+
+        // N+32: store last exchange for failure trace analysis
+        const _errorMsgs = results
+          .filter((r: any) => !r.success && r.error)
+          .map((r: any) => r.error as string)
+        lastExchangeBySession.set(_mainSid, {
+          userMessage: resolvedMessage,
+          aiReply:     fullReply,
+          toolsUsed,
+          errors:      _errorMsgs,
+        })
+
+        // N+32: consecutive tool errors — if ≥2 tool steps failed, fire analysis immediately
+        const _failedCount = results.filter((r: any) => !r.success).length
+        if (_failedCount >= 2) {
+          analyzeFailureTrace({
+            userMessage: resolvedMessage,
+            aiReply:     fullReply,
+            toolsUsed,
+            errors:      _errorMsgs,
+            signal:      'tool_errors',
+            sessionId:   _mainSid,
+          }).catch(() => {})
+        }
 
         memoryLayers.write(`User: ${resolvedMessage}`, ['chat'])
       }
