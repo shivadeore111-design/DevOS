@@ -7,7 +7,7 @@
 ╚═╝  ╚═╝╚═╝╚═════╝ ╚══════╝╚═╝  ╚═══╝
 
 local-first AI operating system
-1500+ skills · 89+ tools · 14+ providers · AGPL-3.0
+1,400+ skills · 80+ tools · 15+ providers · AGPL-3.0
 Windows · Linux · WSL · macOS (API mode)
 ```
 
@@ -37,7 +37,7 @@ Aiden is a local-first AI operating system. It runs entirely on
 your machine — no cloud account required, no telemetry, no data leaving your
 hardware unless you configure a cloud provider. It ships with a signed Windows
 installer, and runs in headless API mode on Linux, WSL, and macOS. Features:
-1500+ composable skills, 89+ autonomous tools, a 6-layer memory architecture,
+1,400+ composable skills, 80+ built-in tools, a 6-layer memory architecture,
 self-healing provider routing, and the ability to control your screen, browse
 the web, run code, send emails, manage files, and hold a full conversation —
 offline via Ollama.
@@ -46,10 +46,10 @@ offline via Ollama.
 
 | Platform | GUI app | API + CLI | Skills available |
 |---|---|---|---|
-| **Windows 10/11** | ✅ signed installer | ✅ | All 1500+ (including Windows-only skills) |
-| **Linux** | — | ✅ headless | ~1491 (Windows-only skills auto-skipped) |
-| **WSL 2** | — | ✅ headless | ~1491 (Windows-only skills auto-skipped) |
-| **macOS** | — | ✅ headless | ~1491 (Windows-only skills auto-skipped) |
+| **Windows 10/11** | ✅ signed installer | ✅ | All 1,400+ (including Windows-only skills) |
+| **Linux** | — | ✅ headless | ~1380 (Windows-only skills auto-skipped) |
+| **WSL 2** | — | ✅ headless | ~1380 (Windows-only skills auto-skipped) |
+| **macOS** | — | ✅ headless | ~1380 (Windows-only skills auto-skipped) |
 
 Windows-only skills (clipboard history, Defender, OneNote, Outlook COM, registry, etc.) are tagged `platform: windows` and are silently skipped on other platforms at load time.
 
@@ -91,13 +91,13 @@ Set `AIDEN_HEADLESS=true` to suppress the Electron GUI when running the packaged
 
 ![TUI](docs/images/tui.png)
 
-Full command palette, 1500+ skills, 89+ tools, automatic provider routing (Groq → BOA → Ollama). Runs in any terminal.
+Full command palette, 1,400+ skills, 80+ tools, automatic provider routing (Groq → BOA → Ollama). Runs in any terminal.
 
 ### Desktop app
 
 ![Desktop](docs/images/dashboard.png)
 
-Full chat interface with live activity panel. Local-first, connects to Ollama or any of 14+ cloud providers via your own API key.
+Full chat interface with live activity panel. Local-first, connects to Ollama or any of 15+ cloud providers via your own API key.
 
 ### Memory graph
 
@@ -111,9 +111,9 @@ Full chat interface with live activity panel. Local-first, connects to Ollama or
 
 | Category | What Aiden does |
 |---|---|
-| **Inference & providers** | Local Ollama (Llama 3, Mistral, Qwen, Gemma, Phi…) with optional cloud fallback to OpenAI, Anthropic, Groq, Cerebras, NVIDIA NIM, OpenRouter, and more — 14+ providers including custom OpenAI-compatible endpoints |
-| **89+ tools** | Web search, file read/write, shell execution, Playwright browser automation, screen capture & OCR, calendar, email (IMAP/SMTP), code execution sandbox, clipboard, system info |
-| **1500+ skills** | Composable plugins each with a `SKILL.md` prompt, tool implementations, and optional sandbox runner — install per-session or globally |
+| **Inference & providers** | Local Ollama (Llama 3, Mistral, Qwen, Gemma, Phi…) with optional cloud fallback to OpenAI, Anthropic, Groq, Cerebras, NVIDIA NIM, OpenRouter, and more — 15+ providers including custom OpenAI-compatible endpoints |
+| **80+ tools** | Web search, file read/write, shell execution, Playwright browser automation, screen capture & OCR, calendar, email (IMAP/SMTP), code execution sandbox, clipboard, system info |
+| **1,400+ skills** | Composable plugins each with a `SKILL.md` prompt, tool implementations, and optional sandbox runner — install per-session or globally |
 | **Subagent swarm** | Spawn N parallel agents on any task; vote, merge, or pick the best result automatically |
 | **6-layer memory** | Episodic (in-context), BM25 keyword, vector semantic, procedural (skill), goal tracking, and `LESSONS.md` permanent-failure moat that grows every session |
 | **Voice** | Speech-to-text (Groq → OpenAI → local Whisper.cpp) + text-to-speech (Edge TTS → ElevenLabs → Windows SAPI); full offline voice loop |
@@ -134,7 +134,7 @@ User input (any channel)
          │
          ▼
   ┌─────────────┐     ┌──────────────────┐
-  │  Agent loop │────▶│  Tool dispatcher │──▶ 89+ tools
+  │  Agent loop │────▶│  Tool dispatcher │──▶ 80+ tools
   │  agentLoop  │     └──────────────────┘
   └──────┬──────┘
          │
@@ -147,7 +147,7 @@ User input (any channel)
          │
          ▼
   ┌─────────────┐
-  │  Provider   │  ← self-healing chain, 14+ providers
+  │  Provider   │  ← self-healing chain, 15+ providers
   │  router     │
   └─────────────┘
          │
@@ -179,6 +179,49 @@ Key environment variables:
 | `DAILY_BUDGET_USD` | `5.00` | Hard cap on daily cloud API spend |
 
 See `.env.example` for the full list of ~90 variables covering voice, messaging integrations, search, computer use, and more.
+
+---
+
+## Security & Sandbox
+
+Aiden includes an opt-in Docker sandbox backend that runs `shell_exec` and `run_python` tool calls inside isolated containers instead of directly on the host.
+
+### Requirements
+
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows/macOS) or Docker Engine (Linux)
+
+### Modes
+
+| `AIDEN_SANDBOX_MODE` | Behaviour |
+|---|---|
+| `off` *(default)* | Tools run on the host — no Docker required |
+| `auto` | Try Docker first; silently fall back to host if Docker is unavailable |
+| `strict` | Require Docker — error if Docker is not available |
+
+### Enable
+
+```bash
+# In .env
+AIDEN_SANDBOX_MODE=auto
+```
+
+Or toggle live from the Aiden CLI without restarting:
+
+```
+/sandbox auto     # switch to auto mode
+/sandbox strict   # require Docker
+/sandbox off      # disable
+/sandbox status   # show current mode + Docker availability
+/sandbox build    # pre-build the container image
+```
+
+### What the container provides
+
+- `--network=none` — no outbound network access (configurable per-call)
+- `--memory=512m --cpus=1` — hard resource caps
+- `--read-only --tmpfs /tmp` — immutable FS, only `/tmp` is writable
+- `--rm` — container removed immediately after each tool call
+- Host `workspace/` bind-mounted at `/workspace` so results are accessible
 
 ---
 

@@ -30,7 +30,8 @@ import { generateBriefing, loadBriefingConfig }              from './morningBrie
 import { getMarketData }   from './tools/marketDataTool'
 import { getCompanyInfo }  from './tools/companyFilingsTool'
 import { mcpClient }       from './mcpClient'
-import { runInSandbox }    from './codeInterpreter'
+import { runInSandbox }         from './codeInterpreter'
+import { runInDockerSandbox }   from './sandboxRunner'
 import { responseCache }   from './responseCache'
 import { extractYouTubeTranscript } from './youtubeTranscript'
 import { knowledgeBase }            from './knowledgeBase'
@@ -542,6 +543,19 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
       console.warn(`[Security] shell_exec DENIED: ${cmd.slice(0, 120)}`)
       return { success: false, output: '', error: 'Blocked: this command pattern is not allowed. Dangerous operations require explicit user approval.' }
     }
+    // ── N+34: Docker sandbox routing ───────────────────────────
+    const _sandboxMode = process.env.AIDEN_SANDBOX_MODE || 'off'
+    if (_sandboxMode === 'strict' || _sandboxMode === 'auto') {
+      try {
+        const sr = await runInDockerSandbox({ command: cmd, type: 'shell', timeout: 30000 })
+        const out = (sr.stdout + (sr.stderr ? `\nstderr: ${sr.stderr}` : '')).trim() || '(completed)'
+        return { success: sr.exitCode === 0, output: out, error: sr.exitCode !== 0 ? `Exit ${sr.exitCode}` : undefined }
+      } catch (sandboxErr: any) {
+        if (_sandboxMode === 'strict') return { success: false, output: '', error: `[Sandbox] ${sandboxErr.message}` }
+        console.warn('[Sandbox] auto-mode fell back to host:', sandboxErr.message)
+      }
+    }
+    // ── Host execution (sandbox off or auto-fallback) ───────────
     try {
       const { stdout, stderr } = await execAsync(cmd, {
         shell:   'powershell.exe',
@@ -745,6 +759,20 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
   run_python: async (p) => {
     const script = p.script || p.code || p.command || ''
     if (!script) return { success: false, output: '', error: 'No script' }
+
+    // ── N+34: Docker sandbox routing ───────────────────────────
+    const _pyMode = process.env.AIDEN_SANDBOX_MODE || 'off'
+    if (_pyMode === 'strict' || _pyMode === 'auto') {
+      try {
+        const sr = await runInDockerSandbox({ command: script, type: 'python', timeout: 60000 })
+        const out = (sr.stdout + (sr.stderr ? `\nstderr: ${sr.stderr}` : '')).trim() || 'Script completed with no output'
+        return { success: sr.exitCode === 0, output: out, error: sr.exitCode !== 0 ? `Python exit ${sr.exitCode}` : undefined }
+      } catch (sandboxErr: any) {
+        if (_pyMode === 'strict') return { success: false, output: '', error: `[Sandbox] ${sandboxErr.message}` }
+        console.warn('[Sandbox] auto-mode fell back to host:', sandboxErr.message)
+      }
+    }
+    // ── Host execution (sandbox off or auto-fallback) ───────────
     const tmp = path.join(process.cwd(), 'workspace', `py_${Date.now()}.py`)
     fs.mkdirSync(path.dirname(tmp), { recursive: true })
     fs.writeFileSync(tmp, script)

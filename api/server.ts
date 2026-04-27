@@ -5750,6 +5750,18 @@ export function startApiServer(portArg?: number): Express {
     console.log('[API] DevOS v' + VERSION + ' - Aiden running at http://' + host + ':' + port)
     console.log('[API] Health: http://' + host + ':' + port + '/api/health')
     console.log('[API] LivePulse WS: ws://' + host + ':' + port)
+
+    // N+34: load persisted sandbox mode override (written by /sandbox CLI command)
+    try {
+      const _sbPath = require('path').join(process.cwd(), 'workspace', '.sandbox_mode')
+      if (require('fs').existsSync(_sbPath)) {
+        const _sbMode = require('fs').readFileSync(_sbPath, 'utf-8').trim()
+        if (['off', 'auto', 'strict'].includes(_sbMode)) {
+          process.env.AIDEN_SANDBOX_MODE = _sbMode
+          console.log('[Sandbox] Mode loaded from .sandbox_mode:', _sbMode)
+        }
+      }
+    } catch {}
   })
 
   // ── Gateway bootstrap ─────────────────────────────────────────

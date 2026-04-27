@@ -870,6 +870,7 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       helpRow('/publish <name>',    'Publish a skill to the public registry  (Pro — requires license)'),
       helpRow('/profile',             'View / edit / clear the structured user profile (Honcho model)'),
       helpRow('/failed [reason]',    'Signal last exchange failed — triggers failure trace analysis + lesson'),
+      helpRow('/sandbox [sub]',      'Manage Docker sandbox mode  (status|off|auto|strict|build)'),
       helpRow('/lessons',           'Browse permanent failure rules  (search / <category>)'),
       helpRow('/teach',             'Add a manual rule to LESSONS.md'),
       helpRow('/focus',             'Toggle zen mode — suppress tool traces and status output'),
@@ -4438,6 +4439,83 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
     }
     return true
   }
+
+  // ── /sandbox ─────────────────────────────────────────────────────────────────
+  // Manage the opt-in Docker sandbox backend for shell_exec / run_python.
+  //   /sandbox status          — show current mode + Docker availability
+  //   /sandbox off             — disable sandbox (host execution)
+  //   /sandbox auto            — try Docker, fall back to host if unavailable
+  //   /sandbox strict          — require Docker, error if unavailable
+  //   /sandbox build           — pre-build the aiden-sandbox Docker image now
+  if (command === '/sandbox') {
+    const sub = parts[1]?.toLowerCase()
+    const { checkDockerAvailable, buildSandboxImage, getSandboxStatus, resetDockerCache } =
+      await import('../core/sandboxRunner')
+
+    // /sandbox status (default with no subcommand)
+    if (!sub || sub === 'status') {
+      const status = await getSandboxStatus()
+      const modeColor = status.mode === 'off'    ? T.dim
+                      : status.mode === 'auto'   ? fg(COLORS.orange)
+                      : fg(COLORS.success)
+      const dockerIcon = status.dockerAvailable ? `${T.success}●${T.reset}` : `${T.error}●${T.reset}`
+      const imageIcon  = status.imageCached     ? `${T.success}✓${T.reset}` : `${T.dim}–${T.reset}`
+      console.log(`
+  ${fg(COLORS.info)}╔══ Sandbox Status ═══════════════════════════════╗${T.reset}
+  ${fg(COLORS.info)}║${T.reset}  Mode:    ${modeColor}${status.mode.toUpperCase()}${T.reset}
+  ${fg(COLORS.info)}║${T.reset}  Docker:  ${dockerIcon} ${status.dockerAvailable ? 'available' : 'not found'}
+  ${fg(COLORS.info)}║${T.reset}  Image:   ${imageIcon} ${status.imageTag}${status.imageCached ? ' (cached)' : ' (not built)'}
+  ${fg(COLORS.info)}╚══════════════════════════════════════════════════╝${T.reset}
+
+  ${T.dim}Set AIDEN_SANDBOX_MODE in .env  |  /sandbox auto|strict|off|build${T.reset}
+`)
+      return true
+    }
+
+    if (sub === 'off' || sub === 'auto' || sub === 'strict') {
+      process.env.AIDEN_SANDBOX_MODE = sub
+      // Persist to .env (workspace/.sandbox_mode ephemeral override)
+      const _fs   = await import('fs')
+      const _path = await import('path')
+      const overridePath = _path.join(process.cwd(), 'workspace', '.sandbox_mode')
+      _fs.mkdirSync(_path.dirname(overridePath), { recursive: true })
+      _fs.writeFileSync(overridePath, sub, 'utf-8')
+      resetDockerCache()
+      const color = sub === 'off' ? T.dim : sub === 'auto' ? fg(COLORS.orange) : fg(COLORS.success)
+      console.log(`\n  ${fg(COLORS.success)}${MARKS.TRI}${T.reset} Sandbox mode set to ${color}${sub.toUpperCase()}${T.reset}\n`)
+      if (sub === 'auto' || sub === 'strict') {
+        const available = await checkDockerAvailable()
+        if (!available) {
+          console.log(`  ${T.error}⚠ Docker not detected.${T.reset} Install Docker Desktop: https://www.docker.com/products/docker-desktop/\n`)
+        } else {
+          console.log(`  ${T.dim}Docker detected. Run ${T.reset}/sandbox build${T.dim} to pre-build the image.${T.reset}\n`)
+        }
+      }
+      return true
+    }
+
+    if (sub === 'build') {
+      const available = await checkDockerAvailable()
+      if (!available) {
+        console.log(`\n  ${T.error}✗ Docker is not available.${T.reset} Install Docker Desktop first.\n`)
+        return true
+      }
+      console.log(`\n  ${T.dim}Building aiden-sandbox image… (this may take 30–60s on first run)${T.reset}\n`)
+      try {
+        await buildSandboxImage()
+        const status = await getSandboxStatus()
+        const icon = status.imageCached ? `${T.success}✓${T.reset}` : `${T.error}✗${T.reset}`
+        console.log(`  ${icon} Image ${status.imageTag} ${status.imageCached ? 'ready' : 'build may have failed — check Docker logs'}\n`)
+      } catch (e: any) {
+        console.log(`\n  ${T.error}✗ Build failed: ${e?.message}${T.reset}\n`)
+      }
+      return true
+    }
+
+    console.log(`\n  ${T.dim}Usage: /sandbox [status|off|auto|strict|build]${T.reset}\n`)
+    return true
+  }
+
   if (command === '/mcp') {
     const O = fg(COLORS.orange)
     const D = T.dim
