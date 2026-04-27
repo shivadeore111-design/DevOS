@@ -608,6 +608,13 @@ async function streamChat(message: string): Promise<void> {
             onToolEnd(tool, success)
           }
 
+          // ── Tool progress (live stdout lines) ──
+          if (evt.event === 'progress' && !boxOpen && process.env.AIDEN_SHOW_TOOL_OUTPUT !== 'false') {
+            const line = `  ↳ ${evt.tool}: ${evt.message}`
+            process.stdout.write(`\r\x1b[K${line}\n`)
+            if (spinMsg) renderSpinner(spinMsg)
+          }
+
           // ── Activity events (verbose) ──
           if (evt.activity && !boxOpen && state.detailLevel === 'verbose') {
             const act = evt.activity

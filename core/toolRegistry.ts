@@ -336,9 +336,24 @@ function normalizeNSESymbol(symbol: string): string {
   return symbol
 }
 
+// ── ToolContext ───────────────────────────────────────────────
+// Passed from the server into each tool call so tools can stream
+// real-time progress back to the SSE connection.
+
+export interface ToolContext {
+  emitProgress?: (message: string) => void
+}
+
+// Module-level progress emitter — set once per SSE request by server.ts,
+// cleared on connection close (same pattern as setStatusEmitter in agentLoop).
+let _emitProgress: ((tool: string, message: string) => void) | null = null
+export function setProgressEmitter(fn: ((tool: string, message: string) => void) | null): void {
+  _emitProgress = fn
+}
+
 // ── Tool implementations ──────────────────────────────────────
 
-export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
+export const TOOLS: Record<string, (payload: any, ctx?: ToolContext) => Promise<RawResult>> = {
 
   // ── respond — direct conversational reply (no external tools needed) ──
   respond: async (p) => {
@@ -564,8 +579,9 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
     } catch (e: any) { return { success: false, output: '', error: e.message } }
   },
 
-  browser_extract: async () => {
+  browser_extract: async (_p, ctx?) => {
     try {
+      ctx?.emitProgress?.('finding browser page...')
       let page = activeBrowserPage
       if (!page) {
         const context = await getBrowserContext()
@@ -573,12 +589,15 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
         page = pages[pages.length - 1]
       }
       if (!page) return { success: false, output: '', error: 'No browser page open. Use open_browser first.' }
-      const content  = await page.evaluate('document.body.innerText')
-      return { success: true, output: (content as string).slice(0, 3000) }
+      ctx?.emitProgress?.('extracting page content...')
+      const content = await page.evaluate('document.body.innerText')
+      const text    = content as string
+      ctx?.emitProgress?.(`extracted ${text.length.toLocaleString()} chars`)
+      return { success: true, output: text.slice(0, 3000) }
     } catch (e: any) { return { success: false, output: '', error: e.message } }
   },
 
-  shell_exec: async (p) => {
+  shell_exec: async (p, ctx?) => {
     const cmd = p.command || p.cmd || ''
     if (!cmd) return { success: false, output: '', error: 'No command' }
     const shellGate = isCommandAllowed(cmd)
@@ -602,16 +621,47 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
         console.warn('[Sandbox] auto-mode fell back to host:', sandboxErr.message)
       }
     }
-    // ── Host execution (sandbox off or auto-fallback) ───────────
-    try {
-      const { stdout, stderr } = await execAsync(cmd, {
-        shell:   'powershell.exe',
-        timeout: 30000,
-        cwd:     process.cwd(),
-        env:     { ...process.env, PATH: process.env.PATH },
+    // ── Host execution — streaming spawn ───────────────────────
+    const showProgress = process.env.AIDEN_SHOW_TOOL_OUTPUT !== 'false'
+    return new Promise<RawResult>((resolve) => {
+      const proc = spawn('powershell.exe', ['-Command', cmd], {
+        cwd: process.cwd(),
+        env: { ...process.env, PATH: process.env.PATH } as NodeJS.ProcessEnv,
       })
-      return { success: true, output: (stdout || stderr || '').trim() || '(completed)' }
-    } catch (e: any) { return { success: false, output: e.stdout || '', error: e.message } }
+      let stdout = ''
+      let stderr = ''
+
+      proc.stdout.on('data', (data: Buffer) => {
+        const text = data.toString()
+        stdout += text
+        if (showProgress && ctx?.emitProgress) {
+          for (const line of text.split('\n')) {
+            const trimmed = line.trim()
+            if (trimmed) ctx.emitProgress(trimmed.slice(0, 100))
+          }
+        }
+      })
+      proc.stderr.on('data', (data: Buffer) => { stderr += data.toString() })
+
+      const timer = setTimeout(() => {
+        proc.kill()
+        resolve({ success: false, output: stdout.trim(), error: 'timeout' })
+      }, (p.timeout_seconds || 30) * 1000)
+
+      proc.on('close', (code: number | null) => {
+        clearTimeout(timer)
+        const out = (stdout || stderr || '').trim() || '(completed)'
+        resolve({
+          success: (code ?? 1) === 0,
+          output:  out,
+          error:   (code ?? 1) !== 0 ? `Exit ${code}` : undefined,
+        })
+      })
+      proc.on('error', (e: Error) => {
+        clearTimeout(timer)
+        resolve({ success: false, output: '', error: e.message })
+      })
+    })
   },
 
   run_powershell: async (p) => {
@@ -803,7 +853,7 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
     } catch (e: any) { return { success: false, output: '', error: e.message } }
   },
 
-  run_python: async (p) => {
+  run_python: async (p, ctx?) => {
     const script = p.script || p.code || p.command || ''
     if (!script) return { success: false, output: '', error: 'No script' }
 
@@ -823,14 +873,30 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
     const tmp = path.join(process.cwd(), 'workspace', `py_${Date.now()}.py`)
     fs.mkdirSync(path.dirname(tmp), { recursive: true })
     fs.writeFileSync(tmp, script)
-    try {
-      const { stdout, stderr } = await execAsync(`python "${tmp}"`, {
-        timeout: 60000,
-        cwd:     process.cwd(),
+    const showProgress = process.env.AIDEN_SHOW_TOOL_OUTPUT !== 'false'
+    return new Promise<RawResult>((resolve) => {
+      let stdout = ''
+      let stderr = ''
+      const proc = spawn('python', [tmp], { cwd: process.cwd() })
+      const timer = setTimeout(() => { proc.kill(); resolve({ success: false, output: stdout, error: 'Python timeout (60s)' }) }, 60000)
+      proc.stdout.on('data', (data: Buffer) => {
+        const text = data.toString()
+        stdout += text
+        if (showProgress && ctx?.emitProgress) {
+          for (const line of text.split('\n')) {
+            const trimmed = line.trim()
+            if (trimmed) ctx.emitProgress(trimmed.slice(0, 100))
+          }
+        }
       })
-      return { success: true, output: (stdout || stderr || '').trim() || 'Script completed with no output' }
-    } catch (e: any) { return { success: false, output: e.stdout || '', error: `Python error: ${e.message}` } }
-    finally { try { fs.unlinkSync(tmp) } catch {} }
+      proc.stderr.on('data', (data: Buffer) => { stderr += data.toString() })
+      proc.on('close', (code) => {
+        clearTimeout(timer)
+        try { fs.unlinkSync(tmp) } catch {}
+        const output = (stdout || stderr || '').trim() || 'Script completed with no output'
+        resolve({ success: code === 0, output, error: code !== 0 ? `Python exit ${code}` : undefined })
+      })
+    })
   },
 
   run_node: async (p) => {
@@ -2333,9 +2399,16 @@ export function getExternalToolsMeta(): Record<string, { source: string }> {
 // ── Internal dispatcher — no retry, no timeout ────────────────
 
 async function runTool(tool: string, input: Record<string, any>): Promise<RawResult> {
+  // Build per-call context with tool-scoped progress emitter
+  const ctx: ToolContext = {
+    emitProgress: _emitProgress
+      ? (msg: string) => _emitProgress!(tool, msg)
+      : undefined,
+  }
+
   // Core tool
   const fn = TOOLS[tool]
-  if (fn) return fn(input)
+  if (fn) return fn(input, ctx)
 
   // Plugin-registered tool
   if (externalTools[tool]) return externalTools[tool](input)

@@ -39,7 +39,7 @@ import { ollamaProvider } from '../providers/ollama'
 import { getSmartProvider, markRateLimited, incrementUsage, logProviderStatus, getModelForTask, getLocalModels } from '../providers/router'
 import { discoverLocalModels, getOllamaTimeout } from '../core/modelDiscovery'
 import { detectTimezone } from '../core/userProfile'
-import { executeTool, getActiveBrowserPage } from '../core/toolRegistry'
+import { executeTool, getActiveBrowserPage, setProgressEmitter } from '../core/toolRegistry'
 import { getScreenSize, takeScreenshot as captureScreen } from '../core/computerControl'
 import { planWithLLM, executePlan, respondWithResults, callLLM, surfaceRelevantMemories, interruptCurrentCall, getBudgetState, setStatusEmitter } from '../core/agentLoop'
 import { getVerb } from '../core/statusVerbs'
@@ -1327,6 +1327,12 @@ export function createApiServer(): Express {
     }
     setStatusEmitter(emitStatus)
 
+    // ── Progress emitter — forwards live tool output lines to the SSE stream ──
+    const emitProgress = (toolName: string, message: string) => {
+      res.write(`event: progress\ndata: ${JSON.stringify({ tool: toolName, message, timestamp: Date.now() })}\n\n`)
+    }
+    setProgressEmitter(emitProgress)
+
     // ── Callback system — additive layer alongside existing SSE sends ──
     const sid = (sessionId as string | undefined) || 'default'
     callbacks.emit('session_start', sid, { message }).catch(() => {})
@@ -1341,6 +1347,7 @@ export function createApiServer(): Express {
     res.on('close', () => {
       interruptCurrentCall()
       setStatusEmitter(null)
+      setProgressEmitter(null)
       unsubscribeSSE()
       callbacks.emit('session_end', sid, {}).catch(() => {})
       distillSession(sid).catch(() => {})
