@@ -1815,9 +1815,7 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
     const query = (p.query || p.task || '').trim()
     if (!query) return { success: false, output: '', error: 'No query provided' }
 
-    const cwd        = process.cwd()
-    const learnedDir = path.join(cwd, 'workspace', 'skills', 'learned')
-    if (!fs.existsSync(learnedDir)) return { success: false, output: '', error: 'No learned skills yet' }
+    const cwd = process.cwd()
 
     // Token similarity (Dice coefficient)
     const tok = (s: string) => new Set(
@@ -1829,17 +1827,26 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
       return (2 * n) / (sa.size + sb.size + 0.001)
     }
 
+    // Scan learned/, approved/, and installed/ folders
+    const skillFolders = ['learned', 'approved', 'installed']
+      .map(f => path.join(cwd, 'workspace', 'skills', f))
+      .filter(d => fs.existsSync(d))
+
+    if (skillFolders.length === 0) return { success: false, output: '', error: 'No skills yet' }
+
     let best = { score: 0, dir: '', name: '' }
-    for (const entry of fs.readdirSync(learnedDir, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue
-      const metaPath = path.join(learnedDir, entry.name, 'meta.json')
-      let taskPattern = entry.name
-      try {
-        const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'))
-        taskPattern = meta.taskPattern || entry.name
-      } catch {}
-      const score = Math.max(dice(query, entry.name), dice(query, taskPattern))
-      if (score > best.score) best = { score, dir: path.join(learnedDir, entry.name), name: entry.name }
+    for (const folder of skillFolders) {
+      for (const entry of fs.readdirSync(folder, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue
+        const metaPath = path.join(folder, entry.name, 'meta.json')
+        let taskPattern = entry.name
+        try {
+          const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'))
+          taskPattern = meta.taskPattern || meta.description || entry.name
+        } catch {}
+        const score = Math.max(dice(query, entry.name), dice(query, taskPattern))
+        if (score > best.score) best = { score, dir: path.join(folder, entry.name), name: entry.name }
+      }
     }
 
     const THRESHOLD = 0.25

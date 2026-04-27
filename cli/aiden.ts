@@ -865,7 +865,9 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       helpRow('/memtimeline',       'Chronological context around a memory ID  — Layer 2'),
       helpRow('/memget',            'Full detail for specific memory IDs  — Layer 3'),
       helpRow('/goals',             'Active goals'),
-      helpRow('/skills',            'Skill lifecycle  (search / install / list / check / update / audit / remove / publish / export / import / import-repo / validate / source / stats / recommend / test)'),
+      helpRow('/skills',            'Skill lifecycle  (search / registry / install / list / check / update / audit / remove / publish / export / import / stats)'),
+      helpRow('/install <name>',    'Install a skill from the public registry  (skills.taracod.com)'),
+      helpRow('/publish <name>',    'Publish a skill to the public registry  (Pro — requires license)'),
       helpRow('/lessons',           'Browse permanent failure rules  (search / <category>)'),
       helpRow('/teach',             'Add a manual rule to LESSONS.md'),
       helpRow('/focus',             'Toggle zen mode — suppress tool traces and status output'),
@@ -1423,6 +1425,39 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       } else {
         console.log(table(colDefs, rows))
         console.log(`\n  ${T.dim}${results.length} result(s) · /skills inspect <name>${T.reset}\n`)
+      }
+      return true
+    }
+
+    // ── /skills registry <query> ——— public registry search ───────────────────
+    if (sub === 'registry') {
+      if (!arg) { console.log(`  ${T.dim}Usage: /skills registry <query>${T.reset}\n`); return true }
+      console.log(`  ${T.dim}Searching skills.taracod.com for "${arg}"…${T.reset}`)
+      try {
+        const { searchRegistry } = await import('../core/skillRegistry')
+        const results = await searchRegistry(arg)
+        if (!results.length) {
+          console.log(`  ${T.dim}No registry skills found for "${arg}".${T.reset}\n`); return true
+        }
+        const colDefs: ColDef[] = [
+          { header: 'Skill',     width: 22, align: 'left' },
+          { header: 'Author',    width: 14, align: 'left', color: COLORS.dim },
+          { header: 'Ver',       width: 8,  align: 'left', color: COLORS.dim },
+          { header: 'DLs',       width: 8,  align: 'right', color: COLORS.dim },
+          { header: 'Description' },
+        ]
+        const rows = results.map((s: any) => [
+          (s.name        || '').substring(0, 20),
+          (s.author      || '').substring(0, 12),
+          (s.version     || '?').substring(0, 6),
+          String(s.downloads || 0),
+          (s.description || '').substring(0, 48),
+        ])
+        console.log()
+        console.log(table(colDefs, rows))
+        console.log(`\n  ${T.dim}${results.length} result(s) · /install <name> to install${T.reset}\n`)
+      } catch (e: any) {
+        console.log(`  ${T.error}✗ Registry search failed: ${e?.message}${T.reset}\n`)
       }
       return true
     }
@@ -4177,6 +4212,76 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       console.log(panel({ title: `${MARKS.TRI} /search — ${query}`, lines, accent: COLORS.orange }))
     } catch (e: any) {
       console.log(`\n  ${T.error}✗ Search failed: ${e?.message}${R}\n`)
+    }
+    return true
+  }
+
+  // ── /install <skill_name> ————— install from public registry ─────────────────
+  if (command === '/install') {
+    const skillName = parts.slice(1).join(' ').trim()
+    if (!skillName) {
+      console.log(panel({
+        title: `${MARKS.TRI} /install`,
+        lines: [
+          '',
+          `  ${T.dim}Install a skill from the public Aiden registry.${T.reset}`,
+          '',
+          `  ${fg(COLORS.orange)}Usage:${T.reset}`,
+          `    ${T.dim}/install <skill_name>${T.reset}`,
+          '',
+          `  ${T.dim}Browse: /skills registry <query>${T.reset}`,
+          '',
+        ],
+        accent: COLORS.orange,
+      }))
+      return true
+    }
+    console.log(`  ${T.dim}Fetching "${skillName}" from skills.taracod.com…${T.reset}`)
+    try {
+      const { installSkill } = await import('../core/skillRegistry')
+      const { path: skillPath } = await installSkill(skillName)
+      console.log(`\n  ${fg(COLORS.success)}${MARKS.TRI}${T.reset} installed ${fg(COLORS.orange)}${skillName}${T.reset}`)
+      console.log(`  ${T.dim}→ ${skillPath}${T.reset}\n`)
+    } catch (e: any) {
+      console.log(`\n  ${T.error}✗ Install failed: ${e?.message}${T.reset}\n`)
+    }
+    return true
+  }
+
+  // ── /publish <skill_name> [--key=<license>] ———— publish to registry ──────
+  if (command === '/publish') {
+    const flagKey  = parts.find(a => a.startsWith('--key='))
+    const license  = flagKey ? flagKey.replace('--key=', '') : (process.env.AIDEN_LICENSE ?? '')
+    const skillName = parts.filter(a => !a.startsWith('--')).slice(1).join(' ').trim()
+    if (!skillName) {
+      console.log(panel({
+        title: `${MARKS.TRI} /publish`,
+        lines: [
+          '',
+          `  ${T.dim}Publish a learned or approved skill to the public registry (Pro).${T.reset}`,
+          '',
+          `  ${fg(COLORS.orange)}Usage:${T.reset}`,
+          `    ${T.dim}/publish <skill_name> [--key=<license_key>]${T.reset}`,
+          '',
+          `  ${T.dim}Or set AIDEN_LICENSE env var to skip --key each time.${T.reset}`,
+          '',
+        ],
+        accent: COLORS.orange,
+      }))
+      return true
+    }
+    if (!license) {
+      console.log(`\n  ${T.error}✗ License key required. Use --key=<key> or set AIDEN_LICENSE.${T.reset}\n`)
+      return true
+    }
+    console.log(`  ${T.dim}Publishing "${skillName}" to skills.taracod.com…${T.reset}`)
+    try {
+      const { publishSkill } = await import('../core/skillRegistry')
+      const { url } = await publishSkill(skillName, license)
+      console.log(`\n  ${fg(COLORS.success)}${MARKS.TRI}${T.reset} published ${fg(COLORS.orange)}${skillName}${T.reset}`)
+      console.log(`  ${T.dim}→ ${url}${T.reset}\n`)
+    } catch (e: any) {
+      console.log(`\n  ${T.error}✗ Publish failed: ${e?.message}${T.reset}\n`)
     }
     return true
   }
