@@ -8,14 +8,42 @@
 import { Provider } from './types'
 import { getOllamaTimeout } from '../core/modelDiscovery'
 
+/** Build Ollama options object from environment variables.
+ *  Only includes keys that are explicitly set — Ollama uses its own defaults
+ *  for anything omitted, so we never send NaN or out-of-range values. */
+function getOllamaOptions(): Record<string, number> | undefined {
+  const opts: Record<string, number> = {}
+
+  const temp = parseFloat(process.env.OLLAMA_TEMPERATURE ?? '')
+  if (!isNaN(temp) && temp >= 0 && temp <= 2) opts.temperature = temp
+
+  const ctx = parseInt(process.env.OLLAMA_CONTEXT_LENGTH ?? '', 10)
+  if (!isNaN(ctx) && ctx > 0) opts.num_ctx = ctx
+
+  const gpu = parseInt(process.env.OLLAMA_NUM_GPU ?? '', 10)
+  if (!isNaN(gpu) && gpu >= 0) opts.num_gpu = gpu
+
+  const threads = parseInt(process.env.OLLAMA_NUM_THREAD ?? '', 10)
+  if (!isNaN(threads) && threads > 0) opts.num_thread = threads
+
+  const topP = parseFloat(process.env.OLLAMA_TOP_P ?? '')
+  if (!isNaN(topP) && topP >= 0 && topP <= 1) opts.top_p = topP
+
+  const repeatPenalty = parseFloat(process.env.OLLAMA_REPEAT_PENALTY ?? '')
+  if (!isNaN(repeatPenalty) && repeatPenalty >= 0) opts.repeat_penalty = repeatPenalty
+
+  return Object.keys(opts).length > 0 ? opts : undefined
+}
+
 export const ollamaProvider: Provider = {
   name: 'ollama',
 
   async generate(messages, model) {
+    const options = getOllamaOptions()
     const res = await fetch('http://localhost:11434/api/chat', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ model, stream: false, messages }),
+      body:    JSON.stringify({ model, stream: false, messages, ...(options && { options }) }),
       signal:  AbortSignal.timeout(getOllamaTimeout(model || '')),
     })
     const data = await res.json() as any
@@ -23,10 +51,11 @@ export const ollamaProvider: Provider = {
   },
 
   async generateStream(messages, model, onToken) {
+    const options = getOllamaOptions()
     const res = await fetch('http://localhost:11434/api/chat', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ model, stream: true, messages }),
+      body:    JSON.stringify({ model, stream: true, messages, ...(options && { options }) }),
       signal:  AbortSignal.timeout(getOllamaTimeout(model || '')),
     })
     if (!res.body) return

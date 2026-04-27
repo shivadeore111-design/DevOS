@@ -289,6 +289,7 @@ const TOOL_TIMEOUTS: Record<string, number> = {
   browser_extract:   10000,
   browser_screenshot: 8000,
   browser_click:     10000,
+  browser_scroll:     8000,
   browser_type:      10000,
   git_push:       60000,
   git_commit:     30000,
@@ -496,6 +497,52 @@ export const TOOLS: Record<string, (payload: any) => Promise<RawResult>> = {
       // Give the page a moment to react (navigation or JS update)
       await page.waitForLoadState('domcontentloaded', { timeout: 5000 }).catch(() => {})
       return { success: true, output: `Clicked: ${rawTarget}` }
+    } catch (e: any) { return { success: false, output: '', error: e.message } }
+  },
+
+  browser_scroll: async (p) => {
+    const direction = (p.direction as string) || 'down'
+    const amount    = typeof p.amount === 'number' ? p.amount : 500
+    const selector  = p.selector as string | undefined
+    try {
+      let page = activeBrowserPage
+      if (!page) {
+        const context = await getBrowserContext()
+        const pages   = context.pages() as any[]
+        page = pages[pages.length - 1]
+      }
+      if (!page) return { success: false, output: '', error: 'No browser page open. Use open_browser first.' }
+
+      if (selector) {
+        // Element-scoped scroll
+        await page.waitForSelector(selector, { state: 'visible', timeout: 5000 }).catch(() => {})
+        if (direction === 'top') {
+          await page.evaluate((sel: string) => {
+            const el = (globalThis as any).document.querySelector(sel); if (el) el.scrollTop = 0
+          }, selector)
+        } else if (direction === 'bottom') {
+          await page.evaluate((sel: string) => {
+            const el = (globalThis as any).document.querySelector(sel); if (el) (el as any).scrollTop = (el as any).scrollHeight
+          }, selector)
+        } else {
+          const delta = direction === 'up' ? -amount : amount
+          await page.evaluate(({ sel, dy }: { sel: string; dy: number }) => {
+            const el = (globalThis as any).document.querySelector(sel); if (el) (el as any).scrollBy(0, dy)
+          }, { sel: selector, dy: delta })
+        }
+        return { success: true, output: `Scrolled ${direction} ${selector}` }
+      }
+
+      // Window scroll
+      if (direction === 'top') {
+        await page.evaluate(() => (globalThis as any).window.scrollTo(0, 0))
+      } else if (direction === 'bottom') {
+        await page.evaluate(() => (globalThis as any).window.scrollTo(0, (globalThis as any).document.body.scrollHeight))
+      } else {
+        const delta = direction === 'up' ? -amount : amount
+        await page.evaluate((dy: number) => (globalThis as any).window.scrollBy(0, dy), delta)
+      }
+      return { success: true, output: `Scrolled ${direction} by ${amount}px` }
     } catch (e: any) { return { success: false, output: '', error: e.message } }
   },
 
@@ -2425,6 +2472,7 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   deep_research:           'Conduct thorough multi-step research on a topic using multiple sources',
   open_browser:            'Open a URL in the system browser',
   browser_click:           'Click on an element in the browser by selector',
+  browser_scroll:          'Scroll the browser page or a specific element. Params: direction (up|down|top|bottom, default down), amount (pixels, default 500), selector (optional CSS selector to scroll a specific element)',
   browser_type:            'Type text into a browser input field',
   browser_extract:         'Extract text content from the current browser page',
   browser_screenshot:      'Take a screenshot of the current browser window',
@@ -2502,9 +2550,12 @@ export const TOOL_NAMES_ONLY: Record<string, string> = Object.fromEntries(
 // Tier 3: Browser automation — slow, brittle, UI-dependent
 // Tier 4: Screen/mouse/keyboard control — last resort only
 
-export type ToolTier = 1 | 2 | 3 | 4
+export type ToolTier = 0 | 1 | 2 | 3 | 4
 
 const TOOL_TIERS: Record<string, ToolTier> = {
+  // Tier 0 — Always-on: scheduling, instant response
+  schedule_reminder:       0,
+
   // Tier 1 — APIs, data, search, notify, respond
   respond:                 1,
   manage_goals:            1,
@@ -2521,7 +2572,6 @@ const TOOL_TIERS: Record<string, ToolTier> = {
   social_research:         1,
   system_info:             1,
   notify:                  1,
-  schedule_reminder:       1,
   wait:                    1,
   get_briefing:            1,
   get_natural_events:      1,
@@ -2557,6 +2607,7 @@ const TOOL_TIERS: Record<string, ToolTier> = {
   // Tier 3 — Browser automation
   open_browser:            3,
   browser_click:           3,
+  browser_scroll:          3,
   browser_type:            3,
   browser_extract:         3,
   browser_screenshot:      3,
@@ -2635,6 +2686,7 @@ const TOOL_CATEGORIES: Record<string, ToolCategory[]> = {
   code_interpreter_node:   ['code'],
   open_browser:            ['browser'],
   browser_click:           ['browser'],
+  browser_scroll:          ['browser'],
   browser_type:            ['browser'],
   browser_extract:         ['browser'],
   browser_screenshot:      ['browser'],
