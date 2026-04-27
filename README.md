@@ -28,8 +28,8 @@ Windows · Linux · WSL · macOS (API mode)
 
 ---
 
-> **v3.11 — Custom provider routing + Claude Haiku 4.5**
-> Full custom OpenAI-compatible provider support: plug in any endpoint via config with no code changes. BayOfAssets Claude Haiku 4.5 ships as the new default tier-1 provider. Fixes silent Groq fallback in `callLLM`, greeting memory double-label, and health endpoint missing custom providers. See [changelog](#changelog) below.
+> **v3.13 — Skill registry · Deep GEPA · User modeling · Docker sandbox · CI/CD**
+> Public skill registry (`/install <skill>`), failure-learning GEPA with permanent lessons, cross-session user profile (`/profile`), opt-in Docker sandbox for safe code execution, and GitHub Actions CI/CD with CODEOWNERS security on every PR. See [changelog](#changelog) below.
 
 ---
 
@@ -247,6 +247,35 @@ Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the ful
 ---
 
 ## Changelog
+
+### v3.13.0 — 2026-04-27
+
+**Community & Intelligence**
+- Public skill registry — `/install <skill>` pulls from [skills.taracod.com](https://skills.taracod.com); browse with `/skills registry <query>`; publish with `/publish <skill>`
+- Deep GEPA — learns from failures, not just successes; `/failed` analyzes the exchange trace, writes a permanent lesson to `LESSONS.md`, degrades responsible skill confidence; skills failing 3× are auto-deprecated
+- Honcho user modeling — structured cross-session profile (identity, projects, goals, preferences); only the relevant slice injected per query; view and edit with `/profile`
+- Docker sandbox — opt-in sandboxed `shell_exec` and `run_python` execution; `AIDEN_SANDBOX_MODE=auto|strict|off`; containers run `--network=none --memory=512m --cpus=1 --read-only`
+- GitHub CI/CD — TypeScript type-check + full build + secret scan on every PR to main
+- CODEOWNERS — sensitive files auto-request maintainer review on every PR
+- Sponsor button — Razorpay + GitHub Sponsors
+
+---
+
+### v3.12.0 — 2026-04-26
+
+**Memory & Agents**
+- Post-task skill writer (GEPA-lite) — writes a new skill after every multi-step success
+- Session-end memory distillation — 5–15 durable facts extracted per session
+- Progressive token budget — tool names only; schema loaded on demand
+- Real parallel subagents — isolated context, LLM synthesis pass
+- Streaming verbs — "Pondering…", "Hunting…" in real time
+- Real scheduler — `remind me in N minutes` actually waits
+- Path C-lite — YouTube/Google/DDG/Bing search + click first result
+- Electron auto-updater
+- Identity honesty — transparent about inference provider
+- Capacity fallback — auto-switches provider on 503/rate-limit
+
+---
 
 ### v3.11.0 — 2026-04-25
 

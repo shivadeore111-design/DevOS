@@ -1,3 +1,39 @@
+## v3.13.0 — 2026-04-27
+
+**Community & Ecosystem**
+- 📦 **Public skill registry** — `aiden install <skill>` pulls skills from the community registry at [skills.taracod.com](https://skills.taracod.com). Browse with `/skills registry <query>`. Publish your own with `/publish <skill>`.
+
+**Intelligence**
+- 🧠 **Deep GEPA — failure learning** — Aiden now learns from failures, not just successes. When you say "that's wrong" or type `/failed`, it analyzes the full exchange trace, writes a permanent lesson to `LESSONS.md`, and degrades the responsible skill's confidence score. Skills that fail 3+ times are automatically deprecated.
+- 👤 **Honcho user modeling** — Aiden maintains a structured profile of you across sessions: identity, projects, goals, preferences, relationships, and skills. Built automatically from distilled session facts. Only the relevant slice is injected per query (zero prompt bloat). View and edit with `/profile`.
+
+**Security**
+- 🐳 **Docker sandbox backend** — opt-in sandboxed execution for `shell_exec` and `run_python` tools. Set `AIDEN_SANDBOX_MODE=auto` in `.env` or toggle live with `/sandbox auto|strict|off`. Containers run with `--network=none --memory=512m --cpus=1 --read-only --tmpfs /tmp`. Requires Docker Desktop.
+- 🔒 **GitHub CI/CD** — automated TypeScript type-check + full build on every PR to main. CODEOWNERS enforces owner review on `api/server.ts`, `core/agentLoop.ts`, `core/toolRegistry.ts`, `SOUL.md`, and `cloudflare-worker/`. Security scan detects accidentally committed API keys.
+- 💝 **Sponsor button** — support Aiden development via [Razorpay](https://razorpay.me/@taracod).
+
+---
+
+## v3.12.0 — 2026-04-26
+
+**Memory**
+- 🧠 **Post-task skill writer (GEPA-lite)** — after every multi-step success, Aiden writes a new skill encoding what it just learned
+- 🗄️ **Session-end memory distillation** — 5–15 durable facts extracted at end of each session and stored in the user profile
+
+**Agent loop**
+- ⚡ **Progressive token budget** — tool names loaded immediately; full schemas pulled on demand; significantly reduces context overhead
+- 🔀 **Real parallel subagents** — each subagent gets isolated context; results merged via a dedicated LLM synthesis pass
+- 💬 **Streaming verbs** — "Pondering…", "Hunting…", "Reasoning…" shown in real time during long operations
+
+**Skills & tools**
+- ⏰ **Real scheduler** — `remind me in N minutes` actually waits the correct duration via OS timer
+- 🌐 **Path C-lite browser chain** — YouTube / Google / DDG / Bing search; clicks first result automatically
+- 🔄 **Electron auto-updater** — background download + restart prompt; `/refresh` to force-check
+- 🤝 **Identity honesty** — Aiden is transparent about which inference provider is answering
+- 🔁 **Capacity fallback** — auto-switches provider on 503 / rate-limit without user intervention
+
+---
+
 ## v3.7.1 — 2026-04-21
 
 **Patch release.** Four desktop stability fixes identified after v3.7.0 shipped.
