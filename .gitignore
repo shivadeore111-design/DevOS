@@ -129,3 +129,37 @@ dashboard-next/dev-out.log
 # ── Runtime config state (machine-specific) ───────────────────────────────────
 config/setup-complete.json
 config/model-selection.json
+
+# ── Build / compile logs ──────────────────────────────────────────────────────
+build-log.txt
+build-win.log
+dist-log.txt
+pager-debug.log
+
+# ── Runtime temp files ────────────────────────────────────────────────────────
+tmp-*.log
+tmp-*.json
+tmp-*.sse
+tmp-*.err.log
+*.pid
+logs/
+
+# ── Ship / release artifacts (generated, not source) ─────────────────────────
+release-notes.md
+tester-dm.md
+threads-post.md
+SHIP-CHECKLIST.md
+
+# ── Test reports (generated output) ──────────────────────────────────────────
+tests/TEST_REPORT-*.md
+tests/results/
+
+# ── Claude Code local settings ────────────────────────────────────────────────
+.claude/settings.json
+
+# ── Graph tool artifacts ──────────────────────────────────────────────────────
+.graphifyignore
+
+# ── Misc stray files ──────────────────────────────────────────────────────────
+FileHandling.java
+"UsersshivaDownloads 2/"
