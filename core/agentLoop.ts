@@ -881,6 +881,7 @@ export async function planWithLLM(
   }
 
   // N+27: inject distilled facts from past sessions into planner context
+  // N+33: also inject smart-sliced Honcho user profile (replaces dumb full-dump)
   let distilledFactsSection = ''
   try {
     const factHits = semanticMemory.search(message, 5, 0.3)
@@ -895,6 +896,13 @@ export async function planWithLLM(
         distilledFactsSection = `\n\nREMEMBERED CONTEXT (facts distilled from past sessions — use to resolve references and avoid repeating work):\n${factLines}\n`
       }
     }
+  } catch {}
+
+  // N+33: smart Honcho profile slice injection (zero LLM cost — regex classifier)
+  let honchoProfileSection = ''
+  try {
+    const { formatForPrompt } = await import('./userProfile')
+    honchoProfileSection = await formatForPrompt(message)
   } catch {}
 
   // Resolve the actual Windows username and home directory at runtime
@@ -1120,7 +1128,7 @@ FAILURE REPLANNING RULES (when message contains "previous approach failed at"):
 - Use ONLY the specific alternative approach mentioned in the message
 - DO NOT add web_search, deep_research, file_write, or notify unless directly needed
 - DO NOT add unrelated analysis or comparison steps
-${skillContext}${memorySection}${learningSection}${knowledgeSection}${memoryRecallSection}${distilledFactsSection}${lessonsSection}${(() => { const s = getActiveGoalsSummary(); return s ? `\n\n## Your Active Goals\n${s}` : '' })()}
+${skillContext}${memorySection}${learningSection}${knowledgeSection}${memoryRecallSection}${distilledFactsSection}${honchoProfileSection}${lessonsSection}${(() => { const s = getActiveGoalsSummary(); return s ? `\n\n## Your Active Goals\n${s}` : '' })()}
 Output ONLY valid JSON, nothing else:`
 
   const cleanHistory = history

@@ -110,6 +110,9 @@ export async function distillSession(
       semanticMemory.add(fact, 'fact', ['distilled', sessionId])
     }
 
+    // N+33: update structured Honcho user profile from distilled facts (non-blocking)
+    import('./userProfile').then(({ updateProfile }) => updateProfile(facts)).catch(() => {})
+
     // Mark session as distilled
     markDistilled(sessionId)
 

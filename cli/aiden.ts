@@ -868,6 +868,7 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       helpRow('/skills',            'Skill lifecycle  (search / registry / install / list / check / update / audit / remove / publish / export / import / stats)'),
       helpRow('/install <name>',    'Install a skill from the public registry  (skills.taracod.com)'),
       helpRow('/publish <name>',    'Publish a skill to the public registry  (Pro — requires license)'),
+      helpRow('/profile',             'View / edit / clear the structured user profile (Honcho model)'),
       helpRow('/failed [reason]',    'Signal last exchange failed — triggers failure trace analysis + lesson'),
       helpRow('/lessons',           'Browse permanent failure rules  (search / <category>)'),
       helpRow('/teach',             'Add a manual rule to LESSONS.md'),
@@ -2421,6 +2422,121 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       console.log(table(colDefs, rows))
       console.log(`\n  ${T.dim}${total} rules · page ${page + 1}/${pages}  · /lessons search <q>  · /teach <rule>${T.reset}\n`)
     }
+    return true
+  }
+
+  // ── /profile ───────────────────────────────────────────────────────────────────
+  if (command === '/profile') {
+    const sub = parts[1]?.toLowerCase()
+    const { getProfile, clearHonchoProfile, HONCHO_PROFILE_PATH } = await import('../core/userProfile')
+
+    // /profile clear
+    if (sub === 'clear') {
+      process.stdout.write(`\n  ${T.warning}Reset profile? This cannot be undone. (y/N) ${T.reset}`)
+      const confirmed = await new Promise<boolean>(resolve => {
+        const rl2 = readline.createInterface({ input: process.stdin, output: process.stdout })
+        rl2.once('line', line => { rl2.close(); resolve(line.trim().toLowerCase() === 'y') })
+      })
+      if (confirmed) {
+        clearHonchoProfile()
+        console.log(`\n  ${fg(COLORS.success)}${MARKS.TRI}${T.reset} Profile cleared.\n`)
+      } else {
+        console.log(`\n  ${T.dim}Cancelled.${T.reset}\n`)
+      }
+      return true
+    }
+
+    // /profile edit
+    if (sub === 'edit') {
+      const { execSync } = await import('child_process')
+      const filePath = HONCHO_PROFILE_PATH
+      const fs2 = await import('fs')
+      if (!fs2.existsSync(filePath)) {
+        // bootstrap empty profile so editor has something to open
+        const { emptyHonchoProfile } = await import('../core/userProfile')
+        fs2.mkdirSync(require('path').dirname(filePath), { recursive: true })
+        fs2.writeFileSync(filePath, JSON.stringify(emptyHonchoProfile(), null, 2) + '\n', 'utf-8')
+      }
+      const editor = process.env.EDITOR || process.env.VISUAL || 'notepad'
+      console.log(`\n  ${T.dim}Opening ${filePath} in ${editor}…${T.reset}\n`)
+      try { execSync(`"${editor}" "${filePath}"`, { stdio: 'inherit' }) } catch {}
+      return true
+    }
+
+    // /profile (show)
+    const profile = await getProfile()
+    const O = fg(COLORS.orange)
+    const D = T.dim
+    const R = T.reset
+    const G = fg(COLORS.success)
+
+    // Identity block
+    const id = profile.identity
+    const idLines = [
+      id.name       ? `  ${D}Name:${R}       ${id.name}`       : null,
+      id.pronouns   ? `  ${D}Pronouns:${R}   ${id.pronouns}`   : null,
+      id.occupation ? `  ${D}Occupation:${R} ${id.occupation}` : null,
+      id.location   ? `  ${D}Location:${R}   ${id.location}`   : null,
+      id.timezone   ? `  ${D}Timezone:${R}   ${id.timezone}`   : null,
+    ].filter(Boolean) as string[]
+
+    // Preferences
+    const pref = profile.preferences
+    const prefLines = [
+      pref.communication_style ? `  ${D}Style:${R}      ${pref.communication_style}` : null,
+      pref.response_length     ? `  ${D}Length:${R}     ${pref.response_length}`     : null,
+      pref.favorite_topics?.length  ? `  ${D}Topics:${R}     ${pref.favorite_topics.join(', ')}` : null,
+      pref.pet_peeves?.length       ? `  ${D}Pet peeves:${R} ${pref.pet_peeves.join(', ')}`      : null,
+    ].filter(Boolean) as string[]
+
+    // Projects
+    const projLines = profile.projects.length > 0
+      ? profile.projects.map(p => `  ${O}●${R} ${p.name}  ${D}[${p.status}]${R}${p.notes ? `  ${D}${p.notes.slice(0, 60)}${R}` : ''}`)
+      : [`  ${D}(none yet)${R}`]
+
+    // Goals
+    const goalLines = profile.current_goals.length > 0
+      ? profile.current_goals.map(g => `  ${G}→${R} ${g}`)
+      : [`  ${D}(none yet)${R}`]
+
+    // Skills
+    const skillLine = profile.skills_known.length > 0
+      ? `  ${profile.skills_known.slice(0, 12).join(', ')}${profile.skills_known.length > 12 ? ` ${D}+${profile.skills_known.length - 12} more${R}` : ''}`
+      : `  ${D}(none yet)${R}`
+
+    // Relationships
+    const relLines = profile.relationships.length > 0
+      ? profile.relationships.map(r => `  ${D}${r.name}${R}  ${r.role}${r.context ? `  ${D}— ${r.context.slice(0, 50)}${R}` : ''}`)
+      : [`  ${D}(none yet)${R}`]
+
+    const updated = profile.last_updated ? `  ${D}Last updated: ${new Date(profile.last_updated).toLocaleString()}${R}` : ''
+
+    const lines = [
+      '',
+      `${O}Identity${R}`,
+      ...(idLines.length > 0 ? idLines : [`  ${D}(not set)${R}`]),
+      '',
+      `${O}Preferences${R}`,
+      ...(prefLines.length > 0 ? prefLines : [`  ${D}(not set)${R}`]),
+      '',
+      `${O}Projects${R}`,
+      ...projLines,
+      '',
+      `${O}Current Goals${R}`,
+      ...goalLines,
+      '',
+      `${O}Skills Known${R}`,
+      skillLine,
+      '',
+      `${O}Relationships${R}`,
+      ...relLines,
+      '',
+      updated,
+      `  ${D}/profile edit  to edit  ·  /profile clear  to reset${R}`,
+      '',
+    ]
+
+    console.log(panel({ title: `${MARKS.TRI} User Profile`, lines, accent: COLORS.orange }))
     return true
   }
 
