@@ -28,8 +28,8 @@ Windows · Linux · WSL · macOS (API mode)
 
 ---
 
-> **v3.13 — Skill registry · Deep GEPA · User modeling · Docker sandbox · CI/CD**
-> Public skill registry (`/install <skill>`), failure-learning GEPA with permanent lessons, cross-session user profile (`/profile`), opt-in Docker sandbox for safe code execution, and GitHub Actions CI/CD with CODEOWNERS security on every PR. See [changelog](#changelog) below.
+> **v3.14 — OpenAI-compatible API · agentskills.io · Streaming tool output**
+> Any OpenAI client (Open WebUI, LibreChat, Chatbox, Cursor, Continue.dev) can now point at `localhost:4200` and use Aiden's full 89-tool agent. Skills ship with `skill.json` manifests compatible with the agentskills.io ecosystem. Shell commands and Python scripts stream live output as they run. See [changelog](#changelog) below.
 
 ---
 
@@ -77,10 +77,18 @@ git clone https://github.com/taracodlabs/aiden.git
 cd aiden
 cp .env.example .env          # configure OLLAMA_HOST, API keys, etc.
 npm install
-npm run build
-npm start                     # starts the API server (headless)
+npm run build                 # compile TypeScript → dist-bundle/
+npm start                     # starts the API server (terminal 1)
 # In a second terminal:
-npm run cli                   # interactive TUI
+npm run cli                   # interactive TUI (terminal 2)
+```
+
+```bash
+# After pulling updates, always rebuild:
+git pull
+npm install
+npm run build
+npm start
 ```
 
 Set `AIDEN_HEADLESS=true` to suppress the Electron GUI when running the packaged app.
@@ -182,6 +190,33 @@ See `.env.example` for the full list of ~90 variables covering voice, messaging 
 
 ---
 
+## Use with any OpenAI client
+
+Aiden exposes an OpenAI-compatible API at `localhost:4200`. Point any OpenAI client at Aiden to get the full 89-tool agent instead of raw GPT:
+
+| Setting | Value |
+|---|---|
+| **Base URL** | `http://localhost:4200` |
+| **API Key** | *(none required locally)* |
+| **Model** | `aiden-3.13` |
+
+Works with: **Open WebUI** · **LibreChat** · **Chatbox** · **Continue.dev** · **Cursor** · **TypingMind** · any app using the OpenAI SDK.
+
+```python
+# Python example — zero config
+from openai import OpenAI
+client = OpenAI(base_url="http://localhost:4200", api_key="none")
+response = client.chat.completions.create(
+    model="aiden-3.13",
+    messages=[{"role": "user", "content": "search news about AI agents"}]
+)
+print(response.choices[0].message.content)
+```
+
+Optional: set `AIDEN_API_KEY=your-secret` in `.env` to require Bearer token authentication.
+
+---
+
 ## Security & Sandbox
 
 Aiden includes an opt-in Docker sandbox backend that runs `shell_exec` and `run_python` tool calls inside isolated containers instead of directly on the host.
@@ -247,6 +282,15 @@ Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the ful
 ---
 
 ## Changelog
+
+### v3.14.0 — 2026-04-27
+
+**Ecosystem & Interoperability**
+- OpenAI-compatible API — `/v1/chat/completions` + `/v1/models`. Point Open WebUI, LibreChat, Cursor, or any OpenAI SDK at `localhost:4200` and get Aiden's full 89-tool agent (not just raw LLM inference)
+- agentskills.io compatibility — skills now ship with `skill.json` manifest. Compatible with Hermes, OpenClaw, and any agentskills.io agent. 1,515 existing skills backfilled automatically
+- Streaming tool output — shell commands, Python scripts, and browser extraction stream live progress lines as they execute. Set `AIDEN_SHOW_TOOL_OUTPUT=false` to suppress
+
+---
 
 ### v3.13.0 — 2026-04-27
 
