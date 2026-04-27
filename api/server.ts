@@ -4989,110 +4989,174 @@ export function createApiServer(): Express {
     res.json(gateway.getStatus())
   })
 
-  // ── ACP — OpenAI-compatible IDE integration ──────────────────
-  // VS Code (Continue.dev), Cursor, JetBrains, and any OpenAI client
-  // can point at http://localhost:4200/v1 and use Aiden as their backend.
+  // ── OpenAI-compatible API (v1) ───────────────────────────────
+  // Any OpenAI client (Open WebUI, LibreChat, TypingMind, Chatbox,
+  // Cursor, Continue.dev, Copilot proxies) can point at:
+  //   Base URL : http://localhost:4200
+  //   Model    : aiden-3.13
+  //   API Key  : (none, or AIDEN_API_KEY if set)
   // CORS is already global — no per-route header needed.
 
-  // GET /v1/models — list available models
+  // ── Internal helper: drives /api/chat SSE and pipes tokens ───
+  // Returns the full assistant text. Calls onToken for each token
+  // as it arrives (used for streaming path).
+  function _driveAgentSSE(
+    userText:  string,
+    history:   { role: string; content: string }[],
+    sessionId: string,
+    port:      number,
+    onToken:   (tok: string) => void,
+  ): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const body = JSON.stringify({ message: userText, history, sessionId, mode: 'auto' })
+      const opts = {
+        hostname: '127.0.0.1',
+        port,
+        path:     '/api/chat',
+        method:   'POST',
+        headers:  {
+          'Content-Type':   'application/json',
+          'Accept':         'text/event-stream',
+          'Content-Length': Buffer.byteLength(body),
+        },
+      }
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const httpReq = require('http').request(opts, (sseRes: any) => {
+        let buf  = ''
+        let full = ''
+        sseRes.on('data', (chunk: Buffer) => {
+          buf += chunk.toString()
+          const parts = buf.split('\n\n')
+          buf = parts.pop() ?? ''
+          for (const part of parts) {
+            if (!part.startsWith('data: ')) continue
+            try {
+              const evt = JSON.parse(part.slice(6))
+              if (evt.token && !evt.done) { onToken(evt.token); full += evt.token }
+              if (evt.done) resolve(full)
+            } catch {}
+          }
+        })
+        sseRes.on('end', () => resolve(full))
+        sseRes.on('error', reject)
+      })
+      httpReq.on('error', reject)
+      httpReq.write(body)
+      httpReq.end()
+    })
+  }
+
+  // ── API key guard (optional) ─────────────────────────────────
+  function _checkApiKey(req: Request, res: Response): boolean {
+    const required = process.env.AIDEN_API_KEY
+    if (!required) return true                           // unprotected — allow all
+    const auth = req.headers.authorization ?? ''
+    if (auth === `Bearer ${required}`) return true
+    res.status(401).json({ error: { message: 'Invalid API key', type: 'auth_error' } })
+    return false
+  }
+
+  // GET /v1/models
   app.get('/v1/models', (_req: Request, res: Response) => {
+    const created = Math.floor(Date.now() / 1000)
     res.json({
       object: 'list',
       data: [
-        {
-          id:         'aiden',
-          object:     'model',
-          created:    Math.floor(Date.now() / 1000),
-          owned_by:   'aiden-local',
-          permission: [],
-          root:       'aiden',
-          parent:     null,
-        },
-        {
-          id:       'aiden/default',
-          object:   'model',
-          created:  Math.floor(Date.now() / 1000),
-          owned_by: 'aiden-local',
-        },
+        { id: 'aiden-3.13',   object: 'model', created, owned_by: 'taracod',    permission: [], root: 'aiden-3.13',   parent: null },
+        { id: 'aiden',        object: 'model', created, owned_by: 'aiden-local', permission: [], root: 'aiden',        parent: null },
+        { id: 'aiden/default',object: 'model', created, owned_by: 'aiden-local', permission: [], root: 'aiden/default', parent: null },
       ],
     })
   })
 
-  // POST /v1/chat/completions — OpenAI-compatible chat
-  // Wires into the same callLLM fast-path used by mode=fast in /api/chat
+  // POST /v1/chat/completions — full agent loop, OpenAI wire format
   app.post('/v1/chat/completions', async (req: Request, res: Response) => {
-    const { messages, model, stream } = req.body as {
-      messages:    { role: string; content: string }[]
-      model?:      string
-      stream?:     boolean
+    if (!_checkApiKey(req, res)) return
+
+    const { messages = [], model, stream = false, user } = req.body as {
+      messages?:    { role: string; content: string | any[] }[]
+      model?:       string
+      stream?:      boolean
       temperature?: number
       max_tokens?:  number
+      user?:        string
     }
 
-    // Extract last user message — matches the pattern the rest of the server uses
-    const lastUser = (messages ?? []).filter((m) => m.role === 'user').pop()
-    if (!lastUser) {
+    // ── Normalise content (vision arrays → plain text) ──────────
+    const textOf = (c: string | any[]): string =>
+      typeof c === 'string' ? c
+        : Array.isArray(c)  ? c.filter((p: any) => p.type === 'text').map((p: any) => p.text).join(' ')
+        : JSON.stringify(c)
+
+    // ── Extract system message (injected as session context) ────
+    const systemMsg = messages.find((m) => m.role === 'system')
+    const systemCtx = systemMsg ? textOf(systemMsg.content) : ''
+
+    // ── Extract last user message ────────────────────────────────
+    const nonSystem    = messages.filter((m) => m.role !== 'system')
+    const lastUserMsg  = [...nonSystem].reverse().find((m) => m.role === 'user')
+    if (!lastUserMsg) {
       res.status(400).json({ error: { message: 'No user message found', type: 'invalid_request_error' } })
       return
     }
 
-    const userText = typeof lastUser.content === 'string'
-      ? lastUser.content
-      : JSON.stringify(lastUser.content)
+    let userText = textOf(lastUserMsg.content)
 
-    // Use the responder tier — same provider selection as mode=fast in /api/chat
-    const tier         = getModelForTask('responder')
-    const rawKey       = tier.apiKey
-    const activeModel  = tier.model
-    const providerName = tier.providerName
+    // Prepend system context for this session (does not mutate SOUL.md)
+    if (systemCtx) userText = `[System context for this session: ${systemCtx}]\n\n${userText}`
 
+    // ── Build history (all turns before the last user message) ──
+    const history = nonSystem
+      .slice(0, nonSystem.lastIndexOf(lastUserMsg))
+      .map((m) => ({ role: m.role, content: textOf(m.content) }))
+
+    const sessionId    = user || `oai_${Date.now()}`
     const completionId = `chatcmpl-${Date.now()}`
     const created      = Math.floor(Date.now() / 1000)
-    const modelName    = model || 'aiden'
+    const modelName    = model || 'aiden-3.13'
+    const port         = (req.socket as any)?.localPort ?? 4200
 
     if (stream) {
-      // Streaming: get full response then emit as a single content chunk
-      // (callLLM does not support token-level streaming; IDE clients accept this)
+      // ── Streaming: translate agent token events → OpenAI deltas ─
       res.setHeader('Content-Type',  'text/event-stream')
       res.setHeader('Cache-Control', 'no-cache')
       res.setHeader('Connection',    'keep-alive')
+
+      const chunk = (delta: object, finish: string | null) =>
+        `data: ${JSON.stringify({
+          id: completionId, object: 'chat.completion.chunk', created, model: modelName,
+          choices: [{ index: 0, delta, finish_reason: finish }],
+        })}\n\n`
+
+      // Role chunk first (required by OpenAI spec)
+      res.write(chunk({ role: 'assistant' }, null))
+
       try {
-        const text = await callLLM(userText, rawKey, activeModel, providerName)
-
-        const chunk = (delta: object, finish: string | null) =>
-          `data: ${JSON.stringify({
-            id: completionId, object: 'chat.completion.chunk',
-            created, model: modelName,
-            choices: [{ index: 0, delta, finish_reason: finish }],
-          })}\n\n`
-
-        res.write(chunk({ role: 'assistant' }, null))
-        res.write(chunk({ content: text },     null))
-        res.write(chunk({},                    'stop'))
-        res.write('data: [DONE]\n\n')
-        res.end()
+        await _driveAgentSSE(userText, history, sessionId, port, (tok) => {
+          res.write(chunk({ content: tok }, null))
+        })
       } catch (e: any) {
         res.write(`data: ${JSON.stringify({ error: e.message })}\n\n`)
-        res.end()
       }
+
+      res.write(chunk({}, 'stop'))
+      res.write('data: [DONE]\n\n')
+      res.end()
+
     } else {
-      // Non-streaming: single JSON response
+      // ── Non-streaming: collect full response, return as JSON ────
       try {
-        const text = await callLLM(userText, rawKey, activeModel, providerName)
+        const fullText = await _driveAgentSSE(userText, history, sessionId, port, () => {})
         res.json({
           id:      completionId,
           object:  'chat.completion',
           created,
           model:   modelName,
-          choices: [{
-            index:         0,
-            message:       { role: 'assistant', content: text },
-            finish_reason: 'stop',
-          }],
+          choices: [{ index: 0, message: { role: 'assistant', content: fullText }, finish_reason: 'stop' }],
           usage: {
             prompt_tokens:     Math.ceil(userText.length / 4),
-            completion_tokens: Math.ceil(text.length / 4),
-            total_tokens:      Math.ceil((userText.length + text.length) / 4),
+            completion_tokens: Math.ceil(fullText.length / 4),
+            total_tokens:      Math.ceil((userText.length + fullText.length) / 4),
           },
         })
       } catch (e: any) {
