@@ -30,12 +30,12 @@ Log-TestResult $t $pass $reason
 $results += [PSCustomObject]@{ Test = $t; Pass = $pass; Reason = $reason }
 
 # ---------------------------------------------------------------------------
-# R2 - /api/config/primary switch to bayofassets-haiku succeeds
+# R2 - /api/config/primary switch to openrouter-1 succeeds
 # ---------------------------------------------------------------------------
-$t = "R2-switch-primary-haiku"
+$t = "R2-switch-primary-openrouter"
 Log-TestStart $t
 try {
-    $body = @{ provider = "bayofassets-haiku" } | ConvertTo-Json -Compress
+    $body = @{ provider = "openrouter-1" } | ConvertTo-Json -Compress
     $r    = Invoke-WebRequest -Uri "$AIDEN_BASE/api/config/primary" -Method POST `
         -Headers @{ "Content-Type" = "application/json" } `
         -Body $body -TimeoutSec 10 -UseBasicParsing -ErrorAction Stop
@@ -73,13 +73,13 @@ Log-TestResult $t $pass $reason
 $results += [PSCustomObject]@{ Test = $t; Pass = $pass; Reason = $reason }
 
 # ---------------------------------------------------------------------------
-# R5 - "write a haiku" ? provider is bayofassets-haiku
+# R5 - "write a haiku" ? provider is openrouter (after R2 switched primary)
 # ---------------------------------------------------------------------------
 $t = "R5-haiku-provider"
 Log-TestStart $t
 $r = Call-Aiden -Message "write a haiku about the ocean" -TimeoutSec 60
-$pass   = $r.Provider -match "haiku|bayofassets"
-$reason = "provider=$($r.Provider) $(if ($pass) {'(haiku OK)'} else {'(expected haiku provider)'})"
+$pass   = $r.Provider -match "openrouter"
+$reason = "provider=$($r.Provider) $(if ($pass) {'(openrouter OK)'} else {'(expected openrouter provider)'})"
 Log-TestResult $t $pass $reason
 $results += [PSCustomObject]@{ Test = $t; Pass = $pass; Reason = $reason }
 

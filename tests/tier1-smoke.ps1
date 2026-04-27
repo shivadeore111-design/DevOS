@@ -38,49 +38,44 @@ if (-not $pass) {
 }
 
 # ---------------------------------------------------------------------------
-# T2 - BayOfAssets reachable (read key from config, direct POST)
+# T2 - Groq reachable (read key from .env, direct POST)
 # ---------------------------------------------------------------------------
-$t = "T2-bayofassets-reachable"
+$t = "T2-groq-reachable"
 if (-not $abort) {
     Log-TestStart $t
-    $bayKey = ""
+    $groqKey = ""
     try {
-        $cfgPath = Join-Path $PSScriptRoot "..\config\devos.config.json"
-        $cfgPath = [System.IO.Path]::GetFullPath($cfgPath)
-        if (Test-Path $cfgPath) {
-            $cfg = Get-Content $cfgPath -Raw | ConvertFrom-Json
-            $bayEntry = $cfg.customProviders | Where-Object { $_.id -eq "bayofassets-haiku" -and $_.enabled -eq $true }
-            if ($bayEntry) {
-                $bayKey = $bayEntry.apiKey
-            }
+        $envPath = Join-Path $PSScriptRoot "..\.env"
+        $envPath = [System.IO.Path]::GetFullPath($envPath)
+        if (Test-Path $envPath) {
+            $envLine = Get-Content $envPath | Where-Object { $_ -match "^GROQ_API_KEY=" } | Select-Object -First 1
+            if ($envLine) { $groqKey = $envLine -replace "^GROQ_API_KEY=", "" }
         }
-    } catch {
-        $bayKey = ""
-    }
+    } catch { $groqKey = "" }
 
-    if ($bayKey -and $bayKey.Length -gt 8) {
+    if ($groqKey -and $groqKey.Length -gt 8) {
         try {
             $testBody = @{
-                model    = "claude-haiku-4-5"
-                messages = @(@{ role = "user"; content = "ping" })
-                max_tokens = 16
+                model    = "llama-3.3-70b-versatile"
+                messages = @(@{ role = "user"; content = "ok" })
+                max_tokens = 3
             } | ConvertTo-Json -Compress
 
-            $boaResp = Invoke-WebRequest -Uri "https://api.bayofassets.com/v1/chat/completions" `
+            $groqResp = Invoke-WebRequest -Uri "https://api.groq.com/openai/v1/chat/completions" `
                 -Method POST `
-                -Headers @{ "Authorization" = "Bearer $bayKey"; "Content-Type" = "application/json" } `
+                -Headers @{ "Authorization" = "Bearer $groqKey"; "Content-Type" = "application/json" } `
                 -Body $testBody `
-                -TimeoutSec 30 -UseBasicParsing -ErrorAction Stop
+                -TimeoutSec 15 -UseBasicParsing -ErrorAction Stop
 
-            $pass   = [int]$boaResp.StatusCode -eq 200 -and $boaResp.Content.Length -gt 0
-            $reason = if ($pass) { "HTTP 200, content received" } else { "HTTP $([int]$boaResp.StatusCode)" }
+            $pass   = [int]$groqResp.StatusCode -eq 200 -and $groqResp.Content.Length -gt 0
+            $reason = if ($pass) { "HTTP 200, content received" } else { "HTTP $([int]$groqResp.StatusCode)" }
         } catch {
             $pass   = $false
-            $reason = "BayOfAssets API error: $($_.Exception.Message)"
+            $reason = "Groq API error: $($_.Exception.Message)"
         }
     } else {
         $pass   = $false
-        $reason = "Could not read BayOfAssets key from /api/config"
+        $reason = "Could not read GROQ_API_KEY from .env"
     }
 
     Log-TestResult $t $pass $reason
