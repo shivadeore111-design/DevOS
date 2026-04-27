@@ -1,0 +1,23 @@
+{
+  "name": "onenote",
+  "version": "1.0.0",
+  "description": "Read and write OneNote notebooks, sections, and pages via Microsoft Graph API or COM automation",
+  "author": "local",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "onenote",
+    "notes",
+    "notebook",
+    "microsoft",
+    "graph",
+    "pages",
+    "sections"
+  ],
+  "created": "2026-04-27T17:11:40.366Z"
+}

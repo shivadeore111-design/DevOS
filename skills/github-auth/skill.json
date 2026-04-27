@@ -1,0 +1,26 @@
+{
+  "name": "github-auth",
+  "version": "1.0.0",
+  "description": "Set up GitHub authentication via gh CLI, SSH keys, and HTTPS personal access tokens",
+  "author": "aiden",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "github",
+    "auth",
+    "ssh",
+    "pat",
+    "token",
+    "credentials",
+    "gh-cli",
+    "authentication",
+    "git",
+    "https"
+  ],
+  "created": "2026-04-27T17:11:39.656Z"
+}

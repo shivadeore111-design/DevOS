@@ -1,0 +1,25 @@
+{
+  "name": "network-diagnostics",
+  "version": "1.0.0",
+  "description": "Diagnose Windows network issues — ping, traceroute, DNS lookup, port scan, interface info, and connection testing via PowerShell",
+  "author": "local",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "network",
+    "diagnostics",
+    "ping",
+    "dns",
+    "traceroute",
+    "port",
+    "connectivity",
+    "powershell",
+    "netstat"
+  ],
+  "created": "2026-04-27T17:11:39.969Z"
+}

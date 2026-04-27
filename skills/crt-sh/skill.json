@@ -1,0 +1,25 @@
+{
+  "name": "crt-sh",
+  "version": "1.0.0",
+  "description": "Search certificate transparency logs to enumerate subdomains and TLS certificates for any domain — no API key required",
+  "author": "aiden",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "security",
+    "osint",
+    "certificates",
+    "subdomains",
+    "tls",
+    "ssl",
+    "ct-logs",
+    "recon",
+    "crt.sh"
+  ],
+  "created": "2026-04-27T17:11:39.411Z"
+}

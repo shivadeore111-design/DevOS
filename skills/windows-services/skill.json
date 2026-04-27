@@ -1,0 +1,23 @@
+{
+  "name": "windows-services",
+  "version": "1.0.0",
+  "description": "List, start, stop, restart, and configure Windows services via PowerShell Get-Service and Set-Service",
+  "author": "local",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "services",
+    "windows",
+    "powershell",
+    "daemon",
+    "startup",
+    "get-service",
+    "set-service"
+  ],
+  "created": "2026-04-27T17:11:41.163Z"
+}

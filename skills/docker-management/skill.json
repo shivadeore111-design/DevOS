@@ -1,0 +1,25 @@
+{
+  "name": "docker-management",
+  "version": "1.0.0",
+  "description": "Manage Docker containers, images, volumes, and networks via the Docker CLI and Dockerode API",
+  "author": "aiden",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "docker",
+    "containers",
+    "images",
+    "volumes",
+    "networks",
+    "compose",
+    "dockerode",
+    "devops",
+    "deployment"
+  ],
+  "created": "2026-04-27T17:11:39.484Z"
+}

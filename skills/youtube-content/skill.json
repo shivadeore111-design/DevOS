@@ -1,0 +1,25 @@
+{
+  "name": "youtube-content",
+  "version": "1.0.0",
+  "description": "Extract transcripts, download audio/video, and analyze YouTube content using youtube-transcript-api and yt-dlp",
+  "author": "aiden",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "youtube",
+    "transcript",
+    "video",
+    "audio",
+    "download",
+    "subtitles",
+    "yt-dlp",
+    "content",
+    "summary"
+  ],
+  "created": "2026-04-27T17:11:41.233Z"
+}

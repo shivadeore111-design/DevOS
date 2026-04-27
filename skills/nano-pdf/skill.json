@@ -1,0 +1,26 @@
+{
+  "name": "nano-pdf",
+  "version": "1.0.0",
+  "description": "Edit PDFs with natural-language instructions using the nano-pdf CLI tool",
+  "author": "aiden",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "pdf",
+    "edit",
+    "merge",
+    "split",
+    "compress",
+    "redact",
+    "nano-pdf",
+    "cli",
+    "document",
+    "watermark"
+  ],
+  "created": "2026-04-27T17:11:39.938Z"
+}

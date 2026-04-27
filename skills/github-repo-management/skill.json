@@ -1,0 +1,26 @@
+{
+  "name": "github-repo-management",
+  "version": "1.0.0",
+  "description": "Create, clone, fork, archive, and manage GitHub repositories using gh CLI and git",
+  "author": "aiden",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "github",
+    "repository",
+    "repo",
+    "clone",
+    "fork",
+    "branch",
+    "gh-cli",
+    "git",
+    "remote",
+    "management"
+  ],
+  "created": "2026-04-27T17:11:39.714Z"
+}

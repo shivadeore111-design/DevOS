@@ -1,0 +1,27 @@
+{
+  "name": "ssllabs",
+  "version": "1.0.0",
+  "description": "Comprehensive TLS/SSL analysis via Qualys SSL Labs — grades cipher suites, certificate chains, protocol versions, and known vulnerabilities",
+  "author": "aiden",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "security",
+    "ssl",
+    "tls",
+    "certificates",
+    "ssllabs",
+    "qualys",
+    "https",
+    "ciphers",
+    "heartbleed",
+    "poodle",
+    "compliance"
+  ],
+  "created": "2026-04-27T17:11:40.749Z"
+}

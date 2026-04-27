@@ -1,0 +1,24 @@
+{
+  "name": "p5js",
+  "version": "1.0.0",
+  "description": "Create generative visual art and interactive sketches using p5.js, rendered as self-contained HTML files",
+  "author": "aiden",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "p5js",
+    "generative-art",
+    "creative-coding",
+    "canvas",
+    "animation",
+    "visualization",
+    "javascript",
+    "interactive"
+  ],
+  "created": "2026-04-27T17:11:40.572Z"
+}

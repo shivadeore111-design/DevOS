@@ -1,0 +1,24 @@
+{
+  "name": "windows-registry",
+  "version": "1.0.0",
+  "description": "Read, write, and query Windows Registry keys and values via PowerShell Registry provider",
+  "author": "local",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "registry",
+    "regedit",
+    "windows",
+    "powershell",
+    "hklm",
+    "hkcu",
+    "settings",
+    "config"
+  ],
+  "created": "2026-04-27T17:11:41.131Z"
+}

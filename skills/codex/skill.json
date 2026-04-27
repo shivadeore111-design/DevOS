@@ -1,0 +1,25 @@
+{
+  "name": "codex",
+  "version": "1.0.0",
+  "description": "Delegate coding tasks to OpenAI Codex CLI for automated code generation, editing, and explanation",
+  "author": "aiden",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "openai",
+    "codex",
+    "cli",
+    "code-generation",
+    "agent-bridge",
+    "gpt",
+    "automation",
+    "coding",
+    "delegation"
+  ],
+  "created": "2026-04-27T17:11:39.347Z"
+}

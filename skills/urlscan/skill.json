@@ -1,0 +1,24 @@
+{
+  "name": "urlscan",
+  "version": "1.0.0",
+  "description": "Submit URLs for automated malware and phishing analysis, then retrieve safety verdicts and screenshots via urlscan.io",
+  "author": "aiden",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "security",
+    "malware",
+    "phishing",
+    "url",
+    "scan",
+    "osint",
+    "urlscan",
+    "threat-intel"
+  ],
+  "created": "2026-04-27T17:11:41.053Z"
+}

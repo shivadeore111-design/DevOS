@@ -1,0 +1,25 @@
+{
+  "name": "test-driven-development",
+  "version": "1.0.0",
+  "description": "Write software using the RED-GREEN-REFACTOR cycle for reliable, well-tested code",
+  "author": "aiden",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "tdd",
+    "testing",
+    "red-green-refactor",
+    "unit-tests",
+    "pytest",
+    "jest",
+    "vitest",
+    "quality",
+    "development"
+  ],
+  "created": "2026-04-27T17:11:40.912Z"
+}

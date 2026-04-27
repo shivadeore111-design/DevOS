@@ -1,0 +1,25 @@
+{
+  "name": "claude-code",
+  "version": "1.0.0",
+  "description": "Delegate complex coding and file-editing tasks to Anthropic Claude Code CLI for deep agentic coding sessions",
+  "author": "aiden",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "claude",
+    "anthropic",
+    "code",
+    "cli",
+    "agent-bridge",
+    "coding",
+    "delegation",
+    "agentic",
+    "pair-programming"
+  ],
+  "created": "2026-04-27T17:11:39.287Z"
+}

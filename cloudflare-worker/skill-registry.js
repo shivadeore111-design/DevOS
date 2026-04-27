@@ -67,6 +67,7 @@ function summary(s) {
     author:      s.author,
     description: s.description,
     tools_used:  s.tools_used || [],
+    tags:        s.tags       || [],
     downloads:   s.downloads  || 0,
     created:     s.created,
     updated:     s.updated,
@@ -121,8 +122,13 @@ async function searchSkills(req, env) {
 async function getSkill(req, env, params) {
   const raw = await env.AIDEN_SKILLS.get(`skill:${params.name}`)
   if (!raw) return json({ error: `Skill "${params.name}" not found` }, 404)
-  try { return json(JSON.parse(raw)) }
-  catch { return json({ error: 'Corrupt skill data' }, 500) }
+  try {
+    const s = JSON.parse(raw)
+    // Include skill_json manifest if present (agentskills.io compatibility)
+    const resp = { ...summary(s), content: s.content, files: s.files || {} }
+    if (s.skill_json) resp.skill_json = s.skill_json
+    return json(resp)
+  } catch { return json({ error: 'Corrupt skill data' }, 500) }
 }
 
 async function getSkillFiles(req, env, params) {
@@ -130,7 +136,9 @@ async function getSkillFiles(req, env, params) {
   if (!raw) return json({ error: `Skill "${params.name}" not found` }, 404)
   try {
     const s = JSON.parse(raw)
-    return json({ name: s.name, content: s.content, files: s.files || {} })
+    const resp = { name: s.name, content: s.content, files: s.files || {} }
+    if (s.skill_json) resp.files['skill.json'] = JSON.stringify(s.skill_json, null, 2)
+    return json(resp)
   } catch { return json({ error: 'Corrupt skill data' }, 500) }
 }
 
@@ -142,7 +150,7 @@ async function publishSkill(req, env) {
   try { body = await req.json() }
   catch { return json({ error: 'Invalid JSON body' }, 400) }
 
-  const { name, version, author, description, tools_used, content, files } = body
+  const { name, version, author, description, tools_used, content, files, skill_json, tags } = body
   if (!name)        return json({ error: 'name is required' },        400)
   if (!description) return json({ error: 'description is required' }, 400)
   if (!content)     return json({ error: 'content (SKILL.md) is required' }, 400)
@@ -157,11 +165,13 @@ async function publishSkill(req, env) {
     author:      author      || 'anonymous',
     description: description.slice(0, 300),
     tools_used:  Array.isArray(tools_used) ? tools_used : [],
+    tags:        Array.isArray(tags) ? tags : (skill_json?.tags || []),
     content,
     files:       files || {},
     downloads:   prev.downloads || 0,
     created:     prev.created   || new Date().toISOString(),
     updated:     new Date().toISOString(),
+    ...(skill_json && { skill_json }),
   }
 
   await env.AIDEN_SKILLS.put(key, JSON.stringify(skill))

@@ -1,0 +1,22 @@
+{
+  "name": "file_operations",
+  "version": "1.0.0",
+  "description": "File creation and management on Windows",
+  "author": "local",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "file",
+    "write",
+    "read",
+    "save",
+    "document",
+    "report"
+  ],
+  "created": "2026-04-27T17:11:39.574Z"
+}

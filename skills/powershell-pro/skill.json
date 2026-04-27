@@ -1,0 +1,24 @@
+{
+  "name": "powershell-pro",
+  "version": "1.0.0",
+  "description": "Expert PowerShell operations — process management, services, WMI queries, REST calls, scheduled tasks, and script automation",
+  "author": "local",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "powershell",
+    "process",
+    "wmi",
+    "service",
+    "automation",
+    "scripting",
+    "windows",
+    "rest"
+  ],
+  "created": "2026-04-27T17:11:40.631Z"
+}

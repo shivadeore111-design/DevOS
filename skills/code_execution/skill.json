@@ -1,0 +1,23 @@
+{
+  "name": "code_execution",
+  "version": "1.0.0",
+  "description": "Running scripts and code on Windows",
+  "author": "local",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "code",
+    "script",
+    "python",
+    "node",
+    "run",
+    "execute",
+    "build"
+  ],
+  "created": "2026-04-27T17:11:39.369Z"
+}

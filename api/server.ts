@@ -4453,6 +4453,90 @@ export function createApiServer(): Express {
     }
   })
 
+  // POST /api/skills/migrate — backfill skill.json for skills that are missing it
+  app.post('/api/skills/migrate', async (_req: Request, res: Response) => {
+    try {
+      const fs   = await import('fs')
+      const path = await import('path')
+      const { inferTags } = await import('../core/skillWriter')
+
+      const cwd      = process.cwd()
+      const migrated: string[] = []
+      const skipped:  string[] = []
+      const failed:   Array<{ id: string; error: string }> = []
+
+      // Scan all skill root directories
+      const scanDirs = [
+        path.join(cwd, 'skills'),
+        path.join(cwd, 'skills', 'learned', 'pending'),
+        path.join(cwd, 'skills', 'learned', 'approved'),
+        path.join(cwd, 'skills', 'installed'),
+      ]
+
+      const seen = new Set<string>()
+
+      for (const dir of scanDirs) {
+        if (!fs.existsSync(dir)) continue
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+          if (!entry.isDirectory()) continue
+          const skillDir = path.join(dir, entry.name)
+          if (seen.has(skillDir)) continue
+          seen.add(skillDir)
+
+          const skillJsonPath = path.join(skillDir, 'skill.json')
+          if (fs.existsSync(skillJsonPath)) { skipped.push(entry.name); continue }
+
+          const skillMdPath = path.join(skillDir, 'SKILL.md')
+          if (!fs.existsSync(skillMdPath)) continue
+
+          try {
+            const content  = fs.readFileSync(skillMdPath, 'utf-8')
+            const fmMatch  = content.match(/^---\s*([\s\S]*?)\s*---/)
+            const fm       = fmMatch ? fmMatch[1] : ''
+            const getName  = (key: string) => (fm.match(new RegExp(`^${key}:\\s*(.+)`, 'm')) || [])[1]?.trim() ?? ''
+            const getArr   = (key: string) => {
+              const v = getName(key)
+              return v ? v.replace(/[\[\]]/g, '').split(',').map((s: string) => s.trim()).filter(Boolean) : []
+            }
+
+            const metaPath = path.join(skillDir, 'meta.json')
+            let toolCalls: string[] = []
+            if (fs.existsSync(metaPath)) {
+              try {
+                const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'))
+                toolCalls  = (meta.sourceDetails?.toolCalls ?? []).map((t: any) => t.tool ?? t).filter(Boolean)
+                if (!toolCalls.length) toolCalls = meta.toolSequence ?? []
+              } catch {}
+            }
+
+            const fmTags = getArr('tags')
+            const skillJson = {
+              name:              entry.name,
+              version:           getName('version') || '1.0.0',
+              description:       getName('description') || entry.name,
+              author:            getName('origin') || 'local',
+              license:           'MIT',
+              tools:             toolCalls.length ? toolCalls : getArr('tools_used'),
+              trigger_phrases:   [] as string[],
+              compatible_agents: ['aiden'],
+              min_agent_version: '3.0.0',
+              tags:              fmTags.length ? fmTags : inferTags(toolCalls, content),
+              created:           new Date().toISOString(),
+            }
+            fs.writeFileSync(skillJsonPath, JSON.stringify(skillJson, null, 2) + '\n', 'utf-8')
+            migrated.push(entry.name)
+          } catch (e: any) {
+            failed.push({ id: entry.name, error: e.message })
+          }
+        }
+      }
+
+      res.json({ migrated, skipped, failed })
+    } catch (e: any) {
+      res.status(500).json({ error: e.message })
+    }
+  })
+
   // POST /api/skills/import-url — import a skill from an HTTPS URL
   // Body: { url: string, force?: boolean }
   app.post('/api/skills/import-url', async (req: Request, res: Response) => {

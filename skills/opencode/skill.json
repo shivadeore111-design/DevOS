@@ -1,0 +1,25 @@
+{
+  "name": "opencode",
+  "version": "1.0.0",
+  "description": "Delegate coding tasks to the OpenCode CLI — an open-source AI coding agent supporting multiple LLM providers",
+  "author": "aiden",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "opencode",
+    "ai-coding",
+    "agent-bridge",
+    "open-source",
+    "multi-model",
+    "coding",
+    "delegation",
+    "claude",
+    "gpt"
+  ],
+  "created": "2026-04-27T17:11:40.408Z"
+}

@@ -1,0 +1,26 @@
+{
+  "name": "indian-tax-calc",
+  "version": "1.0.0",
+  "description": "Calculate Indian income tax, capital gains tax (STCG/LTCG), advance tax, and TDS for FY 2025-26 under old and new regimes",
+  "author": "local",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "tax",
+    "india",
+    "income-tax",
+    "capital-gains",
+    "stcg",
+    "ltcg",
+    "itr",
+    "advance-tax",
+    "tds",
+    "fy2526"
+  ],
+  "created": "2026-04-27T17:11:39.840Z"
+}

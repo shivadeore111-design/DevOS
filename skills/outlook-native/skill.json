@@ -1,0 +1,23 @@
+{
+  "name": "outlook-native",
+  "version": "1.0.0",
+  "description": "Read and manage Outlook calendar and inbox via PowerShell COM interop or Microsoft Graph API",
+  "author": "local",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "outlook",
+    "calendar",
+    "email",
+    "inbox",
+    "meeting",
+    "schedule",
+    "microsoft"
+  ],
+  "created": "2026-04-27T17:11:40.490Z"
+}

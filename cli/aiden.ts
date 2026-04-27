@@ -1906,6 +1906,44 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       return true
     }
 
+    // ── /skills migrate ──────────────────────────────────────────────────────────
+    // Backfills skill.json for any skills that don't have one yet
+    if (sub === 'migrate') {
+      process.stdout.write(`  ${T.dim}Scanning skills for missing skill.json…${T.reset}\n`)
+      const data = await apiPost('/api/skills/migrate', {})
+      if (!data) { console.log(`  ${T.error}Migration failed — server error${T.reset}\n`); return true }
+
+      const migrated  = (data.migrated  || []) as string[]
+      const skipped   = (data.skipped   || []) as string[]
+      const failed    = (data.failed    || []) as Array<{ id: string; error: string }>
+      const lines: string[] = ['']
+
+      if (migrated.length === 0 && failed.length === 0) {
+        lines.push(`  ${fg(COLORS.success)}✓ All skills already have skill.json${RST}`)
+        lines.push(`  ${T.dim}${skipped.length} skill(s) skipped (already up-to-date)${T.reset}`)
+      } else {
+        lines.push(
+          `  ${fg(COLORS.success)}Migrated: ${migrated.length}${RST}  ` +
+          `${T.dim}Skipped: ${skipped.length}${T.reset}  ` +
+          `${fg(COLORS.error)}Failed: ${failed.length}${RST}`
+        )
+        lines.push('')
+        for (const id of migrated.slice(0, 30)) {
+          lines.push(`  ${fg(COLORS.success)}✓${RST} ${T.dim}${id}${T.reset}`)
+        }
+        if (migrated.length > 30) lines.push(`  ${T.dim}… and ${migrated.length - 30} more${T.reset}`)
+        for (const f of failed) {
+          lines.push(`  ${fg(COLORS.error)}✗ ${f.id}${RST}  ${T.dim}${f.error}${T.reset}`)
+        }
+      }
+      lines.push('')
+
+      console.log()
+      console.log(panel({ title: `${MARKS.TRI} Skill Migration — skill.json backfill`, lines }))
+      console.log()
+      return true
+    }
+
     // ── /skills publish <name> ──────────────────────────────────────────────────
     if (sub === 'publish') {
       if (!arg) { console.log(`  ${T.dim}Usage: /skills publish <name>${T.reset}\n`); return true }

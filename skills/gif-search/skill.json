@@ -1,0 +1,25 @@
+{
+  "name": "gif-search",
+  "version": "1.0.1",
+  "description": "Search and fetch GIFs from Tenor using the public API with curl or PowerShell — requires a free Tenor API key",
+  "author": "aiden",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "gif",
+    "tenor",
+    "giphy",
+    "search",
+    "media",
+    "animation",
+    "image",
+    "reaction",
+    "fun"
+  ],
+  "created": "2026-04-27T17:11:39.623Z"
+}

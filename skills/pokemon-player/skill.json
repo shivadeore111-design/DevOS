@@ -1,0 +1,26 @@
+{
+  "name": "pokemon-player",
+  "version": "1.0.0",
+  "description": "Run and automate Pokémon games using headless emulation, RAM state reading, and programmatic button inputs",
+  "author": "aiden",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "pokemon",
+    "emulator",
+    "gameboy",
+    "automation",
+    "mgba",
+    "rom",
+    "ram",
+    "scripting",
+    "gaming",
+    "bot"
+  ],
+  "created": "2026-04-27T17:11:40.602Z"
+}

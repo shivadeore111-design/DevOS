@@ -1,0 +1,24 @@
+{
+  "name": "stable-diffusion-image-generation",
+  "version": "1.0.0",
+  "description": "Generate images using Stable Diffusion via HuggingFace Diffusers library locally or via API",
+  "author": "aiden",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "stable-diffusion",
+    "image-generation",
+    "ai-art",
+    "diffusers",
+    "huggingface",
+    "text-to-image",
+    "sdxl",
+    "creative"
+  ],
+  "created": "2026-04-27T17:11:40.763Z"
+}

@@ -42,6 +42,25 @@ export interface SkillMeta {
   [key: string]: unknown
 }
 
+// ── inferTags ─────────────────────────────────────────────────
+// Derives agentskills.io tags from tool names and content.
+
+export function inferTags(toolsUsed: string[], content: string = ''): string[] {
+  const tags: Set<string> = new Set()
+  const allText = [...toolsUsed, content].join(' ').toLowerCase()
+
+  if (/browser|navigate|open_browser|web_search|fetch|scrape/.test(allText)) tags.add('web')
+  if (/python|shell_exec|run_python|exec|script/.test(allText))              tags.add('code')
+  if (/read_file|write_file|list_files|file|disk|path|folder/.test(allText)) tags.add('files')
+  if (/stock|nse|market|price|finance|invest|trade|ticker/.test(allText))    tags.add('finance')
+  if (/notify|schedule_reminder|cron|alarm|reminder/.test(allText))          tags.add('automation')
+  if (/email|mail|smtp|imap|send_email/.test(allText))                       tags.add('email')
+  if (/slack|discord|whatsapp|telegram|message|send_message/.test(allText))  tags.add('messaging')
+
+  if (tags.size === 0) tags.add('general')
+  return Array.from(tags)
+}
+
 // ── sanitizeSkillId ────────────────────────────────────────────
 // Converts an arbitrary skill name to a safe directory/id slug.
 
@@ -140,6 +159,24 @@ export async function writeSkillDraft(
     enabled:       false,
   }
   fs.writeFileSync(path.join(dir, 'meta.json'), JSON.stringify(meta, null, 2) + '\n', 'utf-8')
+
+  // Write skill.json (agentskills.io compatibility manifest)
+  const toolCalls = (draft.sourceDetails as any)?.toolCalls ?? []
+  const toolNames  = Array.isArray(toolCalls) ? toolCalls.map((t: any) => t.tool ?? t).filter(Boolean) : []
+  const skillJson = {
+    name:              id,
+    version:           draft.version ?? '1.0.0',
+    description:       draft.description,
+    author:            'local',
+    license:           'MIT',
+    tools:             toolNames,
+    trigger_phrases:   [] as string[],
+    compatible_agents: ['aiden'],
+    min_agent_version: '3.0.0',
+    tags:              draft.tags?.length ? draft.tags : inferTags(toolNames, draft.content),
+    created:           timestamp,
+  }
+  fs.writeFileSync(path.join(dir, 'skill.json'), JSON.stringify(skillJson, null, 2) + '\n', 'utf-8')
 
   return { id, filePath, dir }
 }
@@ -370,8 +407,23 @@ export async function writeSkillFromTask(args: TaskSkillArgs): Promise<TaskSkill
       avgDuration:  0,
     }
 
-    fs.writeFileSync(path.join(skillDir, 'SKILL.md'),  skillMd,                              'utf-8')
-    fs.writeFileSync(path.join(skillDir, 'meta.json'), JSON.stringify(metaJson, null, 2) + '\n', 'utf-8')
+    const taskSkillJson = {
+      name:              skillName,
+      version:           '1.0.0',
+      description:       descSnippet,
+      author:            'local',
+      license:           'MIT',
+      tools:             toolsUsed,
+      trigger_phrases:   [userMessage.slice(0, 80).replace(/"/g, "'")],
+      compatible_agents: ['aiden'],
+      min_agent_version: '3.0.0',
+      tags:              inferTags(toolsUsed, userMessage),
+      created:           new Date().toISOString(),
+    }
+
+    fs.writeFileSync(path.join(skillDir, 'SKILL.md'),  skillMd,                                    'utf-8')
+    fs.writeFileSync(path.join(skillDir, 'meta.json'), JSON.stringify(metaJson,      null, 2) + '\n', 'utf-8')
+    fs.writeFileSync(path.join(skillDir, 'skill.json'), JSON.stringify(taskSkillJson, null, 2) + '\n', 'utf-8')
 
     console.log(`[SkillWriter] Wrote skill "${skillName}" → ${skillDir}`)
     return { skillName, path: skillDir }

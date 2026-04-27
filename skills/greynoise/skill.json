@@ -1,0 +1,25 @@
+{
+  "name": "greynoise",
+  "version": "1.0.0",
+  "description": "Classify IP addresses as internet scanners (benign/malicious) or targeted attackers — filters noise from security alerts",
+  "author": "aiden",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "security",
+    "greynoise",
+    "scanner",
+    "threat-intel",
+    "ip",
+    "osint",
+    "soc",
+    "incident-response",
+    "noise-filtering"
+  ],
+  "created": "2026-04-27T17:11:39.765Z"
+}

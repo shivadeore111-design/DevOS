@@ -1,0 +1,26 @@
+{
+  "name": "india-economic-calendar",
+  "version": "1.0.0",
+  "description": "Track upcoming Indian economic events — RBI policy dates, CPI/WPI releases, GDP data, Union Budget, and expiry calendar for NSE derivatives",
+  "author": "local",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "india",
+    "rbi",
+    "economic",
+    "calendar",
+    "cpi",
+    "gdp",
+    "budget",
+    "expiry",
+    "monetary",
+    "policy"
+  ],
+  "created": "2026-04-27T17:11:39.810Z"
+}

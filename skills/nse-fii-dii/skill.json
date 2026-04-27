@@ -1,0 +1,25 @@
+{
+  "name": "nse-fii-dii",
+  "version": "1.0.0",
+  "description": "Fetch FII and DII daily buying/selling activity from NSE to gauge institutional flow into Indian equity markets",
+  "author": "local",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "fii",
+    "dii",
+    "institutional",
+    "flow",
+    "nse",
+    "india",
+    "equity",
+    "market",
+    "foreign"
+  ],
+  "created": "2026-04-27T17:11:40.098Z"
+}

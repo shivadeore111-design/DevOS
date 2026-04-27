@@ -1,0 +1,26 @@
+{
+  "name": "archon-bridge",
+  "version": "1.0.0",
+  "description": "Bridge between Aiden and Indian broker platforms (Zerodha, Upstox, Angel One) for unified portfolio aggregation and order routing",
+  "author": "local",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "archon",
+    "broker",
+    "portfolio",
+    "aggregation",
+    "zerodha",
+    "upstox",
+    "angel",
+    "india",
+    "trading",
+    "unified"
+  ],
+  "created": "2026-04-27T17:11:39.175Z"
+}

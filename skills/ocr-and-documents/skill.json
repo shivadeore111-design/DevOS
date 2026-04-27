@@ -1,0 +1,26 @@
+{
+  "name": "ocr-and-documents",
+  "version": "1.0.0",
+  "description": "Extract text from PDFs, images, scans, and Word documents using Python libraries and CLI tools",
+  "author": "aiden",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "ocr",
+    "pdf",
+    "image",
+    "text-extraction",
+    "documents",
+    "docx",
+    "scan",
+    "pymupdf",
+    "tesseract",
+    "pdf-parse"
+  ],
+  "created": "2026-04-27T17:11:40.330Z"
+}

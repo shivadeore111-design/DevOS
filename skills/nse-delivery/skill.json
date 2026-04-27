@@ -1,0 +1,25 @@
+{
+  "name": "nse-delivery",
+  "version": "1.0.0",
+  "description": "Fetch NSE delivery percentage data to identify stocks with high delivery volume — a signal of genuine buying interest vs intraday noise",
+  "author": "local",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "nse",
+    "delivery",
+    "volume",
+    "equity",
+    "india",
+    "stock",
+    "delhivery",
+    "bulk",
+    "block"
+  ],
+  "created": "2026-04-27T17:11:40.062Z"
+}

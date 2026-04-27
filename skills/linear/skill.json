@@ -1,0 +1,25 @@
+{
+  "name": "linear",
+  "version": "1.0.0",
+  "description": "Manage Linear issues, projects, and cycles via the Linear GraphQL API",
+  "author": "aiden",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "linear",
+    "issues",
+    "project-management",
+    "graphql",
+    "engineering",
+    "sprint",
+    "cycle",
+    "team",
+    "tasks"
+  ],
+  "created": "2026-04-27T17:11:39.895Z"
+}

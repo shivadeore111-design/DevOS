@@ -1,0 +1,26 @@
+{
+  "name": "zerodha-kite",
+  "version": "1.0.0",
+  "description": "Interact with Zerodha Kite Connect API — fetch holdings, positions, place/modify orders, and get live quotes",
+  "author": "local",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "zerodha",
+    "kite",
+    "broker",
+    "india",
+    "trading",
+    "orders",
+    "holdings",
+    "positions",
+    "equity",
+    "portfolio"
+  ],
+  "created": "2026-04-27T17:11:41.262Z"
+}

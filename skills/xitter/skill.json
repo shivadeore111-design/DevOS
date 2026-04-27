@@ -1,0 +1,26 @@
+{
+  "name": "xitter",
+  "version": "1.0.0",
+  "description": "Post, read, and search X (Twitter) content using x-cli or the X API v2",
+  "author": "aiden",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "twitter",
+    "x",
+    "social-media",
+    "tweet",
+    "post",
+    "search",
+    "api",
+    "x-cli",
+    "timeline",
+    "mentions"
+  ],
+  "created": "2026-04-27T17:11:41.209Z"
+}

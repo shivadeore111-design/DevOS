@@ -1,0 +1,26 @@
+{
+  "name": "blogwatcher",
+  "version": "1.0.0",
+  "description": "Monitor RSS and Atom feeds for new posts from blogs, news sites, and podcasts using Python feedparser",
+  "author": "aiden",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "rss",
+    "atom",
+    "feed",
+    "blog",
+    "news",
+    "monitor",
+    "feedparser",
+    "podcast",
+    "updates",
+    "aggregation"
+  ],
+  "created": "2026-04-27T17:11:39.230Z"
+}

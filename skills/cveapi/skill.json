@@ -1,0 +1,25 @@
+{
+  "name": "cveapi",
+  "version": "1.0.0",
+  "description": "Look up CVE vulnerability details by ID via MITRE CVE API with NVD fallback — severity, CVSS score, affected products, and references",
+  "author": "aiden",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "security",
+    "cve",
+    "vulnerability",
+    "nvd",
+    "mitre",
+    "cvss",
+    "patch",
+    "incident-response",
+    "compliance"
+  ],
+  "created": "2026-04-27T17:11:39.429Z"
+}

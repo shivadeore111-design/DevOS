@@ -1,0 +1,24 @@
+{
+  "name": "defender-quickscan",
+  "version": "1.0.0",
+  "description": "Trigger Windows Defender scans, check threat history, update signatures, and query protection status via PowerShell",
+  "author": "local",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "defender",
+    "antivirus",
+    "security",
+    "scan",
+    "threat",
+    "malware",
+    "windows",
+    "powershell"
+  ],
+  "created": "2026-04-27T17:11:39.461Z"
+}

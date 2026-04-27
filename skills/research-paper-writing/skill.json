@@ -1,0 +1,26 @@
+{
+  "name": "research-paper-writing",
+  "version": "1.0.0",
+  "description": "Structured pipeline for writing ML and AI research papers — from literature review to LaTeX submission",
+  "author": "aiden",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "research",
+    "paper",
+    "writing",
+    "latex",
+    "ml",
+    "ai",
+    "academic",
+    "arxiv",
+    "publication",
+    "citation"
+  ],
+  "created": "2026-04-27T17:11:40.658Z"
+}
