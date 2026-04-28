@@ -310,22 +310,36 @@ async function sendMessage() {
           sessionId = ev.sessionId
           document.getElementById('session-label').textContent = 'Session: ' + sessionId.slice(0,8)
         }
-        if (ev.type === 'token' || ev.delta) {
-          if (thinkEl) { thinkEl.remove() }
+        // server sends { token, done: false } — no type field
+        if (ev.token || ev.delta) {
+          if (thinkEl && thinkEl.parentNode) thinkEl.remove()
           if (!aiEl) aiEl = addMsg('aiden', '')
           buffer += (ev.delta || ev.token || '')
           aiEl.innerHTML = mdToHtml(buffer)
           chatBox.scrollTop = chatBox.scrollHeight
         }
-        if (ev.type === 'tool_call') {
-          if (thinkEl) thinkEl.innerHTML = '🔧 ' + escHtml(ev.tool || 'tool')
+        // server sends { tool: "name", message: "...", timestamp } for tool progress
+        if (ev.tool) {
+          if (thinkEl && thinkEl.parentNode) thinkEl.innerHTML = '🔧 ' + escHtml(ev.tool)
         }
-        if (ev.type === 'done' || ev.type === 'end') {
-          if (thinkEl && thinkEl.parentNode) thinkEl.remove()
+        // server sends { activity: { icon, message, style, rawTool? }, done: false }
+        if (ev.activity) {
+          const act = ev.activity
+          if (thinkEl && thinkEl.parentNode) {
+            thinkEl.innerHTML = (act.icon ? act.icon + ' ' : '🔧 ') + escHtml(act.message || act.rawTool || 'working…')
+          }
+          if (act.style === 'error' && !buffer) {
+            if (thinkEl && thinkEl.parentNode) thinkEl.remove()
+            addMsg('system', '⚠ ' + escHtml(act.message || 'Error'))
+          }
         }
-        if (ev.type === 'error') {
+        // server sends { thinking: { stage, message } }
+        if (ev.thinking) {
+          if (thinkEl && thinkEl.parentNode) thinkEl.innerHTML = '⋯ ' + escHtml(ev.thinking.message || 'thinking…')
+        }
+        // server sends { done: true } — no type field
+        if (ev.done === true) {
           if (thinkEl && thinkEl.parentNode) thinkEl.remove()
-          addMsg('system', '⚠ ' + escHtml(ev.message || 'Error'))
         }
       }
     }
