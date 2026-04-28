@@ -103,6 +103,26 @@ npm run build
 npm start
 ```
 
+### Uninstall
+
+**Windows**
+Open *Settings → Apps* (or *Control Panel → Programs*) and uninstall **Aiden**.
+To also remove user data:
+```powershell
+Remove-Item -Recurse -Force "$env:APPDATA\aiden"
+Remove-Item -Recurse -Force "$env:LOCALAPPDATA\aiden"
+```
+
+**Linux / macOS / WSL**
+```bash
+curl -fsSL aiden.taracod.com/uninstall.sh | bash
+```
+Or manually:
+```bash
+rm -rf ~/.local/share/aiden ~/.config/aiden
+npm uninstall -g devos-ai   # if installed via npm
+```
+
 ### Minimum .env to get started
 
 ```
