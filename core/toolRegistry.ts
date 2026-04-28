@@ -38,6 +38,18 @@ import { knowledgeBase }            from './knowledgeBase'
 import { getCalendarEvents }        from './tools/calendarTool'
 import { readGmail, sendGmail }     from './tools/gmailTool'
 import { loadConfig }               from '../providers/index'
+import {
+  pwNavigate,
+  pwScreenshot,
+  pwClick,
+  pwClickFirstResult,
+  pwType,
+  pwScroll,
+  pwSnapshot,
+  pwGetUrl,
+  pwClose,
+  getActiveBrowserPage as _getBridgePage,
+} from './playwrightBridge'
 
 const execAsync = promisify(exec)
 
@@ -232,41 +244,19 @@ export interface ToolResult {
 }
 
 // ── Singleton Playwright browser context (isolated profile) ──
+// LEGACY: Direct Playwright management moved to core/playwrightBridge.ts (N+48).
+// Kept here commented for reference — delete after one sprint if bridge is stable.
+//
+// let browserContext:    any = null
+// let activeBrowserPage: any = null
+// let browserIdleTimer:  any = null
+// function resetBrowserIdleTimer(): void { ... }
+// export function getActiveBrowserPage(): any { return activeBrowserPage }
+// async function getBrowserContext(): Promise<any> { ... }
 
-let browserContext:    any = null   // BrowserContext from launchPersistentContext
-let activeBrowserPage: any = null   // persists across tool calls within a session
-let browserIdleTimer:  any = null   // auto-close after 5 min of inactivity
-
-function resetBrowserIdleTimer(): void {
-  if (browserIdleTimer) clearTimeout(browserIdleTimer)
-  browserIdleTimer = setTimeout(async () => {
-    if (browserContext) {
-      console.log('[Browser] Closing idle browser after 5 min inactivity')
-      try { await browserContext.close() } catch {}
-      browserContext    = null
-      activeBrowserPage = null
-    }
-  }, 5 * 60 * 1000)
-}
-
-/** Returns the currently active Playwright page, or null if no browser is open. */
+/** Returns the currently active Playwright page (delegated to bridge). */
 export function getActiveBrowserPage(): any {
-  return activeBrowserPage
-}
-
-async function getBrowserContext(): Promise<any> {
-  if (!browserContext) {
-    const { chromium } = await import('playwright')
-    const profileDir   = getBrowserProfileDir()
-    console.log(`[Browser] Using isolated profile: ${profileDir}`)
-    console.log(`[Browser] User cookies NOT accessible`)
-    browserContext = await chromium.launchPersistentContext(profileDir, {
-      headless: false,
-      viewport: { width: 1280, height: 720 },
-    })
-  }
-  resetBrowserIdleTimer()
-  return browserContext
+  return _getBridgePage()
 }
 
 // ── Per-tool timeouts (ms) ────────────────────────────────────
@@ -291,6 +281,7 @@ const TOOL_TIMEOUTS: Record<string, number> = {
   browser_click:     10000,
   browser_scroll:     8000,
   browser_type:      10000,
+  browser_get_url:    5000,
   git_push:       60000,
   git_commit:     30000,
   git_status:     15000,
@@ -365,200 +356,56 @@ export const TOOLS: Record<string, (payload: any, ctx?: ToolContext) => Promise<
   open_browser: async (p) => {
     const url = p.url || p.command || ''
     if (!url) return { success: false, output: '', error: 'No URL provided' }
+    const r = await pwNavigate(url)
+    if (r.ok) return { success: true, output: `Opened browser: ${r.url}` }
+    // Playwright failed — fall back to system browser open
+    // (Legacy path: activeBrowserPage = null; openBrowser(url))
     try {
-      const context = await getBrowserContext()
-      // Reuse existing page if already on about:blank, else open new tab
-      const existingPages = context.pages() as any[]
-      const blankPage     = existingPages.find((pg: any) => pg.url() === 'about:blank')
-      activeBrowserPage   = blankPage ?? await context.newPage()
-      await activeBrowserPage.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 })
-      return { success: true, output: `Opened browser: ${url}` }
-    } catch (e: any) {
-      // Playwright failed — fall back to system browser, clear page ref
-      activeBrowserPage = null
-      try {
-        const result = await openBrowser(url)
-        return { success: true, output: result }
-      } catch (e2: any) { return { success: false, output: '', error: e2.message } }
-    }
+      const result = await openBrowser(url)
+      return { success: true, output: result }
+    } catch (e2: any) { return { success: false, output: '', error: r.error ?? e2.message } }
   },
 
   browser_screenshot: async () => {
-    try {
-      let page = activeBrowserPage
-      if (!page) {
-        const context = await getBrowserContext()
-        const pages   = context.pages() as any[]
-        page = pages[pages.length - 1] || (await context.newPage())
-      }
-      const outPath  = path.join(process.cwd(), 'workspace', `screenshot_${Date.now()}.png`)
-      fs.mkdirSync(path.dirname(outPath), { recursive: true })
-      await page.screenshot({ path: outPath, fullPage: false })
-      return { success: true, output: `Screenshot saved: ${outPath}` }
-    } catch (e: any) { return { success: false, output: '', error: e.message } }
+    const r = await pwScreenshot()
+    if (r.ok) return { success: true, output: `Screenshot saved: ${r.path}` }
+    return { success: false, output: '', error: r.error }
   },
 
-  // ── browser_click — reliable element click with readiness guards ──────────
+  // ── browser_click — routes through playwrightBridge ──────────────────────
   //
   // Semantic target shortcuts (pass target: 'first_result'):
   //   YouTube search  → a#video-title  (waits for JS render)
-  //   Google search   → div.g a        (first organic result)
+  //   Google search   → div.g h3 a     (first organic result)
   //   DuckDuckGo      → article[data-testid="result"] h2 a
   //
   // For all other selectors: waits for the element to be visible before clicking.
-  // For link clicks that navigate: uses Promise.all([waitForNavigation, click])
-  // so the tool resolves only after the new page has loaded.
   browser_click: async (p) => {
     const rawTarget = p.target || p.selector || p.text || p.command || ''
-    try {
-      let page = activeBrowserPage
-      if (!page) {
-        const context = await getBrowserContext()
-        const pages   = context.pages() as any[]
-        page = pages[pages.length - 1]
-      }
-      if (!page) return { success: false, output: '', error: 'No browser page open. Use open_browser first.' }
-
-      // ── Site-specific first-result dispatcher ──────────────────────────────
-      if (rawTarget === 'first_result') {
-        const currentUrl = page.url() as string
-
-        // Site-specific config: { selectors (tried in order), navPattern }
-        type SiteConfig = { selectors: string[]; navPattern?: RegExp }
-        const SITE_CONFIGS: { pattern: RegExp; cfg: SiteConfig }[] = [
-          {
-            pattern: /youtube\.com\/results/,
-            cfg: {
-              selectors:  ['a#video-title', 'ytd-video-renderer a[href*="/watch"]', 'ytd-rich-item-renderer a#thumbnail'],
-              navPattern: /youtube\.com\/watch/,
-            },
-          },
-          {
-            pattern: /google\.com\/search/,
-            cfg: {
-              selectors:  ['div.g h3 a', 'div#search a[href]:not([href*="google.com/search"])', 'h3.LC20lb'],
-              navPattern: undefined,
-            },
-          },
-          {
-            pattern: /duckduckgo\.com/,
-            cfg: {
-              selectors:  ['article[data-testid="result"] h2 a', 'a.result__a', 'ol.react-results--main li a[data-testid="result-title-a"]'],
-              navPattern: undefined,
-            },
-          },
-          {
-            pattern: /bing\.com\/search/,
-            cfg: {
-              selectors:  ['li.b_algo h2 a', '#b_results .b_algo a'],
-              navPattern: undefined,
-            },
-          },
-        ]
-
-        // Find matching site config
-        const match = SITE_CONFIGS.find(s => s.pattern.test(currentUrl))
-        if (!match) {
-          return { success: false, output: '', error: `first_result not supported for ${currentUrl} — use an explicit CSS selector` }
-        }
-
-        const { selectors, navPattern } = match.cfg
-
-        // Wait for at least one selector to appear, then click the first visible match
-        let locator: any = null
-        for (const sel of selectors) {
-          try {
-            await page.waitForSelector(sel, { state: 'visible', timeout: 8000 })
-            locator = page.locator(sel).first()
-            break
-          } catch { /* try next selector */ }
-        }
-        if (!locator) {
-          return { success: false, output: '', error: `first_result: none of the selectors appeared on ${currentUrl}` }
-        }
-
-        if (navPattern) {
-          // Click + wait for navigation together
-          await Promise.all([
-            page.waitForURL(navPattern, { timeout: 12000 }),
-            locator.click({ timeout: 5000 }),
-          ])
-          const finalUrl = page.url()
-          activeBrowserPage = page
-          return { success: true, output: `Clicked first result → ${finalUrl}` }
-        } else {
-          await locator.click({ timeout: 5000 })
-          await page.waitForLoadState('domcontentloaded', { timeout: 8000 }).catch(() => {})
-          return { success: true, output: `Clicked first result on ${currentUrl}` }
-        }
-      }
-
-      // ── Generic selector click ─────────────────────────────────────────────
-      // Always wait for the element to be visible before clicking.
-      // Try exact selector first, then fall back to Playwright's text= matcher.
-      const tryClick = async (sel: string): Promise<boolean> => {
-        try {
-          await page.waitForSelector(sel, { state: 'visible', timeout: 5000 })
-          await page.locator(sel).first().click({ timeout: 5000 })
-          return true
-        } catch { return false }
-      }
-
-      const clicked = (await tryClick(rawTarget)) || (await tryClick(`text=${rawTarget}`))
-      if (!clicked) {
-        return { success: false, output: '', error: `Element not found or not visible: "${rawTarget}"` }
-      }
-
-      // Give the page a moment to react (navigation or JS update)
-      await page.waitForLoadState('domcontentloaded', { timeout: 5000 }).catch(() => {})
-      return { success: true, output: `Clicked: ${rawTarget}` }
-    } catch (e: any) { return { success: false, output: '', error: e.message } }
+    if (rawTarget === 'first_result') {
+      const r = await pwClickFirstResult()
+      if (r.ok) return { success: true, output: `Clicked first result → ${r.url ?? ''}` }
+      return { success: false, output: '', error: r.error }
+    }
+    const r = await pwClick(rawTarget)
+    if (r.ok) return { success: true, output: `Clicked: ${rawTarget}` }
+    return { success: false, output: '', error: r.error }
   },
 
   browser_scroll: async (p) => {
     const direction = (p.direction as string) || 'down'
     const amount    = typeof p.amount === 'number' ? p.amount : 500
     const selector  = p.selector as string | undefined
-    try {
-      let page = activeBrowserPage
-      if (!page) {
-        const context = await getBrowserContext()
-        const pages   = context.pages() as any[]
-        page = pages[pages.length - 1]
-      }
-      if (!page) return { success: false, output: '', error: 'No browser page open. Use open_browser first.' }
+    const r = await pwScroll(direction as any, amount, selector)
+    if (r.ok) return { success: true, output: selector ? `Scrolled ${direction} ${selector}` : `Scrolled ${direction} by ${amount}px` }
+    return { success: false, output: '', error: r.error }
+  },
 
-      if (selector) {
-        // Element-scoped scroll
-        await page.waitForSelector(selector, { state: 'visible', timeout: 5000 }).catch(() => {})
-        if (direction === 'top') {
-          await page.evaluate((sel: string) => {
-            const el = (globalThis as any).document.querySelector(sel); if (el) el.scrollTop = 0
-          }, selector)
-        } else if (direction === 'bottom') {
-          await page.evaluate((sel: string) => {
-            const el = (globalThis as any).document.querySelector(sel); if (el) (el as any).scrollTop = (el as any).scrollHeight
-          }, selector)
-        } else {
-          const delta = direction === 'up' ? -amount : amount
-          await page.evaluate(({ sel, dy }: { sel: string; dy: number }) => {
-            const el = (globalThis as any).document.querySelector(sel); if (el) (el as any).scrollBy(0, dy)
-          }, { sel: selector, dy: delta })
-        }
-        return { success: true, output: `Scrolled ${direction} ${selector}` }
-      }
-
-      // Window scroll
-      if (direction === 'top') {
-        await page.evaluate(() => (globalThis as any).window.scrollTo(0, 0))
-      } else if (direction === 'bottom') {
-        await page.evaluate(() => (globalThis as any).window.scrollTo(0, (globalThis as any).document.body.scrollHeight))
-      } else {
-        const delta = direction === 'up' ? -amount : amount
-        await page.evaluate((dy: number) => (globalThis as any).window.scrollBy(0, dy), delta)
-      }
-      return { success: true, output: `Scrolled ${direction} by ${amount}px` }
-    } catch (e: any) { return { success: false, output: '', error: e.message } }
+  // ── browser_get_url — return the URL of the current browser page ──────────
+  browser_get_url: async () => {
+    const r = await pwGetUrl()
+    if (r.ok) return { success: true, output: r.url ?? '' }
+    return { success: false, output: '', error: r.error }
   },
 
   // ── LocalSend LAN file transfer ───────────────────────────────
@@ -645,37 +492,19 @@ export const TOOLS: Record<string, (payload: any, ctx?: ToolContext) => Promise<
   browser_type: async (p) => {
     const selector = p.selector || 'input'
     const text     = p.text || p.command || ''
-    try {
-      let page = activeBrowserPage
-      if (!page) {
-        const context = await getBrowserContext()
-        const pages   = context.pages() as any[]
-        page = pages[pages.length - 1]
-      }
-      if (!page) return { success: false, output: '', error: 'No browser page open. Use open_browser first.' }
-      // Wait for the input to be visible before filling
-      await page.waitForSelector(selector, { state: 'visible', timeout: 5000 }).catch(() => {})
-      await page.fill(selector, text)
-      return { success: true, output: `Typed "${text}" into ${selector}` }
-    } catch (e: any) { return { success: false, output: '', error: e.message } }
+    const r = await pwType(selector, text)
+    if (r.ok) return { success: true, output: `Typed "${text}" into ${selector}` }
+    return { success: false, output: '', error: r.error }
   },
 
   browser_extract: async (_p, ctx?) => {
-    try {
-      ctx?.emitProgress?.('finding browser page...')
-      let page = activeBrowserPage
-      if (!page) {
-        const context = await getBrowserContext()
-        const pages   = context.pages() as any[]
-        page = pages[pages.length - 1]
-      }
-      if (!page) return { success: false, output: '', error: 'No browser page open. Use open_browser first.' }
-      ctx?.emitProgress?.('extracting page content...')
-      const content = await page.evaluate('document.body.innerText')
-      const text    = content as string
-      ctx?.emitProgress?.(`extracted ${text.length.toLocaleString()} chars`)
-      return { success: true, output: text.slice(0, 3000) }
-    } catch (e: any) { return { success: false, output: '', error: e.message } }
+    ctx?.emitProgress?.('extracting page content...')
+    const r = await pwSnapshot()
+    if (r.ok) {
+      ctx?.emitProgress?.(`extracted ${(r.text ?? '').length.toLocaleString()} chars`)
+      return { success: true, output: r.text ?? '' }
+    }
+    return { success: false, output: '', error: r.error }
   },
 
   shell_exec: async (p, ctx?) => {
@@ -2630,6 +2459,7 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   browser_type:            'Type text into a browser input field',
   browser_extract:         'Extract text content from the current browser page',
   browser_screenshot:      'Take a screenshot of the current browser window',
+  browser_get_url:         'Return the URL currently loaded in the browser',
   file_write:              'Write content to a file at the specified path',
   file_read:               'Read the contents of a file at the specified path',
   file_list:               'List files in a directory',
@@ -2769,6 +2599,7 @@ const TOOL_TIERS: Record<string, ToolTier> = {
   browser_type:            3,
   browser_extract:         3,
   browser_screenshot:      3,
+  browser_get_url:         3,
   window_list:             3,
   window_focus:            3,
   app_launch:              3,
@@ -2848,6 +2679,7 @@ const TOOL_CATEGORIES: Record<string, ToolCategory[]> = {
   browser_type:            ['browser'],
   browser_extract:         ['browser'],
   browser_screenshot:      ['browser'],
+  browser_get_url:         ['browser'],
   window_list:             ['browser', 'system'],
   window_focus:            ['browser', 'system'],
   app_launch:              ['browser', 'system'],

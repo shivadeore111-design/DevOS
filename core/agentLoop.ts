@@ -804,7 +804,8 @@ export async function planWithLLM(
 
   const ALLOWED_TOOLS = [
     'web_search', 'fetch_page', 'open_browser', 'browser_extract',
-    'browser_click', 'browser_type', 'file_write', 'file_read',
+    'browser_click', 'browser_type', 'browser_screenshot', 'browser_scroll', 'browser_get_url',
+    'file_write', 'file_read',
     'file_list', 'shell_exec', 'run_python', 'run_node',
     'system_info', 'notify', 'deep_research', 'get_stocks',
     'get_market_data', 'get_company_info', 'social_research',
@@ -814,6 +815,7 @@ export async function planWithLLM(
     'clipboard_read', 'clipboard_write', 'window_list', 'window_focus',
     'app_launch', 'app_close',
     'watch_folder', 'watch_folder_list',
+    'send_file_local', 'receive_file_local',
     'get_briefing',
     'respond',
     'clarify', 'todo', 'cronjob', 'vision_analyze',
@@ -1474,7 +1476,8 @@ Output ONLY valid JSON, nothing else:`
 
 const VALID_TOOLS = [
   'web_search', 'fetch_page', 'fetch_url', 'open_browser', 'browser_extract',
-  'browser_click', 'browser_type', 'browser_screenshot', 'file_write', 'file_read',
+  'browser_click', 'browser_type', 'browser_screenshot', 'browser_scroll', 'browser_get_url',
+  'file_write', 'file_read',
   'file_list', 'shell_exec', 'run_python', 'run_node', 'run_powershell',
   'system_info', 'notify', 'deep_research', 'get_stocks', 'run_agent', 'git_commit',
   'git_push', 'get_market_data', 'get_company_info',
@@ -1484,6 +1487,7 @@ const VALID_TOOLS = [
   'clipboard_read', 'clipboard_write', 'window_list', 'window_focus',
   'app_launch', 'app_close',
   'watch_folder', 'watch_folder_list',
+  'send_file_local', 'receive_file_local',
   'clarify', 'todo', 'cronjob', 'vision_analyze',
   'voice_speak', 'voice_transcribe', 'voice_clone', 'voice_design',
   'lookup_skill', 'lookup_tool_schema',
@@ -1834,7 +1838,7 @@ const NO_RETRY_TOOLS = new Set([
   'shell_exec', 'run_python', 'run_node', 'notify',
   'mouse_click', 'keyboard_type', 'keyboard_press',
   'app_launch', 'app_close',
-  'open_browser', 'browser_extract', 'browser_screenshot', 'browser_click', 'browser_type',
+  'open_browser', 'browser_extract', 'browser_screenshot', 'browser_click', 'browser_type', 'browser_scroll', 'browser_get_url',
 ])
 
 async function executeToolWithRetry(tool: string, input: any, maxRetries = 2): Promise<any> {

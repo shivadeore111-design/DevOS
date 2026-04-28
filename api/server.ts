@@ -40,6 +40,7 @@ import { getSmartProvider, markRateLimited, incrementUsage, logProviderStatus, g
 import { discoverLocalModels, getOllamaTimeout } from '../core/modelDiscovery'
 import { detectTimezone } from '../core/userProfile'
 import { executeTool, getActiveBrowserPage, setProgressEmitter } from '../core/toolRegistry'
+import { pwClose } from '../core/playwrightBridge'
 import { getScreenSize, takeScreenshot as captureScreen } from '../core/computerControl'
 import { planWithLLM, executePlan, respondWithResults, callLLM, surfaceRelevantMemories, interruptCurrentCall, getBudgetState, setStatusEmitter } from '../core/agentLoop'
 import { getVerb } from '../core/statusVerbs'
@@ -5853,8 +5854,8 @@ export function startApiServer(portArg?: number): Express {
   }
 
   // ── Clean shutdown: remove PID on signal ────────────────────
-  process.once('SIGINT',  () => { removePid(); distillAllActiveSessions(8_000).finally(() => process.exit(0)) })
-  process.once('SIGTERM', () => { removePid(); distillAllActiveSessions(8_000).finally(() => process.exit(0)) })
+  process.once('SIGINT',  () => { removePid(); pwClose().finally(() => distillAllActiveSessions(8_000).finally(() => process.exit(0))) })
+  process.once('SIGTERM', () => { removePid(); pwClose().finally(() => distillAllActiveSessions(8_000).finally(() => process.exit(0))) })
 
   // ── EADDRINUSE: kill stale process, retry once ───────────────
   server.on('error', (err: NodeJS.ErrnoException) => {
