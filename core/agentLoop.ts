@@ -35,6 +35,7 @@ import { semanticMemory }          from './semanticMemory'
 import { createChildSession }      from './sessionMemory'
 import { getActiveGoalsSummary }  from './goalTracker'
 import { fireHook }               from './hooks'
+import { pluginHooks }            from './pluginLoader'
 import { instinctSystem }         from './instinctSystem'
 import { startWorkflow, addNode, updateNode, completeWorkflow } from './workflowTracker'
 import { MAX_PARALLEL, chunkSteps, hasParallelism } from './parallelExecutor'
@@ -1848,11 +1849,23 @@ async function executeToolWithRetry(tool: string, input: any, maxRetries = 2): P
   const retryable = !NO_RETRY_TOOLS.has(tool)
   const effectiveMax = retryable ? maxRetries : 0
 
+  // ── Plugin preTool hooks ──────────────────────────────────────
+  let effectiveInput = input
+  for (const hook of pluginHooks.preTool) {
+    try {
+      const r = await hook(tool, effectiveInput)
+      if (r.skip)  return { success: true, output: '[skipped by plugin]', skippedByPlugin: true }
+      if (r.input) effectiveInput = r.input
+    } catch (e: any) {
+      console.warn(`[PluginHook] preTool error for ${tool}:`, e.message)
+    }
+  }
+
   for (let attempt = 0; attempt <= effectiveMax; attempt++) {
     try {
-      const result = await executeTool(tool, input)
+      const result = await executeTool(tool, effectiveInput)
       if (result.success) {
-        const quality = validateResultQuality(tool, input, result.output || result)
+        const quality = validateResultQuality(tool, effectiveInput, result.output || result)
         if (!quality.valid) {
           console.log(`[Quality] ${tool} returned but quality check failed: ${quality.reason}`)
           if (attempt < effectiveMax) {
@@ -1864,7 +1877,19 @@ async function executeToolWithRetry(tool: string, input: any, maxRetries = 2): P
           console.log(`[Quality] ${tool} — accepting low-quality result after ${effectiveMax} retries`)
           appendLesson(`${tool} produced low-quality output (${quality.reason}) after ${effectiveMax} retries — consider alternative approach for this tool.`)
         }
-        return result
+
+        // ── Plugin postTool hooks ─────────────────────────────
+        let finalResult = result
+        for (const hook of pluginHooks.postTool) {
+          try {
+            const r = await hook(tool, effectiveInput, finalResult)
+            if (r.result) finalResult = r.result
+          } catch (e: any) {
+            console.warn(`[PluginHook] postTool error for ${tool}:`, e.message)
+          }
+        }
+
+        return finalResult
       }
 
       if (attempt < effectiveMax) {

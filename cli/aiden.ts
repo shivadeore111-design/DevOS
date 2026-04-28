@@ -875,6 +875,7 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       helpRow('/memget',            'Full detail for specific memory IDs  — Layer 3'),
       helpRow('/goals',             'Active goals'),
       helpRow('/skills',            'Skill lifecycle  (search / registry / install / list / check / update / audit / remove / publish / export / import / stats)'),
+      helpRow('/plugins',           'Plugin manager  (list / reload)'),
       helpRow('/install <name>',    'Install a skill from the public registry  (skills.taracod.com)'),
       helpRow('/publish <name>',    'Publish a skill to the public registry  (Pro — requires license)'),
       helpRow('/profile',             'View / edit / clear the structured user profile (Honcho model)'),
@@ -2061,6 +2062,72 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       pagerState  = { skills, pageIndex: page, pageSize: PAGE_SIZE }
       // pager mode active — navigate with n/p/q
     }
+    return true
+  }
+
+  // ── /plugins ──────────────────────────────────────────────────────────────────
+  if (command === '/plugins') {
+    const sub = parts[1] ?? 'list'
+
+    if (sub === 'reload') {
+      process.stdout.write(`  ${T.dim}Reloading flat plugins…${T.reset}\n`)
+      const data = await apiPost('/api/plugins/reload', {})
+      if (!data) { console.log(`  ${T.error}Reload failed — server error${T.reset}\n`); return true }
+      const flat = (data.plugins || []) as Array<{ name: string; version: string; file: string }>
+      console.log()
+      console.log(panel({
+        title: `${MARKS.TRI} Plugins — reloaded`,
+        lines: flat.length === 0
+          ? ['', `  ${T.dim}No flat plugins found in workspace/plugins/*.js${T.reset}`, '']
+          : [
+              '',
+              ...flat.map(p =>
+                `  ${fg(COLORS.success)}●${RST} ${p.name.padEnd(24)} ${T.dim}v${p.version}  ${p.file}${T.reset}`
+              ),
+              '',
+            ],
+      }))
+      console.log()
+      return true
+    }
+
+    // Default: list
+    const data = await apiFetch<any>('/api/plugins/list', null)
+    if (!data) { console.log(`  ${T.error}Could not fetch plugin list${T.reset}\n`); return true }
+    const subdirPlugins = (data.subdirectory || []) as Array<{ name: string; version: string; enabled: boolean }>
+    const flatPlugins   = (data.flat         || []) as Array<{ name: string; version: string; file: string; loadedAt: number }>
+    const lines: string[] = ['']
+
+    if (subdirPlugins.length === 0 && flatPlugins.length === 0) {
+      lines.push(`  ${T.dim}No plugins loaded.${T.reset}`)
+      lines.push(`  ${T.dim}Drop a .js file in workspace/plugins/ to add one.${T.reset}`)
+    } else {
+      if (subdirPlugins.length > 0) {
+        lines.push(`  ${T.dim}── Subdirectory plugins (workspace/plugins/*/plugin.json)${T.reset}`)
+        for (const p of subdirPlugins) {
+          const dot = p.enabled !== false
+            ? `${fg(COLORS.success)}●${RST}`
+            : `${T.dim}○${T.reset}`
+          lines.push(`  ${dot} ${p.name.padEnd(26)} ${T.dim}v${p.version}${T.reset}`)
+        }
+        lines.push('')
+      }
+      if (flatPlugins.length > 0) {
+        lines.push(`  ${T.dim}── Flat plugins (workspace/plugins/*.js)${T.reset}`)
+        for (const p of flatPlugins) {
+          lines.push(
+            `  ${fg(COLORS.success)}●${RST} ${p.name.padEnd(26)} ${T.dim}v${p.version}  ${p.file}${T.reset}`
+          )
+        }
+        lines.push('')
+      }
+    }
+    lines.push(`  ${T.dim}/plugins reload — hot-reload flat plugins${T.reset}`)
+    lines.push('')
+
+    console.log()
+    console.log(panel({ title: `${MARKS.TRI} Plugins`, lines }))
+    console.log()
     return true
   }
 

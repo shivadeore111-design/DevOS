@@ -88,6 +88,7 @@ import { costTracker }   from '../core/costTracker'
 import { sessionMemory, getSessionLineage, loadSessionMetadata } from '../core/sessionMemory'
 import { memoryExtractor } from '../core/memoryExtractor'
 import { pluginManager }   from '../core/pluginSystem'
+import { loadPlugins, reloadPlugins, listFlatPlugins, pluginHooks as flatPluginHooks } from '../core/pluginLoader'
 import { getIdentity, refreshIdentity } from '../core/aidenIdentity'
 import { eventBus } from '../core/eventBus'
 import { getWorkflow } from '../core/workflowTracker'
@@ -1384,6 +1385,10 @@ export function createApiServer(): Express {
     // ── Callback system — additive layer alongside existing SSE sends ──
     const sid = (sessionId as string | undefined) || 'default'
     callbacks.emit('session_start', sid, { message }).catch(() => {})
+    // Fire flat-plugin session hooks
+    for (const fn of flatPluginHooks.onSessionStart) {
+      fn(sid, { message }).catch(() => {})
+    }
 
     // Forward callback events from other sessions to this SSE connection.
     // The sessionId guard prevents re-sending this session's own emitted events.
@@ -1398,6 +1403,9 @@ export function createApiServer(): Express {
       setProgressEmitter(null)
       unsubscribeSSE()
       callbacks.emit('session_end', sid, {}).catch(() => {})
+      for (const fn of flatPluginHooks.onSessionEnd) {
+        fn(sid, {}).catch(() => {})
+      }
       distillSession(sid).catch(() => {})
     })
 
@@ -2697,10 +2705,29 @@ export function createApiServer(): Express {
     } catch (err: any) { res.status(500).json({ error: err.message }) }
   })
 
-  // GET /api/plugins — list loaded community plugins
+  // GET /api/plugins — list loaded community plugins (subdirectory format)
   app.get('/api/plugins', (_req: Request, res: Response) => {
     try {
       res.json({ plugins: pluginManager.list() })
+    } catch (e: any) { res.status(500).json({ error: e.message }) }
+  })
+
+  // GET /api/plugins/list — list all loaded plugins (subdirectory + flat)
+  app.get('/api/plugins/list', (_req: Request, res: Response) => {
+    try {
+      res.json({
+        subdirectory: pluginManager.list(),
+        flat:         listFlatPlugins(),
+      })
+    } catch (e: any) { res.status(500).json({ error: e.message }) }
+  })
+
+  // POST /api/plugins/reload — hot-reload all flat .js plugins
+  app.post('/api/plugins/reload', async (_req: Request, res: Response) => {
+    try {
+      const dir = path.join(process.cwd(), 'workspace', 'plugins')
+      await reloadPlugins(dir)
+      res.json({ ok: true, plugins: listFlatPlugins() })
     } catch (e: any) { res.status(500).json({ error: e.message }) }
   })
 
@@ -5797,6 +5824,10 @@ export function startApiServer(portArg?: number): Express {
 
   // Load community plugins from workspace/plugins/
   pluginManager.loadAll().catch(e => console.error('[Plugins] Load failed:', e.message))
+
+  // Load flat .js plugins from workspace/plugins/*.js
+  const flatPluginDir = path.join(process.cwd(), 'workspace', 'plugins')
+  loadPlugins(flatPluginDir).catch(e => console.error('[PluginLoader] Load failed:', e.message))
 
   // Start background license refresh (12-hour interval, silent)
   startLicenseRefresh()
