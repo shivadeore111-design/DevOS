@@ -4460,7 +4460,7 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       const sidFailed               = SESSION_ID
 
       // Retrieve the last exchange from sessionMemory
-      const sessions = sessionMemory.getSessions?.() ?? []
+      const sessions: any[] = []  // getSessions not yet implemented; falls back to manualReason
       const thisSess = sessions.find((s: any) => s.id === sidFailed)
       const exchanges = thisSess?.exchanges ?? []
       const last = exchanges[exchanges.length - 1]
@@ -4506,11 +4506,11 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       const dockerIcon = status.dockerAvailable ? `${T.success}●${T.reset}` : `${T.error}●${T.reset}`
       const imageIcon  = status.imageCached     ? `${T.success}✓${T.reset}` : `${T.dim}–${T.reset}`
       console.log(`
-  ${fg(COLORS.info)}╔══ Sandbox Status ═══════════════════════════════╗${T.reset}
-  ${fg(COLORS.info)}║${T.reset}  Mode:    ${modeColor}${status.mode.toUpperCase()}${T.reset}
-  ${fg(COLORS.info)}║${T.reset}  Docker:  ${dockerIcon} ${status.dockerAvailable ? 'available' : 'not found'}
-  ${fg(COLORS.info)}║${T.reset}  Image:   ${imageIcon} ${status.imageTag}${status.imageCached ? ' (cached)' : ' (not built)'}
-  ${fg(COLORS.info)}╚══════════════════════════════════════════════════╝${T.reset}
+  ${fg(COLORS.blue)}╔══ Sandbox Status ═══════════════════════════════╗${T.reset}
+  ${fg(COLORS.blue)}║${T.reset}  Mode:    ${modeColor}${status.mode.toUpperCase()}${T.reset}
+  ${fg(COLORS.blue)}║${T.reset}  Docker:  ${dockerIcon} ${status.dockerAvailable ? 'available' : 'not found'}
+  ${fg(COLORS.blue)}║${T.reset}  Image:   ${imageIcon} ${status.imageTag}${status.imageCached ? ' (cached)' : ' (not built)'}
+  ${fg(COLORS.blue)}╚══════════════════════════════════════════════════╝${T.reset}
 
   ${T.dim}Set AIDEN_SANDBOX_MODE in .env  |  /sandbox auto|strict|off|build${T.reset}
 `)
