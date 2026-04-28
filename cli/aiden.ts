@@ -340,7 +340,9 @@ async function printBanner(): Promise<void> {
   const updateLine = formatUpdateLine(updateInfo)
   if (updateLine) console.log(updateLine)
 
-  // ── Ready prompt ──
+  // ── Dashboard link + Ready prompt ──
+  const port = (API_BASE.split(':')[2] || '4200').replace(/\D.*/, '')
+  console.log(`  ${T.dim}dashboard${T.reset} ${fg(COLORS.orange)}http://localhost:${port}/ui${RST}`)
   console.log(`  ${T.dim}${hr()}${T.reset}`)
   console.log(`  ${fg(COLORS.orange)}ready ${MARKS.ARROW}${RST}  ${T.dim}/help for commands${T.reset}`)
   console.log()

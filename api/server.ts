@@ -116,6 +116,7 @@ import { SignalAdapter }     from '../core/channels/signal'
 import { TwilioAdapter }     from '../core/channels/twilio'
 import { IMessageAdapter }   from '../core/channels/imessage'
 import { EmailAdapter }      from '../core/channels/email'
+import { getDashboardHTML }  from './dashboard'
 
 // —— Sprint 25: module-level WebSocket clients registry (shared between createApiServer routes and startApiServer WS setup)
 let wsBroadcastClients   = new Set<any>()
@@ -508,6 +509,16 @@ export function createApiServer(): Express {
 
   // â”€â”€ Core routes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
+  // GET /ui — local web dashboard
+  app.get('/ui', (_req: Request, res: Response) => {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8')
+    res.send(getDashboardHTML())
+  })
+
+  // GET /api/ping — lightweight status probe for dashboard
+  app.get('/api/ping', (_req: Request, res: Response) => {
+    res.json({ ok: true, version: VERSION, ts: Date.now() })
+  })
   // GET /api/health â€” liveness probe (no auth required)
   app.get('/api/health', (_req: Request, res: Response) => {
     res.json({ status: 'ok', version: VERSION, timestamp: new Date().toISOString() })
