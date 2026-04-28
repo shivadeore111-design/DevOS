@@ -53,45 +53,103 @@ offline via Ollama.
 
 Windows-only skills (clipboard history, Defender, OneNote, Outlook COM, registry, etc.) are tagged `platform: windows` and are silently skipped on other platforms at load time.
 
-## Install
+## Quick Start
 
-### Windows
+### Prerequisites
+- Node.js 18+
+- Git
+- Ollama (optional, for offline mode): [ollama.ai](https://ollama.ai)
+
+### Windows — one-line install
 
 ```powershell
 irm aiden.taracod.com/install.ps1 | iex
 ```
 
-Or [download the installer](https://github.com/taracodlabs/aiden-releases/releases/latest) manually. Windows 10/11, 64-bit, ~500 MB disk space.
+Or [download the signed installer](https://github.com/taracodlabs/aiden-releases/releases/latest) manually. Windows 10/11, 64-bit, ~500 MB disk space.
 
-### Linux / WSL / macOS
+### Linux / WSL / macOS — one-line install
 
 ```bash
 curl -fsSL aiden.taracod.com/install.sh | bash
 ```
 
-Or install manually:
+### Manual install (all platforms)
 
 ```bash
-# Prerequisites: Node.js 20+, git, Ollama (recommended)
 git clone https://github.com/taracodlabs/aiden.git
 cd aiden
-cp .env.example .env          # configure OLLAMA_HOST, API keys, etc.
 npm install
-npm run build                 # compile TypeScript → dist-bundle/
-npm start                     # starts the API server (terminal 1)
-# In a second terminal:
-npm run cli                   # interactive TUI (terminal 2)
+cp .env.example .env
+# Edit .env — add at minimum one API key (Groq is free: console.groq.com)
 ```
 
+### Run
+
 ```bash
-# After pulling updates, always rebuild:
+# Terminal 1 — build and start server
+npm run build
+npm start
+
+# Terminal 2 — start CLI
+npm run cli
+```
+
+### After pulling updates
+
+```bash
 git pull
-npm install
 npm run build
 npm start
 ```
 
+### Minimum .env to get started
+
+```
+GROQ_API_KEY=your_key_here   # free at console.groq.com/keys
+```
+
 Set `AIDEN_HEADLESS=true` to suppress the Electron GUI when running the packaged app.
+
+---
+
+## Troubleshooting
+
+**"Cannot find module" or TypeScript errors**
+```bash
+npm run build   # always rebuild after git pull
+```
+
+**"npm run serve" not found**
+There is no `serve` script. Use `npm start` instead.
+
+**Server not responding**
+```bash
+# Check if server is running on port 4200
+netstat -ano | findstr :4200   # Windows
+lsof -i :4200                  # Linux/macOS
+```
+
+**Ollama not connecting**
+```bash
+ollama serve             # make sure Ollama is running
+ollama pull qwen2.5:7b   # pull your chosen model
+```
+
+**Changing Ollama model or inference settings** (no recompile needed — edit `.env`):
+```
+OLLAMA_MODEL=qwen2.5:7b
+OLLAMA_TEMPERATURE=0.3
+OLLAMA_CONTEXT_LENGTH=4096
+OLLAMA_NUM_GPU=99
+```
+
+**Use with any OpenAI client (Open WebUI, Chatbox, Cursor, etc.)**
+```
+Base URL:  http://localhost:4200
+API Key:   none required
+Model:     aiden-3.13
+```
 
 ## Screenshots
 
