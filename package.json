@@ -26,17 +26,21 @@
   "bin": {
     "devos-ai": "./dist/bin/npx-init.js",
     "devos": "./dist/index.js",
-    "aiden": "./cli/aiden.js"
+    "aiden": "./dist-bundle/cli.js"
   },
   "main": "./dist/index.js",
   "files": [
     "dist/",
+    "dist-bundle/",
     "dashboard-next/",
     "context/",
     "config/",
     "README.md",
     "LICENSE",
     "docker-compose.yml"
+  ],
+  "workspaces": [
+    "packages/*"
   ],
   "preferGlobal": true,
   "type": "commonjs",
