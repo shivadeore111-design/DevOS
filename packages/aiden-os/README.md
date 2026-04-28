@@ -32,8 +32,8 @@ On subsequent runs, it skips the wizard and goes straight to the AI assistant.
 
 ## Peer dependency
 
-`aiden-os` auto-installs `devos-ai` the first time it runs.  
-You can also pre-install it: `npm install -g devos-ai`
+`aiden-os` auto-installs `aiden-runtime` the first time it runs.  
+You can also pre-install it: `npm install -g aiden-runtime`
 
 ## License
 

@@ -334,22 +334,26 @@ async function continueWizard(rl, selectedProvider) {
   log.success('Setup complete! Starting Aiden…\n')
 }
 
-// ── Resolve devos-ai from multiple possible locations ────────────────────────
+// ── Resolve aiden-runtime from multiple possible locations ───────────────────
+// The runtime package is published as "aiden-runtime" on npm.
+// (The npm name "devos-ai" is taken by an unrelated project.)
+const RUNTIME_PKG = 'aiden-runtime'
+
 function resolveDevOs() {
-  // 1. Already in the devos-ai package itself (monorepo / dev)
+  // 1. Already in the monorepo (dev environment)
   try {
-    return require.resolve('devos-ai/dist/api/server')
+    return require.resolve(`${RUNTIME_PKG}/dist/api/server`)
   } catch {}
 
-  // 2. Global node_modules (npm i -g aiden-os installs peer devos-ai globally)
+  // 2. Global node_modules (npm i -g aiden-os auto-installs aiden-runtime)
   try {
     const globalRoot = execSync('npm root -g', { encoding: 'utf8', timeout: 5000 }).trim()
-    const p = path.join(globalRoot, 'devos-ai', 'dist', 'api', 'server.js')
+    const p = path.join(globalRoot, RUNTIME_PKG, 'dist', 'api', 'server.js')
     if (fs.existsSync(p)) return p
   } catch {}
 
   // 3. Local node_modules relative to cwd
-  const local = path.resolve(process.cwd(), 'node_modules', 'devos-ai', 'dist', 'api', 'server.js')
+  const local = path.resolve(process.cwd(), 'node_modules', RUNTIME_PKG, 'dist', 'api', 'server.js')
   if (fs.existsSync(local)) return local
 
   return null
@@ -357,40 +361,40 @@ function resolveDevOs() {
 
 function resolveDevOsCli() {
   try {
-    return require.resolve('devos-ai/dist-bundle/cli')
+    return require.resolve(`${RUNTIME_PKG}/dist-bundle/cli`)
   } catch {}
 
   try {
     const globalRoot = execSync('npm root -g', { encoding: 'utf8', timeout: 5000 }).trim()
-    const p = path.join(globalRoot, 'devos-ai', 'dist-bundle', 'cli.js')
+    const p = path.join(globalRoot, RUNTIME_PKG, 'dist-bundle', 'cli.js')
     if (fs.existsSync(p)) return p
   } catch {}
 
-  const local = path.resolve(process.cwd(), 'node_modules', 'devos-ai', 'dist-bundle', 'cli.js')
+  const local = path.resolve(process.cwd(), 'node_modules', RUNTIME_PKG, 'dist-bundle', 'cli.js')
   if (fs.existsSync(local)) return local
 
   return null
 }
 
-// ── Install devos-ai if missing ───────────────────────────────────────────────
+// ── Install aiden-runtime if missing ─────────────────────────────────────────
 async function ensureDevOs() {
   if (resolveDevOs()) return  // already installed
 
-  log.info('devos-ai not found — installing now…')
+  log.info(`${RUNTIME_PKG} not found — installing now…`)
   log.info('(This takes ~30 s on first run)')
   console.log()
 
   try {
-    execSync('npm install -g devos-ai', { stdio: 'inherit', timeout: 120_000 })
-    log.success('devos-ai installed globally.')
+    execSync(`npm install -g ${RUNTIME_PKG}`, { stdio: 'inherit', timeout: 120_000 })
+    log.success(`${RUNTIME_PKG} installed globally.`)
   } catch (e) {
-    log.error('Failed to install devos-ai:', e.message)
-    log.info('Run manually: npm install -g devos-ai')
+    log.error(`Failed to install ${RUNTIME_PKG}:`, e.message)
+    log.info(`Run manually: npm install -g ${RUNTIME_PKG}`)
     process.exit(1)
   }
 
   if (!resolveDevOs()) {
-    log.error('devos-ai still not found after install — check npm prefix.')
+    log.error(`${RUNTIME_PKG} still not found after install — check npm prefix.`)
     process.exit(1)
   }
 }
@@ -405,7 +409,7 @@ async function main() {
   console.log(`${c.bold}${c.cyan}  ╚═════╝ ╚══════╝  ╚═══╝   ╚═════╝ ╚══════╝${c.reset}`)
   console.log(`${c.dim}  Autonomous AI Operating System  v${require('../package.json').version}${c.reset}\n`)
 
-  // Ensure devos-ai (peer dep) is available
+  // Ensure aiden-runtime (peer dep) is available
   await ensureDevOs()
 
   // Load existing env
@@ -432,20 +436,20 @@ async function main() {
   try {
     serverModule = require(serverPath)
   } catch (e) {
-    log.error('Failed to load devos-ai server module:', e.message)
-    log.info('Try: npm install -g devos-ai && npx aiden-os')
+    log.error('Failed to load aiden-runtime server module:', e.message)
+    log.info('Try: npm install -g aiden-runtime && npx aiden-os')
     process.exit(1)
   }
 
   if (typeof serverModule.start !== 'function') {
-    // Fallback: startApiServer() (older devos-ai without start())
+    // Fallback: startApiServer() (older aiden-runtime without start())
     if (typeof serverModule.startApiServer === 'function') {
-      log.warn('devos-ai start() not found — using startApiServer() fallback (upgrade devos-ai for best results)')
+      log.warn('aiden-runtime start() not found — using startApiServer() fallback (upgrade aiden-runtime for best results)')
       serverModule.startApiServer(PORT)
       // Give server a moment
       await new Promise(r => setTimeout(r, 2000))
     } else {
-      log.error('devos-ai server module does not export start() or startApiServer()')
+      log.error('aiden-runtime server module does not export start() or startApiServer()')
       process.exit(1)
     }
   } else {
@@ -456,8 +460,8 @@ async function main() {
   // ── Start CLI in-process ───────────────────────────────────────────────
   const cliPath = resolveDevOsCli()
   if (!cliPath) {
-    log.error('devos-ai CLI bundle not found (dist-bundle/cli.js missing).')
-    log.info('Ensure devos-ai >= 3.16 is installed, then re-run.')
+    log.error('aiden-runtime CLI bundle not found (dist-bundle/cli.js missing).')
+    log.info('Ensure aiden-runtime >= 3.16 is installed, then re-run.')
     process.exit(1)
   }
 
@@ -472,7 +476,7 @@ async function main() {
   if (typeof cliModule.run === 'function') {
     await cliModule.run()
   } else {
-    log.error('devos-ai CLI does not export run() — upgrade devos-ai to >= 3.16')
+    log.error('aiden-runtime CLI does not export run() — upgrade aiden-runtime to >= 3.16')
     process.exit(1)
   }
 }
