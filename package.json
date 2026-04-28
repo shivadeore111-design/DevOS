@@ -25,10 +25,9 @@
   },
   "bin": {
     "devos-ai": "./dist/bin/npx-init.js",
-    "devos": "./dist/index.js",
     "aiden": "./dist-bundle/cli.js"
   },
-  "main": "./dist/index.js",
+  "main": "./dist/api/server.js",
   "files": [
     "dist/",
     "dist-bundle/cli.js",
