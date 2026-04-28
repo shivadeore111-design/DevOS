@@ -1,0 +1,43 @@
+{
+  "name": "aiden-os",
+  "version": "3.16.0",
+  "description": "npx launcher for DevOS — Autonomous AI Operating System. One command installs and runs Aiden locally.",
+  "author": "Taracod <hello@taracod.com>",
+  "license": "AGPL-3.0-only",
+  "keywords": [
+    "ai",
+    "autonomous-agent",
+    "agent",
+    "personal-ai",
+    "ollama",
+    "local-ai",
+    "devos",
+    "aiden",
+    "llm",
+    "ai-os",
+    "self-hosted-ai",
+    "open-source-ai"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "aiden-os": "./bin/aiden.js",
+    "aiden": "./bin/aiden.js"
+  },
+  "main": "./bin/aiden.js",
+  "files": [
+    "bin/",
+    "README.md"
+  ],
+  "preferGlobal": true,
+  "peerDependencies": {
+    "devos-ai": ">=3.16.0"
+  },
+  "peerDependenciesMeta": {
+    "devos-ai": {
+      "optional": true
+    }
+  },
+  "dependencies": {}
+}

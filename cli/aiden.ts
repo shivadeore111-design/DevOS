@@ -5460,4 +5460,8 @@ async function main(): Promise<void> {
   })
 }
 
-main()
+/** Programmatic entry point — connect to an already-running API server and start the REPL. */
+export async function run(): Promise<void> { return main() }
+
+// Guard against auto-running when required as a module (packages/aiden-os in-process launch).
+if (require.main === module) main().catch((e: Error) => { console.error('[CLI] Fatal:', e.message); process.exit(1) })

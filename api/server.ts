@@ -6062,6 +6062,38 @@ export function startApiServer(portArg?: number): Express {
   return app
 }
 
+// ── Programmatic launcher ─────────────────────────────────────────────────────
+/**
+ * Start the DevOS API server in-process and wait until it is ready.
+ * Returns { port, stop } so callers (e.g. packages/aiden-os) can shut it down
+ * cleanly without spawning a child process.
+ */
+export async function start(opts?: {
+  port?:      number
+  configDir?: string
+}): Promise<{ port: number; stop: () => Promise<void> }> {
+  if (opts?.configDir) process.env.AIDEN_USER_DATA = opts.configDir
+  const port = opts?.port ?? parseInt(process.env.AIDEN_PORT ?? '4200', 10)
+  startApiServer(port)
+  // Poll until the health endpoint responds (up to 20 s)
+  const deadline = Date.now() + 20_000
+  while (Date.now() < deadline) {
+    try {
+      const r = await fetch(`http://127.0.0.1:${port}/api/health`, {
+        signal: AbortSignal.timeout(1_000),
+      })
+      if (r.ok) break
+    } catch { /* not yet ready */ }
+    await new Promise<void>(resolve => setTimeout(resolve, 300))
+  }
+  return {
+    port,
+    stop: async () => {
+      try { await (await import('../core/playwrightBridge')).pwClose() } catch {}
+    },
+  }
+}
+
 // ── Provider racing helpers ─────────────────────────────────
 // fetchProviderResponse: fires a single non-streaming request to a provider.
 // raceProviders: fires top-2 simultaneously, returns the fastest valid response.
