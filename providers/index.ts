@@ -14,6 +14,7 @@ import { createOpenRouterProvider } from './openrouter'
 import { createGeminiProvider } from './gemini'
 import { createBOAProvider } from './boa'
 import { createCerebrasProvider } from './cerebras'
+import { createMistralProvider } from './mistral'
 import { createCustomProvider } from './custom'
 
 // ── Config schema ─────────────────────────────────────────────
@@ -27,7 +28,7 @@ export interface TelegramConfig {
 
 export interface APIEntry {
   name:           string        // e.g. "groq-1", "groq-2"
-  provider:       string        // "groq" | "openrouter" | "gemini" | "cerebras" | "nvidia" | "custom"
+  provider:       string        // "groq" | "openrouter" | "gemini" | "cerebras" | "nvidia" | "mistral" | "custom"
   key:            string        // actual API key (or "env:VAR_NAME")
   model:          string        // default model for this entry
   enabled:        boolean       // user can disable without deleting
@@ -114,6 +115,15 @@ function defaultConfig(): DevOSConfig {
           rateLimited: false,
           usageCount:  0,
         },
+        {
+          name:        'mistral',
+          provider:    'mistral',
+          key:         'env:MISTRAL_API_KEY',
+          model:       'mistral-large-latest',
+          enabled:     false,
+          rateLimited: false,
+          usageCount:  0,
+        },
       ],
     },
     routing:            { mode: 'auto', fallbackToOllama: true },
@@ -181,6 +191,8 @@ export function getActiveProvider(): { provider: Provider; model: string; userNa
       return { provider: createBOAProvider(key), model: apiConfig.model || 'llama-3.3-70b', userName }
     case 'cerebras':
       return { provider: createCerebrasProvider(key), model: apiConfig.model || 'llama3.1-8b', userName }
+    case 'mistral':
+      return { provider: createMistralProvider(key), model: apiConfig.model || 'mistral-large-latest', userName }
     case 'custom': {
       const baseUrl = apiConfig.baseUrl || 'http://localhost:11434/v1'
       return { provider: createCustomProvider(baseUrl, key, apiConfig.name), model: apiConfig.model || 'gpt-4o-mini', userName }

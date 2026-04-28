@@ -24,6 +24,7 @@ const AUX_ENDPOINTS: Record<string, string> = {
   nvidia:     'https://integrate.api.nvidia.com/v1/chat/completions',
   github:     'https://models.inference.ai.azure.com/chat/completions',
   boa:        'https://api.boa.ai/v1/chat/completions',
+  mistral:    'https://api.mistral.ai/v1/chat/completions',
 }
 
 // ── Types ─────────────────────────────────────────────────────
