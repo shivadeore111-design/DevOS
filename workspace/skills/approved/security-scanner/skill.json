@@ -1,0 +1,26 @@
+{
+  "name": "security-scanner",
+  "version": "1.0.0",
+  "description": "Automated security scanning for your own servers and development environments using Decepticon",
+  "author": "taracod",
+  "license": "Apache-2.0",
+  "tools": ["shell_exec", "run_python", "notify"],
+  "trigger_phrases": [
+    "scan my server for vulnerabilities",
+    "run security scan on localhost",
+    "check my app for security issues",
+    "pentest my local server",
+    "audit my website security",
+    "scan my localhost for vulnerabilities",
+    "check my dev server for security issues",
+    "run a pentest on my local app"
+  ],
+  "compatible_agents": ["aiden", "hermes", "openclaw"],
+  "min_agent_version": "3.14.0",
+  "tags": ["security", "scanning", "pentesting", "devops", "vulnerability", "audit"],
+  "requires_confirmation": true,
+  "safety_level": "high",
+  "sandbox_required": true,
+  "default_target": "localhost",
+  "created": "2026-04-28T00:00:00.000Z"
+}

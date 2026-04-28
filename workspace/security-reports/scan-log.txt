@@ -1,0 +1,2 @@
+# Security Scan Log
+# Format: [TIMESTAMP] target=[TARGET] authorized=[yes] tool=decepticon
