@@ -28,8 +28,8 @@ Windows · Linux · WSL · macOS (API mode)
 
 ---
 
-> **v3.14 — OpenAI-compatible API · agentskills.io · Streaming tool output**
-> Any OpenAI client (Open WebUI, LibreChat, Chatbox, Cursor, Continue.dev) can now point at `localhost:4200` and use Aiden's full 89-tool agent. Skills ship with `skill.json` manifests compatible with the agentskills.io ecosystem. Shell commands and Python scripts stream live output as they run. See [changelog](#changelog) below.
+> **v3.15 — Reliable browser automation · LocalSend · Security scanner · OSS contributor infrastructure**
+> Browser tools are now built on a centralised Playwright session (`playwrightBridge.ts`) — persistent context, idle-close, and a new `browser_get_url` tool. Send files to any device on your LAN with the LocalSend skill. Opt-in Decepticon security scanner. Full CONTRIBUTING guide, issue templates, public roadmap, and good-first-issues for contributors. See [changelog](#changelog) below.
 
 ---
 
@@ -178,8 +178,8 @@ Full chat interface with live activity panel. Local-first, connects to Ollama or
 | Category | What Aiden does |
 |---|---|
 | **Inference & providers** | Local Ollama (Llama 3, Mistral, Qwen, Gemma, Phi…) with optional cloud fallback to OpenAI, Anthropic, Groq, Cerebras, NVIDIA NIM, OpenRouter, and more — 15+ providers including custom OpenAI-compatible endpoints |
-| **80+ tools** | Web search, file read/write, shell execution, Playwright browser automation, screen capture & OCR, calendar, email (IMAP/SMTP), code execution sandbox, clipboard, system info |
-| **1,400+ skills** | Composable plugins each with a `SKILL.md` prompt, tool implementations, and optional sandbox runner — install per-session or globally |
+| **80+ tools** | Web search, file read/write, shell execution, Playwright browser automation (`open_browser`, `browser_click`, `browser_type`, `browser_extract`, `browser_get_url`), screen capture & OCR, calendar, email (IMAP/SMTP), code execution sandbox, clipboard, LocalSend LAN transfer, system info |
+| **1,400+ skills** | Composable plugins each with a `SKILL.md` prompt, tool implementations, and optional sandbox runner — install per-session or globally. Includes: LocalSend (AirDrop-style LAN transfer), Decepticon security scanner (opt-in), and more |
 | **Subagent swarm** | Spawn N parallel agents on any task; vote, merge, or pick the best result automatically |
 | **6-layer memory** | Episodic (in-context), BM25 keyword, vector semantic, procedural (skill), goal tracking, and `LESSONS.md` permanent-failure moat that grows every session |
 | **Voice** | Speech-to-text (Groq → OpenAI → local Whisper.cpp) + text-to-speech (Edge TTS → ElevenLabs → Windows SAPI); full offline voice loop |
@@ -340,6 +340,28 @@ Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the ful
 ---
 
 ## Changelog
+
+### v3.15.0 — 2026-04-28
+
+**Browser & Automation**
+- Centralised Playwright session (`core/playwrightBridge.ts`) — single persistent Chromium context shared across all browser tools, idle auto-close after 5 min, clean shutdown on SIGINT/SIGTERM
+- `browser_get_url` — new tool to read the URL currently loaded in the browser
+- All browser tools now in `ALLOWED_TOOLS` and `NO_RETRY_TOOLS`; `send_file_local` / `receive_file_local` added to planner allow-list
+
+**Community & OSS**
+- `CONTRIBUTING.md`, issue templates (bug, feature, skill submission), CLA workflow
+- Public roadmap (`docs/ROADMAP.md`), architecture docs (`docs/ARCHITECTURE.md`), skill development guide
+- GitHub labels automated + 5 good-first-issues pinned
+
+**New skills**
+- **LocalSend** — AirDrop-style LAN file transfer (`send_file_local` / `receive_file_local`); works over WiFi with no cloud
+- **Security scanner** — opt-in Decepticon integration with safety guards for scanning your own servers
+
+**Security**
+- 9 npm audit vulnerabilities resolved (safe + vitest chain)
+- Security headers + rate limiting on `aiden.taracod.com` landing worker (CSP, HSTS, X-Frame-Options)
+
+---
 
 ### v3.14.0 — 2026-04-27
 
