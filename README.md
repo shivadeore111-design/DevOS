@@ -28,8 +28,8 @@ Windows · Linux · WSL · macOS (API mode)
 
 ---
 
-> **v3.15 — Reliable browser automation · LocalSend · Security scanner · OSS contributor infrastructure**
-> Browser tools are now built on a centralised Playwright session (`playwrightBridge.ts`) — persistent context, idle-close, and a new `browser_get_url` tool. Send files to any device on your LAN with the LocalSend skill. Opt-in Decepticon security scanner. Full CONTRIBUTING guide, issue templates, public roadmap, and good-first-issues for contributors. See [changelog](#changelog) below.
+> **v3.16 — `npx aiden-os` single-command launch · programmatic API · in-process server + CLI**
+> Run Aiden with one command — no clone, no build, no two terminals. `npx aiden-os` installs the runtime, runs the setup wizard on first use, then starts the server and CLI together in the same process. New `start()` / `run()` exports for embedding Aiden in your own Node.js apps. See [changelog](#changelog) below.
 
 ---
 
@@ -55,12 +55,27 @@ Windows-only skills (clipboard history, Defender, OneNote, Outlook COM, registry
 
 ## Quick Start
 
-### Prerequisites
+### Fastest — `npx` (no install needed)
+
+```bash
+npx aiden-os
+```
+
+That's it. Node.js 18+ is the only prerequisite. On first run it asks which AI provider you want (Groq is free), validates your key, saves config to `~/.aiden/app/`, and starts both the server and CLI together in one terminal. Subsequent runs skip the wizard and go straight to the assistant.
+
+Or install globally for the `aiden` command:
+
+```bash
+npm install -g aiden-os
+aiden
+```
+
+### Prerequisites (for installer / manual builds)
 - Node.js 18+
 - Git
 - Ollama (optional, for offline mode): [ollama.ai](https://ollama.ai)
 
-### Windows — one-line install
+### Windows — signed installer
 
 ```powershell
 irm aiden.taracod.com/install.ps1 | iex
@@ -84,7 +99,7 @@ cp .env.example .env
 # Edit .env — add at minimum one API key (Groq is free: console.groq.com)
 ```
 
-### Run
+### Run (manual install)
 
 ```bash
 # Terminal 1 — build and start server
@@ -95,7 +110,7 @@ npm start
 npm run cli
 ```
 
-### After pulling updates
+### After pulling updates (manual install)
 
 ```bash
 git pull
@@ -360,6 +375,28 @@ Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the ful
 ---
 
 ## Changelog
+
+### v3.16.0 — 2026-04-28
+
+**One-command install**
+- `npx aiden-os` — zero-install launcher; works on Windows, macOS, Linux (Node.js 18+)
+- `aiden-os` npm package bootstraps `aiden-runtime` automatically, no git clone needed
+- Setup wizard on first run with `--reconfigure` flag to re-run anytime
+
+**Security**
+- Shell blocklist — dangerous commands flagged before execution
+- Permission mode — explicit user approval gate for destructive actions
+- Token budget enforcement — per-request ceiling to prevent runaway loops
+
+**Memory**
+- Conflict resolution — contradictory memories detected and reconciled automatically
+- `/memory` command — inspect, edit, and prune the memory store from the CLI
+
+**UX**
+- Aiden branded banner replaces DevOS; orange `#FF6B35` identity throughout CLI
+- `--reconfigure` flag to re-run first-time setup without reinstalling
+
+---
 
 ### v3.15.0 — 2026-04-28
 

@@ -3,10 +3,10 @@
 // packages/aiden-os/bin/aiden.js
 // npx aiden-os  /  npm i -g aiden-os && aiden
 //
-// Bootstraps DevOS in a single Node.js process:
+// Bootstraps Aiden in a single Node.js process:
 //   1. First-run wizard (provider + API key + optional Ollama check)
-//   2. Starts the DevOS API server in-process (no child_process.spawn)
-//   3. Starts the DevOS CLI REPL in the same process
+//   2. Starts the Aiden API server in-process (no child_process.spawn)
+//   3. Starts the Aiden CLI REPL in the same process
 // ============================================================
 'use strict'
 
@@ -35,6 +35,7 @@ const c = {
   reset:  '\x1b[0m',
   bold:   '\x1b[1m',
   dim:    '\x1b[2m',
+  orange: '\x1b[38;2;255;107;53m',
   cyan:   '\x1b[36m',
   green:  '\x1b[32m',
   yellow: '\x1b[33m',
@@ -200,7 +201,7 @@ async function checkOllama() {
 
 // ── First-run wizard ─────────────────────────────────────────────────────────
 async function runWizard() {
-  log.header('  Welcome to Aiden — DevOS Setup Wizard  ')
+  log.header('  Welcome to Aiden Setup Wizard  ')
   console.log(`${c.dim}  This runs once. Settings saved to: ${ENV_FILE}${c.reset}\n`)
 
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true })
@@ -340,21 +341,30 @@ async function continueWizard(rl, selectedProvider) {
 const RUNTIME_PKG = 'aiden-runtime'
 
 function resolveDevOs() {
-  // 1. Already in the monorepo (dev environment)
-  try {
-    return require.resolve(`${RUNTIME_PKG}/dist/api/server`)
-  } catch {}
+  // Prefer the esbuild bundle (dist-bundle/index.js) — it inlines all deps
+  // at build time so ESM/CJS version conflicts in global node_modules can't
+  // cause "_LRUClass is not a constructor"-style errors.
+  // Fall back to the tsc output (dist/api/server.js) for older installs.
 
-  // 2. Global node_modules (npm i -g aiden-os auto-installs aiden-runtime)
+  // 1. Monorepo / require.resolve (handles both bundle and tsc paths)
+  for (const rel of [`${RUNTIME_PKG}/dist-bundle/index`, `${RUNTIME_PKG}/dist/api/server`]) {
+    try { return require.resolve(rel) } catch {}
+  }
+
+  // 2. Global node_modules
   try {
     const globalRoot = execSync('npm root -g', { encoding: 'utf8', timeout: 5000 }).trim()
-    const p = path.join(globalRoot, RUNTIME_PKG, 'dist', 'api', 'server.js')
-    if (fs.existsSync(p)) return p
+    for (const rel of ['dist-bundle/index.js', 'dist/api/server.js']) {
+      const p = path.join(globalRoot, RUNTIME_PKG, ...rel.split('/'))
+      if (fs.existsSync(p)) return p
+    }
   } catch {}
 
   // 3. Local node_modules relative to cwd
-  const local = path.resolve(process.cwd(), 'node_modules', RUNTIME_PKG, 'dist', 'api', 'server.js')
-  if (fs.existsSync(local)) return local
+  for (const rel of ['dist-bundle/index.js', 'dist/api/server.js']) {
+    const p = path.resolve(process.cwd(), 'node_modules', RUNTIME_PKG, ...rel.split('/'))
+    if (fs.existsSync(p)) return p
+  }
 
   return null
 }
@@ -401,12 +411,12 @@ async function ensureDevOs() {
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 async function main() {
-  console.log(`\n${c.bold}${c.cyan}  ██████╗ ███████╗██╗   ██╗ ██████╗ ███████╗${c.reset}`)
-  console.log(`${c.bold}${c.cyan}  ██╔══██╗██╔════╝██║   ██║██╔═══██╗██╔════╝${c.reset}`)
-  console.log(`${c.bold}${c.cyan}  ██║  ██║█████╗  ██║   ██║██║   ██║███████╗${c.reset}`)
-  console.log(`${c.bold}${c.cyan}  ██║  ██║██╔══╝  ╚██╗ ██╔╝██║   ██║╚════██║${c.reset}`)
-  console.log(`${c.bold}${c.cyan}  ██████╔╝███████╗ ╚████╔╝ ╚██████╔╝███████║${c.reset}`)
-  console.log(`${c.bold}${c.cyan}  ╚═════╝ ╚══════╝  ╚═══╝   ╚═════╝ ╚══════╝${c.reset}`)
+  console.log(`\n${c.bold}${c.orange}   █████╗ ██╗██████╗ ███████╗███╗   ██╗${c.reset}`)
+  console.log(`${c.bold}${c.orange}  ██╔══██╗██║██╔══██╗██╔════╝████╗  ██║${c.reset}`)
+  console.log(`${c.bold}${c.orange}  ███████║██║██║  ██║█████╗  ██╔██╗ ██║${c.reset}`)
+  console.log(`${c.bold}${c.orange}  ██╔══██║██║██║  ██║██╔══╝  ██║╚██╗██║${c.reset}`)
+  console.log(`${c.bold}${c.orange}  ██║  ██║██║██████╔╝███████╗██║ ╚████║${c.reset}`)
+  console.log(`${c.bold}${c.orange}  ╚═╝  ╚═╝╚═╝╚═════╝ ╚══════╝╚═╝  ╚═══╝${c.reset}`)
   console.log(`${c.dim}  Autonomous AI Operating System  v${require('../package.json').version}${c.reset}\n`)
 
   // Ensure aiden-runtime (peer dep) is available
@@ -426,7 +436,7 @@ async function main() {
   }
 
   // ── Start API server in-process ────────────────────────────────────────
-  log.info('Starting DevOS API server…')
+  log.info('Starting Aiden API server…')
 
   process.env.AIDEN_USER_DATA = APP_DIR
   process.env.AIDEN_PORT      = String(PORT)
@@ -435,10 +445,15 @@ async function main() {
   let serverModule
   try {
     serverModule = require(serverPath)
-  } catch (e) {
-    log.error('Failed to load aiden-runtime server module:', e.message)
-    log.info('Try: npm install -g aiden-runtime && npx aiden-os')
-    process.exit(1)
+  } catch (e1) {
+    // require() failed (e.g. ESM-only transitive dep in tsc output) — try dynamic import
+    try {
+      serverModule = await import(serverPath)
+    } catch (e2) {
+      log.error('Failed to load aiden-runtime server module:', e1.message)
+      log.info('Try: npm uninstall -g aiden-runtime && npm install -g aiden-runtime')
+      process.exit(1)
+    }
   }
 
   if (typeof serverModule.start !== 'function') {
@@ -454,7 +469,7 @@ async function main() {
     }
   } else {
     const { port: livePort } = await serverModule.start({ port: PORT, configDir: APP_DIR })
-    log.success(`DevOS API ready on http://127.0.0.1:${livePort}`)
+    log.success(`Aiden API ready on http://127.0.0.1:${livePort}`)
   }
 
   // ── Start CLI in-process ───────────────────────────────────────────────
@@ -468,9 +483,13 @@ async function main() {
   let cliModule
   try {
     cliModule = require(cliPath)
-  } catch (e) {
-    log.error('Failed to load CLI module:', e.message)
-    process.exit(1)
+  } catch (e1) {
+    try {
+      cliModule = await import(cliPath)
+    } catch (e2) {
+      log.error('Failed to load CLI module:', e1.message)
+      process.exit(1)
+    }
   }
 
   if (typeof cliModule.run === 'function') {
