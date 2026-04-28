@@ -32,10 +32,10 @@
   ],
   "preferGlobal": true,
   "peerDependencies": {
-    "devos-ai": ">=3.16.0"
+    "aiden-runtime": ">=3.16.0"
   },
   "peerDependenciesMeta": {
-    "devos-ai": {
+    "aiden-runtime": {
       "optional": true
     }
   },
