@@ -1637,6 +1637,27 @@ export const TOOLS: Record<string, (payload: any, ctx?: ToolContext) => Promise<
     }
   },
 
+  get_natural_events: async () => {
+    try {
+      const res = await fetch(
+        'https://eonet.gsfc.nasa.gov/api/v3/events?limit=10&status=open',
+        { signal: AbortSignal.timeout(8000) }
+      )
+      if (!res.ok) throw new Error(`EONET API returned ${res.status}`)
+      const data: any = await res.json()
+      const events = (data.events ?? []).map((e: any) => ({
+        id:       e.id,
+        title:    e.title,
+        category: e.categories?.[0]?.title ?? 'Unknown',
+        date:     e.geometry?.[0]?.date ?? null,
+        link:     e.sources?.[0]?.url   ?? null,
+      }))
+      return { success: true, output: JSON.stringify({ events, count: events.length }, null, 2) }
+    } catch (e: any) {
+      return { success: false, output: '', error: `NASA EONET fetch failed: ${e.message}` }
+    }
+  },
+
   // ── manage_goals — track and manage long-running goals ────────
   manage_goals: async (p) => {
     const { loadGoals, saveGoals } = await import('./goalTracker')

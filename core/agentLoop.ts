@@ -8,7 +8,7 @@
 //   STEP 2: EXECUTE — Code runs each tool, gets real results
 //   STEP 3: RESPOND — LLM sees real results, streams natural language
 
-import { executeTool, TOOLS, getToolTier, detectToolCategories, getToolsForCategories } from './toolRegistry'
+import { executeTool, TOOLS, getToolTier, detectToolCategories, getToolsForCategories, TOOL_NAMES_ONLY } from './toolRegistry'
 import { loadAllRecipes, matchRecipe, executeRecipe } from './recipeEngine'
 import { livePulse }          from '../coordination/livePulse'
 import { planTool }                        from './planTool'
@@ -928,7 +928,10 @@ IMPORTANT: NEVER use "C:\\Users\\Aiden" — "Aiden" is the AI assistant's name, 
 CRITICAL RULES:
 1. If the answer is in your training data (capitals, definitions, facts, opinions, advice) → requires_execution: false
 2. ONLY use tools when you need: live data, file operations, running code, or computer control
-3. You MUST ONLY use tools from this exact list: ${plannerTools.join(', ')}
+3. AVAILABLE TOOLS (use ONLY these — name: one-liner):
+${plannerTools.map(t => `  ${t}: ${(TOOL_NAMES_ONLY as any)[t] ?? ''}`).join('\n')}
+  For full parameter schema: call lookup_tool_schema({ toolName: "name" })
+  Tier-0 (no lookup needed): web_search, notify, lookup_skill, lookup_tool_schema, schedule_reminder, file_read, file_write, respond
 4. DO NOT invent tools like "identify_top_3", "generate_report", "analyze" — these don't exist
 5. Processing/analysis happens in your response — NOT as a tool step
 6. NEVER use placeholders like "{{result}}" or "{output}" — steps must have real concrete inputs

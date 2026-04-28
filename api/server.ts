@@ -403,6 +403,42 @@ function handleChatError(
 // Workspace root — AIDEN_USER_DATA in packaged Electron, cwd in dev
 const WORKSPACE_ROOT = process.env.AIDEN_USER_DATA || process.cwd()
 
+// ── Workspace bootstrap — create default dirs + files on every boot ──────────
+function initWorkspaceDefaults(): void {
+  const dirs = [
+    'workspace',
+    'workspace/memory',
+    'workspace/skills/learned',
+    'workspace/skills/approved',
+    'workspace/skills/installed',
+    'workspace/knowledge',
+    'workspace/screenshots',
+    'workspace/security-reports',
+    'workspace/downloads',
+  ]
+  for (const dir of dirs) {
+    fs.mkdirSync(path.join(WORKSPACE_ROOT, dir), { recursive: true })
+  }
+
+  const defaults: Record<string, string> = {
+    'workspace/conversation.json': '{}',
+    'workspace/LESSONS.md':        '# Aiden Lessons Learned\n\n',
+    'workspace/user-profile.json': JSON.stringify({
+      identity: {}, preferences: {}, projects: [],
+      relationships: [], skills_known: [], current_goals: [], last_updated: null,
+    }, null, 2),
+    'workspace/scheduled.json': '[]',
+  }
+  for (const [rel, content] of Object.entries(defaults)) {
+    const full = path.join(WORKSPACE_ROOT, rel)
+    if (!fs.existsSync(full)) {
+      fs.writeFileSync(full, content)
+      console.log(`[init] Created ${rel}`)
+    }
+  }
+}
+initWorkspaceDefaults()
+
 // â”€â”€ Knowledge upload â€” multer + progress tracking â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const KB_UPLOAD_DIR = path.join(WORKSPACE_ROOT, 'workspace', 'knowledge', 'uploads')

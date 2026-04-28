@@ -79,8 +79,27 @@ async function ensurePage(): Promise<any> {
 
 // ── Exported helpers ─────────────────────────────────────────
 
+// ── Playwright availability check ────────────────────────────────────────────
+let _pwAvailable: boolean | null = null
+async function checkPwAvailable(): Promise<boolean> {
+  if (_pwAvailable !== null) return _pwAvailable
+  try {
+    await import('playwright')
+    _pwAvailable = true
+    console.log('[Browser] playwright available')
+  } catch {
+    _pwAvailable = false
+    console.warn('[Browser] playwright not installed — browser tools unavailable. Run: npm install playwright')
+  }
+  return _pwAvailable
+}
+
 /** Navigate to a URL, reusing the active page (opens blank tab if needed). */
 export async function pwNavigate(url: string): Promise<{ ok: boolean; url: string; error?: string }> {
+  const available = await checkPwAvailable()
+  if (!available) {
+    return { ok: false, url, error: 'playwright not installed. Run: npm install playwright && npx playwright install chromium' }
+  }
   try {
     const ctx    = await ensureContext()
     const pages  = ctx.pages() as any[]
