@@ -561,6 +561,87 @@ export const TOOLS: Record<string, (payload: any, ctx?: ToolContext) => Promise<
     } catch (e: any) { return { success: false, output: '', error: e.message } }
   },
 
+  // ── LocalSend LAN file transfer ───────────────────────────────
+  send_file_local: async (p) => {
+    const base = 'http://localhost:53317'
+
+    // Check LocalSend is running
+    try {
+      await fetch(`${base}/api/v2/info`, { signal: AbortSignal.timeout(2000) })
+    } catch {
+      return {
+        success: false,
+        output: '',
+        error: 'LocalSend is not running. Start LocalSend and try again.',
+        install: 'https://localsend.org',
+      }
+    }
+
+    if (p.op === 'discover') {
+      try {
+        const res = await fetch(`${base}/api/v2/devices`)
+        const devices = await res.json()
+        return { success: true, output: JSON.stringify(devices, null, 2) }
+      } catch (e: any) {
+        return { success: false, output: '', error: e.message }
+      }
+    }
+
+    if (p.op === 'send') {
+      if (!p.filePath && !p.text) {
+        return { success: false, output: '', error: 'filePath or text required for send op' }
+      }
+      const receiver = p.device ? `--receiver "${p.device}"` : ''
+      const cmd = p.filePath
+        ? `localsend_cli --file "${p.filePath}" ${receiver}`.trim()
+        : `localsend_cli --text "${p.text}" ${receiver}`.trim()
+      try {
+        const result = await execAsync(cmd, { timeout: 30000 })
+        return { success: true, output: result.stdout || 'Sent.' }
+      } catch (e: any) {
+        return { success: false, output: '', error: e.message }
+      }
+    }
+
+    return { success: false, output: '', error: `Unknown op "${p.op}". Use discover or send.` }
+  },
+
+  receive_file_local: async (p) => {
+    const base = 'http://localhost:53317'
+    const timeout = ((p.timeout_seconds as number) || 60) * 1000
+    const saveTo  = (p.save_to as string) || 'workspace/downloads/'
+
+    // Check LocalSend is running
+    try {
+      await fetch(`${base}/api/v2/info`, { signal: AbortSignal.timeout(2000) })
+    } catch {
+      return { success: false, output: '', error: 'LocalSend is not running. Start LocalSend and try again.' }
+    }
+
+    // Poll for incoming transfers
+    const start = Date.now()
+    while (Date.now() - start < timeout) {
+      try {
+        const res = await fetch(`${base}/api/v2/pending`)
+        if (res.ok) {
+          const pending = await res.json() as any
+          if (pending?.files?.length > 0) {
+            await fetch(`${base}/api/v2/accept`, { method: 'POST' })
+            return {
+              success: true,
+              output: `Received ${pending.files.length} file(s) → ${saveTo}`,
+              files: pending.files,
+              savedTo: saveTo,
+            }
+          }
+        }
+      } catch { /* ignore poll errors, keep waiting */ }
+      await new Promise(r => setTimeout(r, 2000))
+    }
+
+    return { success: false, output: '', error: `Timeout — no transfer received in ${p.timeout_seconds || 60}s` }
+  },
+
   browser_type: async (p) => {
     const selector = p.selector || 'input'
     const text     = p.text || p.command || ''
@@ -2605,6 +2686,8 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   spawn:                   'Delegate a sub-task to an isolated subagent with its own context and half the remaining iteration budget. Returns the subagent\'s synthesized answer.',
   spawn_subagent:          'Spawn an isolated subagent to handle a parallel sub-task. The subagent runs in its own conversation context with half your remaining iteration budget. Use for: research that would bloat your context, parallel work where you need both results, sandboxed exploration. Returns the subagent\'s final reply text.',
   swarm:                   'Run N isolated subagents on the same task in parallel and aggregate their answers via voting or synthesis. Use for high-confidence research where multiple independent perspectives reduce error.',
+  send_file_local:         'Send a file to another device on the local network via LocalSend (op: discover | send)',
+  receive_file_local:      'Wait for an incoming LocalSend file transfer on the local network',
 }
 
 // ── N+28: TOOL_NAMES_ONLY ──────────────────────────────────────
@@ -2676,6 +2759,8 @@ const TOOL_TIERS: Record<string, ToolTier> = {
   clipboard_write:         2,
   watch_folder:            2,
   watch_folder_list:       2,
+  send_file_local:         2,
+  receive_file_local:      2,
 
   // Tier 3 — Browser automation
   open_browser:            3,
@@ -2791,6 +2876,8 @@ const TOOL_CATEGORIES: Record<string, ToolCategory[]> = {
   get_calendar:            ['data', 'system'],
   read_email:              ['data', 'system'],
   send_email:              ['data', 'system'],
+  send_file_local:         ['files', 'system'],
+  receive_file_local:      ['files', 'system'],
   // slash-mirror introspection tools
   status:                  ['introspection'],
   analytics:               ['introspection'],

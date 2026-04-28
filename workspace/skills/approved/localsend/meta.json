@@ -1,0 +1,15 @@
+{
+  "name": "localsend",
+  "taskPattern": "Send or receive files to/from LAN devices using LocalSend",
+  "toolSequence": ["send_file_local", "receive_file_local"],
+  "successCount": 0,
+  "failCount": 0,
+  "confidence": 1.0,
+  "promoted": true,
+  "createdAt": 1745798400000,
+  "lastUsed": null,
+  "avgDuration": null,
+  "requiresConfirmation": false,
+  "safetyLevel": "low",
+  "defaultTarget": "localhost:53317"
+}

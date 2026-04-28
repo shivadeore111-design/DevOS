@@ -1,0 +1,24 @@
+{
+  "name": "localsend",
+  "version": "1.0.0",
+  "description": "LAN file transfer to any device on the same WiFi using LocalSend (AirDrop alternative)",
+  "author": "taracod",
+  "license": "Apache-2.0",
+  "tools": ["send_file_local", "receive_file_local", "shell_exec"],
+  "trigger_phrases": [
+    "send this file to my phone",
+    "send file to my laptop",
+    "transfer file to device",
+    "send screenshot to phone",
+    "receive file from phone",
+    "airdrop this file"
+  ],
+  "compatible_agents": ["aiden", "hermes", "openclaw"],
+  "min_agent_version": "3.14.0",
+  "tags": ["files", "networking", "transfer"],
+  "requires_confirmation": false,
+  "safety_level": "low",
+  "sandbox_required": false,
+  "default_target": "localhost:53317",
+  "created": "2026-04-28T00:00:00.000Z"
+}
