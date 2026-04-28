@@ -1,5 +1,6 @@
 ---
 name: localsend
+description: "Send and receive files between devices on the same WiFi network using LocalSend — AirDrop alternative for Windows, Linux, macOS, iOS, Android."
 version: 1.0.0
 author: taracod
 license: Apache-2.0
