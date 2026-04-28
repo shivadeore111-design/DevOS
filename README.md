@@ -33,8 +33,8 @@ Self-Healing • Browser Automation • Terminal Control • Persistent Memory
 
 ---
 
-> **v3.16 — `npx aiden-os` single-command launch · programmatic API · in-process server + CLI**
-> Run Aiden with one command — no clone, no build, no two terminals. `npx aiden-os` installs the runtime, runs the setup wizard on first use, then starts the server and CLI together in the same process. New `start()` / `run()` exports for embedding Aiden in your own Node.js apps. See [changelog](#changelog) below.
+> **v3.17 — local web dashboard · MCP server · plugin system · chat streaming fix**
+> Browse to `localhost:4200/ui` for a full chat UI with live SSE streaming — no terminal required. Expose Aiden's tools to Claude Code, Cursor, and VS Code via the new MCP server mode. Drop a `.js` file into `workspace/plugins/` and it hot-loads automatically. See [changelog](#changelog) below.
 
 ---
 
@@ -210,7 +210,7 @@ Model:     aiden-3.13
 
 ![TUI](docs/images/tui.png)
 
-Full command palette, 1,400+ skills, 80+ tools, automatic provider routing (Groq → BOA → Ollama). Runs in any terminal.
+Full command palette, 1,400+ skills, 89+ tools, automatic provider routing (Groq → OpenRouter → Ollama). Runs in any terminal.
 
 ### Desktop app
 
@@ -251,7 +251,7 @@ Full chat interface with live activity panel. Local-first, connects to Ollama or
 | **OpenAI-compatible API** | ✅ `/v1/chat/completions` | ❌ | ❌ |
 | **agentskills.io skills** | ✅ 1500+ | ✅ | ✅ 13K+ |
 | **Offline (Ollama)** | ✅ | ✅ | ✅ |
-| **Local web dashboard** | 🔨 v3.17 | ✅ | ✅ |
+| **Local web dashboard** | ✅ | ✅ | ✅ |
 | **Pro license system** | ✅ | ❌ | ❌ |
 | **Zero CVEs** | ✅ | ❌ | ❌ |
 | **License** | AGPL-3.0 | MIT | MIT |
@@ -467,6 +467,10 @@ Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the ful
 - 28 safe tools exposed by default
 - MCP_ALLOW_DESTRUCTIVE=true for full tool access
 - Config examples in docs/mcp/
+
+**Bug fixes**
+- Dashboard chat showed "(no response)" for every message — SSE event field names in the browser client (`ev.type`) didn't match the server's wire format (`ev.token`, `ev.done`, `ev.tool`). All event handlers rewritten to match actual shapes.
+- SOUL.md provider honesty: removed stale BayOfAssets reference, added explicit rule against claiming Ollama when running on Groq/OpenRouter.
 
 ---
 
