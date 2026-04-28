@@ -14,6 +14,7 @@ import { createGeminiProvider } from './gemini'
 import { createCerebrasProvider } from './cerebras'
 import { createNvidiaProvider } from './nvidia'
 import { createBOAProvider } from './boa'
+import { createMistralProvider } from './mistral'
 import { createCustomProvider } from './custom'
 import { Provider } from './types'
 import { discoverLocalModels, DiscoveredModels } from '../core/modelDiscovery'
@@ -116,6 +117,7 @@ function buildProvider(entry: APIEntry): Provider {
     case 'cerebras':   return createCerebrasProvider(key)
     case 'nvidia':     return createNvidiaProvider(key)
     case 'boa':        return createBOAProvider(key)
+    case 'mistral':    return createMistralProvider(key)
     case 'custom':     return createCustomProvider(entry.baseUrl || '', key, entry.name)
     default:           return ollamaProvider
   }

@@ -4493,6 +4493,7 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       openrouter: { defaultModel: 'openrouter/free',                                baseUrl: 'https://openrouter.ai/api/v1' },
       boa:        { defaultModel: 'gpt-4o-mini',                                    baseUrl: 'https://api.bayofassets.com/v1' },
       cerebras:   { defaultModel: 'llama3.1-8b',                                    baseUrl: 'https://api.cerebras.ai/v1' },
+      mistral:    { defaultModel: 'mistral-large-latest',                           baseUrl: 'https://api.mistral.ai/v1' },
       openai:     { defaultModel: 'gpt-4o-mini',                                    baseUrl: 'https://api.openai.com/v1' },
       together:   { defaultModel: 'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo',   baseUrl: 'https://api.together.xyz/v1' },
       deepseek:   { defaultModel: 'deepseek-chat',                                  baseUrl: 'https://api.deepseek.com/v1' },

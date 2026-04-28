@@ -452,6 +452,7 @@ const OPENAI_COMPAT_ENDPOINTS: Record<string, string> = {
   nvidia:     'https://integrate.api.nvidia.com/v1/chat/completions',
   github:     'https://models.inference.ai.azure.com/v1/chat/completions',
   boa:        'https://api.bayofassets.com/v1/chat/completions',
+  mistral:    'https://api.mistral.ai/v1/chat/completions',
 }
 
 function buildHeaders(providerName: string, apiKey: string): Record<string, string> {
@@ -3166,5 +3167,4 @@ Respond in JSON:
 
   return allResults.join('\n\n')
 }
-
 
