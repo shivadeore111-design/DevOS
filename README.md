@@ -17,6 +17,7 @@ Windows · Linux · WSL · macOS (API mode)
   <a href="https://discord.gg/gMZ3hUnQTm"><img src="https://img.shields.io/badge/chat-discord-7289da?logo=discord&logoColor=white" alt="Discord" /></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-orange" alt="License: AGPL-3.0" /></a>
   <a href="https://github.com/taracodlabs/aiden/stargazers"><img src="https://img.shields.io/github/stars/taracodlabs/aiden?style=flat&color=f9d71c" alt="Stars" /></a>
+  <a href="https://www.npmjs.com/package/aiden-os"><img src="https://img.shields.io/npm/v/aiden-os?color=f97316&label=npm" alt="npm" /></a>
 </p>
 
 <p align="center">
@@ -30,6 +31,19 @@ Windows · Linux · WSL · macOS (API mode)
 
 > **v3.16 — `npx aiden-os` single-command launch · programmatic API · in-process server + CLI**
 > Run Aiden with one command — no clone, no build, no two terminals. `npx aiden-os` installs the runtime, runs the setup wizard on first use, then starts the server and CLI together in the same process. New `start()` / `run()` exports for embedding Aiden in your own Node.js apps. See [changelog](#changelog) below.
+
+---
+
+## Why Aiden
+
+Most AI agents answer questions. Aiden executes work.
+
+- **Runs on your machine** — local-first, no telemetry, no cloud required
+- **Controls your desktop** — vision loop, mouse, keyboard, window management
+- **Automates any browser** — navigate, click, extract via playwright-cli
+- **Learns from every session** — writes skills from successes, lessons from failures
+- **Works fully offline** — Ollama support, zero cloud dependency
+- **One command to start** — `npx aiden-os` installs, configures, runs everything
 
 ---
 
@@ -223,6 +237,23 @@ Full chat interface with live activity panel. Local-first, connects to Ollama or
 
 ---
 
+## Aiden vs alternatives
+
+| | Aiden | Mercury | Hermes | OpenClaw |
+|---|---|---|---|---|
+| **Windows native installer** | ✅ | ❌ npm only | ❌ | ❌ |
+| **Desktop OS control** | ✅ vision+mouse+kbd | ❌ | ❌ | ❌ |
+| **One-command install** | ✅ `npx aiden-os` | ✅ | ❌ | ❌ |
+| **OpenAI-compatible API** | ✅ `/v1/chat/completions` | ❌ | ❌ | ❌ |
+| **agentskills.io skills** | ✅ 1500+ | ✅ | ✅ | ✅ 13K+ |
+| **Offline (Ollama)** | ✅ | ✅ | ✅ | ✅ |
+| **Local web dashboard** | 🔨 v3.17 | ❌ | ✅ | ✅ |
+| **Pro license system** | ✅ | ❌ | ❌ | ❌ |
+| **Zero CVEs** | ✅ | ✅ | ❌ | ❌ |
+| **License** | AGPL-3.0 | MIT | MIT | MIT |
+
+---
+
 ## Architecture
 
 ```
@@ -353,6 +384,42 @@ Or toggle live from the Aiden CLI without restarting:
 
 ---
 
+## Commands
+
+### Start Aiden
+| Command | Description |
+|---------|-------------|
+| `npx aiden-os` | Install, configure, and start (recommended) |
+| `npm start` | Start API server (port 4200) |
+| `npm run cli` | Start TUI (connect to running server) |
+| `npm run build` | Rebuild after source changes |
+| `aiden --reconfigure` | Re-run setup wizard, change providers |
+
+### In-chat commands
+| Command | Description |
+|---------|-------------|
+| `/help` | Show all commands |
+| `/switch <provider>` | Change primary provider live |
+| `/budget` | Show daily token spend + remaining |
+| `/budget set <n>` | Set daily limit in USD |
+| `/memory` | View distilled facts and memory stats |
+| `/memory search <q>` | Search remembered facts |
+| `/profile` | View structured user profile |
+| `/failed [reason]` | Teach Aiden from a wrong answer |
+| `/skills` | List loaded skills |
+| `/install <skill>` | Install from community registry |
+| `/publish <skill>` | Publish skill to registry |
+| `/skills validate <n>` | Validate agentskills.io compliance |
+| `/sandbox status` | Docker sandbox mode |
+| `/sandbox auto` | Enable sandboxed shell/python |
+| `/permissions` | View permission mode |
+| `/permissions ask` | Require approval for destructive ops |
+| `/permissions allow` | Allow all operations silently |
+| `/retry` | Retry last query |
+| `/exit` | Save memory and exit |
+
+---
+
 ## Contributing
 
 Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide.
@@ -479,6 +546,16 @@ Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the ful
 ### v3.10.0 — 2026-04-09
 
 See [releases page](https://github.com/taracodlabs/aiden-releases/releases) for older changelogs.
+
+---
+
+## Sponsors
+
+Aiden is built and maintained by one person.
+If it saves you time, consider sponsoring:
+
+[![Sponsor on GitHub](https://img.shields.io/badge/sponsor-❤-pink)](https://github.com/sponsors/shivadeore111-design)
+[![Donate via Razorpay](https://img.shields.io/badge/donate-Razorpay-blue)](https://razorpay.me/@shivadeore)
 
 ---
 
