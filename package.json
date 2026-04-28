@@ -31,13 +31,10 @@
   "main": "./dist/index.js",
   "files": [
     "dist/",
-    "dist-bundle/",
-    "dashboard-next/",
-    "context/",
+    "dist-bundle/cli.js",
     "config/",
     "README.md",
-    "LICENSE",
-    "docker-compose.yml"
+    "LICENSE"
   ],
   "workspaces": [
     "packages/*"
