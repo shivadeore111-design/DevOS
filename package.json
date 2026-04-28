@@ -27,11 +27,13 @@
     "devos-ai": "./dist/bin/npx-init.js",
     "aiden": "./dist-bundle/cli.js"
   },
-  "main": "./dist/api/server.js",
+  "main": "./dist/index.js",
   "files": [
     "dist/",
     "dist-bundle/cli.js",
+    "dist-bundle/index.js",
     "config/",
+    "scripts/postinstall.js",
     "README.md",
     "LICENSE"
   ],
