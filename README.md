@@ -1,14 +1,20 @@
 ```
- █████╗ ██╗██████╗ ███████╗███╗   ██╗
+[38;5;208m
+█████╗  ██╗██████╗ ███████╗███╗   ██╗
 ██╔══██╗██║██╔══██╗██╔════╝████╗  ██║
 ███████║██║██║  ██║█████╗  ██╔██╗ ██║
 ██╔══██║██║██║  ██║██╔══╝  ██║╚██╗██║
 ██║  ██║██║██████╔╝███████╗██║ ╚████║
 ╚═╝  ╚═╝╚═╝╚═════╝ ╚══════╝╚═╝  ╚═══╝
 
-local-first AI operating system
-1,400+ skills · 80+ tools · 15+ providers · AGPL-3.0
-Windows · Linux · WSL · macOS (API mode)
+Autonomous AI Operating System
+
+1,500+ Skills • 89+ Tools • 14+ Providers • AGPL-3.0
+
+Windows • Linux • WSL • macOS (API Mode)
+
+Self-Healing • Browser Automation • Terminal Control • Persistent Memory
+[0m
 ```
 
 <p align="center">
