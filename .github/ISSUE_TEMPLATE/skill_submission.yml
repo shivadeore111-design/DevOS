@@ -1,0 +1,44 @@
+name: Skill Submission
+description: Submit a skill for the community registry
+labels: ["skill", "community"]
+body:
+  - type: input
+    id: name
+    attributes:
+      label: Skill name
+      placeholder: "morning-brief"
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What does this skill do?
+    validations:
+      required: true
+  - type: textarea
+    id: trigger
+    attributes:
+      label: Example trigger phrases
+      placeholder: |
+        - "give me my morning briefing"
+        - "what's happening today"
+    validations:
+      required: true
+  - type: input
+    id: tools
+    attributes:
+      label: Tools used
+      placeholder: "web_search, notify, get_stocks"
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Submission checklist
+      options:
+        - label: skill.json included (agentskills.io compatible)
+          required: true
+        - label: SKILL.md included with clear steps
+          required: true
+        - label: Tested on Aiden v3.14+
+          required: true
+        - label: No hardcoded API keys
+          required: true

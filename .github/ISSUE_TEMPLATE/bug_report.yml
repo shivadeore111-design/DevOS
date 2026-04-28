@@ -1,0 +1,58 @@
+name: Bug Report
+description: Something isn't working
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: "Thanks for reporting! Fill this out so we can fix it fast."
+  - type: input
+    id: version
+    attributes:
+      label: Aiden version
+      placeholder: "v3.14.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows 11
+        - Windows 10
+        - Linux
+        - macOS
+        - WSL2
+    validations:
+      required: true
+  - type: input
+    id: provider
+    attributes:
+      label: Provider being used
+      placeholder: "groq-1, openrouter-1, ollama, etc"
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      placeholder: "Describe the bug clearly"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Type '...'
+        2. See error
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs (optional)
+      render: shell
