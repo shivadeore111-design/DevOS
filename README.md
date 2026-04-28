@@ -239,18 +239,18 @@ Full chat interface with live activity panel. Local-first, connects to Ollama or
 
 ## Aiden vs alternatives
 
-| | Aiden | Mercury | Hermes | OpenClaw |
-|---|---|---|---|---|
-| **Windows native installer** | ✅ | ❌ npm only | ❌ | ❌ |
-| **Desktop OS control** | ✅ vision+mouse+kbd | ❌ | ❌ | ❌ |
-| **One-command install** | ✅ `npx aiden-os` | ✅ | ❌ | ❌ |
-| **OpenAI-compatible API** | ✅ `/v1/chat/completions` | ❌ | ❌ | ❌ |
-| **agentskills.io skills** | ✅ 1500+ | ✅ | ✅ | ✅ 13K+ |
-| **Offline (Ollama)** | ✅ | ✅ | ✅ | ✅ |
-| **Local web dashboard** | 🔨 v3.17 | ❌ | ✅ | ✅ |
-| **Pro license system** | ✅ | ❌ | ❌ | ❌ |
-| **Zero CVEs** | ✅ | ✅ | ❌ | ❌ |
-| **License** | AGPL-3.0 | MIT | MIT | MIT |
+| Feature | Aiden | Hermes | OpenClaw |
+|---|---|---|---|
+| **Windows native installer** | ✅ | ❌ | ❌ |
+| **Desktop OS control** | ✅ vision + mouse + keyboard | ❌ | ❌ |
+| **One-command install** | ✅ `npx aiden-os` | ❌ | ❌ |
+| **OpenAI-compatible API** | ✅ `/v1/chat/completions` | ❌ | ❌ |
+| **agentskills.io skills** | ✅ 1500+ | ✅ | ✅ 13K+ |
+| **Offline (Ollama)** | ✅ | ✅ | ✅ |
+| **Local web dashboard** | 🔨 v3.17 | ✅ | ✅ |
+| **Pro license system** | ✅ | ❌ | ❌ |
+| **Zero CVEs** | ✅ | ❌ | ❌ |
+| **License** | AGPL-3.0 | MIT | MIT |
 
 ---
 
