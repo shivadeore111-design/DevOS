@@ -447,6 +447,29 @@ Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the ful
 
 ## Changelog
 
+### v3.17.0 — 2026-04-28
+
+**Local web dashboard**
+- Browser UI at localhost:4200/ui — no terminal needed
+- Chat, Providers, Memory, Skills panels
+- Live SSE streaming, markdown rendering
+
+**Plugin system**
+- Drop workspace/plugins/<name>.js → auto-loads
+- preTool/postTool hooks, custom tool registration
+- Session lifecycle hooks (onSessionStart/onSessionEnd)
+- Hot-reload with /plugins reload
+- Examples: audit-log.js, hello-tool.js
+
+**MCP server mode**
+- Expose Aiden's tools to Claude Code, Cursor, VS Code
+- Run: node dist-bundle/cli.js mcp
+- 28 safe tools exposed by default
+- MCP_ALLOW_DESTRUCTIVE=true for full tool access
+- Config examples in docs/mcp/
+
+---
+
 ### v3.16.0 — 2026-04-28
 
 **One-command install**
