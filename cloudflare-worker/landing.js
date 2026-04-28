@@ -179,22 +179,50 @@ function disclaimerPage() {
 }
 
 function uninstallShRoute() {
-  // Proxy uninstall.sh from the source repo raw URL.
-  const RAW_URL = 'https://raw.githubusercontent.com/taracodlabs/aiden-releases/main/uninstall.sh'
-  return fetch(RAW_URL).then(res => {
-    if (!res.ok) {
-      return new Response('#!/usr/bin/env bash\necho "uninstall.sh temporarily unavailable"\nexit 1\n', {
-        status: 503,
-        headers: { 'Content-Type': 'text/plain;charset=UTF-8' }
-      })
+  const script = `#!/usr/bin/env bash
+set -e
+
+BOLD="\\033[1m"
+GREEN="\\033[0;32m"
+DIM="\\033[2m"
+NC="\\033[0m"
+
+echo ""
+echo -e "\${BOLD}Aiden Uninstaller\${NC}"
+echo "──────────────────"
+
+remove_if_exists() {
+  if [ -d "$1" ] || [ -f "$1" ]; then
+    rm -rf "$1"
+    echo -e "  \${GREEN}removed\${NC}  $1"
+  fi
+}
+
+echo ""
+echo "Removing Aiden data and config..."
+remove_if_exists "$HOME/.local/share/aiden"
+remove_if_exists "$HOME/.config/aiden"
+
+if [[ "$(uname)" == "Darwin" ]]; then
+  remove_if_exists "$HOME/Library/Application Support/aiden"
+  remove_if_exists "$HOME/Library/Preferences/com.taracod.aiden.plist"
+fi
+
+if command -v npm &>/dev/null; then
+  npm uninstall -g devos-ai 2>/dev/null && echo -e "  \${GREEN}removed\${NC}  npm global: devos-ai" || true
+fi
+
+echo ""
+echo -e "\${GREEN}\${BOLD}Done.\${NC} Aiden has been uninstalled."
+echo "Thanks for trying Aiden — feedback welcome: discord.gg/gMZ3hUnQTm"
+echo ""
+`
+  return new Response(script, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Cache-Control': 'no-cache',
     }
-    return res.text().then(body => new Response(body, {
-      status: 200,
-      headers: {
-        'Content-Type': 'text/plain;charset=UTF-8',
-        'Cache-Control': 'public, max-age=300'
-      }
-    }))
   })
 }
 
