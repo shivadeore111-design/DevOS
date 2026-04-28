@@ -5533,4 +5533,33 @@ async function main(): Promise<void> {
 export async function run(): Promise<void> { return main() }
 
 // Guard against auto-running when required as a module (packages/aiden-os in-process launch).
-if (require.main === module) main().catch((e: Error) => { console.error('[CLI] Fatal:', e.message); process.exit(1) })
+if (require.main === module) {
+  // ── MCP server mode ──────────────────────────────────────────
+  if (process.argv[2] === 'mcp') {
+    if (process.argv[3] === 'inspect') {
+      // aiden mcp inspect — list exposed tools as JSON (debug helper)
+      // Deferred import avoids loading API server in stdio MCP mode
+      const { SAFE_TOOLS, DESTRUCTIVE_TOOLS, getExposedTools } = require('../api/mcp')
+      const exposed = getExposedTools()
+      process.stdout.write(JSON.stringify({
+        total:              exposed.length,
+        safeTools:          SAFE_TOOLS.length,
+        destructiveTools:   DESTRUCTIVE_TOOLS.length,
+        destructiveEnabled: process.env.MCP_ALLOW_DESTRUCTIVE === 'true',
+        tools:              exposed,
+      }, null, 2) + '\n')
+      process.exit(0)
+    } else {
+      // aiden mcp — start stdio MCP server
+      const { startMCPServer } = require('../api/mcp')
+      startMCPServer().catch((err: Error) => {
+        process.stderr.write(`[mcp] Fatal: ${err.message}\n`)
+        process.exit(1)
+      })
+      // Process stays alive; MCP server runs until stdin closes
+    }
+  } else {
+    // ── Normal CLI mode ──────────────────────────────────────────
+    main().catch((e: Error) => { console.error('[CLI] Fatal:', e.message); process.exit(1) })
+  }
+}

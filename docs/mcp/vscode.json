@@ -1,0 +1,14 @@
+{
+  "mcp": {
+    "servers": {
+      "aiden": {
+        "type": "stdio",
+        "command": "node",
+        "args": ["${workspaceFolder}/dist-bundle/cli.js", "mcp"],
+        "env": {
+          "GROQ_API_KEY": "your_groq_key_here"
+        }
+      }
+    }
+  }
+}

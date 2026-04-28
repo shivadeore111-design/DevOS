@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "aiden": {
+      "command": "npx",
+      "args": ["aiden-os", "mcp"],
+      "env": {
+        "GROQ_API_KEY": "your_groq_key_here"
+      }
+    }
+  }
+}

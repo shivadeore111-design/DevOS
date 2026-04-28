@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "aiden": {
+      "command": "node",
+      "args": ["C:\\Users\\<you>\\DevOS\\dist-bundle\\cli.js", "mcp"],
+      "env": {
+        "GROQ_API_KEY": "your_groq_key_here"
+      }
+    }
+  }
+}
