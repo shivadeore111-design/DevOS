@@ -5266,7 +5266,185 @@ const TOOL_NAMES: string[] = [
   'ingest_youtube', 'run_agent',
 ]
 
+// ── Live dropdown for / and @ triggers ───────────────────────────────────────
+// Renders a filtered menu below the input line; arrow-key navigable.
+// Completely independent of the opt-in PALETTE_ON command palette.
+
+interface DropdownItem {
+  label:       string
+  description: string
+  category?:   string
+}
+
+interface DropdownState {
+  visible:       boolean
+  items:         DropdownItem[]
+  filtered:      DropdownItem[]
+  selectedIndex: number
+  triggerChar:   '/' | '@' | null
+  query:         string
+  lineCount:     number   // how many lines were drawn (for clean erasure)
+  currentLine:   string   // last real input line (restored when readline hijacks ↑↓)
+}
+
+const DD_ORANGE = '\x1b[38;2;255;107;53m'
+const DD_DIM    = '\x1b[2m'
+const DD_RESET  = '\x1b[0m'
+const DD_BOLD   = '\x1b[1m'
+
+const dropdown: DropdownState = {
+  visible: false, items: [], filtered: [], selectedIndex: 0,
+  triggerChar: null, query: '', lineCount: 0, currentLine: '',
+}
+
+/** Build dropdown items from the canonical COMMAND_DETAIL map. */
+function buildSlashCommands(): DropdownItem[] {
+  return Object.entries(COMMAND_DETAIL).map(([cmd, detail]) => ({
+    label:       cmd,
+    description: detail.desc,
+    category:    detail.section,
+  }))
+}
+
+/** Build dropdown items for all registered tool names. */
+function buildToolList(): DropdownItem[] {
+  return [
+    { label: '@web_search',              description: 'Search the web',                    category: 'Web'     },
+    { label: '@fetch_page',              description: 'Fetch a URL as text',               category: 'Web'     },
+    { label: '@fetch_url',               description: 'Fetch raw URL content',             category: 'Web'     },
+    { label: '@open_browser',            description: 'Open URL in browser',               category: 'Browser' },
+    { label: '@browser_click',           description: 'Click element on page',             category: 'Browser' },
+    { label: '@browser_type',            description: 'Type text into a field',            category: 'Browser' },
+    { label: '@browser_extract',         description: 'Extract page content',              category: 'Browser' },
+    { label: '@browser_screenshot',      description: 'Screenshot the active tab',         category: 'Browser' },
+    { label: '@browser_scroll',          description: 'Scroll the page',                   category: 'Browser' },
+    { label: '@browser_get_url',         description: 'Get current browser URL',           category: 'Browser' },
+    { label: '@file_read',               description: 'Read a file',                       category: 'Files'   },
+    { label: '@file_write',              description: 'Write to a file',                   category: 'Files'   },
+    { label: '@file_list',               description: 'List directory contents',           category: 'Files'   },
+    { label: '@shell_exec',              description: 'Run shell command',                 category: 'System'  },
+    { label: '@run_python',              description: 'Execute Python code',               category: 'Code'    },
+    { label: '@run_node',                description: 'Execute Node.js code',              category: 'Code'    },
+    { label: '@code_interpreter_python', description: 'Python interpreter sandbox',       category: 'Code'    },
+    { label: '@code_interpreter_node',   description: 'Node.js interpreter sandbox',      category: 'Code'    },
+    { label: '@system_info',             description: 'OS / hardware info',               category: 'System'  },
+    { label: '@notify',                  description: 'Send desktop notification',         category: 'System'  },
+    { label: '@deep_research',           description: 'Multi-step web research',           category: 'Web'     },
+    { label: '@get_stocks',              description: 'NSE/BSE stock data',               category: 'Finance' },
+    { label: '@get_market_data',         description: 'Market data feed',                 category: 'Finance' },
+    { label: '@get_company_info',        description: 'Company fundamentals',             category: 'Finance' },
+    { label: '@social_research',         description: 'Social media insights',            category: 'Finance' },
+    { label: '@mouse_move',              description: 'Move mouse cursor',                category: 'Vision'  },
+    { label: '@mouse_click',             description: 'Click at screen coordinates',      category: 'Vision'  },
+    { label: '@keyboard_type',           description: 'Type text via keyboard',           category: 'Vision'  },
+    { label: '@keyboard_press',          description: 'Press a key combo',               category: 'Vision'  },
+    { label: '@screenshot',              description: 'Capture full screen',              category: 'Vision'  },
+    { label: '@screen_read',             description: 'OCR + describe screen',            category: 'Vision'  },
+    { label: '@vision_loop',             description: 'Repeated screen observation',      category: 'Vision'  },
+    { label: '@vision_analyze',          description: 'Analyze an image with AI',         category: 'Vision'  },
+    { label: '@wait',                    description: 'Pause execution',                  category: 'System'  },
+    { label: '@clipboard_read',          description: 'Read clipboard contents',          category: 'System'  },
+    { label: '@clipboard_write',         description: 'Write to clipboard',               category: 'System'  },
+    { label: '@window_list',             description: 'List open windows',                category: 'System'  },
+    { label: '@window_focus',            description: 'Focus a window',                   category: 'System'  },
+    { label: '@app_launch',              description: 'Launch an application',            category: 'System'  },
+    { label: '@app_close',               description: 'Close an application',             category: 'System'  },
+    { label: '@watch_folder',            description: 'Watch directory for changes',       category: 'Files'   },
+    { label: '@watch_folder_list',       description: 'List active folder watches',       category: 'Files'   },
+    { label: '@send_file_local',         description: 'Send file to local agent',         category: 'Agent'   },
+    { label: '@receive_file_local',      description: 'Receive file from local agent',    category: 'Agent'   },
+    { label: '@get_briefing',            description: 'Morning briefing summary',         category: 'Agent'   },
+    { label: '@respond',                 description: 'Send response to user',            category: 'Agent'   },
+    { label: '@clarify',                 description: 'Ask clarifying question',          category: 'Agent'   },
+    { label: '@todo',                    description: 'Manage task list',                 category: 'Agent'   },
+    { label: '@cronjob',                 description: 'Schedule recurring task',          category: 'System'  },
+    { label: '@voice_speak',             description: 'Speak text via TTS',              category: 'Voice'   },
+    { label: '@voice_transcribe',        description: 'Transcribe audio file',            category: 'Voice'   },
+    { label: '@voice_clone',             description: 'Clone a voice',                    category: 'Voice'   },
+    { label: '@voice_design',            description: 'Design a custom voice',            category: 'Voice'   },
+    { label: '@lookup_skill',            description: 'Look up an installed skill',       category: 'Skills'  },
+    { label: '@lookup_tool_schema',      description: 'Get tool JSON schema',             category: 'Agent'   },
+    { label: '@spawn',                   description: 'Spawn subagent (shorthand)',       category: 'Agent'   },
+    { label: '@spawn_subagent',          description: 'Run isolated subagent',            category: 'Agent'   },
+    { label: '@swarm',                   description: 'Parallel subagent swarm',          category: 'Agent'   },
+    { label: '@ingest_youtube',          description: 'Download & transcribe YouTube',    category: 'Web'     },
+    { label: '@run_agent',               description: 'Run a named agent definition',     category: 'Agent'   },
+  ]
+}
+
+/**
+ * Erase the drawn dropdown lines from the terminal.
+ * Preserves all state (filtered/items/query) so re-render works after navigation.
+ */
+function eraseDropdown(): void {
+  if (dropdown.lineCount === 0) return
+  // DECSC → go down past input → erase each line → DECRC
+  process.stdout.write('\x1b7\n')
+  for (let i = 0; i < dropdown.lineCount; i++) {
+    process.stdout.write('\r\x1b[K\n')
+  }
+  process.stdout.write('\x1b8')
+  dropdown.lineCount = 0
+}
+
+/**
+ * Draw the filtered dropdown below the current input line.
+ * Call eraseDropdown() first when re-rendering after navigation.
+ */
+function renderDropdown(): void {
+  if (dropdown.filtered.length === 0) return
+
+  const MAX_ITEMS = 6
+  const items     = dropdown.filtered.slice(0, MAX_ITEMS)
+  const longest   = Math.max(...items.map(i => i.label.length))
+  let   lineCount = 0
+
+  process.stdout.write('\x1b7\n')
+  lineCount++
+
+  items.forEach((item, idx) => {
+    const isSelected = idx === dropdown.selectedIndex
+    const bullet     = isSelected ? `${DD_ORANGE}▸${DD_RESET}` : ' '
+    const labelStyle = isSelected ? `${DD_ORANGE}${DD_BOLD}` : ''
+    const pad        = ' '.repeat(longest - item.label.length + 2)
+    process.stdout.write(
+      `\r${bullet} ${labelStyle}${item.label}${DD_RESET}${pad}${DD_DIM}${item.description}${DD_RESET}\n`
+    )
+    lineCount++
+  })
+
+  if (dropdown.filtered.length > MAX_ITEMS) {
+    process.stdout.write(
+      `${DD_DIM}  ↓ ${dropdown.filtered.length - MAX_ITEMS} more · ↑↓ navigate · Tab to select${DD_RESET}\n`
+    )
+  } else {
+    process.stdout.write(
+      `${DD_DIM}  ↑↓ navigate · Tab/Enter to select · Esc to close${DD_RESET}\n`
+    )
+  }
+  lineCount++
+
+  dropdown.lineCount = lineCount
+  dropdown.visible   = true
+  process.stdout.write('\x1b8')
+}
+
+/** Erase visual + full state reset (dismiss). */
+function clearDropdown(): void {
+  eraseDropdown()
+  dropdown.visible       = false
+  dropdown.filtered      = []
+  dropdown.items         = []
+  dropdown.selectedIndex = 0
+  dropdown.query         = ''
+  dropdown.triggerChar   = null
+  dropdown.currentLine   = ''
+}
+
 function completer(line: string): [string[], string] {
+  // Suppress readline's own Tab completion while our dropdown is handling it
+  if (dropdown.visible) return [[], line]
+
   // ── Slash-command completion (/history, /skills, …) ───────────────────────
   if (line.startsWith('/')) {
     const prefix = COMMANDS.filter(c => c.startsWith(line))
@@ -5596,6 +5774,50 @@ async function main(): Promise<void> {
       }
     }
 
+    // ── Dropdown key handling (intercepts ↑↓ Tab Esc when visible) ──────────
+    // Must run BEFORE history navigation so the arrow keys are claimed by the
+    // dropdown instead of scrolling through history.
+    // We also restore (rl as any).line to dropdown.currentLine because readline
+    // processes ↑/↓ for its own history BEFORE our keypress handler fires.
+    if (dropdown.visible) {
+      if (key.name === 'up') {
+        dropdown.selectedIndex = Math.max(0, dropdown.selectedIndex - 1)
+        eraseDropdown()
+        renderDropdown()
+        ;(rl as any).line   = dropdown.currentLine
+        ;(rl as any).cursor = dropdown.currentLine.length
+        ;(rl as any)._refreshLine?.()
+        return
+      }
+      if (key.name === 'down') {
+        dropdown.selectedIndex = Math.min(dropdown.filtered.length - 1, dropdown.selectedIndex + 1)
+        eraseDropdown()
+        renderDropdown()
+        ;(rl as any).line   = dropdown.currentLine
+        ;(rl as any).cursor = dropdown.currentLine.length
+        ;(rl as any)._refreshLine?.()
+        return
+      }
+      if (key.name === 'escape') {
+        clearDropdown()
+        ;(rl as any).line   = dropdown.currentLine
+        ;(rl as any).cursor = dropdown.currentLine.length
+        ;(rl as any)._refreshLine?.()
+        return
+      }
+      if (key.name === 'tab') {
+        const selected = dropdown.filtered[dropdown.selectedIndex]
+        if (selected) {
+          clearDropdown()
+          const insert = selected.label + ' '
+          ;(rl as any).line   = insert
+          ;(rl as any).cursor = insert.length
+          ;(rl as any)._refreshLine?.()
+        }
+        return
+      }
+    }
+
     // ── History navigation (↑/↓) ─────────────────────────────────────────────
     if (key.name === 'up') {
       if (histIdx < state.inputHistory.length - 1) {
@@ -5619,6 +5841,57 @@ async function main(): Promise<void> {
         ;(rl as any)._refreshLine?.()
       }
     }
+
+    // ── Dropdown trigger detection ────────────────────────────────────────────
+    // setTimeout(0) ensures we read (rl as any).line AFTER readline has updated
+    // it for this keypress.  All early-return paths above (pager, palette,
+    // dropdown nav, history nav) skip this block — it only fires during
+    // normal character typing.
+    setTimeout(() => {
+      const line: string = (rl as any).line ?? ''
+
+      if (line.startsWith('/')) {
+        const query    = line.slice(1).toLowerCase()
+        const allItems = buildSlashCommands()
+        const filtered = query === ''
+          ? allItems
+          : allItems.filter(item => item.label.toLowerCase().includes(query))
+        eraseDropdown()
+        dropdown.triggerChar   = '/'
+        dropdown.items         = allItems
+        dropdown.filtered      = filtered
+        dropdown.query         = query
+        dropdown.selectedIndex = 0
+        dropdown.currentLine   = line
+        if (filtered.length > 0) renderDropdown()
+        else clearDropdown()
+
+      } else if (line.includes('@')) {
+        const lastAt  = line.lastIndexOf('@')
+        const partial = line.slice(lastAt + 1).toLowerCase()
+        if (!partial.includes(' ')) {
+          const allItems = buildToolList()
+          const filtered = partial === ''
+            ? allItems
+            : allItems.filter(item => item.label.toLowerCase().slice(1).startsWith(partial))
+          eraseDropdown()
+          dropdown.triggerChar   = '@'
+          dropdown.items         = allItems
+          dropdown.filtered      = filtered
+          dropdown.query         = partial
+          dropdown.selectedIndex = 0
+          dropdown.currentLine   = line
+          if (filtered.length > 0) renderDropdown()
+          else clearDropdown()
+        } else {
+          // Space after @word means the tool name is complete — close
+          if (dropdown.visible && dropdown.triggerChar === '@') clearDropdown()
+        }
+
+      } else {
+        if (dropdown.visible) clearDropdown()
+      }
+    }, 0)
   })
 
   rl.on('SIGINT', async () => {
@@ -5641,6 +5914,7 @@ async function main(): Promise<void> {
 
   rl.on('line', async (line: string) => {
     histIdx = -1
+    if (dropdown.visible) clearDropdown()
     // Defensive: if Enter was pressed while pager was active, exit pager cleanly
     if (pagerActive) { pagerActive = false; pagerState = null }
     const input = line.trim()
