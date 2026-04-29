@@ -1,10 +1,11 @@
 name              = "aiden-skill-registry"
 main              = "cloudflare-worker/skill-registry.js"
 compatibility_date = "2026-04-27"
+workers_dev       = true
 
 [[kv_namespaces]]
 binding = "AIDEN_SKILLS"
-id      = "<placeholder — run: wrangler kv:namespace create AIDEN_SKILLS --preview false>"
+id      = "ed32a19cc1884190890d39cd4d971245"
 
 [route]
 pattern   = "skills.taracod.com/*"
