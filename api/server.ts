@@ -5711,6 +5711,20 @@ export function startupCheck(): void {
 
 export function startApiServer(portArg?: number): Express {
 
+  // ── Redirect all diagnostic output to stderr ─────────────────────────────
+  // The CLI writes the streaming response to process.stdout character-by-character.
+  // If console.log also writes to stdout (the default), server logs physically
+  // interleave with rendered tokens in the same terminal, producing output like:
+  //   "I'm back. What's up, sh[Router] planner: groq-1...iva?"
+  // Sending ALL diagnostic output to stderr prevents this regardless of how the
+  // user runs the server (same terminal, background process, pipe, etc.).
+  // console.error already targets stderr — leave it alone.
+  const _toStderr = (...args: any[]) =>
+    process.stderr.write(args.map(String).join(' ') + '\n')
+  console.log  = _toStderr
+  console.info = _toStderr
+  console.warn = _toStderr
+
   // Read port from config/api.json with sensible fallback.
   // Host defaults to 127.0.0.1 (loopback only) for security.
   // Set AIDEN_HOST=0.0.0.0 to expose on all interfaces (e.g. headless/WSL2).
