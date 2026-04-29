@@ -19,12 +19,13 @@ param(
 
 $ErrorActionPreference = 'SilentlyContinue'
 
-$BOLD  = "`e[1m"
-$RED   = "`e[31m"
-$GREEN = "`e[32m"
-$CYAN  = "`e[36m"
-$DIM   = "`e[2m"
-$RST   = "`e[0m"
+$ESC   = [char]27
+$BOLD  = "$ESC[1m"
+$RED   = "$ESC[31m"
+$GREEN = "$ESC[32m"
+$CYAN  = "$ESC[36m"
+$DIM   = "$ESC[2m"
+$RST   = "$ESC[0m"
 
 Write-Host ""
 Write-Host ($BOLD + "Aiden - Uninstaller" + $RST)
