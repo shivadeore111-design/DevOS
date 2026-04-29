@@ -166,6 +166,34 @@ Set `AIDEN_HEADLESS=true` to suppress the Electron GUI when running the packaged
 
 ---
 
+## Getting Started
+
+Once Aiden is running, type these in the chat prompt:
+
+| First thing to do | What to type |
+|---|---|
+| See all available commands | `/help` |
+| Check which AI provider is active | `/switch` |
+| See your daily token budget | `/budget` |
+| Browse available skills | `/skills` |
+| Install a skill from the registry | `/install <skill-name>` |
+| Open the web UI in a browser | navigate to `localhost:4200/ui` |
+| Check model availability | `/models` |
+
+**Ask anything in plain English** — no special syntax needed for regular tasks:
+
+```
+summarize the PDF on my desktop
+open chrome and search for latest AI news
+close spotify
+take a screenshot and describe what you see
+what files did I download today
+```
+
+Type `/` to browse all 63 commands with instant search. Type `@` to select any of 61 tools directly.
+
+---
+
 ## Troubleshooting
 
 **"Cannot find module" or TypeScript errors**
@@ -424,9 +452,42 @@ Or toggle live from the Aiden CLI without restarting:
 
 ---
 
+## CLI vs Dashboard Quick Reference
+
+Both the terminal TUI and the browser dashboard (`localhost:4200/ui`) expose the full feature set. Use whichever fits your workflow.
+
+| Feature | Terminal CLI | Browser (`localhost:4200/ui`) |
+|---|---|---|
+| Chat | ✅ inline prompt | ✅ chat panel |
+| Streaming responses | ✅ token-by-token | ✅ live SSE |
+| Markdown rendering | ✅ | ✅ |
+| Slash commands | ✅ `/help`, `/switch`, `/budget`… | ✅ same commands |
+| `/` command dropdown | ✅ instant, 63 commands | 🔜 v3.19 |
+| `@` tool picker | ✅ instant, 61 tools | 🔜 v3.19 |
+| Provider panel | `/switch` | ✅ Providers tab |
+| Memory panel | `/memory` | ✅ Memory tab |
+| Skills panel | `/skills` | ✅ Skills tab |
+| Plugin hooks | ✅ | ✅ |
+| MCP server mode | `aiden mcp` | — |
+| OpenAI-compatible API | — | ✅ `localhost:4200/v1` |
+
+---
+
 ## Contributing
 
 Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide.
+
+**Quickstart:**
+
+```bash
+git clone https://github.com/taracodlabs/aiden.git
+cd aiden
+npm install
+cp .env.example .env   # add at minimum one API key (Groq is free: console.groq.com/keys)
+npm run build
+npm start              # server on :4200
+npm run cli            # TUI in a second terminal
+```
 
 - Bug fixes and new skills are the easiest entry points
 - All contributors sign the [CLA](.github/CLA.md) once via PR comment
@@ -435,13 +496,42 @@ Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the ful
 
 ---
 
-## Resources
+## Community
 
 | | |
 |---|---|
-| **Download installer** | [Latest release](https://github.com/taracodlabs/aiden-releases/releases/latest) |
+| **Discord** | [discord.gg/gMZ3hUnQTm](https://discord.gg/gMZ3hUnQTm) — chat, support, share what you build |
+| **Skills registry** | [agentskills.io](https://agentskills.io) — 1,500+ community skills |
+| **Bug reports & features** | [github.com/taracodlabs/aiden/issues](https://github.com/taracodlabs/aiden/issues) |
+| **Star the repo** | [github.com/taracodlabs/aiden](https://github.com/taracodlabs/aiden) ⭐ |
+| **npm** | [`npm install -g aiden-os`](https://www.npmjs.com/package/aiden-os) |
+| **Sponsor** | [github.com/sponsors/taracodlabs](https://github.com/sponsors/taracodlabs) |
+
+---
+
+## Documentation
+
+| Document | Description |
+|---|---|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Layer-by-layer breakdown, data flow diagrams, skill system design |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute — skills, tools, providers, docs |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | Planned features and milestone tracker |
+| [docs/mcp/](docs/mcp/) | MCP server setup — Claude Code, Cursor, VS Code integration |
+| [.env.example](.env.example) | All ~90 environment variables with descriptions |
+| [workspace-templates/](workspace-templates/) | Starter workspace configs and example plugins |
+| **Download installer** | [github.com/taracodlabs/aiden-releases/releases/latest](https://github.com/taracodlabs/aiden-releases/releases/latest) |
 | **Releases & changelog** | [github.com/taracodlabs/aiden-releases](https://github.com/taracodlabs/aiden-releases) |
 | **License** | AGPL-3.0 core · Apache-2.0 skills |
+
+---
+
+## Migration from Other Agents
+
+> **Detailed guides coming in v3.19.** Short version:
+
+- **Skills** — Aiden is fully compatible with [agentskills.io](https://agentskills.io). Any Hermes or OpenClaw skill with a valid `skill.json` manifest loads automatically via `/install <name>`.
+- **API clients** — Aiden exposes an OpenAI-compatible API at `localhost:4200/v1`. If you pointed your client at another agent, update the base URL and you're done.
+- **Config / env** — Most standard keys (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GROQ_API_KEY`, etc.) are recognized as-is. Copy your existing `.env` and Aiden picks them up on first start.
 
 ---
 
