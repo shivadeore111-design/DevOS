@@ -1635,11 +1635,15 @@ export const TOOLS: Record<string, (payload: any, ctx?: ToolContext) => Promise<
   },
 
   app_close: async (p) => {
-    const appName = (p.app || p.process || p.command || p.name || '').toLowerCase().trim()
-    if (!appName) return { success: false, output: '', error: 'No app/process name provided' }
+    // Accept app_name (planner default), appName, name, app, process, command
+    const appName = (
+      p.app_name || p.appName || p.app || p.process || p.command || p.name || ''
+    ).toString().toLowerCase().trim()
+    if (!appName) return { success: false, output: '', error: 'No app/process name provided. Pass app_name or appName.' }
     const exeMap: Record<string, string> = {
       'chrome':              'chrome.exe',
       'google chrome':       'chrome.exe',
+      'chrome browser':      'chrome.exe',
       'firefox':             'firefox.exe',
       'mozilla firefox':     'firefox.exe',
       'edge':                'msedge.exe',
@@ -1652,6 +1656,7 @@ export const TOOLS: Record<string, (payload: any, ctx?: ToolContext) => Promise<
       'excel':               'EXCEL.EXE',
       'microsoft excel':     'EXCEL.EXE',
       'powerpoint':          'POWERPNT.EXE',
+      'microsoft powerpoint':'POWERPNT.EXE',
       'vscode':              'Code.exe',
       'vs code':             'Code.exe',
       'visual studio code':  'Code.exe',
@@ -1664,13 +1669,25 @@ export const TOOLS: Record<string, (payload: any, ctx?: ToolContext) => Promise<
       'steam':               'steam.exe',
       'explorer':            'explorer.exe',
       'file explorer':       'explorer.exe',
+      'windows explorer':    'explorer.exe',
       'cmd':                 'cmd.exe',
+      'command prompt':      'cmd.exe',
       'terminal':            'wt.exe',
       'windows terminal':    'wt.exe',
       'paint':               'mspaint.exe',
+      'ms paint':            'mspaint.exe',
       'calculator':          'Calculator.exe',
       'task manager':        'Taskmgr.exe',
       'taskmgr':             'Taskmgr.exe',
+      'whatsapp':            'WhatsApp.exe',
+      'telegram':            'Telegram.exe',
+      'obs':                 'obs64.exe',
+      'obs studio':          'obs64.exe',
+      'brave':               'brave.exe',
+      'brave browser':       'brave.exe',
+      'opera':               'opera.exe',
+      'winamp':              'winamp.exe',
+      'itunes':              'iTunes.exe',
     }
     const exe = exeMap[appName] ?? (appName.endsWith('.exe') ? appName : appName + '.exe')
     try {
@@ -1687,42 +1704,93 @@ export const TOOLS: Record<string, (payload: any, ctx?: ToolContext) => Promise<
   },
 
   system_volume: async (p) => {
-    const action = (p.action || 'get').toLowerCase().trim()
-    const amount = Number(p.amount ?? p.percent ?? p.by ?? 10)
-    const target = p.level !== undefined ? Number(p.level) : p.set !== undefined ? Number(p.set) : -1
+    // ── Natural input detection ──────────────────────────────────
+    // Planner may send { volume: 20 }, { level: 50 }, { mute: true },
+    // { action: "up", amount: 20 }, or a mix — normalise all forms here.
+    let action: string = (p.action ?? '').toString().toLowerCase().trim()
+    let amount: number = Number(p.amount ?? p.percent ?? p.by ?? 0)
+    let target: number = p.level !== undefined ? Number(p.level)
+                       : p.set   !== undefined ? Number(p.set)   : -1
+
+    if (!action) {
+      if      (p.mute   === true)              action = 'mute'
+      else if (p.unmute === true)              action = 'unmute'
+      else if (typeof p.volume === 'number') {
+        action = (p.direction === 'down') ? 'down' : 'up'
+        amount = p.volume
+      }
+      else if (typeof p.level  === 'number')   action = 'set'
+      else                                     action = 'get'
+    }
+
+    // Sensible default step when caller didn't supply an amount
+    if (!amount && action !== 'get' && action !== 'mute' && action !== 'unmute') {
+      amount = 20
+    }
 
     try {
-      const { execSync }             = await import('child_process')
+      const { execSync }                  = await import('child_process')
       const { writeFileSync, unlinkSync } = await import('fs')
-      const { tmpdir }               = await import('os')
-      const { join }                 = await import('path')
+      const { tmpdir }                    = await import('os')
+      const { join }                      = await import('path')
 
-      // ── Mute toggle ──────────────────────────────────────────
+      // Helper: write + run + clean a temp .ps1 (avoids all quoting nightmares)
+      const runPs = (script: string, label: string): string => {
+        const f = join(tmpdir(), `_aiden_${label}_${Date.now()}.ps1`)
+        writeFileSync(f, script, 'utf8')
+        try {
+          return execSync(
+            `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${f}"`,
+            { timeout: 6000, encoding: 'utf8' }
+          ).trim()
+        } finally { try { unlinkSync(f) } catch {} }
+      }
+
+      // Shared keybd_event helper — works without a focused window unlike WScript.Shell
+      const keybdScript = (vk: number) => `
+Add-Type -TypeDefinition @"
+using System; using System.Runtime.InteropServices;
+public class AidenKbd {
+  [DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, uint dwExtraInfo);
+}
+"@
+[AidenKbd]::keybd_event(${vk}, 0, 0, 0)
+Start-Sleep -Milliseconds 50
+[AidenKbd]::keybd_event(${vk}, 0, 2, 0)
+`
+
+      // ── Mute / Unmute — VK_VOLUME_MUTE = 0xAD = 173 ─────────
       if (action === 'mute' || action === 'unmute') {
-        execSync(
-          `powershell.exe -NoProfile -Command "$wsh=New-Object -ComObject WScript.Shell; $wsh.SendKeys([char]173)"`,
-          { timeout: 5000 }
-        )
+        runPs(keybdScript(173), 'mute')
         return { success: true, output: action === 'mute' ? 'Muted' : 'Unmuted (toggle)' }
       }
 
-      // ── Up / Down via VK_VOLUME_UP/DOWN ──────────────────────
+      // ── Up / Down — fire VK_VOLUME_UP/DOWN N times ────────────
+      // VK_VOLUME_DOWN = 0xAE = 174, VK_VOLUME_UP = 0xAF = 175
       if (action === 'up' || action === 'down') {
-        const presses = Math.max(1, Math.round(amount / 2)) // each keypress ≈ 2%
-        const key     = action === 'up' ? 175 : 174
-        const cmds    = Array.from({ length: presses }, () => `$wsh.SendKeys([char]${key})`).join('; ')
-        execSync(
-          `powershell.exe -NoProfile -Command "$wsh=New-Object -ComObject WScript.Shell; ${cmds}"`,
-          { timeout: 8000 }
-        )
+        const presses = Math.max(1, Math.round(amount / 2)) // each press ≈ 2%
+        const vk      = action === 'up' ? 175 : 174
+        const script  = `
+Add-Type -TypeDefinition @"
+using System; using System.Runtime.InteropServices;
+public class AidenKbd2 {
+  [DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, uint dwExtraInfo);
+}
+"@
+for ($i = 0; $i -lt ${presses}; $i++) {
+  [AidenKbd2]::keybd_event(${vk}, 0, 0, 0)
+  Start-Sleep -Milliseconds 30
+  [AidenKbd2]::keybd_event(${vk}, 0, 2, 0)
+  Start-Sleep -Milliseconds 20
+}
+`
+        runPs(script, action)
         return { success: true, output: `Volume ${action === 'up' ? 'increased' : 'decreased'} by ~${presses * 2}%` }
       }
 
-      // ── Get / Set via waveOut (temp .ps1 to avoid quoting hell) ──
-      const psFile = join(tmpdir(), `_aiden_vol_${Date.now()}.ps1`)
-
+      // ── Get — read waveOut scalar ─────────────────────────────
       if (action === 'get') {
-        writeFileSync(psFile, `
+        const raw = runPs(`
 Add-Type -TypeDefinition @"
 using System; using System.Runtime.InteropServices;
 public class AidenVolGet {
@@ -1732,21 +1800,17 @@ public class AidenVolGet {
 $v = [uint32]0
 [AidenVolGet]::waveOutGetVolume([IntPtr]::Zero, [ref]$v) | Out-Null
 [Math]::Round(($v -band 0xFFFF) / 65535.0 * 100)
-`, 'utf8')
-        const raw = execSync(
-          `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${psFile}"`,
-          { timeout: 5000, encoding: 'utf8' }
-        ).trim()
-        try { unlinkSync(psFile) } catch {}
+`, 'get')
         const vol = Number(raw)
         return { success: true, output: `Current volume: ${vol}%`, volume: vol }
       }
 
+      // ── Set — write exact waveOut scalar ─────────────────────
       if (action === 'set' && target >= 0) {
         const clamped = Math.max(0, Math.min(100, target))
-        const raw     = Math.round(clamped / 100 * 65535)
-        const dword   = (raw << 16) | raw
-        writeFileSync(psFile, `
+        const scalar  = Math.round(clamped / 100 * 65535)
+        const dword   = (scalar << 16) | scalar
+        runPs(`
 Add-Type -TypeDefinition @"
 using System; using System.Runtime.InteropServices;
 public class AidenVolSet {
@@ -1754,13 +1818,7 @@ public class AidenVolSet {
 }
 "@
 [AidenVolSet]::waveOutSetVolume([IntPtr]::Zero, [uint32]${dword}) | Out-Null
-Write-Output "ok"
-`, 'utf8')
-        execSync(
-          `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${psFile}"`,
-          { timeout: 5000 }
-        )
-        try { unlinkSync(psFile) } catch {}
+`, 'set')
         return { success: true, output: `Volume set to ${clamped}%`, volume: clamped }
       }
 
