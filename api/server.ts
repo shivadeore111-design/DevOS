@@ -145,73 +145,10 @@ interface InstantAction {
 }
 
 const INSTANT_ACTIONS: InstantAction[] = [
-  // 1. Open Chrome
-  {
-    patterns: [/^open\s+chrome\s*$/i],
-    action: async () => {
-      try { await executeTool('app_launch', { app: 'chrome' }) } catch {}
-      return 'Opening Chrome...'
-    },
-  },
-  // 2. Open Firefox
-  {
-    patterns: [/^open\s+firefox\s*$/i],
-    action: async () => {
-      try { await executeTool('app_launch', { app: 'firefox' }) } catch {}
-      return 'Opening Firefox...'
-    },
-  },
-  // 3. Open Edge
-  {
-    patterns: [/^open\s+(?:microsoft\s+)?edge\s*$/i],
-    action: async () => {
-      try { await executeTool('app_launch', { app: 'msedge' }) } catch {}
-      return 'Opening Microsoft Edge...'
-    },
-  },
-  // 4. Open Notepad
-  {
-    patterns: [/^open\s+notepad\s*$/i],
-    action: async () => {
-      try { await executeTool('app_launch', { app: 'notepad' }) } catch {}
-      return 'Opening Notepad...'
-    },
-  },
-  // 5. Open Calculator
-  {
-    patterns: [/^open\s+calc(?:ulator)?\s*$/i],
-    action: async () => {
-      try { await executeTool('app_launch', { app: 'calc' }) } catch {}
-      return 'Opening Calculator...'
-    },
-  },
-  // 6. Open VS Code
-  {
-    patterns: [/^open\s+(?:vs[\s-]?code|vscode)\s*$/i],
-    action: async () => {
-      try { await executeTool('app_launch', { app: 'code' }) } catch {}
-      return 'Opening VS Code...'
-    },
-  },
-  // 7. Open Terminal / CMD
-  {
-    patterns: [/^open\s+(?:terminal|cmd|command\s+prompt)\s*$/i],
-    action: async () => {
-      try { await executeTool('app_launch', { app: 'cmd' }) } catch {}
-      return 'Opening terminal...'
-    },
-  },
-  // 8. Open File Explorer
-  {
-    patterns: [
-      /^open\s+(?:file\s+)?explorer\s*$/i,
-      /^open\s+(?:my\s+)?files?\s*$/i,
-    ],
-    action: async () => {
-      try { await executeTool('app_launch', { app: 'explorer' }) } catch {}
-      return 'Opening File Explorer...'
-    },
-  },
+  // NOTE: "open X" / "close X" / "launch X" entries removed — they faked success via
+  // try/catch swallowing, returned hardcoded strings regardless of tool outcome, and
+  // used the wrong param key ({app:} vs {app_name:}).  The planner handles these
+  // correctly via app_launch / app_close with real success verification.
   // 9. Take Screenshot
   {
     patterns: [
