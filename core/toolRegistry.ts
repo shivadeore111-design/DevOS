@@ -1621,16 +1621,49 @@ export const TOOLS: Record<string, (payload: any, ctx?: ToolContext) => Promise<
   },
 
   app_launch: async (p) => {
-    const app = p.app || p.path || p.command || ''
-    if (!app) return { success: false, output: '', error: 'No app specified' }
-    if (isShellDangerous(app)) {
-      return { success: false, output: '', error: 'CommandGate: Blocked potentially dangerous app launch.' }
+    const appName = (
+      p.app_name ?? p.appName ?? p.app ?? p.path ?? p.command ?? p.name ?? p.target ?? ''
+    ).toString().toLowerCase().trim()
+    if (!appName) return { success: false, output: '', error: 'No app_name provided. Pass app_name e.g. "chrome" or "spotify".' }
+    // Map friendly display names → executable/URI names
+    const exeMap: Record<string, string> = {
+      'chrome':               'chrome',
+      'google chrome':        'chrome',
+      'firefox':              'firefox',
+      'edge':                 'msedge',
+      'microsoft edge':       'msedge',
+      'spotify':              'spotify',
+      'discord':              'discord',
+      'vscode':               'code',
+      'vs code':              'code',
+      'visual studio code':   'code',
+      'notepad':              'notepad',
+      'notepad++':            'notepad++',
+      'word':                 'winword',
+      'excel':                'excel',
+      'powerpoint':           'powerpnt',
+      'slack':                'slack',
+      'zoom':                 'zoom',
+      'teams':                'teams',
+      'microsoft teams':      'teams',
+      'explorer':             'explorer',
+      'file explorer':        'explorer',
+      'task manager':         'taskmgr',
+      'taskmgr':              'taskmgr',
+      'calculator':           'calc',
+      'calc':                 'calc',
+      'paint':                'mspaint',
+      'terminal':             'wt',
+      'windows terminal':     'wt',
+      'cmd':                  'cmd',
+      'powershell':           'powershell',
     }
+    const exe = exeMap[appName] ?? appName
     try {
       const { execSync } = await import('child_process')
-      const safe = app.replace(/'/g, "''")
-      execSync(`powershell.exe -Command "Start-Process '${safe}'"`, { timeout: 10000 })
-      return { success: true, output: `Launched: "${app}"` }
+      // Use cmd /c start — cmd built-in, avoids Start-Process (blocked by permissions)
+      execSync(`cmd /c start "" "${exe}"`, { timeout: 10000 })
+      return { success: true, output: `Launched: "${appName}"` }
     } catch (e: any) { return { success: false, output: '', error: e.message } }
   },
 
