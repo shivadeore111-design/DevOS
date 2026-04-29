@@ -33,8 +33,8 @@ Self-Healing • Browser Automation • Terminal Control • Persistent Memory
 
 ---
 
-> **v3.17 — local web dashboard · MCP server · plugin system · chat streaming fix**
-> Browse to `localhost:4200/ui` for a full chat UI with live SSE streaming — no terminal required. Expose Aiden's tools to Claude Code, Cursor, and VS Code via the new MCP server mode. Drop a `.js` file into `workspace/plugins/` and it hot-loads automatically. See [changelog](#changelog) below.
+> **v3.18 — live dropdown UX · real PC control · smart model failover · anti-confabulation**
+> Type `/` for 63 commands or `@` for 61 tools with instant dropdown. Open/close apps, change volume, and control your PC for real — no more fake responses. Smart per-model failover with free-tier defaults. See [changelog](#changelog) below.
 
 ---
 
@@ -446,6 +446,54 @@ Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the ful
 ---
 
 ## Changelog
+
+### v3.18.0 — 2026-04-30
+
+**Live dropdown UX (Hermes-style)**
+- Type `/` for instant command dropdown (63 commands)
+- Type `@` for tool dropdown (61 tools)
+- Prefix-match filter, arrow nav, Tab to select, Esc to close
+
+**Real PC control**
+- `close chrome` / `spotify` / `notepad` → actually closes via taskkill
+- `increase/decrease volume by N` → actually changes
+- `mute/unmute` → actually toggles
+- 30+ app name → exe map
+- `system_volume` detects intent from any natural input
+
+**YouTube auto-plays**
+- `play X on youtube` → opens browser, auto-clicks first result
+- Bypasses fast-path that was blocking it
+
+**Anti-confabulation rules**
+- SOUL.md updated: never claim actions completed without tool calls
+- InstantAction shortcuts that faked actions removed
+- Honest fallback messages when providers fail
+
+**Smart provider failover**
+- 3-strike rule: provider disabled for 15 min after 3 rate limits
+- Permanent disable on 401/403 (invalid key)
+- All cloud failed → automatic Ollama fallback
+
+**Smart model selection**
+- Free tier defaults per provider (Llama 70B free, Gemini 2.5 Flash, etc.)
+- Per-model failover within provider before marking provider rate-limited
+- Override with `PROVIDER_MODEL` env var
+- `/models` command shows per-provider table with FREE/PAID badges
+
+**Server logs no longer leak into chat**
+- `console.log` redirected to stderr
+- CLI output is clean even with both in same terminal
+
+**Skill loader fix**
+- 1,484 skills now load (was blocking 1,445 due to overly broad patterns)
+
+**Known issues — fixing in v3.19**
+- Cross-provider failover not always reliable (Groq may not try other providers)
+- Real-time state queries (now playing, open tabs) need dedicated tools
+- YouTube auto-click occasionally fails on slow-loading pages
+
+---
 
 ### v3.17.0 — 2026-04-28
 
