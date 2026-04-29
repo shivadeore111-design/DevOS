@@ -87,7 +87,6 @@ import { fetchIndex, scoreSkillsForTopic, installSkill as libraryInstallSkill } 
 import { costTracker }   from '../core/costTracker'
 import { sessionMemory, getSessionLineage, loadSessionMetadata } from '../core/sessionMemory'
 import { memoryExtractor } from '../core/memoryExtractor'
-import { pluginManager }   from '../core/pluginSystem'
 import { loadPlugins, reloadPlugins, listFlatPlugins, pluginHooks as flatPluginHooks } from '../core/pluginLoader'
 import { getIdentity, refreshIdentity } from '../core/aidenIdentity'
 import { eventBus } from '../core/eventBus'
@@ -2714,20 +2713,17 @@ export function createApiServer(): Express {
     } catch (err: any) { res.status(500).json({ error: err.message }) }
   })
 
-  // GET /api/plugins — list loaded community plugins (subdirectory format)
+  // GET /api/plugins — list all loaded plugins
   app.get('/api/plugins', (_req: Request, res: Response) => {
     try {
-      res.json({ plugins: pluginManager.list() })
+      res.json({ plugins: listFlatPlugins() })
     } catch (e: any) { res.status(500).json({ error: e.message }) }
   })
 
-  // GET /api/plugins/list — list all loaded plugins (subdirectory + flat)
+  // GET /api/plugins/list — alias for /api/plugins (kept for backward compat)
   app.get('/api/plugins/list', (_req: Request, res: Response) => {
     try {
-      res.json({
-        subdirectory: pluginManager.list(),
-        flat:         listFlatPlugins(),
-      })
+      res.json({ plugins: listFlatPlugins() })
     } catch (e: any) { res.status(500).json({ error: e.message }) }
   })
 
@@ -5842,10 +5838,7 @@ export function startApiServer(portArg?: number): Express {
     console.error('[Startup] setupHttpKeepalive failed:', e.message)
   }
 
-  // Load community plugins from workspace/plugins/
-  pluginManager.loadAll().catch(e => console.error('[Plugins] Load failed:', e.message))
-
-  // Load flat .js plugins from workspace/plugins/*.js
+  // Load plugins from workspace/plugins/*.js (unified flat format)
   const flatPluginDir = path.join(process.cwd(), 'workspace', 'plugins')
   loadPlugins(flatPluginDir).catch(e => console.error('[PluginLoader] Load failed:', e.message))
 

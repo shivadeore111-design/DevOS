@@ -3,10 +3,15 @@
 // Copyright (c) 2026 Shiva Deore. All rights reserved.
 // ============================================================
 
-// core/pluginSystem.ts — Plugin system foundation.
-// Allows community extensions without modifying core code.
-// Scans workspace/plugins/*/plugin.json, loads entry files,
-// and calls onLoad(ctx) with a sandboxed PluginContext.
+// core/pluginSystem.ts — DEPRECATED as of v3.17.0
+// Use core/pluginLoader.ts (flat .js format) instead.
+// This file is kept for reference only and will be removed in a future release.
+//
+// Old format: workspace/plugins/<name>/plugin.json + onLoad(ctx)
+// New format: workspace/plugins/<name>.js + init(ctx)
+//
+// pluginLoader supports both init() and onLoad() for backward compatibility.
+console.warn('[pluginSystem] core/pluginSystem.ts is deprecated — use core/pluginLoader.ts')
 
 import fs   from 'fs'
 import path from 'path'

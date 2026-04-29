@@ -1,12 +1,16 @@
 // ============================================================
-// DevOS — Plugin Loader (flat .js format)
+// DevOS — Plugin Loader (unified flat .js format)
 // Loads workspace/plugins/*.js  (files NOT starting with _)
-// Runs alongside the existing pluginSystem.ts (subdirectory format).
+//
+// This is the single plugin system for Aiden v3.17+.
+// core/pluginSystem.ts is deprecated — all new plugins use
+// the flat format with init(ctx).
 // ============================================================
 
 import * as fs   from 'fs'
 import * as path from 'path'
 import { registerExternalTool } from './toolRegistry'
+import { registerExternalHook } from './hooks'
 
 // ── Hook arrays ───────────────────────────────────────────────
 export interface PreToolHook {
@@ -35,32 +39,41 @@ export const pluginHooks: PluginHooks = {
 
 // ── Loaded-plugin registry ────────────────────────────────────
 export interface LoadedPlugin {
-  name:     string
-  version:  string
-  file:     string
-  loadedAt: number
-  dispose?: () => void | Promise<void>
+  name:        string
+  version:     string
+  description: string
+  author:      string
+  file:        string
+  loadedAt:    number
+  active:      boolean
+  dispose?:    () => void | Promise<void>
 }
 
 export const loadedFlatPlugins: LoadedPlugin[] = []
 
-// ── Plugin context (passed to init) ──────────────────────────
+// ── Plugin context (passed to init / onLoad) ──────────────────
 function makeContext(pluginName: string) {
   return {
     registerTool(def: {
-      name:        string
-      description: string
+      name:         string
+      description:  string
       input_schema?: Record<string, any>
-      execute:     (input: any) => Promise<any>
+      execute:      (input: any) => Promise<any>
     }) {
       registerExternalTool(def.name, def.execute, pluginName)
     },
 
+    // Lifecycle hooks that fire around every tool call and session boundary
     hooks: {
       preTool(fn: PreToolHook)        { pluginHooks.preTool.push(fn) },
       postTool(fn: PostToolHook)       { pluginHooks.postTool.push(fn) },
       onSessionStart(fn: SessionHook)  { pluginHooks.onSessionStart.push(fn) },
       onSessionEnd(fn: SessionHook)    { pluginHooks.onSessionEnd.push(fn) },
+    },
+
+    // Core lifecycle events: 'pre_compact' | 'session_stop' | 'after_tool_call'
+    registerHook(event: string, handler: (payload?: Record<string, any>) => Promise<void> | void) {
+      registerExternalHook(event, handler, pluginName)
     },
 
     log(...args: any[]) {
@@ -77,8 +90,8 @@ export async function loadPlugins(pluginDir: string): Promise<void> {
   }
 
   const entries = fs.readdirSync(pluginDir).filter(f => {
-    if (!f.endsWith('.js'))      return false  // .js only
-    if (f.startsWith('_'))       return false  // skip _example.js etc.
+    if (!f.endsWith('.js')) return false  // .js only
+    if (f.startsWith('_')) return false   // skip _example.js etc.
     return true
   })
 
@@ -93,20 +106,26 @@ export async function loadPlugins(pluginDir: string): Promise<void> {
       const name    = def.name    || path.basename(file, '.js')
       const version = def.version || '0.0.0'
 
-      if (typeof def.init !== 'function') {
+      // Support both flat format (init) and legacy subdirectory format (onLoad)
+      const initFn = def.init ?? def.onLoad ?? (def.default?.init) ?? (def.default?.onLoad)
+      if (typeof initFn !== 'function') {
         console.warn(`[PluginLoader] ${file}: no init() — skipping`)
         continue
       }
 
-      const ctx = makeContext(name)
-      const dispose = await def.init(ctx)
+      const ctx     = makeContext(name)
+      const dispose = await initFn.call(def.default ?? def, ctx)
 
       loadedFlatPlugins.push({
         name,
         version,
-        file:     fullPath,
-        loadedAt: Date.now(),
-        dispose:  typeof dispose === 'function' ? dispose : def.dispose,
+        description: def.description || def.default?.description || '',
+        author:      def.author      || def.default?.author      || '',
+        file:        fullPath,
+        loadedAt:    Date.now(),
+        active:      true,
+        dispose:     typeof dispose === 'function' ? dispose
+                   : (def.dispose   ?? def.default?.onUnload ?? def.default?.dispose),
       })
 
       console.log(`[PluginLoader] Loaded: ${name} v${version} (${file})`)
@@ -124,10 +143,11 @@ export async function reloadPlugins(pluginDir: string): Promise<void> {
     if (p.dispose) {
       try { await p.dispose() } catch { /* ignore dispose errors */ }
     }
+    p.active = false
   }
   loadedFlatPlugins.length = 0
 
-  // Clear hooks contributed by flat plugins (note: subdirectory plugins aren't touched)
+  // Clear all hooks contributed by plugins
   pluginHooks.preTool.length        = 0
   pluginHooks.postTool.length       = 0
   pluginHooks.onSessionStart.length = 0
@@ -139,9 +159,12 @@ export async function reloadPlugins(pluginDir: string): Promise<void> {
 // ── Status ────────────────────────────────────────────────────
 export function listFlatPlugins() {
   return loadedFlatPlugins.map(p => ({
-    name:     p.name,
-    version:  p.version,
-    file:     path.basename(p.file),
-    loadedAt: p.loadedAt,
+    name:        p.name,
+    version:     p.version,
+    description: p.description,
+    author:      p.author,
+    file:        path.basename(p.file),
+    loadedAt:    p.loadedAt,
+    active:      p.active,
   }))
 }
