@@ -5378,12 +5378,13 @@ function buildToolList(): DropdownItem[] {
  */
 function eraseDropdown(): void {
   if (dropdown.lineCount === 0) return
-  // DECSC → go down past input → erase each line → DECRC
-  process.stdout.write('\x1b7\n')
-  for (let i = 0; i < dropdown.lineCount; i++) {
-    process.stdout.write('\r\x1b[K\n')
+  const n = dropdown.lineCount
+  // Move down one row at a time (cursor-down never scrolls), clear each line,
+  // then jump back up — all relative moves so terminal scroll can't invalidate them.
+  for (let i = 0; i < n; i++) {
+    process.stdout.write('\x1b[1B\r\x1b[2K')  // cursor-down 1 + carriage-return + erase line
   }
-  process.stdout.write('\x1b8')
+  process.stdout.write(`\x1b[${n}A`)           // cursor-up n lines — back on the input row
   dropdown.lineCount = 0
 }
 
@@ -5392,6 +5393,9 @@ function eraseDropdown(): void {
  * Call eraseDropdown() first when re-rendering after navigation.
  */
 function renderDropdown(): void {
+  // Always erase any existing render first so we never stack dropdowns.
+  eraseDropdown()
+
   if (dropdown.filtered.length === 0) return
 
   const MAX_ITEMS = 6
@@ -5399,34 +5403,40 @@ function renderDropdown(): void {
   const longest   = Math.max(...items.map(i => i.label.length))
   let   lineCount = 0
 
-  process.stdout.write('\x1b7\n')
-  lineCount++
-
   items.forEach((item, idx) => {
     const isSelected = idx === dropdown.selectedIndex
-    const bullet     = isSelected ? `${DD_ORANGE}▸${DD_RESET}` : ' '
+    const bullet     = isSelected ? `${DD_ORANGE}>${DD_RESET}` : ' '
     const labelStyle = isSelected ? `${DD_ORANGE}${DD_BOLD}` : ''
     const pad        = ' '.repeat(longest - item.label.length + 2)
+    // cursor-down (no scroll) → overwrite line → increment count
     process.stdout.write(
-      `\r${bullet} ${labelStyle}${item.label}${DD_RESET}${pad}${DD_DIM}${item.description}${DD_RESET}\n`
+      `\x1b[1B\r\x1b[2K${bullet} ${labelStyle}${item.label}${DD_RESET}${pad}${DD_DIM}${item.description}${DD_RESET}`
     )
     lineCount++
   })
 
+  // Footer hint line
   if (dropdown.filtered.length > MAX_ITEMS) {
     process.stdout.write(
-      `${DD_DIM}  ↓ ${dropdown.filtered.length - MAX_ITEMS} more · ↑↓ navigate · Tab to select${DD_RESET}\n`
+      `\x1b[1B\r\x1b[2K${DD_DIM}  v ${dropdown.filtered.length - MAX_ITEMS} more  up/dn navigate  Tab select${DD_RESET}`
     )
   } else {
     process.stdout.write(
-      `${DD_DIM}  ↑↓ navigate · Tab/Enter to select · Esc to close${DD_RESET}\n`
+      `\x1b[1B\r\x1b[2K${DD_DIM}  up/dn navigate  Tab/Enter select  Esc close${DD_RESET}`
     )
   }
   lineCount++
 
   dropdown.lineCount = lineCount
   dropdown.visible   = true
-  process.stdout.write('\x1b8')
+
+  // Return cursor to the input row using relative-up (immune to scroll)
+  process.stdout.write(`\x1b[${lineCount}A`)
+
+  // Restore readline's display of the prompt + input buffer
+  ;(rl as any).line   = dropdown.currentLine
+  ;(rl as any).cursor = dropdown.currentLine.length
+  ;(rl as any)._refreshLine?.()
 }
 
 /** Erase visual + full state reset (dismiss). */
@@ -5577,6 +5587,8 @@ async function main(): Promise<void> {
       // Spawning any shell command activates the ConPTY VT pipeline on older hosts
       const { execSync } = require('child_process')
       execSync('', { shell: true, stdio: 'ignore' })
+      // UTF-8 codepage — ensures Unicode chars render correctly in Windows terminals
+      execSync('chcp 65001', { shell: true, stdio: 'ignore' })
     } catch { /* ignore */ }
     if (process.stdout.isTTY) {
       process.env.FORCE_COLOR = '3'
@@ -5782,20 +5794,12 @@ async function main(): Promise<void> {
     if (dropdown.visible) {
       if (key.name === 'up') {
         dropdown.selectedIndex = Math.max(0, dropdown.selectedIndex - 1)
-        eraseDropdown()
         renderDropdown()
-        ;(rl as any).line   = dropdown.currentLine
-        ;(rl as any).cursor = dropdown.currentLine.length
-        ;(rl as any)._refreshLine?.()
         return
       }
       if (key.name === 'down') {
         dropdown.selectedIndex = Math.min(dropdown.filtered.length - 1, dropdown.selectedIndex + 1)
-        eraseDropdown()
         renderDropdown()
-        ;(rl as any).line   = dropdown.currentLine
-        ;(rl as any).cursor = dropdown.currentLine.length
-        ;(rl as any)._refreshLine?.()
         return
       }
       if (key.name === 'escape') {
@@ -5856,7 +5860,6 @@ async function main(): Promise<void> {
         const filtered = query === ''
           ? allItems
           : allItems.filter(item => item.label.toLowerCase().includes(query))
-        eraseDropdown()
         dropdown.triggerChar   = '/'
         dropdown.items         = allItems
         dropdown.filtered      = filtered
@@ -5874,7 +5877,6 @@ async function main(): Promise<void> {
           const filtered = partial === ''
             ? allItems
             : allItems.filter(item => item.label.toLowerCase().slice(1).startsWith(partial))
-          eraseDropdown()
           dropdown.triggerChar   = '@'
           dropdown.items         = allItems
           dropdown.filtered      = filtered
