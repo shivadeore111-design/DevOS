@@ -88,6 +88,7 @@ import { costTracker }   from '../core/costTracker'
 import { sessionMemory, getSessionLineage, loadSessionMetadata } from '../core/sessionMemory'
 import { memoryExtractor } from '../core/memoryExtractor'
 import { loadPlugins, reloadPlugins, listFlatPlugins, pluginHooks as flatPluginHooks } from '../core/pluginLoader'
+import { permissionSystem } from '../core/permissionSystem'
 import { getIdentity, refreshIdentity } from '../core/aidenIdentity'
 import { eventBus } from '../core/eventBus'
 import { getWorkflow } from '../core/workflowTracker'
@@ -436,6 +437,14 @@ function initWorkspaceDefaults(): void {
       fs.writeFileSync(full, content)
       console.log(`[init] Created ${rel}`)
     }
+  }
+
+  // Copy permissions.yaml from template if not present
+  const permTarget   = path.join(WORKSPACE_ROOT, 'workspace', 'permissions.yaml')
+  const permTemplate = path.join(WORKSPACE_ROOT, 'workspace-templates', 'permissions.yaml')
+  if (!fs.existsSync(permTarget) && fs.existsSync(permTemplate)) {
+    fs.copyFileSync(permTemplate, permTarget)
+    console.log('[init] Created workspace/permissions.yaml from template')
   }
 }
 initWorkspaceDefaults()
@@ -2734,6 +2743,17 @@ export function createApiServer(): Express {
       await reloadPlugins(dir)
       res.json({ ok: true, plugins: listFlatPlugins() })
     } catch (e: any) { res.status(500).json({ error: e.message }) }
+  })
+
+  // GET /api/permissions/config — return the current parsed permissions config
+  app.get('/api/permissions/config', (_req: Request, res: Response) => {
+    res.json(permissionSystem.getConfig())
+  })
+
+  // POST /api/permissions/reload — hot-reload workspace/permissions.yaml
+  app.post('/api/permissions/reload', requireLocalhost, (_req: Request, res: Response) => {
+    permissionSystem.reload()
+    res.json({ ok: true, mode: permissionSystem.getMode() })
   })
 
   // GET /api/telegram/config — load Telegram bot config

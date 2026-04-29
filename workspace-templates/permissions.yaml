@@ -1,0 +1,173 @@
+# =============================================================
+# Aiden — Permission System v1
+# =============================================================
+# Controls what shell commands, file paths, and browser domains
+# Aiden's agent loop is allowed to access without user approval.
+#
+# mode:
+#   ask    (default) — unknown commands ask you before running
+#   allow  — auto-approve everything not explicitly denied
+#   strict — deny anything not in the allow lists below
+#
+# After editing, changes take effect immediately — no restart.
+# =============================================================
+
+version: 1
+
+# Global enforcement mode: ask | allow | strict
+mode: ask
+
+# ── Shell ─────────────────────────────────────────────────────
+shell:
+  # Always blocked, regardless of mode.
+  # Supports glob patterns (* matches any text, no path separators).
+  deny:
+    - "rm -rf /"
+    - "rm -rf /*"
+    - "format c:*"
+    - "del /f /s /q *"
+    - "reg delete*"
+    - "net user *"
+    - "schtasks *"
+    - "curl * | bash"
+    - "wget * | bash"
+    - "curl * | sh"
+    - "Invoke-Expression*"
+    - "iex(*"
+    - "powershell * -encodedcommand *"
+    - "powershell * -enc *"
+    - "Invoke-WebRequest * |*"
+    - "Start-Process *"
+    - "wmic process call*"
+    - "Set-ExecutionPolicy*"
+    - "New-Service*"
+    - "sc create*"
+
+  # Always allowed without prompting (relevant in all modes).
+  # In strict mode ONLY these patterns are permitted.
+  allow:
+    - "git *"
+    - "git"
+    - "npm *"
+    - "npx *"
+    - "node *"
+    - "yarn *"
+    - "pnpm *"
+    - "bun *"
+    - "python *"
+    - "python3 *"
+    - "pip *"
+    - "pip3 *"
+    - "tsc *"
+    - "ls*"
+    - "dir*"
+    - "cat *"
+    - "type *"
+    - "echo *"
+    - "mkdir *"
+    - "md *"
+    - "cp *"
+    - "copy *"
+    - "mv *"
+    - "move *"
+    - "pwd"
+    - "whoami"
+    - "cd *"
+    - "grep *"
+    - "rg *"
+    - "find *"
+    - "Get-*"
+    - "Select-*"
+    - "Where-*"
+    - "Sort-*"
+    - "Format-*"
+    - "Out-*"
+    - "Write-Output *"
+    - "Write-Host *"
+    - "ConvertTo-*"
+    - "ConvertFrom-*"
+    - "Test-Path *"
+    - "New-Item *"
+    - "Copy-Item *"
+    - "Move-Item *"
+    - "Set-Content *"
+    - "Add-Content *"
+    - "Set-Location *"
+
+# ── Filesystem ────────────────────────────────────────────────
+filesystem:
+  # Paths the agent can never read.
+  deny_read:
+    - "**/.ssh/**"
+    - "**/.gnupg/**"
+    - "**/.env"
+    - "**/.env.*"
+    - "**/credentials"
+    - "**/credentials.json"
+    - "**/*.pem"
+    - "**/*.key"
+    - "**/id_rsa"
+    - "**/id_rsa.*"
+    - "**/id_ed25519"
+    - "**/id_ed25519.*"
+    - "**/.netrc"
+    - "**/secrets.yaml"
+    - "**/secrets.json"
+
+  # Paths the agent can never write to.
+  deny_write:
+    - "**/.ssh/**"
+    - "**/.gnupg/**"
+    - "**/.env"
+    - "**/.env.*"
+    - "**/credentials"
+    - "**/credentials.json"
+    - "**/*.pem"
+    - "**/*.key"
+    - "**/id_rsa"
+    - "**/id_rsa.*"
+    - "**/id_ed25519"
+    - "**/id_ed25519.*"
+    - "**/.netrc"
+    - "**/secrets.yaml"
+    - "**/secrets.json"
+
+  # Paths that are always writeable (overrides nothing — these are just hints
+  # for strict mode: write attempts OUTSIDE allow_write are denied when mode=strict).
+  allow_write:
+    - "workspace/**"
+    - "output/**"
+    - "tmp/**"
+    - "dist/**"
+    - "build/**"
+    - "*.md"
+    - "*.json"
+    - "*.ts"
+    - "*.js"
+    - "*.py"
+    - "*.txt"
+    - "*.yaml"
+    - "*.yml"
+
+# ── Browser ───────────────────────────────────────────────────
+browser:
+  # Domains the browser tool may never navigate to.
+  deny_domains:
+    - "*.onion"
+
+  # Set to true to require your approval before ANY navigation.
+  require_approval: false
+
+# ── Audit log ─────────────────────────────────────────────────
+audit:
+  # Enable/disable audit logging entirely.
+  enabled: true
+
+  # Where to write the audit log (relative to project root).
+  log_file: workspace/audit.log
+
+  # What to record:
+  #   deny  — only blocked actions (default, minimal noise)
+  #   ask   — blocked + prompted actions
+  #   all   — everything including allowed actions
+  log_level: deny

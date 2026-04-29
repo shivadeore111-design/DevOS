@@ -33,6 +33,7 @@ import { mcpClient }       from './mcpClient'
 import { runInSandbox }         from './codeInterpreter'
 import { runInDockerSandbox }   from './sandboxRunner'
 import { responseCache }   from './responseCache'
+import { permissionSystem } from './permissionSystem'
 import { extractYouTubeTranscript } from './youtubeTranscript'
 import { knowledgeBase }            from './knowledgeBase'
 import { getCalendarEvents }        from './tools/calendarTool'
@@ -356,6 +357,17 @@ export const TOOLS: Record<string, (payload: any, ctx?: ToolContext) => Promise<
   open_browser: async (p) => {
     const url = p.url || p.command || ''
     if (!url) return { success: false, output: '', error: 'No URL provided' }
+
+    // ── Permission system check ────────────────────────────────
+    const permBrowser = permissionSystem.checkBrowserDomain(url)
+    if (permBrowser.verdict === 'deny') {
+      console.warn(`[Permissions] open_browser DENIED: ${url}`)
+      return { success: false, output: '', error: permBrowser.reason || 'Blocked by permission system.' }
+    }
+    if (permBrowser.verdict === 'ask') {
+      return { success: false, output: '', error: `PermissionGate: Navigation to this URL requires explicit user approval: ${url}` }
+    }
+
     const r = await pwNavigate(url)
     if (r.ok) return { success: true, output: `Opened browser: ${r.url}` }
     // Playwright failed — fall back to system browser open
@@ -510,14 +522,31 @@ export const TOOLS: Record<string, (payload: any, ctx?: ToolContext) => Promise<
   shell_exec: async (p, ctx?) => {
     const cmd = p.command || p.cmd || ''
     if (!cmd) return { success: false, output: '', error: 'No command' }
-    const shellGate = isCommandAllowed(cmd)
-    if (!shellGate.allowed) {
-      if (shellGate.needsApproval) {
-        console.warn(`[AllowList] shell_exec UNKNOWN — approval required: ${cmd.slice(0, 120)}`)
-        return { success: false, output: '', error: `CommandGate: This command requires explicit user approval before running: ${cmd.slice(0, 80)}` }
+
+    // ── Permission system check (workspace/permissions.yaml) ──
+    const permCheck = permissionSystem.checkShell(cmd)
+    if (permCheck.verdict === 'deny') {
+      console.warn(`[Permissions] shell_exec DENIED: ${cmd.slice(0, 120)}`)
+      return { success: false, output: '', error: permCheck.reason || 'Blocked by permission system.' }
+    }
+    if (permCheck.verdict === 'ask') {
+      console.warn(`[Permissions] shell_exec ASK — approval required: ${cmd.slice(0, 120)}`)
+      return { success: false, output: '', error: `PermissionGate: This command requires explicit user approval: ${cmd.slice(0, 80)}` }
+    }
+    // verdict === 'allow' skips the hardcoded gate below
+    // verdict === 'defer' falls through to the existing SHELL_ALLOWLIST gate
+
+    if (permCheck.verdict !== 'allow') {
+      // Existing hardcoded gate (DENIED_COMMANDS + SHELL_DANGEROUS + SHELL_ALLOWLIST)
+      const shellGate = isCommandAllowed(cmd)
+      if (!shellGate.allowed) {
+        if (shellGate.needsApproval) {
+          console.warn(`[AllowList] shell_exec UNKNOWN — approval required: ${cmd.slice(0, 120)}`)
+          return { success: false, output: '', error: `CommandGate: This command requires explicit user approval before running: ${cmd.slice(0, 80)}` }
+        }
+        console.warn(`[Security] shell_exec DENIED: ${cmd.slice(0, 120)}`)
+        return { success: false, output: '', error: 'Blocked: this command pattern is not allowed. Dangerous operations require explicit user approval.' }
       }
-      console.warn(`[Security] shell_exec DENIED: ${cmd.slice(0, 120)}`)
-      return { success: false, output: '', error: 'Blocked: this command pattern is not allowed. Dangerous operations require explicit user approval.' }
     }
     // ── N+34: Docker sandbox routing ───────────────────────────
     const _sandboxMode = process.env.AIDEN_SANDBOX_MODE || 'off'
@@ -577,14 +606,27 @@ export const TOOLS: Record<string, (payload: any, ctx?: ToolContext) => Promise<
   run_powershell: async (p) => {
     const script  = p.script || p.command || ''
     if (!script) return { success: false, output: '', error: 'No script' }
-    const psGate = isCommandAllowed(script)
-    if (!psGate.allowed) {
-      if (psGate.needsApproval) {
-        console.warn(`[AllowList] run_powershell UNKNOWN — approval required: ${script.slice(0, 120)}`)
-        return { success: false, output: '', error: `CommandGate: This PowerShell command requires explicit user approval before running.` }
+
+    // ── Permission system check ────────────────────────────────
+    const permPs = permissionSystem.checkShell(script)
+    if (permPs.verdict === 'deny') {
+      console.warn(`[Permissions] run_powershell DENIED: ${script.slice(0, 120)}`)
+      return { success: false, output: '', error: permPs.reason || 'Blocked by permission system.' }
+    }
+    if (permPs.verdict === 'ask') {
+      return { success: false, output: '', error: `PermissionGate: This PowerShell command requires explicit user approval: ${script.slice(0, 80)}` }
+    }
+
+    if (permPs.verdict !== 'allow') {
+      const psGate = isCommandAllowed(script)
+      if (!psGate.allowed) {
+        if (psGate.needsApproval) {
+          console.warn(`[AllowList] run_powershell UNKNOWN — approval required: ${script.slice(0, 120)}`)
+          return { success: false, output: '', error: `CommandGate: This PowerShell command requires explicit user approval before running.` }
+        }
+        console.warn(`[Security] run_powershell DENIED: ${script.slice(0, 120)}`)
+        return { success: false, output: '', error: 'Blocked: this command pattern is not allowed. Dangerous operations require explicit user approval.' }
       }
-      console.warn(`[Security] run_powershell DENIED: ${script.slice(0, 120)}`)
-      return { success: false, output: '', error: 'Blocked: this command pattern is not allowed. Dangerous operations require explicit user approval.' }
     }
     const tmpFile = path.join(process.cwd(), 'workspace', `tmp_${Date.now()}.ps1`)
     fs.mkdirSync(path.dirname(tmpFile), { recursive: true })
@@ -686,6 +728,14 @@ export const TOOLS: Record<string, (payload: any, ctx?: ToolContext) => Promise<
     let   filePath = p.path || p.file || ''
     const content  = p.content || ''
     if (!filePath) return { success: false, output: '', error: 'No path' }
+
+    // ── Permission system check ────────────────────────────────
+    const permWrite = permissionSystem.checkFileWrite(filePath)
+    if (permWrite.verdict === 'deny') {
+      console.warn(`[Permissions] file_write DENIED: ${filePath}`)
+      return { success: false, output: '', error: permWrite.reason || 'Blocked by permission system.' }
+    }
+
     if (isProtectedFile(filePath)) {
       console.warn(`[Security] file_write BLOCKED (protected): ${filePath}`)
       return { success: false, output: '', error: `Protected file: ${filePath} cannot be modified by agents. Use 'devos config' or edit manually.` }
@@ -722,6 +772,14 @@ export const TOOLS: Record<string, (payload: any, ctx?: ToolContext) => Promise<
   file_read: async (p) => {
     let filePath = p.path || p.file || ''
     if (!filePath) return { success: false, output: '', error: 'No path' }
+
+    // ── Permission system check ────────────────────────────────
+    const permRead = permissionSystem.checkFileRead(filePath)
+    if (permRead.verdict === 'deny') {
+      console.warn(`[Permissions] file_read DENIED: ${filePath}`)
+      return { success: false, output: '', error: permRead.reason || 'Blocked by permission system.' }
+    }
+
     if (isPathDenied(filePath)) {
       console.warn(`[Security] file_read DENIED: ${filePath}`)
       return { success: false, output: '', error: 'Access denied: protected path. Aiden cannot read credentials, SSH keys, or env files.' }

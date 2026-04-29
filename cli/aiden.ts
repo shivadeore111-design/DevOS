@@ -876,6 +876,7 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       helpRow('/goals',             'Active goals'),
       helpRow('/skills',            'Skill lifecycle  (search / registry / install / list / check / update / audit / remove / publish / export / import / stats)'),
       helpRow('/plugins',           'Plugin manager  (list / reload)'),
+      helpRow('/permissions',       'Permission system  (status / reload / audit / edit)'),
       helpRow('/install <name>',    'Install a skill from the public registry  (skills.taracod.com)'),
       helpRow('/publish <name>',    'Publish a skill to the public registry  (Pro — requires license)'),
       helpRow('/profile',             'View / edit / clear the structured user profile (Honcho model)'),
@@ -2127,6 +2128,82 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
 
     console.log()
     console.log(panel({ title: `${MARKS.TRI} Plugins`, lines }))
+    console.log()
+    return true
+  }
+
+  // ── /permissions ──────────────────────────────────────────────────────────────
+  if (command === '/permissions') {
+    const sub = parts[1] ?? 'status'
+
+    if (sub === 'reload') {
+      const data = await apiPost('/api/permissions/reload', {})
+      if (!data) { console.log(`  ${T.error}Reload failed — server error${T.reset}\n`); return true }
+      console.log()
+      console.log(panel({
+        title: `${MARKS.TRI} Permissions — reloaded`,
+        lines: [
+          '',
+          `  ${fg(COLORS.success)}✓${RST} permissions.yaml reloaded`,
+          `  ${T.dim}mode: ${data.mode ?? '?'}${T.reset}`,
+          '',
+        ],
+      }))
+      console.log()
+      return true
+    }
+
+    if (sub === 'edit') {
+      const cfgPath = 'workspace/permissions.yaml'
+      console.log(`  ${T.dim}Opening ${cfgPath} in your editor…${T.reset}\n`)
+      const editor = process.env.EDITOR || process.env.VISUAL || 'notepad'
+      const { spawn } = await import('child_process')
+      spawn(editor, [cfgPath], { stdio: 'inherit', detached: true }).unref()
+      return true
+    }
+
+    if (sub === 'audit') {
+      const logPath = 'workspace/audit.log'
+      const fs2     = await import('fs')
+      if (!fs2.existsSync(logPath)) {
+        console.log(`  ${T.dim}No audit log yet at ${logPath}${T.reset}\n`)
+        return true
+      }
+      const lines2  = fs2.readFileSync(logPath, 'utf-8').trim().split('\n')
+      const recent  = lines2.slice(-30)
+      console.log()
+      console.log(panel({
+        title:  `${MARKS.TRI} Permissions — audit log (last ${recent.length})`,
+        lines:  ['', ...recent.map(l => `  ${T.dim}${l}${T.reset}`), ''],
+      }))
+      console.log()
+      return true
+    }
+
+    // Default: status
+    const data = await apiFetch<any>('/api/permissions/config', null)
+    if (!data) { console.log(`  ${T.error}Could not fetch permissions config — is the server running?${T.reset}\n`); return true }
+
+    const modeColor = data.mode === 'allow' ? T.warn : data.mode === 'strict' ? T.error : fg(COLORS.success)
+    const lines: string[] = [
+      '',
+      `  mode        ${modeColor}${data.mode}${RST}`,
+      `  config      ${T.dim}workspace/permissions.yaml${T.reset}`,
+      '',
+      `  ${T.dim}shell deny rules    ${data.shell?.deny?.length ?? 0}${T.reset}`,
+      `  ${T.dim}shell allow rules   ${data.shell?.allow?.length ?? 0}${T.reset}`,
+      `  ${T.dim}fs deny_read        ${data.filesystem?.deny_read?.length ?? 0}${T.reset}`,
+      `  ${T.dim}fs deny_write       ${data.filesystem?.deny_write?.length ?? 0}${T.reset}`,
+      `  ${T.dim}fs allow_write      ${data.filesystem?.allow_write?.length ?? 0}${T.reset}`,
+      `  ${T.dim}browser deny_domains ${data.browser?.deny_domains?.length ?? 0}${T.reset}`,
+      '',
+      `  ${T.dim}/permissions reload — reload yaml without restart${T.reset}`,
+      `  ${T.dim}/permissions audit  — view recent audit log${T.reset}`,
+      `  ${T.dim}/permissions edit   — open yaml in editor${T.reset}`,
+      '',
+    ]
+    console.log()
+    console.log(panel({ title: `${MARKS.TRI} Permissions`, lines }))
     console.log()
     return true
   }
