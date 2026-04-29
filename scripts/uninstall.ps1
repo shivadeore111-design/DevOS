@@ -27,7 +27,7 @@ $DIM   = "`e[2m"
 $RST   = "`e[0m"
 
 Write-Host ""
-Write-Host "${BOLD}Aiden — Uninstaller${RST}"
+Write-Host ($BOLD + "Aiden - Uninstaller" + $RST)
 Write-Host "${DIM}────────────────────────────────────${RST}"
 Write-Host ""
 
@@ -103,7 +103,7 @@ if (-not $KeepWorkspace) {
 Write-Host "Checking for npm global install..."
 $npmList = npm list -g --depth=0 2>$null
 if ($npmList -match "devos-ai|aiden-os|aiden-runtime") {
-  Write-Host "  Found npm global package — uninstalling..."
+  Write-Host "  Found npm global package - uninstalling..."
   $pkg = if ($npmList -match "devos-ai") { "devos-ai" } `
          elseif ($npmList -match "aiden-os") { "aiden-os" } `
          else { "aiden-runtime" }
@@ -138,9 +138,9 @@ Write-Host ""
 # ── Summary ───────────────────────────────────────────────────────────────────
 
 if ($removed -gt 0) {
-  Write-Host "${GREEN}${BOLD}Done.${RST} Aiden uninstalled ($removed item(s) removed)."
+  Write-Host ($GREEN + $BOLD + "Done." + $RST + " Aiden uninstalled (" + $removed + " item(s) removed).")
 } else {
-  Write-Host "${DIM}Nothing to remove — Aiden does not appear to be installed.${RST}"
+  Write-Host ($DIM + "Nothing to remove - Aiden does not appear to be installed." + $RST)
 }
-Write-Host ($DIM + "Project files in " + (Get-Location) + " were not touched." + $RST)
+Write-Host ($DIM + "Project files in " + (Get-Location).Path + " were not touched." + $RST)
 Write-Host ""
