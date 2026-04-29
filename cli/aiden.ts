@@ -877,6 +877,7 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       helpRow('/skills',            'Skill lifecycle  (search / registry / install / list / check / update / audit / remove / publish / export / import / stats)'),
       helpRow('/plugins',           'Plugin manager  (list / reload)'),
       helpRow('/permissions',       'Permission system  (status / reload / audit / edit)'),
+      helpRow('/uninstall',         'Uninstall Aiden from this system'),
       helpRow('/install <name>',    'Install a skill from the public registry  (skills.taracod.com)'),
       helpRow('/publish <name>',    'Publish a skill to the public registry  (Pro — requires license)'),
       helpRow('/profile',             'View / edit / clear the structured user profile (Honcho model)'),
@@ -2205,6 +2206,43 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
     console.log()
     console.log(panel({ title: `${MARKS.TRI} Permissions`, lines }))
     console.log()
+    return true
+  }
+
+  // ── /uninstall ────────────────────────────────────────────────────────────────
+  if (command === '/uninstall') {
+    const keepWorkspace = parts.includes('--keep-workspace')
+    const keepConfig    = parts.includes('--keep-config')
+    const yes           = parts.includes('--yes') || parts.includes('-y')
+
+    console.log()
+    console.log(panel({
+      title: `${MARKS.TRI} Uninstall Aiden`,
+      lines: [
+        '',
+        `  ${T.warn}This will remove Aiden from your system.${T.reset}`,
+        '',
+        `  ${T.dim}Run:  npm run uninstall${T.reset}`,
+        `  ${T.dim}  or:  powershell -ExecutionPolicy Bypass -File scripts\\uninstall.ps1${T.reset}`,
+        '',
+        `  ${T.dim}Flags:  --keep-workspace  --keep-config  --yes (skip prompts)${T.reset}`,
+        '',
+      ],
+    }))
+
+    const flags = [
+      ...(keepWorkspace ? ['-KeepWorkspace'] : []),
+      ...(keepConfig    ? ['-KeepConfig']    : []),
+      ...(yes           ? ['-Yes']            : []),
+    ]
+
+    const { spawn } = await import('child_process')
+    const ps = spawn(
+      'powershell.exe',
+      ['-ExecutionPolicy', 'Bypass', '-File', 'scripts\\uninstall.ps1', ...flags],
+      { stdio: 'inherit', shell: false },
+    )
+    ps.on('close', (code: number) => { process.exit(code ?? 0) })
     return true
   }
 
@@ -5611,8 +5649,21 @@ export async function run(): Promise<void> { return main() }
 
 // Guard against auto-running when required as a module (packages/aiden-os in-process launch).
 if (require.main === module) {
-  // ── MCP server mode ──────────────────────────────────────────
-  if (process.argv[2] === 'mcp') {
+  // ── Subcommand dispatch ───────────────────────────────────────
+  if (process.argv[2] === 'uninstall') {
+    // aiden uninstall [--keep-workspace] [--keep-config] [--yes]
+    const { spawnSync } = require('child_process')
+    const flags: string[] = []
+    if (process.argv.includes('--keep-workspace')) flags.push('-KeepWorkspace')
+    if (process.argv.includes('--keep-config'))    flags.push('-KeepConfig')
+    if (process.argv.includes('--yes') || process.argv.includes('-y')) flags.push('-Yes')
+    const result = spawnSync(
+      'powershell.exe',
+      ['-ExecutionPolicy', 'Bypass', '-File', 'scripts\\uninstall.ps1', ...flags],
+      { stdio: 'inherit', shell: false },
+    )
+    process.exit(result.status ?? 0)
+  } else if (process.argv[2] === 'mcp') {
     if (process.argv[3] === 'inspect') {
       // aiden mcp inspect — list exposed tools as JSON (debug helper)
       // Deferred import avoids loading API server in stdio MCP mode
