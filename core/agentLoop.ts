@@ -478,6 +478,7 @@ function inferPhasesFromSteps(
     clipboard_read:  'execution', clipboard_write: 'execution',
     window_list:     'execution', window_focus:   'execution',
     app_launch:      'execution', app_close:      'execution',
+    system_volume:   'execution',
     watch_folder:    'execution', watch_folder_list: 'execution',
   }
   const phaseNames: Record<string, string> = {
@@ -814,7 +815,7 @@ export async function planWithLLM(
     'screenshot', 'screen_read', 'vision_loop', 'wait',
     'code_interpreter_python', 'code_interpreter_node',
     'clipboard_read', 'clipboard_write', 'window_list', 'window_focus',
-    'app_launch', 'app_close',
+    'app_launch', 'app_close', 'system_volume',
     'watch_folder', 'watch_folder_list',
     'send_file_local', 'receive_file_local',
     'get_briefing',
@@ -1093,7 +1094,7 @@ TIER 1 (USE FIRST): lookup_skill, respond, web_search, fetch_page, fetch_url, de
 TIER 2 (USE SECOND): file_write, file_read, file_list, shell_exec, run_powershell, run_python, run_node, code_interpreter_python, code_interpreter_node, git_status, git_commit, git_push, clipboard_read, clipboard_write, spawn_subagent, swarm
   → Use when you need to read/write files, run scripts, or run git commands
 
-TIER 3 (USE THIRD): open_browser, browser_click, browser_type, browser_extract, browser_screenshot, window_list, window_focus, app_launch, app_close
+TIER 3 (USE THIRD): open_browser, browser_click, browser_type, browser_extract, browser_screenshot, window_list, window_focus, app_launch, app_close, system_volume
   → ONLY when task requires interacting with a website UI
   → NEVER use browser when an API tool can do the same job
   → For other selectors always pass selector: "<css selector>", never guess at element text.
@@ -1489,7 +1490,7 @@ const VALID_TOOLS = [
   'screenshot', 'screen_read', 'vision_loop', 'wait',
   'code_interpreter_python', 'code_interpreter_node',
   'clipboard_read', 'clipboard_write', 'window_list', 'window_focus',
-  'app_launch', 'app_close',
+  'app_launch', 'app_close', 'system_volume',
   'watch_folder', 'watch_folder_list',
   'send_file_local', 'receive_file_local',
   'clarify', 'todo', 'cronjob', 'vision_analyze',
@@ -1927,7 +1928,7 @@ const SEQUENTIAL_ONLY = new Set([
   'open_browser', 'browser_click', 'browser_type', 'browser_extract',
   'mouse_move', 'mouse_click', 'keyboard_type', 'keyboard_press',
   'screenshot', 'screen_read', 'vision_loop', 'notify', 'wait',
-  'clipboard_write', 'window_focus', 'app_launch', 'app_close',
+  'clipboard_write', 'window_focus', 'app_launch', 'app_close', 'system_volume',
   'watch_folder',
 ])
 
@@ -2018,6 +2019,7 @@ export async function executePlan(
     clipboard_read:  'execution', clipboard_write: 'execution',
     window_list:     'execution', window_focus:   'execution',
     app_launch:      'execution', app_close:      'execution',
+    system_volume:   'execution',
     watch_folder:    'execution', watch_folder_list: 'execution',
   }
 

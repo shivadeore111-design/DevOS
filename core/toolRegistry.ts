@@ -309,6 +309,7 @@ const TOOL_TIMEOUTS: Record<string, number> = {
   window_focus:                  8000,
   app_launch:                   10000,
   app_close:                     8000,
+  system_volume:                 8000,
   watch_folder:                 10000,
   watch_folder_list:             5000,
   clarify:                  300_000,   // up to 5 min for human response
@@ -1634,13 +1635,136 @@ export const TOOLS: Record<string, (payload: any, ctx?: ToolContext) => Promise<
   },
 
   app_close: async (p) => {
-    const app = p.app || p.process || p.command || ''
-    if (!app) return { success: false, output: '', error: 'No app/process name provided' }
+    const appName = (p.app || p.process || p.command || p.name || '').toLowerCase().trim()
+    if (!appName) return { success: false, output: '', error: 'No app/process name provided' }
+    const exeMap: Record<string, string> = {
+      'chrome':              'chrome.exe',
+      'google chrome':       'chrome.exe',
+      'firefox':             'firefox.exe',
+      'mozilla firefox':     'firefox.exe',
+      'edge':                'msedge.exe',
+      'microsoft edge':      'msedge.exe',
+      'spotify':             'Spotify.exe',
+      'notepad':             'notepad.exe',
+      'notepad++':           'notepad++.exe',
+      'word':                'WINWORD.EXE',
+      'microsoft word':      'WINWORD.EXE',
+      'excel':               'EXCEL.EXE',
+      'microsoft excel':     'EXCEL.EXE',
+      'powerpoint':          'POWERPNT.EXE',
+      'vscode':              'Code.exe',
+      'vs code':             'Code.exe',
+      'visual studio code':  'Code.exe',
+      'discord':             'Discord.exe',
+      'slack':               'slack.exe',
+      'zoom':                'Zoom.exe',
+      'teams':               'Teams.exe',
+      'microsoft teams':     'Teams.exe',
+      'vlc':                 'vlc.exe',
+      'steam':               'steam.exe',
+      'explorer':            'explorer.exe',
+      'file explorer':       'explorer.exe',
+      'cmd':                 'cmd.exe',
+      'terminal':            'wt.exe',
+      'windows terminal':    'wt.exe',
+      'paint':               'mspaint.exe',
+      'calculator':          'Calculator.exe',
+      'task manager':        'Taskmgr.exe',
+      'taskmgr':             'Taskmgr.exe',
+    }
+    const exe = exeMap[appName] ?? (appName.endsWith('.exe') ? appName : appName + '.exe')
     try {
       const { execSync } = await import('child_process')
-      const safe = app.replace(/'/g, "''")
-      execSync(`powershell.exe -Command "Stop-Process -Name '${safe}' -Force -ErrorAction SilentlyContinue"`, { timeout: 8000 })
-      return { success: true, output: `Closed process: "${app}"` }
+      execSync(`taskkill /F /IM "${exe}"`, { timeout: 5000 })
+      return { success: true, output: `Closed: "${appName}" (${exe})` }
+    } catch (e: any) {
+      const msg = (e.message || '').toLowerCase()
+      if (msg.includes('not found') || msg.includes('no tasks')) {
+        return { success: false, output: '', error: `Process not found: ${exe} — is "${appName}" running?` }
+      }
+      return { success: false, output: '', error: e.message }
+    }
+  },
+
+  system_volume: async (p) => {
+    const action = (p.action || 'get').toLowerCase().trim()
+    const amount = Number(p.amount ?? p.percent ?? p.by ?? 10)
+    const target = p.level !== undefined ? Number(p.level) : p.set !== undefined ? Number(p.set) : -1
+
+    try {
+      const { execSync }             = await import('child_process')
+      const { writeFileSync, unlinkSync } = await import('fs')
+      const { tmpdir }               = await import('os')
+      const { join }                 = await import('path')
+
+      // ── Mute toggle ──────────────────────────────────────────
+      if (action === 'mute' || action === 'unmute') {
+        execSync(
+          `powershell.exe -NoProfile -Command "$wsh=New-Object -ComObject WScript.Shell; $wsh.SendKeys([char]173)"`,
+          { timeout: 5000 }
+        )
+        return { success: true, output: action === 'mute' ? 'Muted' : 'Unmuted (toggle)' }
+      }
+
+      // ── Up / Down via VK_VOLUME_UP/DOWN ──────────────────────
+      if (action === 'up' || action === 'down') {
+        const presses = Math.max(1, Math.round(amount / 2)) // each keypress ≈ 2%
+        const key     = action === 'up' ? 175 : 174
+        const cmds    = Array.from({ length: presses }, () => `$wsh.SendKeys([char]${key})`).join('; ')
+        execSync(
+          `powershell.exe -NoProfile -Command "$wsh=New-Object -ComObject WScript.Shell; ${cmds}"`,
+          { timeout: 8000 }
+        )
+        return { success: true, output: `Volume ${action === 'up' ? 'increased' : 'decreased'} by ~${presses * 2}%` }
+      }
+
+      // ── Get / Set via waveOut (temp .ps1 to avoid quoting hell) ──
+      const psFile = join(tmpdir(), `_aiden_vol_${Date.now()}.ps1`)
+
+      if (action === 'get') {
+        writeFileSync(psFile, `
+Add-Type -TypeDefinition @"
+using System; using System.Runtime.InteropServices;
+public class AidenVolGet {
+  [DllImport("winmm.dll")] public static extern int waveOutGetVolume(IntPtr h, out uint v);
+}
+"@
+$v = [uint32]0
+[AidenVolGet]::waveOutGetVolume([IntPtr]::Zero, [ref]$v) | Out-Null
+[Math]::Round(($v -band 0xFFFF) / 65535.0 * 100)
+`, 'utf8')
+        const raw = execSync(
+          `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${psFile}"`,
+          { timeout: 5000, encoding: 'utf8' }
+        ).trim()
+        try { unlinkSync(psFile) } catch {}
+        const vol = Number(raw)
+        return { success: true, output: `Current volume: ${vol}%`, volume: vol }
+      }
+
+      if (action === 'set' && target >= 0) {
+        const clamped = Math.max(0, Math.min(100, target))
+        const raw     = Math.round(clamped / 100 * 65535)
+        const dword   = (raw << 16) | raw
+        writeFileSync(psFile, `
+Add-Type -TypeDefinition @"
+using System; using System.Runtime.InteropServices;
+public class AidenVolSet {
+  [DllImport("winmm.dll")] public static extern int waveOutSetVolume(IntPtr h, uint v);
+}
+"@
+[AidenVolSet]::waveOutSetVolume([IntPtr]::Zero, [uint32]${dword}) | Out-Null
+Write-Output "ok"
+`, 'utf8')
+        execSync(
+          `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${psFile}"`,
+          { timeout: 5000 }
+        )
+        try { unlinkSync(psFile) } catch {}
+        return { success: true, output: `Volume set to ${clamped}%`, volume: clamped }
+      }
+
+      return { success: false, output: '', error: `Unknown action: "${action}". Use: get, up, down, mute, unmute, set` }
     } catch (e: any) { return { success: false, output: '', error: e.message } }
   },
 
@@ -2599,7 +2723,8 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   window_list:             'List all open windows on the desktop',
   window_focus:            'Bring a specific window to the foreground by title',
   app_launch:              'Launch an application by name or executable path',
-  app_close:               'Close an application by window title',
+  app_close:               'Close an application by window title or process name',
+  system_volume:           'Get or set Windows speaker volume (get/up/down/mute/unmute/set)',
   watch_folder:            'Watch a folder and react automatically when new files appear',
   watch_folder_list:       'List all currently watched folder paths',
   get_briefing:            'Run the morning briefing: weather, markets, news, and daily summary',
@@ -2708,6 +2833,7 @@ const TOOL_TIERS: Record<string, ToolTier> = {
   window_focus:            3,
   app_launch:              3,
   app_close:               3,
+  system_volume:           2,
 
   // Voice tools — Tier 2 (subprocess / local model)
   voice_speak:             2,
