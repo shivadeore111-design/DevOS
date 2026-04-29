@@ -5242,15 +5242,56 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
 
 // ── Tab completer (prefix-first, fuzzy fallback) ──────────────────────────────────
 
+// Known tool names — kept in sync with the ALLOWED_TOOLS list in core/agentLoop.ts.
+// The completer is synchronous so we use a static list rather than a dynamic import.
+const TOOL_NAMES: string[] = [
+  'web_search', 'fetch_page', 'fetch_url', 'open_browser',
+  'browser_click', 'browser_type', 'browser_extract', 'browser_screenshot',
+  'browser_scroll', 'browser_get_url',
+  'file_read', 'file_write', 'file_list',
+  'shell_exec', 'run_python', 'run_node',
+  'code_interpreter_python', 'code_interpreter_node',
+  'system_info', 'notify', 'deep_research',
+  'get_stocks', 'get_market_data', 'get_company_info', 'social_research',
+  'mouse_move', 'mouse_click', 'keyboard_type', 'keyboard_press',
+  'screenshot', 'screen_read', 'vision_loop', 'vision_analyze', 'wait',
+  'clipboard_read', 'clipboard_write', 'window_list', 'window_focus',
+  'app_launch', 'app_close',
+  'watch_folder', 'watch_folder_list',
+  'send_file_local', 'receive_file_local',
+  'get_briefing', 'respond', 'clarify', 'todo', 'cronjob',
+  'voice_speak', 'voice_transcribe', 'voice_clone', 'voice_design',
+  'lookup_skill', 'lookup_tool_schema',
+  'spawn', 'spawn_subagent', 'swarm',
+  'ingest_youtube', 'run_agent',
+]
+
 function completer(line: string): [string[], string] {
-  if (!line.startsWith('/')) return [[], line]
-  // 1. Exact prefix matches
-  const prefix = COMMANDS.filter(c => c.startsWith(line))
-  if (prefix.length > 0) return [prefix, line]
-  // 2. Fuzzy: all characters of `line` appear in order in the command
-  const needle = line.slice(1)   // strip leading /
-  const fuzzy  = COMMANDS.filter(c => fuzzyCmd(needle, c.slice(1)))
-  return [fuzzy.length ? fuzzy : [], line]
+  // ── Slash-command completion (/history, /skills, …) ───────────────────────
+  if (line.startsWith('/')) {
+    const prefix = COMMANDS.filter(c => c.startsWith(line))
+    if (prefix.length > 0) return [prefix, line]
+    // Fuzzy fallback: all chars of line (minus /) appear in order in command
+    const needle = line.slice(1)
+    const fuzzy  = COMMANDS.filter(c => fuzzyCmd(needle, c.slice(1)))
+    return [fuzzy.length ? fuzzy : [], line]
+  }
+
+  // ── Tool-name completion (@web → @web_search, @open_browser, …) ──────────
+  if (line.startsWith('@')) {
+    const needle  = line.slice(1).toLowerCase()
+    const matches = TOOL_NAMES
+      .filter(t => t.startsWith(needle))
+      .map(t => `@${t}`)
+    if (matches.length > 0) return [matches, line]
+    // Fuzzy fallback
+    const fuzzy = TOOL_NAMES
+      .filter(t => fuzzyCmd(needle, t))
+      .map(t => `@${t}`)
+    return [fuzzy.length ? fuzzy : [], line]
+  }
+
+  return [[], line]
 }
 
 // ── Session resume helpers ─────────────────────────────────────────────────────────

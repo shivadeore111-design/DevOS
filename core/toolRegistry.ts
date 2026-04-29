@@ -379,7 +379,22 @@ export const TOOLS: Record<string, (payload: any, ctx?: ToolContext) => Promise<
     }
 
     const r = await pwNavigate(url)
-    if (r.ok) return { success: true, output: `Opened browser: ${r.url}` }
+    if (r.ok) {
+      // Auto-chain: if we landed on a YouTube search results page, immediately
+      // click the first video — so "play X on YouTube" works in a single step
+      // even when the planner forgets to emit the browser_click follow-up.
+      if (r.url.includes('youtube.com/results')) {
+        console.log('[open_browser] YouTube search detected — auto-clicking first result')
+        const click = await pwClickFirstResult()
+        if (click.ok) {
+          return { success: true, output: `Opened YouTube → playing first result → ${click.url ?? r.url}` }
+        }
+        console.warn(`[open_browser] YouTube auto-click failed: ${click.error}`)
+        // Navigation still succeeded; report it and let a browser_click retry handle it
+        return { success: true, output: `Opened browser: ${r.url} (auto-click failed: ${click.error})` }
+      }
+      return { success: true, output: `Opened browser: ${r.url}` }
+    }
     // Playwright failed — fall back to system browser open
     // (Legacy path: activeBrowserPage = null; openBrowser(url))
     try {
