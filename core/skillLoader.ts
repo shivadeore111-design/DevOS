@@ -39,50 +39,30 @@ export function getSkillCacheStats(): { size: number; max: number } {
 // ── Skill injection guard ─────────────────────────────────────
 
 const SKILL_INJECTION_PATTERNS: RegExp[] = [
-  // ── Original patterns ──────────────────────────────────────
+  // ── Prompt hijacking ───────────────────────────────────────
   /ignore\s+(all\s+)?(previous|above|prior)/i,
   /disregard\s+(all\s+)?(previous|above)/i,
   /you\s+are\s+now\s+/i,
   /new\s+instructions\s*:/i,
-  /override\s+system/i,
-  /curl\s+.*\|\s*bash/i,
+  /override\s+(your\s+)?(system|instructions|rules)/i,
+  /curl\s+[^\n]*\|\s*(bash|sh)\b/i,
   /ANTHROPIC_BASE_URL/i,
   /\]\s*\(\s*javascript:/i,
 
   // ── Role hijacking ─────────────────────────────────────────
-  /act\s+as\s+(if\s+you\s+are|a|an)\s/i,
   /pretend\s+(to\s+be|you\s+are)/i,
   /roleplay\s+as/i,
   /you\s+must\s+obey/i,
   /your\s+new\s+(role|instruction|directive)/i,
 
-  // ── Indirect injection (model-control tokens) ──────────────
-  /\[SYSTEM\]/i,
+  // ── Model-control tokens (LLM prompt format injection) ─────
   /\[INST\]/i,
   /<\|im_start\|>/i,
   /<\|system\|>/i,
   /<<\s*SYS\s*>>/i,
-  /###\s*instruction/i,
 
-  // ── Encoded / obfuscated payloads ──────────────────────────
-  /base64\s*decode/i,
-  /eval\s*\(/i,
-  /exec\s*\(/i,
-  /import\s+os/i,
-  /subprocess/i,
-  /\\x[0-9a-f]{2}/i,
-
-  // ── Data exfiltration ──────────────────────────────────────
-  /send\s+(to|via)\s+(http|email|webhook|api)/i,
-  /upload\s+(to|file|data)/i,
-  /curl\s+.*-d\s/i,
-  /fetch\s*\(\s*['"]http/i,
-
-  // ── Privilege escalation ───────────────────────────────────
-  /admin\s*(mode|access|privilege)/i,
-  /sudo\s/i,
-  /run\s+as\s+administrator/i,
-  /elevation\s+prompt/i,
+  // ── Obfuscated payloads ────────────────────────────────────
+  /\\x[0-9a-f]{2}\\x[0-9a-f]{2}/i,   // hex sequences (2+ consecutive)
 ]
 
 function sanitizeSkill(content: string, filename: string): string | null {
