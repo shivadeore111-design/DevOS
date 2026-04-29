@@ -162,7 +162,7 @@ export class EmailAdapter implements ChannelAdapter {
           host:           this.imapHost,
           port:           this.imapPort,
           tls:            true,
-          tlsOptions:     { rejectUnauthorized: false },
+          tlsOptions:     { rejectUnauthorized: false }, // user-configured IMAP server may use self-signed cert
           user:           this.imapUser,
           password:       this.imapPassword,
           authTimeout:    5000,

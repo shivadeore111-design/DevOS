@@ -499,11 +499,20 @@ export function createApiServer(): Express {
     next()
   })
 
-  // CORS â€” allow any origin (dev mode)
+  // CORS — localhost only by default.
+  // Set AIDEN_CORS_ORIGIN=* (or a specific origin) to allow remote access.
+  const _corsAllowedOrigin = process.env.AIDEN_CORS_ORIGIN || null
   app.use((req: Request, res: Response, next: NextFunction) => {
-    res.setHeader('Access-Control-Allow-Origin',  '*')
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+    const origin = req.headers.origin || ''
+    const isLocal = !origin ||
+      origin.startsWith('http://localhost') ||
+      origin.startsWith('http://127.0.0.1')
+    const allowed = _corsAllowedOrigin || (isLocal ? origin || '*' : null)
+    if (allowed) {
+      res.setHeader('Access-Control-Allow-Origin',  allowed)
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+    }
     if (req.method === 'OPTIONS') { res.sendStatus(200); return }
     next()
   })
@@ -723,7 +732,7 @@ export function createApiServer(): Express {
       res.setHeader('Content-Type',  'text/event-stream')
       res.setHeader('Cache-Control', 'no-cache')
       res.setHeader('Connection',    'keep-alive')
-      res.setHeader('Access-Control-Allow-Origin', '*')
+      // CORS already set by global middleware
       res.flushHeaders()
       res.write(`data: ${JSON.stringify({ thinking: { stage: 'understanding', message: 'Understanding...' } })}\n\n`)
     }
@@ -738,7 +747,7 @@ export function createApiServer(): Express {
           res.setHeader('Content-Type',  'text/event-stream')
           res.setHeader('Cache-Control', 'no-cache')
           res.setHeader('Connection',    'keep-alive')
-          res.setHeader('Access-Control-Allow-Origin', '*')
+          // CORS already set by global middleware
           res.flushHeaders()
         }
         res.write(`data: ${JSON.stringify({ token: text, done: false, provider: 'fast-path' })}\n\n`)
@@ -2723,7 +2732,7 @@ export function createApiServer(): Express {
   })
 
   // POST /api/plugins/reload — hot-reload all flat .js plugins
-  app.post('/api/plugins/reload', async (_req: Request, res: Response) => {
+  app.post('/api/plugins/reload', requireLocalhost, async (_req: Request, res: Response) => {
     try {
       const dir = path.join(process.cwd(), 'workspace', 'plugins')
       await reloadPlugins(dir)
@@ -3142,7 +3151,7 @@ export function createApiServer(): Express {
   })
 
   // POST /api/mcp/servers -- register a new MCP server and discover its tools
-  app.post('/api/mcp/servers', async (req: Request, res: Response) => {
+  app.post('/api/mcp/servers', requireLocalhost, async (req: Request, res: Response) => {
     const { name, url, description } = req.body as { name?: string; url?: string; description?: string }
     if (!name || !url) {
       res.status(400).json({ error: 'name and url are required' })
@@ -3154,7 +3163,7 @@ export function createApiServer(): Express {
   })
 
   // DELETE /api/mcp/servers/:name -- remove an MCP server
-  app.delete('/api/mcp/servers/:name', (req: Request, res: Response) => {
+  app.delete('/api/mcp/servers/:name', requireLocalhost, (req: Request, res: Response) => {
     mcpClient.removeServer(String(req.params.name))
     res.json({ success: true })
   })
@@ -3613,7 +3622,7 @@ export function createApiServer(): Express {
     res.setHeader('Content-Type',  'text/event-stream')
     res.setHeader('Cache-Control', 'no-cache')
     res.setHeader('Connection',    'keep-alive')
-    res.setHeader('Access-Control-Allow-Origin', '*')
+    // CORS already set by global middleware
     res.flushHeaders()
 
     const ping = setInterval(() => {
@@ -3852,7 +3861,7 @@ export function createApiServer(): Express {
     res.setHeader('Content-Type',      'text/event-stream')
     res.setHeader('Cache-Control',     'no-cache')
     res.setHeader('Connection',        'keep-alive')
-    res.setHeader('Access-Control-Allow-Origin', '*')
+    // CORS already set by global middleware
     res.flushHeaders()
 
     // Send ping every 25s to keep connection alive
@@ -4536,7 +4545,7 @@ export function createApiServer(): Express {
   })
 
   // POST /api/skills/migrate — backfill skill.json for skills that are missing it
-  app.post('/api/skills/migrate', async (_req: Request, res: Response) => {
+  app.post('/api/skills/migrate', requireLocalhost, async (_req: Request, res: Response) => {
     try {
       const fs   = await import('fs')
       const path = await import('path')
@@ -4889,13 +4898,13 @@ export function createApiServer(): Express {
   })
 
   // DELETE /api/memory — clear all conversation memory
-  app.delete('/api/memory', (_req: Request, res: Response) => {
+  app.delete('/api/memory', requireLocalhost, (_req: Request, res: Response) => {
     conversationMemory.clear()
     res.json({ success: true, message: 'Conversation memory cleared' })
   })
 
   // POST /api/memory/clear — alias for DELETE (for frontend compatibility)
-  app.post('/api/memory/clear', (_req: Request, res: Response) => {
+  app.post('/api/memory/clear', requireLocalhost, (_req: Request, res: Response) => {
     try {
       conversationMemory.clear()
       res.json({ success: true, message: 'All memory cleared' })
@@ -4905,7 +4914,7 @@ export function createApiServer(): Express {
   })
 
   // POST /api/conversations/clear — clear all saved conversation sessions from disk
-  app.post('/api/conversations/clear', (_req: Request, res: Response) => {
+  app.post('/api/conversations/clear', requireLocalhost, (_req: Request, res: Response) => {
     try {
       const sessionsDir = path.join(WORKSPACE_ROOT, 'workspace', 'sessions')
       if (fs.existsSync(sessionsDir)) {
@@ -4920,7 +4929,7 @@ export function createApiServer(): Express {
   })
 
   // POST /api/knowledge/clear — clear knowledge base files
-  app.post('/api/knowledge/clear', (_req: Request, res: Response) => {
+  app.post('/api/knowledge/clear', requireLocalhost, (_req: Request, res: Response) => {
     try {
       const kbDir = path.join(WORKSPACE_ROOT, 'workspace', 'knowledge')
       if (fs.existsSync(kbDir)) {
@@ -5119,6 +5128,18 @@ export function createApiServer(): Express {
       httpReq.write(body)
       httpReq.end()
     })
+  }
+
+  // ── Localhost-only guard for destructive endpoints ───────────
+  // Applied as middleware to endpoints that must not be reachable
+  // from remote hosts even when AIDEN_HOST=0.0.0.0.
+  function requireLocalhost(req: Request, res: Response, next: NextFunction) {
+    const ip = req.ip || req.socket?.remoteAddress || ''
+    const isLocal = ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1'
+    if (!isLocal) {
+      return res.status(403).json({ error: 'This endpoint is only accessible from localhost' })
+    }
+    next()
   }
 
   // ── API key guard (optional) ─────────────────────────────────
@@ -5665,12 +5686,11 @@ export function startupCheck(): void {
 export function startApiServer(portArg?: number): Express {
 
   // Read port from config/api.json with sensible fallback.
-  // Host defaults to 0.0.0.0 in headless/Linux mode so the API
-  // is reachable from the WSL2 host (Windows) and other LAN clients.
-  // Electron mode keeps 127.0.0.1 for security (loopback only).
+  // Host defaults to 127.0.0.1 (loopback only) for security.
+  // Set AIDEN_HOST=0.0.0.0 to expose on all interfaces (e.g. headless/WSL2).
   let port = portArg ?? 4200
   const isHeadless = process.env.AIDEN_HEADLESS === 'true'
-  let host = isHeadless ? '0.0.0.0' : '127.0.0.1'
+  let host = process.env.AIDEN_HOST || (isHeadless ? '0.0.0.0' : '127.0.0.1')
   try {
     const cfgPath = path.join(WORKSPACE_ROOT, 'config', 'api.json')
     if (fs.existsSync(cfgPath)) {
