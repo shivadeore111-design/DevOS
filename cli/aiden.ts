@@ -2185,7 +2185,7 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
     const data = await apiFetch<any>('/api/permissions/config', null)
     if (!data) { console.log(`  ${T.error}Could not fetch permissions config — is the server running?${T.reset}\n`); return true }
 
-    const modeColor = data.mode === 'allow' ? T.warn : data.mode === 'strict' ? T.error : fg(COLORS.success)
+    const modeColor = data.mode === 'allow' ? T.warning : data.mode === 'strict' ? T.error : fg(COLORS.success)
     const lines: string[] = [
       '',
       `  mode        ${modeColor}${data.mode}${RST}`,
@@ -2220,7 +2220,7 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       title: `${MARKS.TRI} Uninstall Aiden`,
       lines: [
         '',
-        `  ${T.warn}This will remove Aiden from your system.${T.reset}`,
+        `  ${T.warning}This will remove Aiden from your system.${T.reset}`,
         '',
         `  ${T.dim}Run:  npm run uninstall${T.reset}`,
         `  ${T.dim}  or:  powershell -ExecutionPolicy Bypass -File scripts\\uninstall.ps1${T.reset}`,
