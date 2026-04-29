@@ -68,8 +68,8 @@ Write-Host ""
 # ── Step 2 — AppData (config, browser profiles, cache) ────────────────────────
 
 if (-not $KeepConfig) {
-  $appData   = $env:APPDATA    ?? (Join-Path $env:USERPROFILE "AppData\Roaming")
-  $localData = $env:LOCALAPPDATA ?? (Join-Path $env:USERPROFILE "AppData\Local")
+  if ($env:APPDATA)      { $appData   = $env:APPDATA }      else { $appData   = Join-Path $env:USERPROFILE "AppData\Roaming" }
+  if ($env:LOCALAPPDATA) { $localData = $env:LOCALAPPDATA } else { $localData = Join-Path $env:USERPROFILE "AppData\Local"  }
 
   Write-Host "Removing Aiden user data..."
   Remove-AidenPath (Join-Path $appData   "aiden")        "%APPDATA%\aiden"
@@ -142,5 +142,5 @@ if ($removed -gt 0) {
 } else {
   Write-Host "${DIM}Nothing to remove — Aiden does not appear to be installed.${RST}"
 }
-Write-Host "${DIM}Project files in $(Get-Location) were not touched.${RST}"
+Write-Host ($DIM + "Project files in " + (Get-Location) + " were not touched." + $RST)
 Write-Host ""
