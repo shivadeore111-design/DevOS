@@ -24,6 +24,7 @@ import type { CmdDetail }                                    from './commandCata
 
 const API_BASE      = process.env.AIDEN_API || 'http://localhost:4200'
 let   SESSION_ID    = `session_${Date.now()}`
+let   _activeRL: readline.Interface | null = null   // module-scope ref for dropdown refresh
 const SESSION_START = Date.now()
 let   RESUMED_FROM: string | null = null
 const CONFIG_PATH   = path.join(__dirname, '..', 'config', 'devos.config.json')
@@ -5434,9 +5435,11 @@ function renderDropdown(): void {
   process.stdout.write(`\x1b[${lineCount}A`)
 
   // Restore readline's display of the prompt + input buffer
-  ;(rl as any).line   = dropdown.currentLine
-  ;(rl as any).cursor = dropdown.currentLine.length
-  ;(rl as any)._refreshLine?.()
+  if (_activeRL) {
+    ;(_activeRL as any).line   = dropdown.currentLine
+    ;(_activeRL as any).cursor = dropdown.currentLine.length
+    ;(_activeRL as any)._refreshLine?.()
+  }
 }
 
 /** Erase visual + full state reset (dismiss). */
@@ -5619,6 +5622,7 @@ async function main(): Promise<void> {
     completer,
     terminal : true,
   })
+  _activeRL = rl
 
   _rl = rl  // expose to streamChat for pause/resume during streaming
 
