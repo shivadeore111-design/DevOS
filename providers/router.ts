@@ -17,6 +17,7 @@ import { createBOAProvider } from './boa'
 import { createCustomProvider } from './custom'
 import { Provider } from './types'
 import { discoverLocalModels, DiscoveredModels } from '../core/modelDiscovery'
+import { getDefaultModel } from '../core/modelRegistry'
 
 // Per-provider rate-limit windows — tuned to actual reset characteristics.
 // Previous flat 1-hour window was far too conservative for fast-reset APIs.
@@ -491,7 +492,7 @@ export function getSmartProvider(): {
   // AUTO MODE: round-robin across available APIs
   const next = getNextAvailableAPI()
   if (next) {
-    return { provider: next.provider, model: next.entry.model || 'llama-3.3-70b-versatile', userName, apiName: next.entry.name }
+    return { provider: next.provider, model: next.entry.model || getDefaultModel(next.entry.provider) || 'llama-3.3-70b-versatile', userName, apiName: next.entry.name }
   }
 
   // FALLBACK: best discovered Ollama model

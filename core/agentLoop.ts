@@ -20,6 +20,7 @@ import { entityGraph }                      from './entityGraph'
 import { learningMemory }                  from './learningMemory'
 import { conversationMemory }             from './conversationMemory'
 import { getNextAvailableAPI, markRateLimited, markHealthy, incrementUsage, getModelForTask, getOllamaModelForTask, enterDegradedMode } from '../providers/router'
+import { getNextModelOnFailure } from './modelRegistry'
 import { ollamaProvider } from '../providers/ollama'
 import { loadConfig }     from '../providers/index'
 import { knowledgeBase } from './knowledgeBase'
@@ -1308,10 +1309,17 @@ Output ONLY valid JSON, nothing else:`
         e.message?.includes('rate') ||
         e.message?.includes('aborted')
       ) {
-        try {
-          markRateLimited(curApiName)
-          console.log(`[Planner] Marked ${curApiName} as rate limited — will rotate away`)
-        } catch {}
+        // Try next model within the same provider before marking whole entry rate-limited
+        const nextModel = getNextModelOnFailure(curProvider, curModel)
+        if (nextModel) {
+          console.log(`[Planner] Model ${curModel} failed — trying next model ${nextModel} on same provider (${curApiName})`)
+          curModel = nextModel
+        } else {
+          try {
+            markRateLimited(curApiName)
+            console.log(`[Planner] Marked ${curApiName} as rate limited — will rotate away`)
+          } catch {}
+        }
       }
     }
 

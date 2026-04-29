@@ -1200,14 +1200,48 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
   if (command === '/models' || (command === '/model' && parts.length === 1)) {
     const m   = await apiFetch<any>('/api/debug/models', {})
     const cfg = loadCfg()
+    const { MODEL_REGISTRY } = await import('../core/modelRegistry')
+
+    const activeProvider = cfg?.model?.active || m.activeProvider || 'unknown'
+    const activeModel    = cfg?.model?.activeModel || m.activeModel || 'unknown'
+
     console.log()
     console.log(`  ${T.bold}Models${T.reset}`)
     console.log(`  ${T.dim}${hr()}${T.reset}`)
-    console.log(`  ${'Active'.padEnd(14)}${T.accent}${cfg?.model?.activeModel || m.activeModel || 'unknown'}${T.reset}`)
-    console.log(`  ${'Provider'.padEnd(14)}${cfg?.model?.active || m.activeProvider || 'unknown'}`)
-    console.log(`  ${'Cloud'.padEnd(14)}${T.dim}${(m.providers    || []).join(', ') || 'none'}${T.reset}`)
-    console.log(`  ${'Local'.padEnd(14)}${T.dim}${(m.ollamaModels || []).join(', ') || 'none'}${T.reset}`)
+    console.log(`  ${'Active'.padEnd(16)}${T.accent}${activeModel}${T.reset}  ${T.dim}← ${activeProvider}${T.reset}`)
     console.log()
+
+    // Per-provider table
+    const apiEntries: any[] = cfg?.providers?.apis ?? []
+    const cloudEntries = apiEntries.filter((a: any) => a.enabled && a.provider !== 'ollama')
+
+    if (cloudEntries.length > 0) {
+      console.log(`  ${T.bold}Cloud providers${T.reset}`)
+      console.log(`  ${T.dim}${'NAME'.padEnd(16)}${'MODEL'.padEnd(46)}${'TIER'.padEnd(8)}STATUS${T.reset}`)
+      for (const entry of cloudEntries) {
+        const regModels = MODEL_REGISTRY[entry.provider] ?? []
+        const regEntry  = regModels.find((rm: any) => rm.id === entry.model)
+        const badge     = regEntry?.pricing === 'free' ? `${T.success}FREE${T.reset}` : `${T.dim}PAID${T.reset}`
+        const status    = entry.rateLimited
+          ? `${T.warning}rate-limited${T.reset}`
+          : `${T.success}ready${T.reset}`
+        const modelStr  = (entry.model || '—').padEnd(44)
+        console.log(`  ${entry.name.padEnd(16)}${T.dim}${modelStr}${T.reset}  ${badge.padEnd(8)}  ${status}`)
+      }
+      console.log()
+    }
+
+    // Ollama section
+    const ollamaModels: string[] = m.ollamaModels ?? []
+    if (ollamaModels.length > 0) {
+      console.log(`  ${T.bold}Local (Ollama)${T.reset}`)
+      for (const om of ollamaModels) {
+        const isActive = om === (cfg?.ollama?.model ?? '')
+        console.log(`  ${isActive ? T.accent : T.dim}${om}${T.reset}${isActive ? '  ← active' : ''}`)
+      }
+      console.log()
+    }
+
     return true
   }
 
