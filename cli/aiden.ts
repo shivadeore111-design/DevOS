@@ -1068,24 +1068,6 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
   if (command === '/tools') {
     const tools = await apiFetch<any[]>('/api/tools', [])
 
-    // Category → icon map (spec-defined)
-    const CAT_ICONS: Record<string, string> = {
-      browser:      '◈',
-      file:         '▤',
-      terminal:     '▣',
-      web:          '◉',
-      memory:       '⬢',
-      delegation:   '◆',
-      code:         '⬡',
-      windows:      '▲',
-      mcp:          '◎',
-      voice:        '◐',
-      schedule:     '⬟',
-      vision:       '◪',
-      'slash-mirror': '△',
-      core:         '▸',
-    }
-
     // Group by category (falling back to source, then 'other')
     const groups = new Map<string, any[]>()
     for (const t of tools) {
@@ -1094,32 +1076,25 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       groups.get(cat)!.push(t)
     }
 
-    // Build panel body lines
-    const bodyLines: string[] = ['']
-    for (const [cat, catTools] of groups) {
-      const icon   = CAT_ICONS[cat] || MARKS.DOT
-      const header =
-        `  ${fg(COLORS.orange)}${icon}${RST} ${T.bold}${cat}${T.reset}` +
-        `  ${T.dim}${catTools.length} tool${catTools.length !== 1 ? 's' : ''}${T.reset}`
-      bodyLines.push(header)
-      for (const t of catTools) {
-        const name = (t.name || '').padEnd(22)
-        const desc = (t.description || '').substring(0, 46)
-        bodyLines.push(`    ${T.dim}${MARKS.ARROW}${T.reset} ${name}${T.dim}${desc}${T.reset}`)
-      }
-      bodyLines.push('')
-    }
-
-    const catCount = groups.size
-    bodyLines.push(
-      `  ${T.dim}${tools.length} tools · ${catCount} categor${catCount !== 1 ? 'ies' : 'y'}${T.reset}`,
-    )
-    bodyLines.push(
-      `  ${T.dim}/tools enable <cat>  │  /tools disable <cat>${T.reset}`,
-    )
-
+    // Print directly — bypasses panel() box-drawing so all tools are always visible
     console.log()
-    console.log(panel({ title: `${MARKS.TRI} Tools`, lines: bodyLines }))
+    console.log(`  ${fg(COLORS.orange)}${MARKS.TRI} Tools${RST}  ${T.dim}${tools.length} total${T.reset}`)
+    console.log()
+    for (const [cat, catTools] of groups) {
+      // Category header
+      console.log(
+        `  ${fg(COLORS.orange)}${T.bold}${cat.toUpperCase()}${T.reset}` +
+        `  ${T.dim}${catTools.length} tool${catTools.length !== 1 ? 's' : ''}${T.reset}`
+      )
+      // Each tool on its own line — name left-padded, description dimmed
+      for (const t of catTools) {
+        const name = (t.name || '').padEnd(24)
+        const desc = (t.description || '').substring(0, 55)
+        console.log(`    ${T.dim}${name}${T.reset}${T.dim}${desc}${T.reset}`)
+      }
+      console.log()
+    }
+    console.log(`  ${T.dim}/tools enable <cat>  |  /tools disable <cat>${T.reset}`)
     console.log()
     return true
   }
