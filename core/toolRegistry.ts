@@ -1637,9 +1637,9 @@ export const TOOLS: Record<string, (payload: any, ctx?: ToolContext) => Promise<
   app_close: async (p) => {
     // Accept app_name (planner default), appName, name, app, process, command
     const appName = (
-      p.app_name || p.appName || p.app || p.process || p.command || p.name || ''
+      p.app_name ?? p.appName ?? p.app ?? p.process ?? p.command ?? p.name ?? p.target ?? ''
     ).toString().toLowerCase().trim()
-    if (!appName) return { success: false, output: '', error: 'No app/process name provided. Pass app_name or appName.' }
+    if (!appName) return { success: false, output: '', error: 'No app name provided. Pass app_name e.g. "chrome" or "spotify".' }
     const exeMap: Record<string, string> = {
       'chrome':              'chrome.exe',
       'google chrome':       'chrome.exe',
