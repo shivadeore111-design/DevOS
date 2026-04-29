@@ -93,6 +93,13 @@ shell:
     - "Set-Content *"
     - "Add-Content *"
     - "Set-Location *"
+    # Process / app control
+    - "taskkill /im *"
+    - "taskkill /f /im *"
+    - "Stop-Process -Name *"
+    - "Stop-Process -Id *"
+    - "start *"
+    - "explorer *"
 
 # ── Filesystem ────────────────────────────────────────────────
 filesystem:

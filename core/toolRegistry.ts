@@ -175,6 +175,16 @@ const SHELL_ALLOWLIST: RegExp[] = [
   // 13. Instant Actions: lock screen (rundll32) and volume one-liners (powershell -c)
   /^rundll32\b/i,
   /^powershell\s+-c\b/i,
+  // 14. Process / app control — close named apps by name (user-directed, not destructive)
+  /^taskkill\s+\/im\s+\S+/i,           // taskkill /im chrome.exe
+  /^taskkill\s+\/f\s+\/im\s+\S+/i,     // taskkill /f /im chrome.exe
+  /^Stop-Process\s+-Name\b/i,           // Stop-Process -Name chrome
+  /^Stop-Process\s+-Id\b/i,             // Stop-Process -Id 1234
+  /^kill\b/i,                           // kill <pid> (Unix/WSL)
+  // 15. Volume / brightness / display controls
+  /^nircmd\b/i,
+  // 16. Windows window management
+  /^(start|explorer)\b/i,
 ]
 
 function isCommandAllowed(cmd: string): { allowed: boolean; needsApproval: boolean } {

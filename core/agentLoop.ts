@@ -2503,6 +2503,21 @@ export async function respondWithResults(
   goals?:          string[],   // Phase 1: multi-goal numbered output
 ): Promise<void> {
 
+  // ── CommandGate / PermissionGate short-circuit ───────────────
+  // If ANY tool was blocked with an approval gate, stream the
+  // approval question directly — never let the LLM hallucinate "Done".
+  const gatedResult = results.find(r =>
+    !r.success && r.error &&
+    (r.error.startsWith('CommandGate:') || r.error.startsWith('PermissionGate:'))
+  )
+  if (gatedResult) {
+    const blocked = gatedResult.error!
+      .replace(/^(CommandGate|PermissionGate):\s*/i, '')
+      .replace(/:\s*$/, '')
+    onToken(`I need your approval before I can do that.\n\n**Blocked action:** ${blocked}\n\nReply **yes** to confirm, or tell me what you'd like instead.`)
+    return
+  }
+
   const date = new Date().toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
   })
