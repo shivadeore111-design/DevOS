@@ -5431,14 +5431,16 @@ function renderDropdown(): void {
   dropdown.lineCount = lineCount
   dropdown.visible   = true
 
-  // Return cursor to the input row using relative-up (immune to scroll)
-  process.stdout.write(`\x1b[${lineCount}A`)
+  // Return to input row (relative-up, immune to scroll), go to col 0, erase line,
+  // then re-emit prompt + input.  Do NOT call _refreshLine() — it emits \x1b[0J
+  // (erase to end of screen) which would wipe the dropdown we just drew.
+  process.stdout.write(`\x1b[${lineCount}A\r\x1b[K`)
+  process.stdout.write(getPrompt() + dropdown.currentLine)
 
-  // Restore readline's display of the prompt + input buffer
+  // Keep readline's internal state in sync for the next keystroke
   if (_activeRL) {
     ;(_activeRL as any).line   = dropdown.currentLine
     ;(_activeRL as any).cursor = dropdown.currentLine.length
-    ;(_activeRL as any)._refreshLine?.()
   }
 }
 
@@ -5861,9 +5863,18 @@ async function main(): Promise<void> {
       if (line.startsWith('/')) {
         const query    = line.slice(1).toLowerCase()
         const allItems = buildSlashCommands()
-        const filtered = query === ''
-          ? allItems
-          : allItems.filter(item => item.label.toLowerCase().includes(query))
+        let filtered: typeof allItems
+        if (query === '') {
+          filtered = allItems
+        } else {
+          // Prefix-first: /s → /skills /status /save … NOT /reset
+          const prefix = allItems.filter(i => i.label.toLowerCase().slice(1).startsWith(query))
+          const substr = allItems.filter(i =>
+            !i.label.toLowerCase().slice(1).startsWith(query) &&
+            i.label.toLowerCase().includes(query)
+          )
+          filtered = [...prefix, ...substr]
+        }
         dropdown.triggerChar   = '/'
         dropdown.items         = allItems
         dropdown.filtered      = filtered
