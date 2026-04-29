@@ -1720,6 +1720,8 @@ export const TOOLS: Record<string, (payload: any, ctx?: ToolContext) => Promise<
         amount = p.volume
       }
       else if (typeof p.level  === 'number')   action = 'set'
+      // { amount: 20 } or { by: 20 } with no other hints → default up
+      else if (amount > 0)                     action = (p.direction === 'down') ? 'down' : 'up'
       else                                     action = 'get'
     }
 
