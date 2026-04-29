@@ -1029,29 +1029,38 @@ export function createApiServer(): Express {
       { regex: /open\s+github\s+(?:and\s+)?(?:search|find)\s+(?:for\s+)?(.+)/i,                          url: q => `https://github.com/search?q=${encodeURIComponent(q)}`, label: 'GitHub' },
     ]
 
-    for (const fp of searchFastPaths) {
-      const m = message.match(fp.regex)
-      if (m) {
-        const query = (m[m.length - 1] || '').trim().replace(/[.!?]+$/, '')
-        if (query.length > 1) {
-          const url = fp.url(query)
-          console.log(`[FastPath] ${fp.label} search: “${query}” → ${url}`)
-          try {
-            await executeTool('open_browser', { url })
-          } catch (e: any) {
-            console.warn('[FastPath] open_browser failed, trying shell:', e.message)
-            try { await executeTool('shell_exec', { command: `start “” “${url}”` }) } catch {}
+    // Play/listen/watch intents must go through the planner so the open_browser
+    // auto-chain (toolRegistry.ts) fires and actually starts playback.
+    const hasPlayIntent = /\b(play|listen|watch)\b/i.test(message)
+    if (hasPlayIntent) {
+      console.log('[FastPath] Skipping search fast-paths for play/listen/watch intent — routing to planner')
+    }
+
+    if (!hasPlayIntent) {
+      for (const fp of searchFastPaths) {
+        const m = message.match(fp.regex)
+        if (m) {
+          const query = (m[m.length - 1] || '').trim().replace(/[.!?]+$/, '')
+          if (query.length > 1) {
+            const url = fp.url(query)
+            console.log(`[FastPath] ${fp.label} search: “${query}” → ${url}`)
+            try {
+              await executeTool('open_browser', { url })
+            } catch (e: any) {
+              console.warn('[FastPath] open_browser failed, trying shell:', e.message)
+              try { await executeTool('shell_exec', { command: `start “” “${url}”` }) } catch {}
+            }
+            let replyMsg: string
+            if (fp.label === 'YouTube') {
+              replyMsg = `Opening YouTube search for “${query}” — click the first result to play.\n→ ${url}`
+            } else if (fp.label === 'DuckDuckGo') {
+              replyMsg = `Searching DuckDuckGo for “${query}” — opening results in your browser.\n→ ${url}`
+            } else {
+              replyMsg = `Opening ${fp.label} in your browser.\n→ ${url}`
+            }
+            fastReply(replyMsg)
+            return
           }
-          let replyMsg: string
-          if (fp.label === 'YouTube') {
-            replyMsg = `Opening YouTube search for "${query}" — click the first result to play.\n→ ${url}`
-          } else if (fp.label === 'DuckDuckGo') {
-            replyMsg = `Searching DuckDuckGo for "${query}" — opening results in your browser.\n→ ${url}`
-          } else {
-            replyMsg = `Opening ${fp.label} in your browser.\n→ ${url}`
-          }
-          fastReply(replyMsg)
-          return
         }
       }
     }
@@ -1096,8 +1105,9 @@ export function createApiServer(): Express {
     }
 
     // 2. "play X on youtube" / "play X on spotify"
+    // hasPlayIntent guard: these go through the planner so open_browser auto-chain fires.
     const onPlatformMatch = /^play\s+(.+?)\s+on\s+(youtube|spotify)\s*$/i.exec(message)
-    if (onPlatformMatch) {
+    if (onPlatformMatch && !hasPlayIntent) {
       const query    = onPlatformMatch[1].trim()
       const platform = onPlatformMatch[2].toLowerCase()
       const url      = buildMusicUrl(query, platform)
