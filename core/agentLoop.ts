@@ -50,6 +50,7 @@ import { repairToolName }    from './toolNameRepair'
 // through slashAsTool.ts injection path, not the planner's allowed-tool list.
 import { repairPlanResponse }      from './planResponseRepair'
 import { isActionIntent, detectActionVerb } from './actionVerbDetector'
+import { buildDiagnostic } from './diagnosticError'
 import * as nodeFs             from 'fs'
 import * as nodePath           from 'path'
 import * as nodeOs             from 'os'
@@ -1403,7 +1404,7 @@ Output ONLY valid JSON, nothing else:`
     // Don't return early — let FORCE_RESPOND_TEST hook and PlannerGuard process the fallback plan
     console.warn('[Planner] All LLM attempts failed — respond fallback (going through guard)')
     parsed = {
-      plan:               [{ step: 1, tool: 'respond', input: { message: "I'm not sure how to help with that right now. Could you rephrase your request." }, description: 'Fallback response' }],
+      plan:               [{ step: 1, tool: 'respond', input: { message: buildDiagnostic({ tool: 'planner', error: 'All LLM attempts failed', retries: 3, suggestion: 'Provider chain may be rate-limited. Try again in 1–2 minutes or rephrase your request.' }) }, description: 'Fallback response' }],
       requires_execution: true,
       goal:               message,
     }
@@ -1537,6 +1538,14 @@ Output ONLY valid JSON, nothing else:`
       const guardMatch = guardRetryRaw.replace(/```json\s*/g, '').replace(/```\s*/g, '').match(/\{[\s\S]*\}/)
       if (!guardMatch) {
         process.stderr.write(`[PlannerGuard] retry returned no JSON (providers exhausted) for verb='${verb}'\n`)
+        candidatePlan.plan               = []
+        candidatePlan.requires_execution = false
+        candidatePlan.direct_response    = buildDiagnostic({
+          tool:       'planner',
+          error:      'Could not generate tool plan for action intent',
+          retries:    1,
+          suggestion: 'Provider chain may be rate-limited. Try again in 1–2 minutes or use a more specific instruction.',
+        })
       }
       if (guardMatch) {
         const guardParsed  = JSON.parse(guardMatch[0])

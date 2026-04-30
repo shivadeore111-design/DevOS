@@ -87,6 +87,7 @@ import { writeSkillDraft, approveDraft, rejectDraft, setSkillEnabled, listPendin
 import { fetchIndex, scoreSkillsForTopic, installSkill as libraryInstallSkill } from '../core/skillLibrary'
 import { costTracker }   from '../core/costTracker'
 import { sessionMemory, getSessionLineage, loadSessionMetadata } from '../core/sessionMemory'
+import { buildDiagnostic } from '../core/diagnosticError'
 import { memoryExtractor } from '../core/memoryExtractor'
 import { loadPlugins, reloadPlugins, listFlatPlugins, pluginHooks as flatPluginHooks } from '../core/pluginLoader'
 import { permissionSystem } from '../core/permissionSystem'
@@ -6806,7 +6807,7 @@ ${cognitionHint}${firstMessageContext}${memoryContext}${greetingPreamble}${sessi
     }
     // Both failed — send a graceful error token
     console.error('[Router] All providers failed. Last error:', err?.message ?? 'unknown')
-    send({ token: `I'm temporarily unavailable — my AI providers are at capacity. Please try again in a few minutes, or add more API keys in Settings → API Keys.`, done: false, provider: 'error' })
+    send({ token: buildDiagnostic({ tool: 'respond', provider: 'all', retries: 2, error: 'All AI providers failed or are at capacity', suggestion: 'Try again in a few minutes, or add more API keys in Settings → API Keys.' }), done: false, provider: 'error' })
   }
 
   streamEnded = true
