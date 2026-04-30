@@ -14,50 +14,21 @@ import {
 } from '@modelcontextprotocol/sdk/types.js'
 import type { Tool } from '@modelcontextprotocol/sdk/types.js'
 
-import { TOOLS, TOOL_DESCRIPTIONS, executeTool, getExternalToolsMeta } from '../core/toolRegistry'
+import { TOOLS, TOOL_DESCRIPTIONS, executeTool, getExternalToolsMeta,
+         registryMcpSafeList, registryMcpDestructiveList } from '../core/toolRegistry'
 import { pluginHooks } from '../core/pluginLoader'
 import { loadConfig } from '../providers/index'
 
 // ── VERSION ──────────────────────────────────────────────────
 const VERSION = '3.16.0'
 
-// ── SAFE tools (exposed by default) ──────────────────────────
-export const SAFE_TOOLS: string[] = [
-  'web_search', 'fetch_url', 'fetch_page', 'deep_research',
-  'file_read', 'file_list',
-  'get_stocks', 'get_market_data', 'get_company_info',
-  'get_briefing', 'get_natural_events', 'get_calendar',
-  'system_info',
-  'browser_extract', 'browser_screenshot', 'browser_get_url', 'open_browser',
-  'screenshot', 'screen_read', 'take_screenshot',
-  'clipboard_read',
-  'window_list',
-  'lookup_skill', 'lookup_tool_schema',
-  'read_email',
-  'git_status',
-  'voice_transcribe',
-  'respond',
-  'manage_goals',
-]
+// ── v3.19 Phase 1 Commit 6: derived from TOOL_REGISTRY[mcp='safe'] — literal deleted ──
+// take_screenshot was previously in this list but has no handler in TOOLS; it is
+// automatically excluded because it has no TOOL_REGISTRY entry.
+export const SAFE_TOOLS: string[] = registryMcpSafeList()
 
-// ── DESTRUCTIVE tools (opt-in via MCP_ALLOW_DESTRUCTIVE=true) ─
-export const DESTRUCTIVE_TOOLS: string[] = [
-  'shell_exec', 'run_powershell', 'cmd', 'ps', 'wsl',
-  'run_python', 'run_node',
-  'code_interpreter_python', 'code_interpreter_node',
-  'file_write',
-  'mouse_click', 'mouse_move', 'keyboard_type', 'keyboard_press',
-  'browser_click', 'browser_type', 'browser_scroll',
-  'send_email',
-  'git_commit', 'git_push',
-  'clipboard_write',
-  'app_launch', 'app_close', 'window_focus',
-  'notify', 'schedule_reminder',
-  'voice_speak',
-  'watch_folder',
-  'run_agent', 'spawn', 'spawn_subagent', 'swarm',
-  'send_file_local', 'receive_file_local',
-]
+// ── v3.19 Phase 1 Commit 6: derived from TOOL_REGISTRY[mcp='destructive'] — literal deleted ──
+export const DESTRUCTIVE_TOOLS: string[] = registryMcpDestructiveList()
 
 export function getExposedTools(): string[] {
   const allowDestructive = process.env.MCP_ALLOW_DESTRUCTIVE === 'true'
