@@ -3138,9 +3138,11 @@ export function createApiServer(): Express {
 
   // GET /api/tools — list all built-in + plugin-registered tools
   app.get('/api/tools', (_req: Request, res: Response) => {
-    const { TOOLS, TOOL_DESCRIPTIONS, getExternalToolsMeta } = require('../core/toolRegistry')
-    const names   = Object.keys(TOOLS as Record<string, unknown>)
+    const { TOOL_DESCRIPTIONS, getExternalToolsMeta } = require('../core/toolRegistry')
+    // v3.19 Phase 1: use TOOL_DESCRIPTIONS keys (71 user-facing) instead of TOOLS handler
+    // keys (79 = 77 registry + 2 legacy stubs) so banner count reflects real tool count.
     const descs   = (TOOL_DESCRIPTIONS as Record<string, string>) || {}
+    const names   = Object.keys(descs)
     const extMeta = (getExternalToolsMeta as () => Record<string, { source: string }>)()
     const coreTools = names.map(name => ({ name, description: descs[name] || '', source: 'core' }))
     const extTools  = Object.entries(extMeta).map(([name, m]) => ({
