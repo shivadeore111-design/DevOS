@@ -842,7 +842,7 @@ export async function planWithLLM(
   // real-time state tools are reliably preferred. See docs/v3.20-candidates.md.
   if (/\b(what|which).*(music|song|track|artist|playing)|now.?playing|currently playing|what('?s| is) (on|playing)/i.test(message)) {
     console.log('[Planner] instant-dispatch → now_playing')
-    return { steps: [{ tool: 'now_playing', input: {} }], requires_execution: true }
+    return { goal: message, requires_execution: true, plan: [{ step: 1, tool: 'now_playing', input: {}, description: 'Get currently playing media' }], phases: [] }
   }
 
   // Dynamic tool loading — filter to relevant tools per task category
