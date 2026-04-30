@@ -837,6 +837,9 @@ export async function planWithLLM(
     : ALLOWED_TOOLS
 
   // Instant dispatch: deterministic single-tool plans that don't need the LLM planner
+  // TODO(v3.20): TEMPORARY — llama-3.3-70b ignores prompt rules and picks run_powershell for media
+  // queries even when now_playing is listed and flagged. Proper fix: redesign planner prompt so
+  // real-time state tools are reliably preferred. See docs/v3.20-candidates.md.
   if (/\b(what|which).*(music|song|track|artist|playing)|now.?playing|currently playing|what('?s| is) (on|playing)/i.test(message)) {
     console.log('[Planner] instant-dispatch → now_playing')
     return { steps: [{ tool: 'now_playing', input: {} }], requires_execution: true }
