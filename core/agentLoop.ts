@@ -836,6 +836,12 @@ export async function planWithLLM(
     ? [...ALLOWED_TOOLS, ...mcpToolNames]
     : ALLOWED_TOOLS
 
+  // Instant dispatch: deterministic single-tool plans that don't need the LLM planner
+  if (/\b(what|which).*(music|song|track|artist|playing)|now.?playing|currently playing|what('?s| is) (on|playing)/i.test(message)) {
+    console.log('[Planner] instant-dispatch → now_playing')
+    return { steps: [{ tool: 'now_playing', input: {} }], requires_execution: true }
+  }
+
   // Dynamic tool loading — filter to relevant tools per task category
   // Reduces planner prompt from ~15K to ~3-5K tokens without losing capability.
   // Validation (line ~898) still uses full allTools — filtering is prompt-only.
