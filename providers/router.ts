@@ -369,8 +369,8 @@ export function assessComplexity(message: string): number {
 // Planner needs strong reasoning; executor needs speed; responder needs quality.
 //
 // Full fallback chains:
-//   Planner:   groq → gemini → openrouter → gemma4:e4b (Ollama)
-//   Responder: groq → gemini → openrouter → gemma4:e4b (Ollama)
+//   Planner:   groq → gemini → nvidia → openrouter → gemma4:e4b (Ollama)
+//   Responder: groq → gemini → nvidia → openrouter → gemma4:e4b (Ollama)
 //   Executor:  cerebras → groq → nvidia → gemma4:e4b (Ollama)
 //
 // IMPORTANT: Cerebras (llama3.1-8b, 8B params) is too small to follow the SOUL
@@ -429,8 +429,8 @@ export function getModelForTask(
   })
 
   // Planner + Responder: walk ALL apis in config order (handles multiple slots per provider).
-  // Cerebras/nvidia excluded — 8B models cannot follow complex SOUL-based prompts.
-  const CHAT_EXCLUDED = new Set(['cerebras', 'nvidia'])
+  // Cerebras excluded — 8B models cannot follow complex SOUL-based prompts. NVIDIA promoted to chat chain.
+  const CHAT_EXCLUDED = new Set(['cerebras'])
   if (task === 'planner' || task === 'responder') {
     let chatApis = available.filter(a => !CHAT_EXCLUDED.has(a.provider))
     // Primary provider pinning — move primary to front of chain
