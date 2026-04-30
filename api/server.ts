@@ -6756,7 +6756,7 @@ ${cognitionHint}${memoryContext}${greetingPreamble}${sessionContext}${memoryInde
     if (providerType !== 'ollama') {
       console.warn(`[Router] ${providerType} failed — falling back to Ollama`)
       try {
-        const ollamaModel = cfg.model?.activeModel || 'gemma4:e4b'
+        const ollamaModel = cfg.ollama?.model || 'gemma4:e4b'
         const ollamaMs    = getOllamaTimeout(ollamaModel) // full timeout — model may need to load
         const resp = await fetch('http://localhost:11434/api/chat', {
           method: 'POST',
