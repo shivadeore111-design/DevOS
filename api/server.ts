@@ -6504,7 +6504,7 @@ async function streamChat(
   const systemContext = `\nSYSTEM CONTEXT — use these exact paths for ANY file operations:\n- Windows username: ${_sysUser} (NOT "Aiden" — Aiden is the AI name, not the Windows user)\n- Home directory: ${_sysHome}\n- Desktop: ${require('path').join(_sysHome, 'Desktop')}\n- Documents: ${require('path').join(_sysHome, 'Documents')}\n- Downloads: ${require('path').join(_sysHome, 'Downloads')}\n`
   const _prevHash      = sessionId ? soulHashBySession.get(sessionId) : undefined
   const _ctx           = protectedContextManager.getProtectedContext()
-  const protectedBlock = buildProtectedContextBlock(_ctx, _prevHash)
+  const protectedBlock = buildProtectedContextBlock(_ctx, _prevHash, sessionId)
   if (sessionId) soulHashBySession.set(sessionId, _ctx.hash)
   const chatPrompt = `${protectedBlock ? protectedBlock + '\n\n' : ''}You are Aiden — a personal AI OS built for ${userName}. You are sharp, direct, and slightly witty. You speak like a trusted co-founder. Today: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.
 ${systemContext}

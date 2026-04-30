@@ -1,6 +1,10 @@
 import type { ProtectedContext } from './protectedContext'
 
-export function buildProtectedContextBlock(ctx: ProtectedContext, previousHash?: string): string {
+export function buildProtectedContextBlock(
+  ctx:           ProtectedContext,
+  previousHash?: string,
+  sessionId?:    string,
+): string {
   const sections: string[] = []
   const soulUnchanged = previousHash !== undefined && ctx.hash === previousHash
 
@@ -16,19 +20,24 @@ export function buildProtectedContextBlock(ctx: ProtectedContext, previousHash?:
 
   if (sections.length === 0) return ''
 
-  // C4-preview: per-turn injection decision logged to stderr
-  process.stderr.write(
-    `[ProtectedCtx] soul=${soulUnchanged ? 'REF' : (ctx.soul ? 'FULL' : 'EMPTY')}` +
-    ` hash=${ctx.hash}` +
-    ` user=${ctx.user.length}c goals=${ctx.goals.length}c` +
-    ` so=${ctx.standingOrders.length}c lessons=${ctx.lessons.length}c\n`
-  )
-
-  return [
+  const block = [
     '[PROTECTED CONTEXT — AUTHORITATIVE, REFRESHED THIS TURN]',
     '',
     sections.join('\n\n'),
     '',
     '[END PROTECTED CONTEXT]',
   ].join('\n')
+
+  // C4: structured per-turn protected-context metrics (always-on, stderr only)
+  const sidShort  = sessionId ? sessionId.slice(0, 8) : 'nosess  '
+  const soulMode  = soulUnchanged ? 'REF' : (ctx.soul ? 'FULL' : 'EMPTY')
+  const tokens    = Math.round(block.length / 4)
+  const hashShort = ctx.hash.slice(0, 8)
+  const files     = ctx.changedFiles.length > 0 ? ctx.changedFiles.join(',') : 'none'
+  process.stderr.write(
+    `[ProtectedCtx] sessionId=${sidShort} cacheHit=${soulUnchanged}` +
+    ` soul=${soulMode} tokens=${tokens} hash=${hashShort} files=${files}\n`
+  )
+
+  return block
 }

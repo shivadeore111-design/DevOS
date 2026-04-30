@@ -712,7 +712,7 @@ async function rebuildContextAfterCompaction(
 
   // Use hash-cached manager — no previousHash so SOUL always injects in full.
   const _pctx        = protectedContextManager.getProtectedContext()
-  const _pctxBlock   = buildProtectedContextBlock(_pctx)
+  const _pctxBlock   = buildProtectedContextBlock(_pctx, undefined, 'compaction')
   if (_pctxBlock) protectedContent.push(_pctxBlock)
 
   // Legacy per-file entries for any COMPACTION_PROTECTED files not covered above.
@@ -2502,7 +2502,7 @@ function responderSystem(userName: string, date: string, sessionId?: string): st
   if (sessionId) soulHashBySession.set(sessionId, _ctx.hash)
   // When soul is unchanged, prepend a compact block then the responder body.
   if (_prevHash !== undefined && _ctx.hash === _prevHash) {
-    const refBlock = buildProtectedContextBlock(_ctx, _prevHash)
+    const refBlock = buildProtectedContextBlock(_ctx, _prevHash, sessionId)
     return refBlock ? refBlock + '\n\n' + AIDEN_RESPONDER_SYSTEM(userName, date) : AIDEN_RESPONDER_SYSTEM(userName, date)
   }
   return AIDEN_RESPONDER_SYSTEM(userName, date)

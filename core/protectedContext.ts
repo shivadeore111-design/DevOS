@@ -8,7 +8,15 @@ export type ProtectedContext = {
   goals:         string
   standingOrders: string
   lessons:       string
-  hash:          string  // composite SHA-1 of all 5 file contents
+  hash:          string        // composite SHA-1 of all 5 file contents
+  changedFiles:  string[]      // files re-read from disk this call (empty = all cached)
+}
+
+export type ProtectedMetrics = {
+  totalReads:    number   // total getProtectedContext() calls
+  cacheHits:     number   // calls where no file needed re-reading
+  lastRefreshMs: number   // epoch ms of last disk read (0 = never)
+  currentHash:   string   // current composite hash
 }
 
 type FileCache = {
@@ -62,6 +70,9 @@ class ProtectedContextManager {
   }
 
   private compositeHash = ''
+  private _totalReads   = 0
+  private _cacheHits    = 0
+  private _lastRefreshMs = 0
 
   constructor() {
     this.refresh()
@@ -74,20 +85,29 @@ class ProtectedContextManager {
       const content    = readFirst(candidates)
       this.cache[key]  = { content, hash: sha1(content) }
     }
-    this.compositeHash = this._buildComposite()
+    this.compositeHash  = this._buildComposite()
+    this._lastRefreshMs = Date.now()
   }
 
   // Returns cached context, re-reading only files whose on-disk hash changed.
   getProtectedContext(): ProtectedContext {
-    let changed = false
+    this._totalReads++
+    const changedFiles: string[] = []
+
     for (const key of Object.keys(PROTECTED_FILES) as FileKey[]) {
       if (this.isStale(key)) {
         const content   = readFirst(PROTECTED_FILES[key])
         this.cache[key] = { content, hash: sha1(content) }
-        changed = true
+        changedFiles.push(key)
       }
     }
-    if (changed) this.compositeHash = this._buildComposite()
+
+    if (changedFiles.length > 0) {
+      this.compositeHash  = this._buildComposite()
+      this._lastRefreshMs = Date.now()
+    } else {
+      this._cacheHits++
+    }
 
     return {
       soul:          this.cache.soul.content,
@@ -96,6 +116,16 @@ class ProtectedContextManager {
       standingOrders:this.cache.standingOrders.content,
       lessons:       this.cache.lessons.content,
       hash:          this.compositeHash,
+      changedFiles,
+    }
+  }
+
+  getMetrics(): ProtectedMetrics {
+    return {
+      totalReads:    this._totalReads,
+      cacheHits:     this._cacheHits,
+      lastRefreshMs: this._lastRefreshMs,
+      currentHash:   this.compositeHash,
     }
   }
 
