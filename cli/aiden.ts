@@ -19,6 +19,7 @@ import { checkForUpdate, formatUpdateLine }                  from '../core/updat
 import { VERSION }                                           from '../core/version'
 import { COMMANDS, COMMAND_DETAIL, getCatalog }             from './commandCatalog'
 import type { CmdDetail }                                    from './commandCatalog'
+import { TOOL_DESCRIPTIONS }                                 from '../core/toolRegistry'
 
 // ── Constants ────────────────────────────────────────────────────────────────────
 
@@ -5252,29 +5253,9 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
 
 // ── Tab completer (prefix-first, fuzzy fallback) ──────────────────────────────────
 
-// Known tool names — kept in sync with the ALLOWED_TOOLS list in core/agentLoop.ts.
-// The completer is synchronous so we use a static list rather than a dynamic import.
-const TOOL_NAMES: string[] = [
-  'web_search', 'fetch_page', 'fetch_url', 'open_browser',
-  'browser_click', 'browser_type', 'browser_extract', 'browser_screenshot',
-  'browser_scroll', 'browser_get_url',
-  'file_read', 'file_write', 'file_list',
-  'shell_exec', 'run_python', 'run_node',
-  'code_interpreter_python', 'code_interpreter_node',
-  'system_info', 'notify', 'deep_research',
-  'get_stocks', 'get_market_data', 'get_company_info', 'social_research',
-  'mouse_move', 'mouse_click', 'keyboard_type', 'keyboard_press',
-  'screenshot', 'screen_read', 'vision_loop', 'vision_analyze', 'wait',
-  'clipboard_read', 'clipboard_write', 'window_list', 'window_focus',
-  'app_launch', 'app_close',
-  'watch_folder', 'watch_folder_list',
-  'send_file_local', 'receive_file_local',
-  'get_briefing', 'respond', 'clarify', 'todo', 'cronjob',
-  'voice_speak', 'voice_transcribe', 'voice_clone', 'voice_design',
-  'lookup_skill', 'lookup_tool_schema',
-  'spawn', 'spawn_subagent', 'swarm',
-  'ingest_youtube', 'run_agent',
-]
+// ── v3.19 Phase 1 Commit 5: derived from TOOL_DESCRIPTIONS — literal deleted ──
+// TOOL_DESCRIPTIONS is a plain object imported synchronously; no dynamic import needed.
+const TOOL_NAMES: string[] = Object.keys(TOOL_DESCRIPTIONS)
 
 // ── Live dropdown for / and @ triggers ───────────────────────────────────────
 // Renders a filtered menu below the input line; arrow-key navigable.

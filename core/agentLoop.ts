@@ -9,7 +9,8 @@
 //   STEP 3: RESPOND — LLM sees real results, streams natural language
 
 import { executeTool, TOOLS, getToolTier, detectToolCategories, getToolsForCategories, TOOL_NAMES_ONLY,
-         registryAllowedTools, registryValidTools } from './toolRegistry'
+         registryAllowedTools, registryValidTools,
+         registryNoRetrySet, registryParallelSafeSet, registrySequentialOnlySet } from './toolRegistry'
 import { loadAllRecipes, matchRecipe, executeRecipe } from './recipeEngine'
 import { livePulse }          from '../coordination/livePulse'
 import { planTool }                        from './planTool'
@@ -1844,12 +1845,8 @@ function appendLesson(lesson: string): void {
 
 // ── executeToolWithRetry — step-level retry with exponential backoff ──
 // Tools that mutate state are excluded from retry to prevent double-execution.
-export const NO_RETRY_TOOLS = new Set([
-  'shell_exec', 'run_python', 'run_node', 'notify',
-  'mouse_click', 'keyboard_type', 'keyboard_press',
-  'app_launch', 'app_close',
-  'open_browser', 'browser_extract', 'browser_screenshot', 'browser_click', 'browser_type', 'browser_scroll', 'browser_get_url',
-])
+// ── v3.19 Phase 1 Commit 5: derived from TOOL_REGISTRY[retry=false] — literal deleted ──
+export const NO_RETRY_TOOLS: Set<string> = registryNoRetrySet()
 
 async function executeToolWithRetry(tool: string, input: any, maxRetries = 2): Promise<any> {
   const retryable = !NO_RETRY_TOOLS.has(tool)
@@ -1920,22 +1917,11 @@ async function executeToolWithRetry(tool: string, input: any, maxRetries = 2): P
 // Groups consecutive tool steps into batches: parallel-safe tools are
 // batched together; sequential tools break the batch.
 
-export const PARALLEL_SAFE = new Set([
-  'web_search', 'system_info', 'get_stocks', 'get_market_data',
-  'social_research', 'fetch_url', 'fetch_page', 'get_company_info',
-  'deep_research', 'code_interpreter_python', 'code_interpreter_node',
-  'clipboard_read', 'window_list', 'watch_folder_list',
-  'get_calendar', 'read_email', 'get_natural_events', 'ingest_youtube',
-])
+// ── v3.19 Phase 1 Commit 5: derived from TOOL_REGISTRY[parallel=safe] — literal deleted ──
+export const PARALLEL_SAFE: Set<string> = registryParallelSafeSet()
 
-export const SEQUENTIAL_ONLY = new Set([
-  'file_write', 'run_python', 'run_node', 'shell_exec',
-  'open_browser', 'browser_click', 'browser_type', 'browser_extract',
-  'mouse_move', 'mouse_click', 'keyboard_type', 'keyboard_press',
-  'screenshot', 'screen_read', 'vision_loop', 'notify', 'wait',
-  'clipboard_write', 'window_focus', 'app_launch', 'app_close', 'system_volume',
-  'watch_folder',
-])
+// ── v3.19 Phase 1 Commit 5: derived from TOOL_REGISTRY[parallel=sequential] — literal deleted ──
+export const SEQUENTIAL_ONLY: Set<string> = registrySequentialOnlySet()
 
 export function buildDependencyGroups(steps: ToolStep[]): ToolStep[][] {
   const groups: ToolStep[][] = []
