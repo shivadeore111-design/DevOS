@@ -2607,6 +2607,12 @@ public class AidenVolSet {
 const externalTools: Record<string, (payload: any) => Promise<RawResult>> = {}
 const externalToolsMeta: Record<string, { source: string }> = {}
 
+// v3.19 Phase 1 — registry generation counter (Hermes run_agent.py:113,159).
+// Incremented whenever a new external tool is registered so deriver caches
+// know to recompute.  Declared here so registerExternalTool can reference it
+// before the deriver block (which appears after TOOL_REGISTRY).
+let _generation = 0
+
 export function registerExternalTool(
   name:   string,
   fn:     (input: Record<string, any>) => Promise<{ success: boolean; output: string }>,
@@ -2617,6 +2623,7 @@ export function registerExternalTool(
     return { success: r.success, output: r.output }
   }
   externalToolsMeta[name] = { source }
+  _generation++                                          // invalidate deriver caches
   if ((process.env.AIDEN_LOG_LEVEL || 'info') === 'debug') {
     console.log('[ToolRegistry] Plugin "' + source + '" registered tool: ' + name)
   }
@@ -3592,6 +3599,148 @@ export const TOOL_REGISTRY: Record<string, ToolRegistryMeta> = {
     mcp: 'excluded',     // api/mcp.ts — not in SAFE_TOOLS or DESTRUCTIVE_TOOLS
   },
 }
+
+// ── v3.19 Phase 1, Commit 2: deriver functions ───────────────────────────────
+// Inspired by Hermes run_agent.py:113,159.  Each deriver caches its result and
+// recomputes only when _generation changes (i.e. when a new external tool is
+// registered via registerExternalTool).  Callers should use these instead of
+// reading TOOL_REGISTRY directly — Commits 4-6 will swap every hand-maintained
+// list to call the appropriate deriver.
+
+/** Expose the current generation for consumers that manage their own caches. */
+export function bumpGeneration(): void { _generation++ }
+export function getGeneration():  number { return _generation }
+
+/** Build a zero-argument memoiser that recomputes whenever _generation changes. */
+function makeCache<T>(build: () => T): () => T {
+  let cached: T | undefined
+  let cachedGen = -1
+  return (): T => {
+    if (cachedGen !== _generation) { cached = build(); cachedGen = _generation }
+    return cached!
+  }
+}
+
+// ── 1. Names ──────────────────────────────────────────────────────────────────
+
+/** All core tool names (TOOL_REGISTRY keys only, excludes slash mirrors).
+ *  Replaces TOOL_NAMES_ONLY (toolRegistry.ts). */
+export const registryNames: () => string[] =
+  makeCache(() => Object.keys(TOOL_REGISTRY))
+
+// ── 2. Descriptions ───────────────────────────────────────────────────────────
+
+/** Map of name → description string.  Falls back to ''.
+ *  Replaces TOOL_DESCRIPTIONS (toolRegistry.ts). */
+export const registryDescriptions: () => Record<string, string> =
+  makeCache(() => Object.fromEntries(
+    Object.entries(TOOL_REGISTRY).map(([n, m]) => [n, m.description ?? ''])
+  ))
+
+// ── 3. Tiers ──────────────────────────────────────────────────────────────────
+
+/** Map of name → ToolTier.  Falls back to tier 1.
+ *  Replaces TOOL_TIERS (toolRegistry.ts). */
+export const registryTiers: () => Record<string, ToolTier> =
+  makeCache(() => Object.fromEntries(
+    Object.entries(TOOL_REGISTRY).map(([n, m]) => [n, m.tier ?? 1])
+  ) as Record<string, ToolTier>)
+
+// ── 4. Categories ─────────────────────────────────────────────────────────────
+
+/** Map of name → ToolCategory[].  Falls back to ['core'].
+ *  Replaces TOOL_CATEGORIES (toolRegistry.ts). */
+export const registryCategories: () => Record<string, ToolCategory[]> =
+  makeCache(() => Object.fromEntries(
+    Object.entries(TOOL_REGISTRY).map(([n, m]) => [n, m.category ?? ['core']])
+  ) as Record<string, ToolCategory[]>)
+
+// ── 5. Timeouts ───────────────────────────────────────────────────────────────
+
+/** Map of name → timeout in ms.  Falls back to 15 000 ms.
+ *  Replaces TOOL_TIMEOUTS (toolRegistry.ts). */
+export const registryTimeouts: () => Record<string, number> =
+  makeCache(() => Object.fromEntries(
+    Object.entries(TOOL_REGISTRY).map(([n, m]) => [n, m.timeoutMs ?? 15000])
+  ))
+
+// ── 6. Allowed / valid tools ──────────────────────────────────────────────────
+
+/** Complete allowed-tool list: TOOL_REGISTRY keys + registered external tools.
+ *  Replaces ALLOWED_TOOLS (agentLoop.ts:808) and VALID_TOOLS (agentLoop.ts:1521). */
+export const registryAllowedTools: () => string[] =
+  makeCache(() => [
+    ...Object.keys(TOOL_REGISTRY),
+    ...Object.keys(externalTools),
+  ])
+
+// ── 6b. Valid tools ───────────────────────────────────────────────────────────
+
+/** Valid-tool list for agent-loop routing: same data as registryAllowedTools,
+ *  kept as a separate deriver for independent traceability per call site.
+ *  Replaces VALID_TOOLS (agentLoop.ts:1521). */
+export const registryValidTools: () => string[] =
+  makeCache(() => [
+    ...Object.keys(TOOL_REGISTRY),
+    ...Object.keys(externalTools),
+  ])
+
+// ── 7. No-retry set ───────────────────────────────────────────────────────────
+
+/** Set of tools that must NOT be retried on failure (retry === false).
+ *  Replaces NO_RETRY_TOOLS (agentLoop.ts:1881). */
+export const registryNoRetrySet: () => Set<string> =
+  makeCache(() => new Set(
+    Object.entries(TOOL_REGISTRY)
+      .filter(([, m]) => m.retry === false)
+      .map(([n]) => n)
+  ))
+
+// ── 8. Parallel-safe set ──────────────────────────────────────────────────────
+
+/** Set of tools safe to execute in parallel (parallel === 'safe').
+ *  Replaces PARALLEL_SAFE (agentLoop.ts:1957). */
+export const registryParallelSafeSet: () => Set<string> =
+  makeCache(() => new Set(
+    Object.entries(TOOL_REGISTRY)
+      .filter(([, m]) => m.parallel === 'safe')
+      .map(([n]) => n)
+  ))
+
+// ── 9. Sequential-only set ────────────────────────────────────────────────────
+
+/** Set of tools that must always run sequentially (parallel === 'sequential').
+ *  Replaces SEQUENTIAL_ONLY (agentLoop.ts:1965). */
+export const registrySequentialOnlySet: () => Set<string> =
+  makeCache(() => new Set(
+    Object.entries(TOOL_REGISTRY)
+      .filter(([, m]) => m.parallel === 'sequential')
+      .map(([n]) => n)
+  ))
+
+// ── 10. MCP safe list ─────────────────────────────────────────────────────────
+
+/** Tools safe to expose via MCP (mcp === 'safe').
+ *  Replaces SAFE_TOOLS (api/mcp.ts:25). */
+export const registryMcpSafeList: () => string[] =
+  makeCache(() =>
+    Object.entries(TOOL_REGISTRY)
+      .filter(([, m]) => m.mcp === 'safe')
+      .map(([n]) => n)
+  )
+
+// ── 11. MCP destructive list ──────────────────────────────────────────────────
+
+/** Tools exposed via MCP but flagged destructive (mcp === 'destructive').
+ *  Replaces DESTRUCTIVE_TOOLS (api/mcp.ts:44). */
+export const registryMcpDestructiveList: () => string[] =
+  makeCache(() =>
+    Object.entries(TOOL_REGISTRY)
+      .filter(([, m]) => m.mcp === 'destructive')
+      .map(([n]) => n)
+  )
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 export function detectToolCategories(message: string): ToolCategory[] {
   const categories = new Set<ToolCategory>(['core'])
