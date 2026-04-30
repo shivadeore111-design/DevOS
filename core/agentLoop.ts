@@ -8,7 +8,8 @@
 //   STEP 2: EXECUTE — Code runs each tool, gets real results
 //   STEP 3: RESPOND — LLM sees real results, streams natural language
 
-import { executeTool, TOOLS, getToolTier, detectToolCategories, getToolsForCategories, TOOL_NAMES_ONLY } from './toolRegistry'
+import { executeTool, TOOLS, getToolTier, detectToolCategories, getToolsForCategories, TOOL_NAMES_ONLY,
+         registryAllowedTools, registryValidTools } from './toolRegistry'
 import { loadAllRecipes, matchRecipe, executeRecipe } from './recipeEngine'
 import { livePulse }          from '../coordination/livePulse'
 import { planTool }                        from './planTool'
@@ -42,7 +43,8 @@ import { startWorkflow, addNode, updateNode, completeWorkflow } from './workflow
 import { MAX_PARALLEL, chunkSteps, hasParallelism } from './parallelExecutor'
 import { sanitizeMessages }  from './messageValidator'
 import { repairToolName }    from './toolNameRepair'
-import { SLASH_MIRROR_TOOL_NAMES } from './slashAsTool'
+// SLASH_MIRROR_TOOL_NAMES import removed in Commit 4 — slash mirrors route
+// through slashAsTool.ts injection path, not the planner's allowed-tool list.
 import { repairPlanResponse }      from './planResponseRepair'
 import * as nodeFs             from 'fs'
 import * as nodePath           from 'path'
@@ -754,29 +756,10 @@ async function rebuildContextAfterCompaction(
   return [protectedMessage, ...contextHistory]
 }
 
-// ── v3.19 Phase 1: exported for registryValidator — deleted in Commit 7 ──────
-export const ALLOWED_TOOLS: string[] = [
-  'web_search', 'fetch_page', 'open_browser', 'browser_extract',
-  'browser_click', 'browser_type', 'browser_screenshot', 'browser_scroll', 'browser_get_url',
-  'file_write', 'file_read',
-  'file_list', 'shell_exec', 'run_python', 'run_node',
-  'system_info', 'notify', 'deep_research', 'get_stocks',
-  'get_market_data', 'get_company_info', 'social_research',
-  'mouse_move', 'mouse_click', 'keyboard_type', 'keyboard_press',
-  'screenshot', 'screen_read', 'vision_loop', 'wait',
-  'code_interpreter_python', 'code_interpreter_node',
-  'clipboard_read', 'clipboard_write', 'window_list', 'window_focus',
-  'app_launch', 'app_close', 'system_volume',
-  'watch_folder', 'watch_folder_list',
-  'send_file_local', 'receive_file_local',
-  'get_briefing',
-  'respond',
-  'clarify', 'todo', 'cronjob', 'vision_analyze',
-  'voice_speak', 'voice_transcribe', 'voice_clone', 'voice_design',
-  'lookup_skill', 'lookup_tool_schema',
-  'spawn', 'spawn_subagent', 'swarm',
-  ...SLASH_MIRROR_TOOL_NAMES,
-]
+// ── v3.19 Phase 1 Commit 4: derived from TOOL_REGISTRY — literal deleted ──────
+// Slash-mirror tools (status, analytics, etc.) are intentionally excluded here;
+// they route through the slashAsTool.ts injection path, not the planner.
+export const ALLOWED_TOOLS: string[] = registryAllowedTools()
 
 // ── STEP 1: planWithLLM ────────────────────────────────────────
 
@@ -1519,26 +1502,8 @@ Output ONLY valid JSON, nothing else:`
 // ── Plan validation ────────────────────────────────────────────
 // Called after planWithLLM — rejects structurally bad plans before execution.
 
-export const VALID_TOOLS = [
-  'web_search', 'fetch_page', 'fetch_url', 'open_browser', 'browser_extract',
-  'browser_click', 'browser_type', 'browser_screenshot', 'browser_scroll', 'browser_get_url',
-  'file_write', 'file_read',
-  'file_list', 'shell_exec', 'run_python', 'run_node', 'run_powershell',
-  'system_info', 'notify', 'deep_research', 'get_stocks', 'run_agent', 'git_commit',
-  'git_push', 'get_market_data', 'get_company_info',
-  'mouse_move', 'mouse_click', 'keyboard_type', 'keyboard_press',
-  'screenshot', 'screen_read', 'vision_loop', 'wait',
-  'code_interpreter_python', 'code_interpreter_node',
-  'clipboard_read', 'clipboard_write', 'window_list', 'window_focus',
-  'app_launch', 'app_close', 'system_volume',
-  'watch_folder', 'watch_folder_list',
-  'send_file_local', 'receive_file_local',
-  'clarify', 'todo', 'cronjob', 'vision_analyze',
-  'voice_speak', 'voice_transcribe', 'voice_clone', 'voice_design',
-  'lookup_skill', 'lookup_tool_schema',
-  'spawn', 'spawn_subagent', 'swarm',
-  ...SLASH_MIRROR_TOOL_NAMES,
-]
+// ── v3.19 Phase 1 Commit 4: derived from TOOL_REGISTRY — literal deleted ──────
+export const VALID_TOOLS: string[] = registryValidTools()
 
 interface ValidationResult {
   valid:    boolean
