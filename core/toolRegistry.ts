@@ -37,6 +37,7 @@ import { permissionSystem } from './permissionSystem'
 import { extractYouTubeTranscript } from './youtubeTranscript'
 import { knowledgeBase }            from './knowledgeBase'
 import { getCalendarEvents }        from './tools/calendarTool'
+import { getNowPlaying }            from './tools/nowPlaying'
 import { readGmail, sendGmail }     from './tools/gmailTool'
 import { loadConfig }               from '../providers/index'
 import {
@@ -916,6 +917,13 @@ export const TOOLS: Record<string, (payload: any, ctx?: ToolContext) => Promise<
         { shell: 'powershell.exe', timeout: 15000 }
       )
       return { success: true, output: stdout.trim() }
+    } catch (e: any) { return { success: false, output: '', error: e.message } }
+  },
+
+  now_playing: async () => {
+    try {
+      const result = await getNowPlaying()
+      return { success: true, output: JSON.stringify(result) }
     } catch (e: any) { return { success: false, output: '', error: e.message } }
   },
 
@@ -2799,6 +2807,7 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   run_python:              'Execute a Python script and return stdout/stderr',
   run_node:                'Execute Node.js/JavaScript code and return the output',
   system_info:             'Get system hardware and OS information (CPU, RAM, disk, OS)',
+  now_playing:             'Get the currently playing media (song, artist, app). Calls Windows MediaSession live — always reflects real-time state. Use whenever the user asks what is playing, whether music is paused, or what track is on.',
   notify:                  'Send a desktop notification to the user',
   get_stocks:              'Get top gainers, losers, or most active stocks from NSE/BSE',
   get_market_data:         'Get real-time price, change%, and volume for a stock symbol',
@@ -2887,6 +2896,7 @@ const TOOL_TIERS: Record<string, ToolTier> = {
   get_company_info:        1,
   social_research:         1,
   system_info:             1,
+  now_playing:             1,
   notify:                  1,
   wait:                    1,
   get_briefing:            1,
@@ -3029,6 +3039,7 @@ const TOOL_CATEGORIES: Record<string, ToolCategory[]> = {
   get_natural_events:      ['data'],
   notify:                  ['system'],
   system_info:             ['system'],
+  now_playing:             ['system'],
   wait:                    ['system', 'browser', 'screen'],
   clipboard_read:          ['system', 'code'],
   clipboard_write:         ['system', 'code'],
@@ -3411,6 +3422,13 @@ export const TOOL_REGISTRY: Record<string, ToolRegistryMeta> = {
     tier: 1, category: ['system'],
     parallel: 'safe',    // agentLoop.ts:1957 PARALLEL_SAFE
     mcp: 'safe',         // api/mcp.ts:25
+  },
+  now_playing: {
+    description: 'Get the currently playing media (song, artist, app). Calls Windows MediaSession live — always reflects real-time state. Use whenever the user asks what is playing, whether music is paused, or what track is on.',
+    tier: 1, category: ['system'],
+    parallel: 'safe',    // read-only, no side effects
+    mcp: 'safe',
+    timeoutMs: 5000,
   },
   notify: {
     description: 'Send a desktop notification to the user',
