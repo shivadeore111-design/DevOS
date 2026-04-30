@@ -1,12 +1,18 @@
 // core/registryValidator.ts
-// v3.19 Phase 1, Commit 3 (amended) — content-drift validator.
+// v3.19 Phase 1, Commit 7 — throw-mode registry invariant guard.
 //
-// Imports every hand-maintained tool-name list that still exists in the
-// codebase and diffs each one against TOOL_REGISTRY / TOOLS.  Emits a
-// [RegistryValidator] WARN line for every mismatch so drift is visible in
-// server startup output before Commits 4-7 rewire the call sites.
+// All 13 hand-maintained tool-name lists have been replaced with
+// TOOL_REGISTRY-derived values in Commits 4-6.  This validator now THROWS
+// on any remaining drift so startup fails fast if a future edit introduces
+// a hand-maintained list that diverges from TOOL_REGISTRY.
 //
-// Commit 7 deletes the 13 legacy lists and this file becomes a no-op stub.
+// Checks retained (all should produce zero findings):
+//   1. ALLOWED_TOOLS vs TOOL_REGISTRY
+//   2. VALID_TOOLS vs TOOL_REGISTRY
+//   3. MCP SAFE_TOOLS — entries with no handler
+//   4. MCP DESTRUCTIVE_TOOLS — entries with no handler
+//   5. CLI TOOL_NAMES count vs TOOL_DESCRIPTIONS
+//   6-8. PARALLEL_SAFE / SEQUENTIAL_ONLY / NO_RETRY_TOOLS vs TOOL_REGISTRY metadata
 
 import { TOOL_REGISTRY, TOOL_DESCRIPTIONS, TOOLS }            from './toolRegistry'
 import { ALLOWED_TOOLS, VALID_TOOLS,
@@ -23,13 +29,17 @@ function readSrc(rel: string): string {
   try { return fs.readFileSync(path.join(ROOT, rel), 'utf-8') } catch { return '' }
 }
 
+const _violations: string[] = []
+
 function warn(msg: string): void {
+  _violations.push(msg)
   console.warn(`[RegistryValidator] WARN ${msg}`)
 }
 
 // ── main ─────────────────────────────────────────────────────────────────────
 
 export function validateRegistry(): void {
+  _violations.length = 0  // reset for idempotent calls
   const registryKeys  = new Set(Object.keys(TOOL_REGISTRY))
   const toolHandlers  = new Set(Object.keys(TOOLS))
   const descKeys      = Object.keys(TOOL_DESCRIPTIONS)
@@ -130,5 +140,14 @@ export function validateRegistry(): void {
   if (extraNoRetry.length > 0) {
     warn(`NO_RETRY_TOOLS has ${extraNoRetry.length} entries not in TOOL_REGISTRY: ` +
          extraNoRetry.join(', '))
+  }
+
+  // ── Throw on any violations ────────────────────────────────────────────────
+  if (_violations.length > 0) {
+    throw new Error(
+      `[RegistryValidator] ${_violations.length} registry invariant(s) violated — ` +
+      `fix before deploying:\n` +
+      _violations.map((v, i) => `  ${i + 1}. ${v}`).join('\n')
+    )
   }
 }
