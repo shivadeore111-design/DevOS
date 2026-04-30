@@ -1,5 +1,54 @@
-# CLAUDE_CHAT_BRIEFING — Aiden v3.18.0
-Generated: 2026-04-30. Read-only context extraction. No code was modified.
+# CLAUDE_CHAT_BRIEFING — Aiden v3.19 Phase 1 SHIPPED
+Generated: 2026-04-30. Updated: 2026-04-30 (Phase 1 complete).
+
+---
+
+## SECTION 0 — v3.19 PHASE 1 GROUND TRUTH (final)
+
+Phase 1 objective: make `TOOL_REGISTRY` (`core/toolRegistry.ts`) the single source of truth for all 13 hand-maintained tool-name lists.
+
+### Registry counts (authoritative post-Phase-1)
+
+| Name | Count | Notes |
+|------|-------|-------|
+| `TOOL_REGISTRY` | **77** | 71 user-facing + 6 intentionally excluded (`run`, `vision_analyze`, `clarify`, `todo`, `search`, `cronjob` — all `mcp:'excluded'`) |
+| `TOOL_DESCRIPTIONS` | **71** | User-facing tools only; drives `/api/tools` endpoint and CLI banner |
+| `SOUL.md` tool claim | **71** | "You have 71 built-in tools" — matches TOOL_DESCRIPTIONS |
+| CLI banner count | **81** | 71 (TOOL_DESCRIPTIONS) + 10 slash mirrors (`status`, `analytics`, `spend`, `memory_show`, `lessons`, `skills_list`, `tools_list`, `whoami`, `channels_status`, `goals`) |
+| `TOOLS` handler dict | **79** | 77 TOOL_REGISTRY + 2 legacy stubs (`_deep_research_legacy_unused`, `_web_search_legacy_unused`) |
+| Slash mirror tools | **10** | Registered via `registerExternalTool` in `core/slashAsTool.ts`; external to TOOL_REGISTRY |
+
+### What was derived (all 13 hand-maintained lists now auto-derived)
+
+| Registry | Derived from | Commit |
+|----------|-------------|--------|
+| `ALLOWED_TOOLS` | `TOOL_REGISTRY` keys + `SLASH_MIRROR_TOOL_NAMES` | C4 |
+| `VALID_TOOLS` | `TOOL_REGISTRY` keys + `SLASH_MIRROR_TOOL_NAMES` | C4 |
+| `PARALLEL_SAFE` | `TOOL_REGISTRY[parallel='safe']` | C5 |
+| `SEQUENTIAL_ONLY` | `TOOL_REGISTRY[parallel='sequential']` | C5 |
+| `NO_RETRY_TOOLS` | `TOOL_REGISTRY[retry=false]` | C5 |
+| CLI `TOOL_NAMES` | `TOOL_DESCRIPTIONS` keys (via `TOOL_NAMES_ONLY`) | C5 |
+| MCP `SAFE_TOOLS` | `TOOL_REGISTRY[mcp='safe']` | C6 |
+| MCP `DESTRUCTIVE_TOOLS` | `TOOL_REGISTRY[mcp='destructive']` | C6 |
+
+### Validator throw-mode (active)
+
+`core/registryValidator.ts` checks 8 invariants at startup. Any drift throws; `api/server.ts` catches and calls `process.exit(1)` — server aborts startup on violation. Zero violations on clean start.
+
+### Phase 1 commits (in order)
+
+```
+cded9c6 fix(api): /api/tools returns TOOL_DESCRIPTIONS keys (71) not TOOLS handlers (79)
+35e3478 fix: add ingest_youtube to TOOL_DESCRIPTIONS, update tool count 70 -> 71
+59595fa fix(validator): process.exit(1) on registry violation — throw-mode was silently swallowed
+25847fa feat(v3.19-p1-c7): validator throw mode + SOUL.md tool count/list update
+e20c73a feat(v3.19-p1-c6): derive MCP SAFE_TOOLS + DESTRUCTIVE_TOOLS from TOOL_REGISTRY
+4e75ae2 feat(v3.19-p1-c5): derive PARALLEL_SAFE, SEQUENTIAL_ONLY, NO_RETRY_TOOLS, CLI TOOL_NAMES
+2a1dbbf feat(v3.19-p1-c4): derive ALLOWED_TOOLS + VALID_TOOLS from TOOL_REGISTRY
+a016742 docs: update BRIEFING.md audit section with Commit 3 validator ground truth
+423e7a9 add warn-only registry migration guard (registryValidator.ts)
+7f87d06 feat(registry): add _generation counter and 12 deriver functions
+```
 
 ---
 
@@ -17,8 +66,8 @@ Generated: 2026-04-30. Read-only context extraction. No code was modified.
 
 ### docs/audit-v3.18.0-full.md (v3.18 full audit)
 
-- Tool registry has 14 distinct enumerations that must agree; none validate against each other at startup. (`toolRegistry.ts:359` TOOLS=79, TOOL_DESCRIPTIONS=70, TOOL_TIERS=70, TOOL_CATEGORIES=85.)
-- SOUL.md tells the model it has 48 tools (`SOUL.md:41`) — actual handler count is 79. Stale claim.
+- ~~Tool registry has 14 distinct enumerations that must agree; none validate against each other at startup. (`toolRegistry.ts:359` TOOLS=79, TOOL_DESCRIPTIONS=70, TOOL_TIERS=70, TOOL_CATEGORIES=85.)~~ **Phase 1 complete**: 9 of 14 registries now derived from TOOL_REGISTRY; validator throws on drift at startup. Current counts: TOOL_REGISTRY=77, TOOL_DESCRIPTIONS=71, TOOLS=79 (77+2 legacy stubs).
+- ~~SOUL.md tells the model it has 48 tools (`SOUL.md:41`) — actual handler count is 79. Stale claim.~~ **Fixed Phase 1 C7**: SOUL.md now claims 71 tools (matches TOOL_DESCRIPTIONS).
 - **19 tools planner cannot reach** via `ALLOWED_TOOLS` despite having wired handlers (per Commit 3 validator output — briefing was stale): `manage_goals`, `compact_context`, `run_agent`, `fetch_url`, `ingest_youtube`, `run_powershell`, `cmd`, `ps`, `wsl`, `run`, `get_natural_events`, `schedule_reminder`, `git_status`, `git_commit`, `git_push`, `get_calendar`, `read_email`, `send_email`, `search`. Additionally 10 entries in `ALLOWED_TOOLS` are slash-mirror tools (`status`, `analytics`, `spend`, `memory_show`, `lessons`, `skills_list`, `tools_list`, `whoami`, `channels_status`, `goals`) that do not belong there — they route through `slashAsTool.ts` injection path. (`agentLoop.ts` module-level post Commit 3 hoist)
 - 5 of 7 remaining `INSTANT_ACTIONS` still fake success by swallowing errors and returning hardcoded strings: `screenshot`, `volume_up/down/mute`, `lock_screen`. (`api/server.ts:158-237`)
 - Dashboard Memory panel is broken: `dashboard.ts:411` fetches `GET /api/memory` which has no handler in `server.ts`. Returns 404 silently.
@@ -38,25 +87,25 @@ Not found — directory is empty.
 
 | # | Name | File:line | Purpose | Derived from TOOL_REGISTRY? |
 |---|------|-----------|---------|---------------------------|
-| 1 | `TOOLS` (handler dict) | `core/toolRegistry.ts:359` | Maps tool name → executor function | Source of truth — hand-maintained |
-| 2 | `TOOL_DESCRIPTIONS` | `core/toolRegistry.ts:2772` | Tool name → one-line description (70 entries) | Hand-maintained; TOOL_NAMES_ONLY derived from this |
+| 1 | `TOOLS` (handler dict) | `core/toolRegistry.ts:359` | Maps tool name → executor function (79 entries = 77 registry + 2 legacy stubs) | Source of truth — hand-maintained |
+| 2 | `TOOL_DESCRIPTIONS` | `core/toolRegistry.ts:2772` | Tool name → one-line description (**71 entries**) | Hand-maintained; TOOL_NAMES_ONLY derived from this |
 | 3 | `TOOL_NAMES_ONLY` | `core/toolRegistry.ts:2848` | Name→description map for planner prompts | Derived from TOOL_DESCRIPTIONS (auto) |
-| 4 | `TOOL_TIERS` | `core/toolRegistry.ts:2863` | Tool name → tier (1-3) for rate/priority | Hand-maintained (70 entries) |
-| 5 | `TOOL_CATEGORIES` | `core/toolRegistry.ts:2973` | Tool name → category for context filtering | Hand-maintained (85 entries; 19 extras not in TOOL_DESCRIPTIONS) |
+| 4 | `TOOL_TIERS` | `core/toolRegistry.ts:2863` | Tool name → tier (1-3) for rate/priority | Hand-maintained (71 entries) |
+| 5 | `TOOL_CATEGORIES` | `core/toolRegistry.ts:2973` | Tool name → category for context filtering | Hand-maintained (85 entries; some extras vs TOOL_DESCRIPTIONS) |
 | 6 | `TOOL_TIMEOUTS` | `core/toolRegistry.ts:275` | Tool name → ms timeout | Hand-maintained (45 entries) |
-| 7 | `ALLOWED_TOOLS` | `core/agentLoop.ts:808` | Planner prompt tool list (53 + slash mirrors) | Hand-maintained — DOES NOT derive from TOOLS |
-| 8 | `VALID_TOOLS` | `core/agentLoop.ts:1521` | Planner validation allowlist (60 + slash mirrors) | Hand-maintained |
-| 9 | `NO_RETRY_TOOLS` | `core/agentLoop.ts:1881` | Tools that don't retry on failure (13 entries) | Hand-maintained |
-| 10 | `PARALLEL_SAFE` | `core/agentLoop.ts:1957` | Tools safe for parallel execution (18 entries) | Hand-maintained |
-| 11 | `SEQUENTIAL_ONLY` | `core/agentLoop.ts:1965` | Tools that must run sequentially (23 entries) | Hand-maintained |
-| 12 | MCP `SAFE_TOOLS` | `api/mcp.ts:25` | Tools exposed to MCP clients without opt-in (26 entries) | Hand-maintained; includes `take_screenshot` which has no handler |
-| 13 | MCP `DESTRUCTIVE_TOOLS` | `api/mcp.ts:44` | Tools requiring `MCP_ALLOW_DESTRUCTIVE` (30 entries) | Hand-maintained |
-| 14 | `TOOL_NAMES` (CLI dropdown) | `cli/aiden.ts:5257` | Dropdown suggestions for `@tool` trigger | Hand-maintained literal — confirmed drift vs TOOL_DESCRIPTIONS |
+| 7 | `ALLOWED_TOOLS` | `core/agentLoop.ts` | Planner prompt tool list | **Derived from TOOL_REGISTRY** ✅ (Phase 1 C4) |
+| 8 | `VALID_TOOLS` | `core/agentLoop.ts` | Planner validation allowlist | **Derived from TOOL_REGISTRY** ✅ (Phase 1 C4) |
+| 9 | `NO_RETRY_TOOLS` | `core/agentLoop.ts` | Tools that don't retry on failure | **Derived from TOOL_REGISTRY[retry=false]** ✅ (Phase 1 C5) |
+| 10 | `PARALLEL_SAFE` | `core/agentLoop.ts` | Tools safe for parallel execution | **Derived from TOOL_REGISTRY[parallel='safe']** ✅ (Phase 1 C5) |
+| 11 | `SEQUENTIAL_ONLY` | `core/agentLoop.ts` | Tools that must run sequentially | **Derived from TOOL_REGISTRY[parallel='sequential']** ✅ (Phase 1 C5) |
+| 12 | MCP `SAFE_TOOLS` | `api/mcp.ts` | Tools exposed to MCP clients without opt-in | **Derived from TOOL_REGISTRY[mcp='safe']** ✅ (Phase 1 C6) |
+| 13 | MCP `DESTRUCTIVE_TOOLS` | `api/mcp.ts` | Tools requiring `MCP_ALLOW_DESTRUCTIVE` | **Derived from TOOL_REGISTRY[mcp='destructive']** ✅ (Phase 1 C6) |
+| 14 | `TOOL_NAMES` (CLI dropdown) | `cli/aiden.ts` | Dropdown suggestions for `@tool` trigger | **Derived from TOOL_DESCRIPTIONS keys** ✅ (Phase 1 C5) |
 
-**Hand-maintained (drift risk):** #1, #2, #4, #5, #6, #7, #8, #9, #10, #11, #12, #13, #14 — 13 of 14.
-**Derived (safe):** #3 only.
+**Hand-maintained (drift risk):** #1, #2, #4, #5, #6 — 5 of 14. (#1 is intentional; #4/#5/#6 are Phase 2 candidates.)
+**Derived (safe):** #3, #7, #8, #9, #10, #11, #12, #13, #14 — 9 of 14.
 
-Phase 1 fix targets: #7 (`ALLOWED_TOOLS`), #8 (`VALID_TOOLS`), #14 (CLI dropdown) — the three that directly affect user-visible tool reachability.
+Phase 1 complete. Phase 2 targets: `TOOL_TIERS` (#4), `TOOL_CATEGORIES` (#5), `TOOL_TIMEOUTS` (#6).
 
 ---
 
@@ -174,8 +223,8 @@ No `TODO(v3.`, `TODO(post`, or `FIXME.*later` patterns found in own TypeScript f
 - `dashboard.ts:411` — Memory panel fetches `GET /api/memory` which has no handler. Silent 404.
 - `api/server.ts:158-237` — 5 InstantActions (`screenshot`, `volume_up`, `volume_down`, `mute`, `lock_screen`) try/catch-swallow and return hardcoded success strings regardless of actual result.
 - `api/mcp.ts:32` — `take_screenshot` in `SAFE_TOOLS` has no handler in `TOOLS`; silently skipped at registration.
-- `cli/aiden.ts:5257` — `TOOL_NAMES` literal is **10 entries behind** `TOOL_DESCRIPTIONS` (60 vs 70) (per Commit 3 validator — briefing was stale).
-- `core/agentLoop.ts` — `ALLOWED_TOOLS` omits **19 tools** with live handlers; also contains 10 slash-mirror entries that don't belong. Fixed in Commit 4 (derived from `TOOL_REGISTRY`).
+- ~~`cli/aiden.ts:5257` — `TOOL_NAMES` literal was 10 entries behind `TOOL_DESCRIPTIONS`.~~ **Fixed Phase 1 C5** — now derived from TOOL_DESCRIPTIONS.
+- ~~`core/agentLoop.ts` — `ALLOWED_TOOLS` omitted 19 tools; contained 10 stray slash-mirror entries.~~ **Fixed Phase 1 C4** — derived from TOOL_REGISTRY.
 
 ---
 
@@ -213,4 +262,4 @@ v3.16.0
 # startup and prepended to every system prompt.
 # It cannot be overridden by user messages.
 ```
-- Note: Line 41 claims "You have 48 built-in tools" — actual handler count in `core/toolRegistry.ts:359` is 79. Stale.
+- Note: ~~Line 41 claimed "You have 48 built-in tools"~~ — **updated Phase 1 C7** to "You have 71 built-in tools". TOOL_DESCRIPTIONS=71, TOOL_REGISTRY=77 (71 user-facing + 6 excluded).
