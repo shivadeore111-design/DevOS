@@ -29,6 +29,8 @@ import { knowledgeBase } from './knowledgeBase'
 import { skillTeacher }  from './skillTeacher'
 import { growthEngine }  from './growthEngine'
 import { AIDEN_RESPONDER_SYSTEM } from './aidenPersonality'
+import { protectedContextManager }   from './protectedContext'
+import { buildProtectedContextBlock } from './contextHandoff'
 import { auditTrail }             from './auditTrail'
 import { mcpClient }             from './mcpClient'
 import { unifiedMemoryRecall, buildMemoryInjection } from './memoryRecall'
@@ -54,6 +56,9 @@ import * as nodeOs             from 'os'
 // ── Pre-compact threshold ──────────────────────────────────────
 // Fire pre_compact hook when history has this many messages
 const COMPACT_THRESHOLD = 40
+
+// Per-session soul hash for Option-B protected-context injection (responder).
+const soulHashBySession = new Map<string, string>()
 
 // ── Interrupt / stop state ─────────────────────────────────────
 let currentAbortController: AbortController | null = null
@@ -705,14 +710,24 @@ async function rebuildContextAfterCompaction(
   const workspaceDir      = nodePath.join(process.cwd(), 'workspace')
   const protectedContent: string[] = []
 
-  // Read all protected files
+  // Use hash-cached manager — no previousHash so SOUL always injects in full.
+  const _pctx        = protectedContextManager.getProtectedContext()
+  const _pctxBlock   = buildProtectedContextBlock(_pctx)
+  if (_pctxBlock) protectedContent.push(_pctxBlock)
+
+  // Legacy per-file entries for any COMPACTION_PROTECTED files not covered above.
+  // (instincts.json is not in protectedContextManager — still read directly.)
   for (const filename of COMPACTION_PROTECTED) {
     try {
       const filepath = nodePath.join(workspaceDir, filename)
       if (nodeFs.existsSync(filepath)) {
         const content = nodeFs.readFileSync(filepath, 'utf-8')
         if (content.trim()) {
-          protectedContent.push(`## ${filename}\n${content.trim()}`)
+          // Skip the 5 files already in the protected block to avoid duplication.
+          const skip = ['SOUL.md','USER.md','GOALS.md','STANDING_ORDERS.md','LESSONS.md']
+          if (!skip.includes(filename)) {
+            protectedContent.push(`## ${filename}\n${content.trim()}`)
+          }
         }
       }
     } catch {}
@@ -2478,7 +2493,18 @@ function resolvePreviousOutput(
 
 // ── STEP 3: respondWithResults ────────────────────────────────
 
-function responderSystem(userName: string, date: string): string {
+function responderSystem(userName: string, date: string, sessionId?: string): string {
+  // Option-B: SOUL.md in full on first turn or when content changed on disk;
+  // reference line only on unchanged turns. AIDEN_RESPONDER_SYSTEM already
+  // calls getLiveSoul() — hash tracking here is additional cost guard.
+  const _ctx      = protectedContextManager.getProtectedContext()
+  const _prevHash = sessionId ? soulHashBySession.get(sessionId) : undefined
+  if (sessionId) soulHashBySession.set(sessionId, _ctx.hash)
+  // When soul is unchanged, prepend a compact block then the responder body.
+  if (_prevHash !== undefined && _ctx.hash === _prevHash) {
+    const refBlock = buildProtectedContextBlock(_ctx, _prevHash)
+    return refBlock ? refBlock + '\n\n' + AIDEN_RESPONDER_SYSTEM(userName, date) : AIDEN_RESPONDER_SYSTEM(userName, date)
+  }
   return AIDEN_RESPONDER_SYSTEM(userName, date)
 }
 
@@ -2586,7 +2612,7 @@ export async function respondWithResults(
     : ''
 
   const systemWithResults = toolResultsContext
-    ? `${capabilitiesSection}${entitySummary}${responderSystem(userName, date)}${responseSkillContext}${knowledgeResponderSection}${multiGoalInstruction}
+    ? `${capabilitiesSection}${entitySummary}${responderSystem(userName, date, sessionId)}${responseSkillContext}${knowledgeResponderSection}${multiGoalInstruction}
 
 YOU JUST RAN THESE TOOLS AND GOT THESE RESULTS:
 ${toolResultsContext}
@@ -2599,7 +2625,7 @@ CRITICAL RULES FOR YOUR RESPONSE:
 - If system_info returned hardware data, show the data
 - Be direct: show the actual output, then provide context if needed
 - If a tool failed, say it failed and why`
-    : `${capabilitiesSection}${entitySummary}${responderSystem(userName, date)}${responseSkillContext}${knowledgeResponderSection}${multiGoalInstruction}`
+    : `${capabilitiesSection}${entitySummary}${responderSystem(userName, date, sessionId)}${responseSkillContext}${knowledgeResponderSection}${multiGoalInstruction}`
 
   const userContent = executionSummary
     ? `User asked: "${originalMessage}"\n\nReal execution results:\n${executionSummary}\n\nRespond naturally based on these real results only. Show the actual output, not a description of it.${depthInstruction}${memSection}`

@@ -8,32 +8,13 @@
 // Single source of truth for personality, tone, and capability declarations.
 // All system prompts across agentLoop.ts and server.ts reference this.
 
-import fs   from 'fs'
-import path from 'path'
+import { protectedContextManager } from './protectedContext'
 
-// ── Workspace root — same logic as api/server.ts ──────────────
-// In Electron: AIDEN_USER_DATA = %APPDATA%/devos-ai
-// In direct dev (npm run dev): process.cwd() = project root
-const SOUL_WORKSPACE_ROOT = process.env.AIDEN_USER_DATA || process.cwd()
-
-// ── Load SOUL.md at startup ────────────────────────────────────
-function loadSoul(): string {
-  try {
-    // Primary: workspace/SOUL.md (installed Electron app location)
-    const wsPath = path.join(SOUL_WORKSPACE_ROOT, 'workspace', 'SOUL.md')
-    if (fs.existsSync(wsPath)) {
-      return fs.readFileSync(wsPath, 'utf-8')
-    }
-    // Fallback: SOUL.md at root (direct npm run dev, cwd = project root)
-    const rootPath = path.join(process.cwd(), 'SOUL.md')
-    if (fs.existsSync(rootPath)) {
-      return fs.readFileSync(rootPath, 'utf-8')
-    }
-  } catch {}
-  return ''
+// ── Live SOUL.md accessor — reads from hash-cached ProtectedContextManager.
+// Never frozen: always reflects the current on-disk content.
+export function getLiveSoul(): string {
+  return protectedContextManager.getProtectedContext().soul
 }
-
-export const SOUL = loadSoul()
 
 // ── Tool list ─────────────────────────────────────────────────
 // Keep in sync with TOOLS in toolRegistry.ts
@@ -145,19 +126,11 @@ Good: "I have 48 built-in tools: web_search, file_write, run_python... [lists re
   group chats and external communications.
 `.trim()
 
-// ── Stream chat system prompt (no tools available) ────────────
-
-export const AIDEN_STREAM_SYSTEM = `${SOUL ? SOUL + '\n\n' : ''}${AIDEN_IDENTITY}
-
-You are in direct chat mode — no tools are running right now.
-Answer from your knowledge. Be concise and direct.
-If the question needs real-time data (weather, stocks, news) — tell the user to
-rephrase as a task (e.g. "search for..." or "get me the latest...") and you will
-execute the right tool automatically.`
-
 // ── Responder system prompt (post-execution) ──────────────────
 
-export const AIDEN_RESPONDER_SYSTEM = (userName: string, date: string): string => `${SOUL ? SOUL + '\n\n' : ''}${AIDEN_IDENTITY}
+export const AIDEN_RESPONDER_SYSTEM = (userName: string, date: string): string => {
+  const soul = getLiveSoul()
+  return `${soul ? soul + '\n\n' : ''}${AIDEN_IDENTITY}
 
 You just executed real tools and have their actual output.
 Current date: ${date}
@@ -169,3 +142,4 @@ REPORT RESULTS:
 - If multiple steps ran: summarize the outcome, not each individual step
 - If a step failed: acknowledge it clearly and explain what worked
 - For research tasks: analyze and synthesize — don't just re-paste the raw data`
+}

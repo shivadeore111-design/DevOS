@@ -48,7 +48,8 @@ import { validateMultiGoalCoverage } from '../core/multiGoalValidator'
 import { TOOL_DESCRIPTIONS } from '../core/toolRegistry'
 import { runReActLoop, ReActStep }                                 from '../core/reactLoop'
 import { scheduler, initReminderScheduler }                        from '../core/scheduler'
-import { AIDEN_STREAM_SYSTEM, SOUL as AIDEN_SOUL }      from '../core/aidenPersonality'
+import { protectedContextManager }   from '../core/protectedContext'
+import { buildProtectedContextBlock } from '../core/contextHandoff'
 import { checkVoiceAvailable, recordAudio, transcribeAudio } from '../core/voiceInput'
 import { speak, checkTTSAvailable }                    from '../core/voiceOutput'
 import type { AgentPlan, StepResult, ToolStep }        from '../core/agentLoop'
@@ -341,6 +342,11 @@ function handleChatError(
 
 // Workspace root — AIDEN_USER_DATA in packaged Electron, cwd in dev
 const WORKSPACE_ROOT = process.env.AIDEN_USER_DATA || process.cwd()
+
+// Per-session soul hash for Option-B protected-context injection.
+// First turn: undefined → full SOUL inject. Subsequent turns: compare → emit
+// reference line when unchanged, re-inject when SOUL.md edited on disk.
+const soulHashBySession = new Map<string, string>()
 
 // ── Workspace bootstrap — create default dirs + files on every boot ──────────
 function initWorkspaceDefaults(): void {
@@ -6490,34 +6496,18 @@ async function streamChat(
     if (idx) memoryIndex = `\n\nMEMORY INDEX (topics you've learned about this user — use as background, not to recite):\n${idx}`
   } catch {}
 
-  // [Aiden] System prompt v8 — SOUL.md + USER.md + STANDING_ORDERS injected
-  // Resolve real Windows username and home directory to prevent LLM from using "Aiden" as username
+  // [Aiden] System prompt v9 — per-turn protected context (Option B hash-aware)
+  // SOUL.md injected in full on first turn or when content changes; reference
+  // line only when hash matches previous turn. USER/GOALS/SO/LESSONS always full.
   const _sysUser   = process.env.USERNAME || process.env.USER || require('os').userInfo().username || 'User'
   const _sysHome   = require('os').homedir()
   const systemContext = `\nSYSTEM CONTEXT — use these exact paths for ANY file operations:\n- Windows username: ${_sysUser} (NOT "Aiden" — Aiden is the AI name, not the Windows user)\n- Home directory: ${_sysHome}\n- Desktop: ${require('path').join(_sysHome, 'Desktop')}\n- Documents: ${require('path').join(_sysHome, 'Documents')}\n- Downloads: ${require('path').join(_sysHome, 'Downloads')}\n`
-  const soulPrefix = AIDEN_SOUL ? AIDEN_SOUL + '\n\n' : ''
-  const userMdPath = path.join(WORKSPACE_ROOT, 'workspace', 'USER.md')
-  let userProfile = ''
-  if (fs.existsSync(userMdPath)) {
-    const raw = fs.readFileSync(userMdPath, 'utf8').trim()
-    if (raw && raw !== '# User Profile\nName: User' && raw !== '# User Profile') {
-      userProfile = '\nUSER PROFILE (read this — it describes the person you are talking to):\n' + raw + '\n'
-    }
-  }
-  if (!userProfile) {
-    // Fallback: at minimum tell Aiden the user's name from config
-    const cfg = loadConfig()
-    const name = cfg.user?.name || process.env.USER_NAME || userName
-    if (name && name !== 'there' && name !== 'User') {
-      userProfile = `\nUSER PROFILE:\nName: ${name}\n`
-    }
-  }
-  const soPath = path.join(WORKSPACE_ROOT, 'workspace', 'STANDING_ORDERS.md')
-  const standingOrders = fs.existsSync(soPath)
-    ? '\n\nSTANDING ORDERS — follow always:\n' + fs.readFileSync(soPath, 'utf-8')
-    : ''
-  const chatPrompt = `${soulPrefix}You are Aiden — a personal AI OS built for ${userName}. You are sharp, direct, and slightly witty. You speak like a trusted co-founder. Today: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.
-${userProfile}${systemContext}
+  const _prevHash      = sessionId ? soulHashBySession.get(sessionId) : undefined
+  const _ctx           = protectedContextManager.getProtectedContext()
+  const protectedBlock = buildProtectedContextBlock(_ctx, _prevHash)
+  if (sessionId) soulHashBySession.set(sessionId, _ctx.hash)
+  const chatPrompt = `${protectedBlock ? protectedBlock + '\n\n' : ''}You are Aiden — a personal AI OS built for ${userName}. You are sharp, direct, and slightly witty. You speak like a trusted co-founder. Today: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}.
+${systemContext}
 HARD RULES — never violate:
 - Never say "As an AI language model...", "I'm here to assist", "Certainly!", "Great question!", "Of course!"
 - Never say "key findings from our research", "as per your request I have written", "here is a comparison of", "verdict:", "recommendation:" in a generic reply
@@ -6538,7 +6528,7 @@ IDENTITY — you are NOT a static pre-trained model. You have active living syst
 - Growth Engine: tracks failures, learns from them, improves over time
 - XP & Leveling: gains experience, streaks, and levels up
 When asked about capabilities or learning, be accurate. NEVER say you are just a pre-trained model that cannot learn.
-${cognitionHint}${firstMessageContext}${memoryContext}${greetingPreamble}${sessionContext}${memoryIndex}${standingOrders}`
+${cognitionHint}${firstMessageContext}${memoryContext}${greetingPreamble}${sessionContext}${memoryIndex}`
 
   const msgs = [
     { role: 'system', content: chatPrompt },
