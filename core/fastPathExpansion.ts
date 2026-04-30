@@ -4,6 +4,7 @@
 // ============================================================
 
 // core/fastPathExpansion.ts — Phase 5 of Prompt 10.
+// v3.19 C3: action intents are never fast-pathed (they need the planner).
 //
 // Classifies messages that can be answered directly by streamChat without
 // going through the planner, cutting 2–8s of planner latency for ~60% of
@@ -15,6 +16,8 @@
 //   - Asks for short creative output (joke, quote, haiku)
 //   - Does NOT contain signals for file I/O, code execution, web search,
 //     git, screen control, or multi-step planning keywords.
+
+import { isActionIntent } from './actionVerbDetector'
 
 // ── Patterns that indicate a tool-less, plannable-free response ──────────────
 
@@ -63,6 +66,9 @@ const PLANNER_REQUIRED_PATTERNS: RegExp[] = [
  */
 export function matchFastPath(message: string): boolean {
   const trimmed = message.trim()
+
+  // Action intents always need the planner — never fast-path them
+  if (isActionIntent(trimmed)) return false
 
   // Very short messages are usually conversational
   if (trimmed.length < 20 && !/\b(run|exec|create|write|search|find|git)\b/i.test(trimmed)) {

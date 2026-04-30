@@ -49,6 +49,7 @@ import { repairToolName }    from './toolNameRepair'
 // SLASH_MIRROR_TOOL_NAMES import removed in Commit 4 — slash mirrors route
 // through slashAsTool.ts injection path, not the planner's allowed-tool list.
 import { repairPlanResponse }      from './planResponseRepair'
+import { isActionIntent, detectActionVerb } from './actionVerbDetector'
 import * as nodeFs             from 'fs'
 import * as nodePath           from 'path'
 import * as nodeOs             from 'os'
@@ -1399,16 +1400,16 @@ Output ONLY valid JSON, nothing else:`
   }
 
   if (!parsed) {
-    console.warn('[Planner] All LLM attempts failed — respond fallback')
-    return {
-      goal:               message,
+    // Don't return early — let FORCE_RESPOND_TEST hook and PlannerGuard process the fallback plan
+    console.warn('[Planner] All LLM attempts failed — respond fallback (going through guard)')
+    parsed = {
+      plan:               [{ step: 1, tool: 'respond', input: { message: "I'm not sure how to help with that right now. Could you rephrase your request." }, description: 'Fallback response' }],
       requires_execution: true,
-      plan:               [{ step: 1, tool: 'respond', input: { message: "I'm not sure how to help with that right now. Could you rephrase your request?" }, description: 'Fallback response' }],
-      phases:             [],
+      goal:               message,
     }
   }
 
-  // Guard against null/empty plan object
+  // Guard against null/empty plan object — direct_response path bypasses guard (no action tools involved)
   if (!parsed.plan && !parsed.steps) {
     return {
       goal:               message,
@@ -1461,6 +1462,7 @@ Output ONLY valid JSON, nothing else:`
     phases:             taskPlan.phases,
   }
 
+
   // Validate before returning — log warnings, strip hard-invalid steps
   const validation = validatePlan(candidatePlan)
   if (validation.warnings.length > 0) {
@@ -1509,6 +1511,59 @@ Output ONLY valid JSON, nothing else:`
       }
     } catch (e: any) {
       console.warn(`[Planner] Retry failed: ${e.message}`)
+    }
+  }
+
+  // ── PlannerGuard: reject respond-only plans for action intents ──────────
+  const isRespondOnly = candidatePlan.plan.length === 1 && candidatePlan.plan[0].tool === 'respond'
+  if (isRespondOnly && isActionIntent(message)) {
+    const verb = detectActionVerb(message)
+    process.stderr.write(
+      `[PlannerGuard] rejected respond-only plan for action intent: verb='${verb}' message='${message.slice(0, 60)}'\n`
+    )
+    const guardRetryMessages = [
+      ...messages,
+      { role: 'assistant' as const, content: JSON.stringify({ plan: candidatePlan.plan }).slice(0, 300) },
+      {
+        role: 'user' as const,
+        content: `PLAN REJECTED: User intent is action (${verb}). You returned respond-only. Generate a plan with concrete tool calls.`,
+      },
+    ]
+    try {
+      const guardRetryRaw = await callLLM(
+        guardRetryMessages.map(m => `${m.role}: ${m.content}`).join('\n'),
+        curApiKey, curModel, curProvider,
+      )
+      const guardMatch = guardRetryRaw.replace(/```json\s*/g, '').replace(/```\s*/g, '').match(/\{[\s\S]*\}/)
+      if (!guardMatch) {
+        process.stderr.write(`[PlannerGuard] retry returned no JSON (providers exhausted) for verb='${verb}'\n`)
+      }
+      if (guardMatch) {
+        const guardParsed  = JSON.parse(guardMatch[0])
+        const guardRawPlan = (guardParsed.plan || guardParsed.steps || []) as any[]
+        const guardValid   = guardRawPlan.filter((s: any) => allTools.includes(s.tool))
+        const guardNorm    = guardValid.map((s: any, idx: number) => ({
+          step:        s.step        ?? (idx + 1),
+          tool:        s.tool        || '',
+          input:       s.input       || s.args || {},
+          description: s.description || '',
+        }))
+        const guardOrdered = fixStepOrdering(guardNorm)
+        const stillRespondOnly = guardOrdered.length === 1 && guardOrdered[0].tool === 'respond'
+        if (guardOrdered.length > 0 && !stillRespondOnly) {
+          candidatePlan.plan               = guardOrdered
+          candidatePlan.requires_execution = true
+          process.stderr.write(`[PlannerGuard] retry succeeded: ${guardOrdered.length} tool step(s) for verb='${verb}'\n`)
+        } else {
+          process.stderr.write(`[PlannerGuard] retry still respond-only — emitting diagnostic for verb='${verb}'\n`)
+          candidatePlan.plan               = []
+          candidatePlan.requires_execution = false
+          candidatePlan.direct_response    =
+            `Planner failed to emit tool call for action intent after retry. User asked: '${message}'`
+        }
+      }
+    } catch (e: any) {
+      process.stderr.write(`[PlannerGuard] retry threw: ${e.message}\n`)
     }
   }
 
