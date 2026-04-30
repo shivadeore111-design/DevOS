@@ -2847,6 +2847,7 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   swarm:                   'Run N isolated subagents on the same task in parallel and aggregate their answers via voting or synthesis. Use for high-confidence research where multiple independent perspectives reduce error.',
   send_file_local:         'Send a file to another device on the local network via LocalSend (op: discover | send)',
   receive_file_local:      'Wait for an incoming LocalSend file transfer on the local network',
+  ingest_youtube:          'Download and ingest a YouTube video into memory: transcribes audio, extracts metadata, and stores as a searchable memory entry.',
 }
 
 // ── N+28: TOOL_NAMES_ONLY ──────────────────────────────────────
@@ -3598,6 +3599,7 @@ export const TOOL_REGISTRY: Record<string, ToolRegistryMeta> = {
     parallel: 'never',   // agentLoop.ts:1957 — not in PARALLEL_SAFE
     mcp: 'excluded',     // api/mcp.ts — not in SAFE_TOOLS or DESTRUCTIVE_TOOLS
   },
+
 }
 
 // ── v3.19 Phase 1, Commit 2: deriver functions ───────────────────────────────
