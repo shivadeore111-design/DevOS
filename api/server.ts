@@ -5726,12 +5726,14 @@ export function startApiServer(portArg?: number): Express {
     console.log('[Startup] Tool count:', Object.keys(TOOL_DESCRIPTIONS).length)
   }
 
-  // v3.19 Phase 1: warn if hand-maintained list content diverges from TOOL_REGISTRY
+  // v3.19 Phase 1 Commit 7: throw-mode — re-throw so server FAILS to start on drift
   try {
     const { validateRegistry } = require('../core/registryValidator')
     validateRegistry()
   } catch (e: any) {
-    console.warn('[Startup] registryValidator error:', e.message)
+    console.error('[Startup] FATAL — registry invariant violated. Fix before deploying:')
+    console.error(e.message)
+    process.exit(1)
   }
 
   // ── Startup health check ─────────────────────────────────────
