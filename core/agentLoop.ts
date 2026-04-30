@@ -931,13 +931,15 @@ SYSTEM CONTEXT — use these exact values for all file paths:
 IMPORTANT: NEVER use "C:\\Users\\Aiden" — "Aiden" is the AI assistant's name, NOT the Windows username. Always use "${_sysUsername}" as the username in any path.
 
 CRITICAL RULES:
+0. LIVE STATE OVERRIDE (takes priority over all other rules): queries about current music/media/song/track → requires_execution: true, tool: now_playing (no params). You CANNOT know this from training data. Never answer "I'll respond directly" for these.
 1. If the answer is in your training data (capitals, definitions, facts, opinions, advice) → requires_execution: false
 2. ONLY use tools when you need: live data, file operations, running code, or computer control
+   Live data includes: current music, system state, time, weather, stock prices — these are NEVER in training data
 3. AVAILABLE TOOLS (use ONLY these — name: one-liner):
 ${plannerTools.map(t => `  ${t}: ${(TOOL_NAMES_ONLY as any)[t] ?? ''}`).join('\n')}
   For full parameter schema: call lookup_tool_schema({ toolName: "name" })
   Tier-0 (no lookup needed): web_search, notify, lookup_skill, lookup_tool_schema, schedule_reminder, file_read, file_write, respond, now_playing
-  Media rule: for ANY query about what is playing / current song / music — use now_playing (zero params). NEVER use run_powershell to read Spotify or media state.
+  Media rule: what is playing / current song / music → now_playing (zero params). NEVER use run_powershell for media state.
 4. DO NOT invent tools like "identify_top_3", "generate_report", "analyze" — these don't exist
 5. Processing/analysis happens in your response — NOT as a tool step
 6. NEVER use placeholders like "{{result}}" or "{output}" — steps must have real concrete inputs
