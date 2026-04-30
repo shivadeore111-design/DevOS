@@ -531,9 +531,14 @@ Server log on fresh startup shows zero `[system_info]`, `[Get-Process]`, or `[Ge
 ✅ PASS
 
 **Test: now_playing alive-test:**
-PowerShell WinRT verified working: `STATUS:Playing|TITLE:Our Past|ARTIST:MR TOUT LE MONDE|APP:SpotifyAB...`
-Tool dispatch fix verified: category detector now routes music queries to `system` category.
-Full end-to-end test pending Groq TPD reset (rate-limited during testing).
+✅ PASS (2026-05-01, session `phase4-alive14`)
+Response: `"All My Love" by Elderbrook, album "Why Do We Shake In The Cold?" — Spotify, isPlaying: true`
+Full end-to-end confirmed: instant dispatch → tool executed → real song data → LLM formatted response.
+
+**Architectural debt note:**
+The music query path uses a **regex-based instant dispatch** in `agentLoop.ts` that bypasses the LLM planner entirely. This was necessary because `llama-3.3-70b-versatile` (Groq) ignored explicit prompt rules and selected `run_powershell` for media queries across 5 prompt iterations. The dispatch is tagged `TODO(v3.20): TEMPORARY`. The proper fix (few-shot examples, per-tool `instant_dispatch_pattern` registry metadata, or model switch to gemini-2.5-flash) is documented in `docs/v3.20-candidates.md`.
+
+Additionally: `now_playing` was missing from `NO_INPUT_TOOLS` in the executor, causing the `{}` input to be treated as an error and the step skipped. Fixed in `4391add`.
 
 ### Phase 4 commits
 
@@ -542,4 +547,10 @@ Full end-to-end test pending Groq TPD reset (rate-limited during testing).
 | C1 `docs` | `docs/phase4-state-audit.md` — volatile vs stable injection site audit |
 | C2 `cb31388` | `core/tools/nowPlaying.ts` + `now_playing` in TOOL_REGISTRY (71→72 tools) |
 | C3 `38c6f07` | Delete `firstMessageContext` startup block; update SOUL.md ×3; fix sync-soul.ps1; `docs/v3.20-candidates.md` |
-| C4 (this) | Fix `detectToolCategories` for music queries; briefing update |
+| C4 `9254ab7` | Fix Ollama fallback model: `cfg.model.activeModel` → `cfg.ollama.model` |
+| C4 `1848270` | `fastPathExpansion.ts`: add music/media to PLANNER_REQUIRED_PATTERNS |
+| C4 `68fac14` | Planner prompt: tier-0 + media rule for `now_playing` |
+| C4 `6493977` | Planner prompt: rule-0 live-state override |
+| C4 `e20faa2` | Instant dispatch for now_playing (correct plan schema) |
+| C4 `b5d851f` | `docs/v3.20-candidates.md`: planner debt + TODO(v3.20) comment |
+| C4 `4391add` | Fix: add `now_playing` to `NO_INPUT_TOOLS` — executor was skipping `{}` input |
