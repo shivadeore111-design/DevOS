@@ -3059,6 +3059,540 @@ const TOOL_CATEGORIES: Record<string, ToolCategory[]> = {
   voice_design:            ['voice'],
 }
 
+// ── v3.19 Phase 1: TOOL_REGISTRY — consolidated metadata source of truth ─────
+// All per-tool metadata previously scattered across 13 separate hand-maintained
+// lists is consolidated here. Existing lists remain intact; Commit 2 adds deriver
+// functions; Commit 7 deletes the old lists once all call sites are switched over.
+//
+// Cross-file source annotations (parallel / retry / mcp):
+//   parallel  — agentLoop.ts:1957 PARALLEL_SAFE / :1965 SEQUENTIAL_ONLY
+//   retry     — agentLoop.ts:1881 NO_RETRY_TOOLS (false = no retry; omitted = true)
+//   mcp       — api/mcp.ts:25 SAFE_TOOLS / :44 DESTRUCTIVE_TOOLS
+
+export interface ToolRegistryMeta {
+  /** One-line description (source: TOOL_DESCRIPTIONS:2772) */
+  description?: string
+  /** Execution tier 0–4, lower = fewer side effects (source: TOOL_TIERS:2863) */
+  tier?: ToolTier
+  /** Task categories (source: TOOL_CATEGORIES:2973) */
+  category?: ToolCategory[]
+  /** Per-tool timeout in ms; undefined = executeTool default 30 s (source: TOOL_TIMEOUTS:275) */
+  timeoutMs?: number
+  /** Parallel execution class (source: agentLoop.ts:1957,1965) */
+  parallel?: 'safe' | 'sequential' | 'never'
+  /** Retry on failure — false for state-mutating tools (source: agentLoop.ts:1881) */
+  retry?: boolean
+  /** MCP exposure: safe=always, destructive=opt-in, excluded=not exposed (source: api/mcp.ts:25,44) */
+  mcp?: 'safe' | 'destructive' | 'excluded'
+}
+
+export const TOOL_REGISTRY: Record<string, ToolRegistryMeta> = {
+
+  // ── Core / response ──────────────────────────────────────────────────────────
+  respond: {
+    description: 'Send a direct conversational response to the user. Use for greetings, capability questions, clarifications, simple factual answers, and anything that does NOT require external tools. This is the default tool when no other tool is needed.',
+    tier: 1, category: ['core'],
+    parallel: 'never',   // agentLoop.ts:1957 — not in PARALLEL_SAFE
+    mcp: 'safe',         // api/mcp.ts:25
+  },
+  manage_goals: {
+    description: 'Track and manage goals and projects. Use when user asks what to work on, mentions a project, deadline, or launch plan. Actions: list, add, update, complete, remove, suggest.',
+    tier: 1, category: ['core'],
+    parallel: 'never',   // agentLoop.ts:1957 — not in PARALLEL_SAFE
+    mcp: 'safe',         // api/mcp.ts:25
+  },
+  compact_context: {
+    description: 'Summarize and compress the current conversation context. Saves session to disk and extracts durable memories. Call when context is getting long.',
+    tier: 1, category: ['core'],
+    parallel: 'never',   // agentLoop.ts:1957 — not in PARALLEL_SAFE
+    mcp: 'excluded',     // api/mcp.ts — not in SAFE_TOOLS or DESTRUCTIVE_TOOLS
+  },
+  run_agent: {
+    description: 'Spawn a sub-agent to complete a sub-goal autonomously',
+    tier: 1, category: ['core'],
+    parallel: 'never',   // agentLoop.ts:1957 — not in PARALLEL_SAFE
+    mcp: 'destructive',  // api/mcp.ts:44
+  },
+  lookup_skill: {
+    description: 'Search learned skills for a matching pattern. Returns the SKILL.md of the best match. Use before planning multi-step tasks to check if Aiden already knows how to do it.',
+    tier: 1, category: ['core'],
+    parallel: 'never',   // agentLoop.ts:1957 — not in PARALLEL_SAFE
+    mcp: 'safe',         // api/mcp.ts:25
+  },
+  lookup_tool_schema: {
+    description: 'Get the full description for a named tool. Call before using an unfamiliar tool.',
+    tier: 1, category: ['core'],
+    parallel: 'never',   // agentLoop.ts:1957 — not in PARALLEL_SAFE
+    mcp: 'safe',         // api/mcp.ts:25
+  },
+
+  // ── Web / research ───────────────────────────────────────────────────────────
+  web_search: {
+    description: 'Search the web for current information, news, or any topic',
+    tier: 1, category: ['web', 'data'], timeoutMs: 15000,
+    parallel: 'safe',    // agentLoop.ts:1957 PARALLEL_SAFE
+    mcp: 'safe',         // api/mcp.ts:25
+  },
+  fetch_url: {
+    description: 'Fetch the content of any URL and return the text',
+    tier: 1, category: ['web'], timeoutMs: 20000,
+    parallel: 'safe',    // agentLoop.ts:1957 PARALLEL_SAFE
+    mcp: 'safe',         // api/mcp.ts:25
+  },
+  fetch_page: {
+    description: 'Fetch a web page and extract its readable text content',
+    tier: 1, category: ['web'], timeoutMs: 20000,
+    parallel: 'safe',    // agentLoop.ts:1957 PARALLEL_SAFE
+    mcp: 'safe',         // api/mcp.ts:25
+  },
+  deep_research: {
+    description: 'Conduct thorough multi-step research on a topic using multiple sources',
+    tier: 1, category: ['web'], timeoutMs: 60000,
+    parallel: 'safe',    // agentLoop.ts:1957 PARALLEL_SAFE
+    mcp: 'safe',         // api/mcp.ts:25
+  },
+  social_research: {
+    description: 'Research a person or company across social and public sources',
+    tier: 1, category: ['web', 'data'], timeoutMs: 30000,
+    parallel: 'safe',    // agentLoop.ts:1957 PARALLEL_SAFE
+    mcp: 'excluded',     // api/mcp.ts — not in SAFE_TOOLS or DESTRUCTIVE_TOOLS
+  },
+  ingest_youtube: {
+    description: 'Ingest a YouTube video — downloads transcript or audio and extracts searchable text',
+    tier: 1, category: ['web', 'memory'],
+    parallel: 'safe',    // agentLoop.ts:1957 PARALLEL_SAFE
+    mcp: 'excluded',     // api/mcp.ts — not in SAFE_TOOLS or DESTRUCTIVE_TOOLS
+  },
+
+  // ── Browser ──────────────────────────────────────────────────────────────────
+  open_browser: {
+    description: 'Open a URL in the system browser',
+    tier: 3, category: ['browser'], timeoutMs: 15000,
+    parallel: 'sequential', // agentLoop.ts:1965 SEQUENTIAL_ONLY
+    retry: false,            // agentLoop.ts:1881 NO_RETRY_TOOLS
+    mcp: 'safe',             // api/mcp.ts:25
+  },
+  browser_click: {
+    description: 'Click on an element in the browser by selector',
+    tier: 3, category: ['browser'], timeoutMs: 10000,
+    parallel: 'sequential', // agentLoop.ts:1965 SEQUENTIAL_ONLY
+    retry: false,            // agentLoop.ts:1881 NO_RETRY_TOOLS
+    mcp: 'destructive',      // api/mcp.ts:44
+  },
+  browser_scroll: {
+    description: 'Scroll the browser page or a specific element. Params: direction (up|down|top|bottom, default down), amount (pixels, default 500), selector (optional CSS selector to scroll a specific element)',
+    tier: 3, category: ['browser'], timeoutMs: 8000,
+    parallel: 'never',   // agentLoop.ts:1965 — not in SEQUENTIAL_ONLY
+    retry: false,        // agentLoop.ts:1881 NO_RETRY_TOOLS
+    mcp: 'destructive',  // api/mcp.ts:44
+  },
+  browser_type: {
+    description: 'Type text into a browser input field',
+    tier: 3, category: ['browser'], timeoutMs: 10000,
+    parallel: 'sequential', // agentLoop.ts:1965 SEQUENTIAL_ONLY
+    retry: false,            // agentLoop.ts:1881 NO_RETRY_TOOLS
+    mcp: 'destructive',      // api/mcp.ts:44
+  },
+  browser_extract: {
+    description: 'Extract text content from the current browser page',
+    tier: 3, category: ['browser'], timeoutMs: 10000,
+    parallel: 'sequential', // agentLoop.ts:1965 SEQUENTIAL_ONLY
+    retry: false,            // agentLoop.ts:1881 NO_RETRY_TOOLS
+    mcp: 'safe',             // api/mcp.ts:25
+  },
+  browser_screenshot: {
+    description: 'Take a screenshot of the current browser window',
+    tier: 3, category: ['browser'], timeoutMs: 8000,
+    parallel: 'never',   // agentLoop.ts:1965 — not in SEQUENTIAL_ONLY
+    retry: false,        // agentLoop.ts:1881 NO_RETRY_TOOLS
+    mcp: 'safe',         // api/mcp.ts:25
+  },
+  browser_get_url: {
+    description: 'Return the URL currently loaded in the browser',
+    tier: 3, category: ['browser'], timeoutMs: 5000,
+    parallel: 'never',   // agentLoop.ts:1965 — not in SEQUENTIAL_ONLY
+    retry: false,        // agentLoop.ts:1881 NO_RETRY_TOOLS
+    mcp: 'safe',         // api/mcp.ts:25
+  },
+
+  // ── Files ────────────────────────────────────────────────────────────────────
+  file_write: {
+    description: 'Write content to a file at the specified path',
+    tier: 2, category: ['files'],
+    parallel: 'sequential', // agentLoop.ts:1965 SEQUENTIAL_ONLY
+    mcp: 'destructive',      // api/mcp.ts:44
+  },
+  file_read: {
+    description: 'Read the contents of a file at the specified path',
+    tier: 2, category: ['files'],
+    parallel: 'never',   // agentLoop.ts:1957 — not in PARALLEL_SAFE
+    mcp: 'safe',         // api/mcp.ts:25
+  },
+  file_list: {
+    description: 'List files in a directory',
+    tier: 2, category: ['files'],
+    parallel: 'never',   // agentLoop.ts:1957 — not in PARALLEL_SAFE
+    mcp: 'safe',         // api/mcp.ts:25
+  },
+  watch_folder: {
+    description: 'Watch a folder and react automatically when new files appear',
+    tier: 2, category: ['files', 'system'], timeoutMs: 10000,
+    parallel: 'sequential', // agentLoop.ts:1965 SEQUENTIAL_ONLY
+    mcp: 'destructive',      // api/mcp.ts:44
+  },
+  watch_folder_list: {
+    description: 'List all currently watched folder paths',
+    tier: 2, category: ['files', 'system'], timeoutMs: 5000,
+    parallel: 'safe',    // agentLoop.ts:1957 PARALLEL_SAFE
+    mcp: 'excluded',     // api/mcp.ts — not in SAFE_TOOLS or DESTRUCTIVE_TOOLS
+  },
+
+  // ── Shell / code execution ───────────────────────────────────────────────────
+  shell_exec: {
+    description: 'Execute a shell/PowerShell command and return the output',
+    tier: 2, category: ['code', 'system'], timeoutMs: 30000,
+    parallel: 'sequential', // agentLoop.ts:1965 SEQUENTIAL_ONLY
+    retry: false,            // agentLoop.ts:1881 NO_RETRY_TOOLS
+    mcp: 'destructive',      // api/mcp.ts:44
+  },
+  run_powershell: {
+    description: 'Run a PowerShell command on Windows',
+    tier: 2, category: ['code', 'system'], timeoutMs: 30000,
+    parallel: 'never',   // agentLoop.ts:1965 — not in SEQUENTIAL_ONLY
+    mcp: 'destructive',  // api/mcp.ts:44
+  },
+  cmd: {
+    description: 'Run a Windows cmd.exe command and return stdout/stderr/exitCode',
+    tier: 2, category: ['code', 'system'], timeoutMs: 30000,
+    parallel: 'never',   // agentLoop.ts:1965 — not in SEQUENTIAL_ONLY
+    mcp: 'destructive',  // api/mcp.ts:44
+  },
+  ps: {
+    description: 'Run a PowerShell command directly (no temp file) and return stdout/stderr/exitCode',
+    tier: 2, category: ['code', 'system'], timeoutMs: 30000,
+    parallel: 'never',   // agentLoop.ts:1965 — not in SEQUENTIAL_ONLY
+    mcp: 'destructive',  // api/mcp.ts:44
+  },
+  wsl: {
+    description: 'Run a bash command inside WSL (Windows Subsystem for Linux); auto-translates C:\\ paths to /mnt/c/',
+    tier: 2, category: ['code', 'system'], timeoutMs: 30000,
+    parallel: 'never',   // agentLoop.ts:1965 — not in SEQUENTIAL_ONLY
+    mcp: 'destructive',  // api/mcp.ts:44
+  },
+  run_python: {
+    description: 'Execute a Python script and return stdout/stderr',
+    tier: 2, category: ['code'], timeoutMs: 60000,
+    parallel: 'sequential', // agentLoop.ts:1965 SEQUENTIAL_ONLY
+    retry: false,            // agentLoop.ts:1881 NO_RETRY_TOOLS
+    mcp: 'destructive',      // api/mcp.ts:44
+  },
+  run_node: {
+    description: 'Execute Node.js/JavaScript code and return the output',
+    tier: 2, category: ['code'], timeoutMs: 60000,
+    parallel: 'sequential', // agentLoop.ts:1965 SEQUENTIAL_ONLY
+    retry: false,            // agentLoop.ts:1881 NO_RETRY_TOOLS
+    mcp: 'destructive',      // api/mcp.ts:44
+  },
+  run: {
+    description: 'Run a command or script (generic alias for shell_exec)',
+    tier: 2, category: ['code'],
+    parallel: 'never',   // agentLoop.ts:1965 — not in SEQUENTIAL_ONLY
+    mcp: 'excluded',     // api/mcp.ts — not in SAFE_TOOLS or DESTRUCTIVE_TOOLS
+  },
+  code_interpreter_python: {
+    description: 'Run Python code in a sandboxed interpreter with data science libraries',
+    tier: 2, category: ['code'], timeoutMs: 35000,
+    parallel: 'safe',    // agentLoop.ts:1957 PARALLEL_SAFE
+    mcp: 'destructive',  // api/mcp.ts:44
+  },
+  code_interpreter_node: {
+    description: 'Run Node.js code in a sandboxed interpreter',
+    tier: 2, category: ['code'], timeoutMs: 35000,
+    parallel: 'safe',    // agentLoop.ts:1957 PARALLEL_SAFE
+    mcp: 'destructive',  // api/mcp.ts:44
+  },
+
+  // ── Screen / vision / input ──────────────────────────────────────────────────
+  screenshot: {
+    description: 'Take a screenshot of the entire screen',
+    tier: 4, category: ['screen'], timeoutMs: 10000,
+    parallel: 'sequential', // agentLoop.ts:1965 SEQUENTIAL_ONLY
+    mcp: 'safe',             // api/mcp.ts:25
+  },
+  screen_read: {
+    description: 'Read and describe the current screen contents',
+    tier: 4, category: ['screen'],
+    parallel: 'sequential', // agentLoop.ts:1965 SEQUENTIAL_ONLY
+    mcp: 'safe',             // api/mcp.ts:25
+  },
+  vision_loop: {
+    description: 'Autonomously control the computer using vision to complete a goal',
+    tier: 4, category: ['screen'], timeoutMs: 120000,
+    parallel: 'sequential', // agentLoop.ts:1965 SEQUENTIAL_ONLY
+    mcp: 'excluded',         // api/mcp.ts — not in SAFE_TOOLS or DESTRUCTIVE_TOOLS
+  },
+  vision_analyze: {
+    description: 'Analyze an image file using computer vision and return a structured description',
+    tier: 4, category: ['screen', 'data'], timeoutMs: 45000,
+    parallel: 'never',   // agentLoop.ts:1957 — not in PARALLEL_SAFE
+    mcp: 'excluded',     // api/mcp.ts — not in SAFE_TOOLS or DESTRUCTIVE_TOOLS
+  },
+  mouse_move: {
+    description: 'Move the mouse cursor to screen coordinates',
+    tier: 4, category: ['screen'],
+    parallel: 'sequential', // agentLoop.ts:1965 SEQUENTIAL_ONLY
+    mcp: 'destructive',      // api/mcp.ts:44
+  },
+  mouse_click: {
+    description: 'Click the mouse at screen coordinates',
+    tier: 4, category: ['screen'],
+    parallel: 'sequential', // agentLoop.ts:1965 SEQUENTIAL_ONLY
+    retry: false,            // agentLoop.ts:1881 NO_RETRY_TOOLS
+    mcp: 'destructive',      // api/mcp.ts:44
+  },
+  keyboard_type: {
+    description: 'Type text using the keyboard',
+    tier: 4, category: ['screen'],
+    parallel: 'sequential', // agentLoop.ts:1965 SEQUENTIAL_ONLY
+    retry: false,            // agentLoop.ts:1881 NO_RETRY_TOOLS
+    mcp: 'destructive',      // api/mcp.ts:44
+  },
+  keyboard_press: {
+    description: 'Press a keyboard key or shortcut (e.g. ctrl+c)',
+    tier: 4, category: ['screen'],
+    parallel: 'sequential', // agentLoop.ts:1965 SEQUENTIAL_ONLY
+    retry: false,            // agentLoop.ts:1881 NO_RETRY_TOOLS
+    mcp: 'destructive',      // api/mcp.ts:44
+  },
+
+  // ── Data / market ────────────────────────────────────────────────────────────
+  get_stocks: {
+    description: 'Get top gainers, losers, or most active stocks from NSE/BSE',
+    tier: 1, category: ['data'], timeoutMs: 20000,
+    parallel: 'safe',    // agentLoop.ts:1957 PARALLEL_SAFE
+    mcp: 'safe',         // api/mcp.ts:25
+  },
+  get_market_data: {
+    description: 'Get real-time price, change%, and volume for a stock symbol',
+    tier: 1, category: ['data'], timeoutMs: 15000,
+    parallel: 'safe',    // agentLoop.ts:1957 PARALLEL_SAFE
+    mcp: 'safe',         // api/mcp.ts:25
+  },
+  get_company_info: {
+    description: 'Get company profile, sector, P/E ratio, EPS, and revenue',
+    tier: 1, category: ['data'], timeoutMs: 15000,
+    parallel: 'safe',    // agentLoop.ts:1957 PARALLEL_SAFE
+    mcp: 'safe',         // api/mcp.ts:25
+  },
+  get_briefing: {
+    description: 'Run the morning briefing: weather, markets, news, and daily summary',
+    tier: 1, category: ['data'],
+    parallel: 'never',   // agentLoop.ts:1957 — not in PARALLEL_SAFE
+    mcp: 'safe',         // api/mcp.ts:25
+  },
+  get_natural_events: {
+    description: 'Fetch active natural events from NASA EONET API. Returns current earthquakes, wildfires, storms, floods, and other natural events worldwide.',
+    tier: 1, category: ['data'],
+    parallel: 'safe',    // agentLoop.ts:1957 PARALLEL_SAFE
+    mcp: 'safe',         // api/mcp.ts:25
+  },
+
+  // ── System / OS ──────────────────────────────────────────────────────────────
+  system_info: {
+    description: 'Get system hardware and OS information (CPU, RAM, disk, OS)',
+    tier: 1, category: ['system'],
+    parallel: 'safe',    // agentLoop.ts:1957 PARALLEL_SAFE
+    mcp: 'safe',         // api/mcp.ts:25
+  },
+  notify: {
+    description: 'Send a desktop notification to the user',
+    tier: 1, category: ['system'],
+    parallel: 'sequential', // agentLoop.ts:1965 SEQUENTIAL_ONLY
+    retry: false,            // agentLoop.ts:1881 NO_RETRY_TOOLS
+    mcp: 'destructive',      // api/mcp.ts:44
+  },
+  wait: {
+    description: 'Pause execution for a specified number of milliseconds',
+    tier: 1, category: ['system', 'browser', 'screen'], timeoutMs: 6000,
+    parallel: 'sequential', // agentLoop.ts:1965 SEQUENTIAL_ONLY
+    mcp: 'excluded',         // api/mcp.ts — not in SAFE_TOOLS or DESTRUCTIVE_TOOLS
+  },
+  clipboard_read: {
+    description: 'Read the current contents of the system clipboard',
+    tier: 2, category: ['system', 'code'], timeoutMs: 5000,
+    parallel: 'safe',    // agentLoop.ts:1957 PARALLEL_SAFE
+    mcp: 'safe',         // api/mcp.ts:25
+  },
+  clipboard_write: {
+    description: 'Write text to the system clipboard',
+    tier: 2, category: ['system', 'code'], timeoutMs: 5000,
+    parallel: 'sequential', // agentLoop.ts:1965 SEQUENTIAL_ONLY
+    mcp: 'destructive',      // api/mcp.ts:44
+  },
+  window_list: {
+    description: 'List all open windows on the desktop',
+    tier: 3, category: ['browser', 'system'], timeoutMs: 10000,
+    parallel: 'safe',    // agentLoop.ts:1957 PARALLEL_SAFE
+    mcp: 'safe',         // api/mcp.ts:25
+  },
+  window_focus: {
+    description: 'Bring a specific window to the foreground by title',
+    tier: 3, category: ['browser', 'system'], timeoutMs: 8000,
+    parallel: 'sequential', // agentLoop.ts:1965 SEQUENTIAL_ONLY
+    mcp: 'destructive',      // api/mcp.ts:44
+  },
+  app_launch: {
+    description: 'Launch an application by name or executable path',
+    tier: 3, category: ['browser', 'system'], timeoutMs: 10000,
+    parallel: 'sequential', // agentLoop.ts:1965 SEQUENTIAL_ONLY
+    retry: false,            // agentLoop.ts:1881 NO_RETRY_TOOLS
+    mcp: 'destructive',      // api/mcp.ts:44
+  },
+  app_close: {
+    description: 'Close an application by window title or process name',
+    tier: 3, category: ['browser', 'system'], timeoutMs: 8000,
+    parallel: 'sequential', // agentLoop.ts:1965 SEQUENTIAL_ONLY
+    retry: false,            // agentLoop.ts:1881 NO_RETRY_TOOLS
+    mcp: 'destructive',      // api/mcp.ts:44
+  },
+  system_volume: {
+    description: 'Get or set Windows speaker volume (get/up/down/mute/unmute/set)',
+    tier: 2, category: ['system'], timeoutMs: 8000,
+    parallel: 'sequential', // agentLoop.ts:1965 SEQUENTIAL_ONLY
+    mcp: 'excluded',         // api/mcp.ts — not in SAFE_TOOLS or DESTRUCTIVE_TOOLS
+  },
+  schedule_reminder: {
+    description: "Schedule a desktop notification reminder. Params: message (string), delaySeconds or delayMs (number), recurring ('hourly'|'daily'|'weekly', optional). op='list' to see pending reminders, op='cancel' with id to cancel one.",
+    tier: 0, category: ['system'],
+    parallel: 'never',   // agentLoop.ts:1957 — not in PARALLEL_SAFE
+    mcp: 'destructive',  // api/mcp.ts:44
+  },
+
+  // ── Git ──────────────────────────────────────────────────────────────────────
+  git_status: {
+    description: 'Show git status and recent commits for a repository. Provide path parameter for a specific directory.',
+    tier: 2, category: ['git'], timeoutMs: 15000,
+    parallel: 'never',   // agentLoop.ts:1957 — not in PARALLEL_SAFE
+    mcp: 'safe',         // api/mcp.ts:25
+  },
+  git_commit: {
+    description: 'Stage and commit files to a local git repository',
+    tier: 2, category: ['git'], timeoutMs: 30000,
+    parallel: 'never',   // agentLoop.ts:1957 — not in PARALLEL_SAFE
+    mcp: 'destructive',  // api/mcp.ts:44
+  },
+  git_push: {
+    description: 'Push committed changes to a remote git repository',
+    tier: 2, category: ['git'], timeoutMs: 60000,
+    parallel: 'never',   // agentLoop.ts:1957 — not in PARALLEL_SAFE
+    mcp: 'destructive',  // api/mcp.ts:44
+  },
+
+  // ── Comms / calendar / email ─────────────────────────────────────────────────
+  get_calendar: {
+    description: 'Get upcoming calendar events from Google Calendar (requires iCal URL in Settings → Channels). Parameters: daysAhead (number, default 7).',
+    tier: 1, category: ['data', 'system'],
+    parallel: 'safe',    // agentLoop.ts:1957 PARALLEL_SAFE
+    mcp: 'safe',         // api/mcp.ts:25
+  },
+  read_email: {
+    description: 'Read recent unread emails from Gmail (requires App Password in Settings → Channels). Parameters: count (number, default 10), folder (string, default INBOX).',
+    tier: 1, category: ['data', 'system'],
+    parallel: 'safe',    // agentLoop.ts:1957 PARALLEL_SAFE
+    mcp: 'safe',         // api/mcp.ts:25
+  },
+  send_email: {
+    description: 'Send an email via Gmail (requires App Password in Settings → Channels). Parameters: to (string), subject (string), body (string).',
+    tier: 1, category: ['data', 'system'],
+    parallel: 'never',   // agentLoop.ts:1957 — not in PARALLEL_SAFE
+    mcp: 'destructive',  // api/mcp.ts:44
+  },
+  send_file_local: {
+    description: 'Send a file to another device on the local network via LocalSend (op: discover | send)',
+    tier: 2, category: ['files', 'system'],
+    parallel: 'never',   // agentLoop.ts:1957 — not in PARALLEL_SAFE
+    mcp: 'destructive',  // api/mcp.ts:44
+  },
+  receive_file_local: {
+    description: 'Wait for an incoming LocalSend file transfer on the local network',
+    tier: 2, category: ['files', 'system'],
+    parallel: 'never',   // agentLoop.ts:1957 — not in PARALLEL_SAFE
+    mcp: 'destructive',  // api/mcp.ts:44
+  },
+
+  // ── Delegation / subagents ───────────────────────────────────────────────────
+  spawn: {
+    description: "Delegate a sub-task to an isolated subagent with its own context and half the remaining iteration budget. Returns the subagent's synthesized answer.",
+    tier: 2, category: ['delegation'],
+    parallel: 'never',   // agentLoop.ts:1957 — not in PARALLEL_SAFE
+    mcp: 'destructive',  // api/mcp.ts:44
+  },
+  spawn_subagent: {
+    description: "Spawn an isolated subagent to handle a parallel sub-task. The subagent runs in its own conversation context with half your remaining iteration budget. Use for: research that would bloat your context, parallel work where you need both results, sandboxed exploration. Returns the subagent's final reply text.",
+    tier: 2, category: ['delegation'],
+    parallel: 'never',   // agentLoop.ts:1957 — not in PARALLEL_SAFE
+    mcp: 'destructive',  // api/mcp.ts:44
+  },
+  swarm: {
+    description: 'Run N isolated subagents on the same task in parallel and aggregate their answers via voting or synthesis. Use for high-confidence research where multiple independent perspectives reduce error.',
+    tier: 2, category: ['delegation'],
+    parallel: 'never',   // agentLoop.ts:1957 — not in PARALLEL_SAFE
+    mcp: 'destructive',  // api/mcp.ts:44
+  },
+
+  // ── Voice ────────────────────────────────────────────────────────────────────
+  voice_speak: {
+    description: 'Speak text aloud using the TTS provider chain (VoxCPM → Edge TTS → ElevenLabs → SAPI). Accepts text, voice, rate, volume, provider overrides.',
+    tier: 2, category: ['voice'], timeoutMs: 60000,
+    parallel: 'never',   // agentLoop.ts:1957 — not in PARALLEL_SAFE
+    mcp: 'destructive',  // api/mcp.ts:44
+  },
+  voice_transcribe: {
+    description: 'Transcribe an audio file to text using the STT provider chain (Groq Whisper → OpenAI Whisper → Whisper.cpp). Returns { text, provider, durationMs }.',
+    tier: 2, category: ['voice'], timeoutMs: 60000,
+    parallel: 'never',   // agentLoop.ts:1957 — not in PARALLEL_SAFE
+    mcp: 'safe',         // api/mcp.ts:25
+  },
+  voice_clone: {
+    description: 'Clone a voice from a reference audio file and synthesize new text. Requires text and referenceAudioPath. Uses VoxCPM when USE_VOXCPM=1.',
+    tier: 2, category: ['voice'], timeoutMs: 120000,
+    parallel: 'never',   // agentLoop.ts:1957 — not in PARALLEL_SAFE
+    mcp: 'excluded',     // api/mcp.ts — not in SAFE_TOOLS or DESTRUCTIVE_TOOLS
+  },
+  voice_design: {
+    description: 'Design a custom voice from a text description and synthesize text with it. Requires text and voiceDescription. Uses VoxCPM when USE_VOXCPM=1.',
+    tier: 2, category: ['voice'], timeoutMs: 120000,
+    parallel: 'never',   // agentLoop.ts:1957 — not in PARALLEL_SAFE
+    mcp: 'excluded',     // api/mcp.ts — not in SAFE_TOOLS or DESTRUCTIVE_TOOLS
+  },
+
+  // ── Interaction / UX ─────────────────────────────────────────────────────────
+  clarify: {
+    description: 'Ask the user a clarifying question and wait for their typed response before proceeding',
+    tier: 1, category: ['interaction', 'core'], timeoutMs: 300000,
+    parallel: 'never',   // agentLoop.ts:1957 — not in PARALLEL_SAFE
+    mcp: 'excluded',     // api/mcp.ts — not in SAFE_TOOLS or DESTRUCTIVE_TOOLS
+  },
+  todo: {
+    description: 'Manage the current session todo list — add, check off, or display pending tasks',
+    tier: 1, category: ['interaction', 'core'],
+    parallel: 'never',   // agentLoop.ts:1957 — not in PARALLEL_SAFE
+    mcp: 'excluded',     // api/mcp.ts — not in SAFE_TOOLS or DESTRUCTIVE_TOOLS
+  },
+  search: {
+    description: 'Search workspace memory, session context, and file system for relevant stored information',
+    tier: 1, category: ['memory', 'introspection'],
+    parallel: 'never',   // agentLoop.ts:1957 — not in PARALLEL_SAFE
+    mcp: 'excluded',     // api/mcp.ts — not in SAFE_TOOLS or DESTRUCTIVE_TOOLS
+  },
+  cronjob: {
+    description: 'Schedule a recurring task using cron-style timing (alias for schedule_reminder with recurring param)',
+    tier: 1, category: ['system', 'core'],
+    parallel: 'never',   // agentLoop.ts:1957 — not in PARALLEL_SAFE
+    mcp: 'excluded',     // api/mcp.ts — not in SAFE_TOOLS or DESTRUCTIVE_TOOLS
+  },
+}
+
 export function detectToolCategories(message: string): ToolCategory[] {
   const categories = new Set<ToolCategory>(['core'])
   const msg = message.toLowerCase()
