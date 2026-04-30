@@ -6437,22 +6437,7 @@ async function streamChat(
   send:      (data: object) => void,
   sessionId?: string,
 ): Promise<void> {
-  // ── Sprint 1: First Message WOW — silent system context gathering ───────────────────
   const isFirstMessage = history.length === 0
-  let firstMessageContext = ''
-  if (isFirstMessage) {
-    try {
-      const [sysResult, windowsResult, diskResult] = await Promise.allSettled([
-        executeTool('system_info', {}),
-        executeTool('shell_exec', { command: 'Get-Process | Where-Object {$_.MainWindowTitle -ne ""} | Select-Object Name, MainWindowTitle, @{N="RAM_MB";E={[math]::Round($_.WorkingSet64/1MB,1)}} | ConvertTo-Json -Compress' }),
-        executeTool('shell_exec', { command: 'Get-PSDrive C | Select-Object @{N="UsedGB";E={[math]::Round(($_.Used/1GB),1)}}, @{N="FreeGB";E={[math]::Round(($_.Free/1GB),1)}} | ConvertTo-Json -Compress' }),
-      ])
-      const sysInfo = sysResult.status === 'fulfilled' ? (sysResult.value as any).output ?? '' : ''
-      const windows = windowsResult.status === 'fulfilled' ? (windowsResult.value as any).output ?? '' : ''
-      const disk    = diskResult.status === 'fulfilled' ? (diskResult.value as any).output ?? '' : ''
-      firstMessageContext = `\n\nSYSTEM CONTEXT (you silently gathered this — use it to show awareness of the user’s machine):\nHardware: ${sysInfo}\nOpen windows: ${windows}\nDisk: ${disk}\n\nOn this first message, respond by showing what you can see on their machine right now. Be specific and natural — not a feature list. Example: \"I can see you have VS Code open, 6GB RAM free, and your disk is 78% full. What are you working on?\"`
-    } catch { /* silent — never block the response */ }
-  }
 
   const cognitionHint = userCognitionProfile.getSystemPromptAddition()
 
@@ -6510,7 +6495,7 @@ HARD RULES — never violate:
 - Never mention Pega, BlueWinston, Gaude Digital, or any third-party product by name
 - Never say you can't access the internet (you have web_search) or can't create files (you have file_write)
 - Never fabricate capabilities: no graphic design, video production, or music generation
-- Never list 250+ skills — you have 48 real tools, 31 specialist agents, and a 6-layer memory system
+- Never list 250+ skills — you have 72 real tools, 31 specialist agents, and a 6-layer memory system
 - For errors: explain what failed and what to try next
 - If you don't know something: say "I don't know"
 - Direct and concise: 1–3 sentences for simple results; more only when output is rich
@@ -6524,7 +6509,7 @@ IDENTITY — you are NOT a static pre-trained model. You have active living syst
 - Growth Engine: tracks failures, learns from them, improves over time
 - XP & Leveling: gains experience, streaks, and levels up
 When asked about capabilities or learning, be accurate. NEVER say you are just a pre-trained model that cannot learn.
-${cognitionHint}${firstMessageContext}${memoryContext}${greetingPreamble}${sessionContext}${memoryIndex}`
+${cognitionHint}${memoryContext}${greetingPreamble}${sessionContext}${memoryIndex}`
 
   const msgs = [
     { role: 'system', content: chatPrompt },

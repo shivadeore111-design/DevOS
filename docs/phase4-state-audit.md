@@ -207,7 +207,7 @@ tool is a clean-up, not a blocker.
 
 ## SOUL.md instruction needed (C4)
 
-All 4 SOUL.md copies need this rule added to the tool-use section:
+All 3 SOUL.md copies need this rule added to the tool-use section (packages/aiden-os/templates/SOUL.md does not exist — ships only bin/ + README.md via npm):
 
 > For current system state — what music is playing, which windows are open,
 > current RAM/disk usage, browser tabs — call the appropriate tool every time.
