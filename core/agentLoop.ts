@@ -2149,7 +2149,7 @@ async function executeSingleStep(
   }
 
   // Tools that legitimately take zero input
-  const NO_INPUT_TOOLS = ['system_info', 'screenshot', 'get_hardware', 'screen_read', 'vision_loop', 'health_check', 'respond']
+  const NO_INPUT_TOOLS = ['system_info', 'screenshot', 'get_hardware', 'screen_read', 'vision_loop', 'health_check', 'respond', 'now_playing']
   if (!NO_INPUT_TOOLS.includes(step.tool)) {
     if (!step.input || Object.keys(step.input).length === 0) {
       console.log(`[ExecutePlan] Skipping step ${step.step} (${step.tool}) — empty input`)
