@@ -1,5 +1,5 @@
-# CLAUDE_CHAT_BRIEFING — Aiden v3.19 Phase 3 SHIPPED
-Generated: 2026-04-30. Updated: 2026-04-30 (Phase 3 complete).
+# CLAUDE_CHAT_BRIEFING — Aiden v3.19 Phase 4 SHIPPED
+Generated: 2026-04-30. Updated: 2026-05-01 (Phase 4 complete).
 
 ---
 
@@ -442,4 +442,104 @@ curl POST /api/chat {"message":"what is the latest tech news today"}
 | C2 `f92f48d` | Remove 5 fake InstantActions, route to real handlers, surface errors |
 | C3 `0fef546` | `core/actionVerbDetector.ts` + fastPath fix + PlannerGuard `!parsed` fix |
 | C4 `0278bbb` | `core/diagnosticError.ts` + buildDiagnostic wired to 3 callsites |
-| C5 (this commit) | Phase 3 formal tests + briefing update |
+| C5 `2d970bc` | Phase 3 formal tests + briefing update |
+
+---
+
+## SECTION 7 — v3.19 PHASE 4: STALE STATE FIX (SHIPPED 2026-05-01)
+
+### Objective
+
+Aiden was injecting volatile system state (open windows + RAM + disk usage + hardware info) into every new session's system prompt at startup. By message 2 that snapshot was stale, but the model would still answer questions about RAM and disk from cached context rather than re-querying.
+
+Phase 4 fixes this via the Manus lazy-eval principle: **volatile state belongs behind a tool call, not in the session-start context**.
+
+### What changed
+
+| Before Phase 4 | After Phase 4 |
+|----------------|---------------|
+| `firstMessageContext` block ran 3 tool calls at session start: `system_info`, `Get-Process`, `Get-PSDrive` | Block deleted entirely — zero startup tool calls |
+| First response latency: +200–600 ms (3 parallel shell calls before responding) | First response: immediate — no blocking pre-flight |
+| "What windows are open?" answered from session-start snapshot | Must call `shell_exec` or `system_info` per-turn to get live state |
+| No `now_playing` tool existed | `now_playing` registered — queries Windows SMTC live per call |
+| SOUL.md had no lazy-state rule | SOUL.md instructs: call tool every time for music/RAM/disk/windows |
+| `detectToolCategories()` missed music-status queries | Added patterns: `now.?playing`, `what.*playing`, `what.*song`, `what.*music`, `is.*playing`, `music.*paused`, `current.*track` → `system` category |
+
+### Root-cause bug found during C4 testing
+
+After rebuilding the bundle with Phase 3+4 changes, `now_playing` was registered and the startup block was removed — but test queries like "What music am I playing right now?" returned `"I'll check what's playing. Done."` without actual song data.
+
+Investigation: `detectToolCategories("What music am I playing right now?")` returned only `['core']`. The `system` category pattern did not match "music" or "playing". Since `now_playing` is category `['system']`, it was absent from `plannerTools`, so the planner never saw it as an option and the responder improvised.
+
+Fix: added music-query patterns to the `system` category branch in `detectToolCategories` (`core/toolRegistry.ts:3783`).
+
+### New tool: `now_playing`
+
+| Field | Value |
+|-------|-------|
+| File | `core/tools/nowPlaying.ts` |
+| Registry key | `now_playing` |
+| Category | `['system']`, tier 1 |
+| Method | PowerShell WinRT via `GlobalSystemMediaTransportControlsSessionManager` |
+| Bridge | `System.WindowsRuntimeSystemExtensions.AsTask` (PS5.1 can't await WinRT natively) |
+| Returns | `{ isPlaying, app, title, artist, album, playbackStatus, message? }` |
+| Timeout | 5000 ms |
+| App normalization | Spotify, Edge, Chrome, Firefox, VLC, Groove, Windows Media Player |
+
+### Deleted from `api/server.ts streamChat()`
+
+```typescript
+// DELETED (Phase 4 C3):
+const isFirstMessage = history.length === 0
+let firstMessageContext = ''
+if (isFirstMessage) {
+  try {
+    const [sysResult, ...] = await Promise.all([
+      executeTool('system_info', {}),           // hardware
+      executeTool('shell_exec', { command: 'Get-Process | ...' }),  // open windows
+      executeTool('shell_exec', { command: 'Get-PSDrive C | ...' }) // disk
+    ])
+    firstMessageContext = `\n\nSYSTEM CONTEXT...`
+  } catch { }
+}
+// Also removed: ${firstMessageContext} from template literal
+```
+
+### SOUL.md lazy-state rule (added Phase 4 C3)
+
+```
+For current system state — what music is playing, which windows are open, current RAM/disk
+usage — call the appropriate tool every time. Never answer from session context or prior
+observations. State changes between messages:
+- "what's playing" / "what song is this" / "is music paused" → `now_playing`
+- "how much RAM" / "disk space" / "what's running" → `system_info` or `shell_exec`
+```
+
+### Supporting files
+
+| File | Change |
+|------|--------|
+| `scripts/sync-soul.ps1` | Fixed parse error (Unicode em dash → `--`; single-quoted strings); removed stale 4th target `packages/aiden-os/templates/SOUL.md` (never existed); hard `exit 1` instead of skippable warning |
+| `docs/phase4-state-audit.md` | Full audit of all 12 injection sites in `streamChat()` — 4 REMOVE, 8 KEEP |
+| `docs/v3.20-candidates.md` | `browser_tabs` deferred (3 reasons) + `system_state` tool deferred |
+| `SOUL.md` + `workspace/SOUL.md` + `workspace-templates/SOUL.md` | Tool count 71→72; `now_playing` added to System & Data section; lazy-state rule added |
+
+### Phase 4 test results (2026-05-01)
+
+**Test: Trim verification (no volatile startup calls):**
+Server log on fresh startup shows zero `[system_info]`, `[Get-Process]`, or `[Get-PSDrive]` calls before first user message.
+✅ PASS
+
+**Test: now_playing alive-test:**
+PowerShell WinRT verified working: `STATUS:Playing|TITLE:Our Past|ARTIST:MR TOUT LE MONDE|APP:SpotifyAB...`
+Tool dispatch fix verified: category detector now routes music queries to `system` category.
+Full end-to-end test pending Groq TPD reset (rate-limited during testing).
+
+### Phase 4 commits
+
+| Commit | Description |
+|--------|-------------|
+| C1 `docs` | `docs/phase4-state-audit.md` — volatile vs stable injection site audit |
+| C2 `cb31388` | `core/tools/nowPlaying.ts` + `now_playing` in TOOL_REGISTRY (71→72 tools) |
+| C3 `38c6f07` | Delete `firstMessageContext` startup block; update SOUL.md ×3; fix sync-soul.ps1; `docs/v3.20-candidates.md` |
+| C4 (this) | Fix `detectToolCategories` for music queries; briefing update |

@@ -3780,7 +3780,7 @@ export function detectToolCategories(message: string): ToolCategory[] {
     categories.add('data')
   if (/email|inbox|mail|gmail|unread|read_email|send_email|calendar|meetings|events/i.test(msg))
     categories.add('data')
-  if (/notify|notification|remind|alert|system info|cpu|ram|disk|hardware|clipboard|launch|close app/i.test(msg))
+  if (/notify|notification|remind|alert|system info|cpu|ram|disk|hardware|clipboard|launch|close app|now.?playing|what.*playing|what.*song|what.*music|is.*playing|music.*paused|current.*track/i.test(msg))
     categories.add('system')
   if (/voice|speak|say aloud|listen|record audio|tts|text.to.speech|transcribe|speech.to.text|clone.*voice|voice.*design|voice.*clone|design.*voice/i.test(msg))
     categories.add('voice')
