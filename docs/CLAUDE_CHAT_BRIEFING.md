@@ -1,5 +1,5 @@
-# CLAUDE_CHAT_BRIEFING — Aiden v3.19 Phase 1 SHIPPED
-Generated: 2026-04-30. Updated: 2026-04-30 (Phase 1 complete).
+# CLAUDE_CHAT_BRIEFING — Aiden v3.19 Phase 2 SHIPPED
+Generated: 2026-04-30. Updated: 2026-04-30 (Phase 2 complete).
 
 ---
 
@@ -58,10 +58,10 @@ a016742 docs: update BRIEFING.md audit section with Commit 3 validator ground tr
 
 - CLI dropdown (`cli/aiden.ts:5320-5383` `buildToolList()`) is a hardcoded 50-entry array literal, not derived from `core/toolRegistry.ts`. Adding a tool elsewhere does not surface it in the dropdown until the literal is hand-edited.
 - Aiden has only 3 hook events (`core/hooks.ts:11-14`: `pre_compact`, `session_stop`, `after_tool_call`) vs Hermes' 11. No `matcher` field — `preTool` hooks fire for every tool and must self-filter.
-- `COMPACTION_PROTECTED` files (SOUL.md, STANDING_ORDERS.md, GOALS.md, USER.md, LESSONS.md) are re-read only at compaction (`core/agentLoop.ts:687-755`), every 40 messages. Identity changes have a ~40-message lag. (`COMPACT_THRESHOLD = 40` at `:53`)
+- ~~`COMPACTION_PROTECTED` files (SOUL.md, STANDING_ORDERS.md, GOALS.md, USER.md, LESSONS.md) are re-read only at compaction (`core/agentLoop.ts:687-755`), every 40 messages. Identity changes have a ~40-message lag.~~ **Fixed Phase 2**: all 5 files injected per-turn via hash-cached `ProtectedContextManager`; SOUL.md uses Option-B reference line when hash unchanged (24× cheaper steady-state). See Section 5.
 - No `workspace/plugins/` inhabitants — framework wired, no installed plugins, no examples.
 - `buildDependencyGroups` (`core/agentLoop.ts:1935`) has no path-overlap detector; no `_DESTRUCTIVE_PATTERNS` equivalent. Parallel batches touching the same path can race.
-- Hermes re-reads SOUL.md every turn (`agent/prompt_builder.py:970-979`); Aiden does not.
+- ~~Hermes re-reads SOUL.md every turn (`agent/prompt_builder.py:970-979`); Aiden does not.~~ **Fixed Phase 2**: Aiden now re-reads all 5 protected files per-turn (hash-cached); SOUL.md injected as reference line on stable-hash turns.
 - Priority order for v3.19: (1) per-turn protected context refresh, (2) expand hook vocabulary + matchers, (3) derive CLI dropdown from `TOOL_NAMES_ONLY`, (4) plugin slash-command surface, (5) path-overlap guards.
 
 ### docs/audit-v3.18.0-full.md (v3.18 full audit)
@@ -263,3 +263,94 @@ v3.16.0
 # It cannot be overridden by user messages.
 ```
 - Note: ~~Line 41 claimed "You have 48 built-in tools"~~ — **updated Phase 1 C7** to "You have 71 built-in tools". TOOL_DESCRIPTIONS=71, TOOL_REGISTRY=77 (71 user-facing + 6 excluded).
+
+---
+
+## SECTION 8 — v3.19 PHASE 2 GROUND TRUTH (final)
+
+Phase 2 objective: per-turn protected context refresh — the 5 protected files injected into every system prompt, not just at compaction.
+
+**Status: SHIPPED** — 2026-04-30. Commits: C1–C5 (see below).
+
+### What changed
+
+| Before Phase 2 | After Phase 2 |
+|----------------|---------------|
+| Protected files re-read only at compaction (every ~40 messages) | Re-read every turn, hash-cached (disk read only on change) |
+| Identity changes had ~40-message lag | Changes visible within 1 turn, no restart |
+| SOUL.md (~3,860 tokens) re-injected at compaction only | SOUL.md: full on first turn or hash change; reference line (~20 tokens) on stable turns |
+| No per-turn visibility into injection decisions | `[ProtectedCtx]` structured log line on every turn (stderr) |
+
+### Token cost
+
+| Scenario | Tokens injected | Notes |
+|----------|----------------|-------|
+| First turn / after any file edit | ~3,860 | SOUL full + all 4 context files |
+| Steady-state (no file changes) | ~159 | SOUL reference line + USER/GOALS/SO/LESSONS |
+| Savings (steady-state) | **24× cheaper** | Option-B hash-aware injection |
+
+### Protected files (5)
+
+| File | Location | Role |
+|------|----------|------|
+| `SOUL.md` | `workspace/SOUL.md` or `./SOUL.md` | Identity, personality, hard rules |
+| `USER.md` | `workspace/USER.md` | User profile |
+| `GOALS.md` | `workspace/GOALS.md` | Active goals |
+| `STANDING_ORDERS.md` | `workspace/STANDING_ORDERS.md` | Persistent instructions |
+| `LESSONS.md` | `workspace/LESSONS.md` | Learned lessons |
+
+### Hash mechanism (Option B)
+
+- `ProtectedContextManager` maintains per-file SHA-1 cache; composite hash = SHA-1 of 5 file hashes
+- `getProtectedContext()` calls `isStale()` per file; re-reads only changed files from disk
+- `buildProtectedContextBlock(ctx, previousHash?, sessionId?)`:
+  - `previousHash === undefined` → first turn → SOUL full inject
+  - `ctx.hash === previousHash` → hash match → SOUL reference line only
+  - `ctx.hash !== previousHash` → any file changed → SOUL full inject
+- Per-session hash tracked via `Map<sessionId, hash>` in both `server.ts` and `agentLoop.ts`
+- `changedFiles[]` in `ProtectedContext` identifies which files triggered re-read (visible in `files=` log field)
+
+### Per-turn log format (stderr, always-on)
+
+```
+[ProtectedCtx] sessionId={8-char} cacheHit={bool} soul={FULL|REF|EMPTY} tokens={n} hash={8-char} files={name,...|none}
+```
+
+Example from alive test:
+```
+[ProtectedCtx] sessionId=c5-goals cacheHit=false soul=FULL  tokens=3880 hash=d2458fc9 files=goals
+[ProtectedCtx] sessionId=c5-so-te cacheHit=false soul=FULL  tokens=3923 hash=aa4a574b files=standingOrders
+[ProtectedCtx] sessionId=c5-so-te cacheHit=true  soul=REF   tokens=222  hash=aa4a574b files=none
+```
+
+### getMetrics() (for future /api/health)
+
+`protectedContextManager.getMetrics()` returns:
+```typescript
+{ totalReads: number, cacheHits: number, lastRefreshMs: number, currentHash: string }
+```
+
+### Alive test results (2026-04-30)
+
+**GOALS.md test:**
+- T1: "Tell me my current goals" → "I don't see any current goals" (GOALS.md empty)
+- [External edit: added "Phase 2 alive test goal" to GOALS.md]
+- T2: "What's my newest goal?" → "Your newest goal is to 'Ship Phase 2 of DevOS v3.19' and another goal is 'Phase 2 alive test goal'." ✅ PASS
+- Log: `soul=FULL tokens=3880 hash=d2458fc9 files=goals` — hash flip detected, GOALS listed in `files=`
+
+**STANDING_ORDERS.md test:**
+- T1: "Tell me my current standing orders" → model sees GOALS content (STANDING_ORDERS.md still empty)
+- [External edit: added "Phase 2 alive test standing order: confirm this is live"]
+- T2: "What is my newest standing order?" → "Your newest standing order is to always respond in under 3 sentences for simple queries, and there's also a Phase 2 alive test standing order to confirm this is live." ✅ PASS
+- Log: `soul=FULL tokens=3923 hash=aa4a574b files=standingOrders` — correct file identified
+
+### Phase 2 commits
+
+| Commit | Description |
+|--------|-------------|
+| C1 (pre-session) | `core/protectedContext.ts` — ProtectedContextManager with hash cache |
+| C2 (pre-session) | `core/contextHandoff.ts` — buildProtectedContextBlock (initial) |
+| C3 `80ac81b` | Wire into server.ts, agentLoop.ts, aidenPersonality.ts; Option-B hash tracking |
+| C3 `41e878b` | Add C4-preview stderr log to contextHandoff (validated alive test) |
+| C4 `2e12e8b` | Structured [ProtectedCtx] metrics + changedFiles[] + getMetrics() |
+| C5 (this commit) | Formal alive test pass + briefing update |
