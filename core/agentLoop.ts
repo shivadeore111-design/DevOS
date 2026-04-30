@@ -754,6 +754,30 @@ async function rebuildContextAfterCompaction(
   return [protectedMessage, ...contextHistory]
 }
 
+// ── v3.19 Phase 1: exported for registryValidator — deleted in Commit 7 ──────
+export const ALLOWED_TOOLS: string[] = [
+  'web_search', 'fetch_page', 'open_browser', 'browser_extract',
+  'browser_click', 'browser_type', 'browser_screenshot', 'browser_scroll', 'browser_get_url',
+  'file_write', 'file_read',
+  'file_list', 'shell_exec', 'run_python', 'run_node',
+  'system_info', 'notify', 'deep_research', 'get_stocks',
+  'get_market_data', 'get_company_info', 'social_research',
+  'mouse_move', 'mouse_click', 'keyboard_type', 'keyboard_press',
+  'screenshot', 'screen_read', 'vision_loop', 'wait',
+  'code_interpreter_python', 'code_interpreter_node',
+  'clipboard_read', 'clipboard_write', 'window_list', 'window_focus',
+  'app_launch', 'app_close', 'system_volume',
+  'watch_folder', 'watch_folder_list',
+  'send_file_local', 'receive_file_local',
+  'get_briefing',
+  'respond',
+  'clarify', 'todo', 'cronjob', 'vision_analyze',
+  'voice_speak', 'voice_transcribe', 'voice_clone', 'voice_design',
+  'lookup_skill', 'lookup_tool_schema',
+  'spawn', 'spawn_subagent', 'swarm',
+  ...SLASH_MIRROR_TOOL_NAMES,
+]
+
 // ── STEP 1: planWithLLM ────────────────────────────────────────
 
 export async function planWithLLM(
@@ -804,29 +828,6 @@ export async function planWithLLM(
       console.warn(`[Recipe] Execution failed for ${recipeMatch.recipe.name}: ${err} — falling through to LLM planner`)
     }
   }
-
-  const ALLOWED_TOOLS = [
-    'web_search', 'fetch_page', 'open_browser', 'browser_extract',
-    'browser_click', 'browser_type', 'browser_screenshot', 'browser_scroll', 'browser_get_url',
-    'file_write', 'file_read',
-    'file_list', 'shell_exec', 'run_python', 'run_node',
-    'system_info', 'notify', 'deep_research', 'get_stocks',
-    'get_market_data', 'get_company_info', 'social_research',
-    'mouse_move', 'mouse_click', 'keyboard_type', 'keyboard_press',
-    'screenshot', 'screen_read', 'vision_loop', 'wait',
-    'code_interpreter_python', 'code_interpreter_node',
-    'clipboard_read', 'clipboard_write', 'window_list', 'window_focus',
-    'app_launch', 'app_close', 'system_volume',
-    'watch_folder', 'watch_folder_list',
-    'send_file_local', 'receive_file_local',
-    'get_briefing',
-    'respond',
-    'clarify', 'todo', 'cronjob', 'vision_analyze',
-    'voice_speak', 'voice_transcribe', 'voice_clone', 'voice_design',
-    'lookup_skill', 'lookup_tool_schema',
-    'spawn', 'spawn_subagent', 'swarm',
-    ...SLASH_MIRROR_TOOL_NAMES,
-  ]
 
   // Sprint 13: append discovered MCP tools
   const mcpToolNames = mcpClient.getAllCachedTools().map(t => t.name)
@@ -1518,7 +1519,7 @@ Output ONLY valid JSON, nothing else:`
 // ── Plan validation ────────────────────────────────────────────
 // Called after planWithLLM — rejects structurally bad plans before execution.
 
-const VALID_TOOLS = [
+export const VALID_TOOLS = [
   'web_search', 'fetch_page', 'fetch_url', 'open_browser', 'browser_extract',
   'browser_click', 'browser_type', 'browser_screenshot', 'browser_scroll', 'browser_get_url',
   'file_write', 'file_read',
@@ -1878,7 +1879,7 @@ function appendLesson(lesson: string): void {
 
 // ── executeToolWithRetry — step-level retry with exponential backoff ──
 // Tools that mutate state are excluded from retry to prevent double-execution.
-const NO_RETRY_TOOLS = new Set([
+export const NO_RETRY_TOOLS = new Set([
   'shell_exec', 'run_python', 'run_node', 'notify',
   'mouse_click', 'keyboard_type', 'keyboard_press',
   'app_launch', 'app_close',
@@ -1954,7 +1955,7 @@ async function executeToolWithRetry(tool: string, input: any, maxRetries = 2): P
 // Groups consecutive tool steps into batches: parallel-safe tools are
 // batched together; sequential tools break the batch.
 
-const PARALLEL_SAFE = new Set([
+export const PARALLEL_SAFE = new Set([
   'web_search', 'system_info', 'get_stocks', 'get_market_data',
   'social_research', 'fetch_url', 'fetch_page', 'get_company_info',
   'deep_research', 'code_interpreter_python', 'code_interpreter_node',
@@ -1962,7 +1963,7 @@ const PARALLEL_SAFE = new Set([
   'get_calendar', 'read_email', 'get_natural_events', 'ingest_youtube',
 ])
 
-const SEQUENTIAL_ONLY = new Set([
+export const SEQUENTIAL_ONLY = new Set([
   'file_write', 'run_python', 'run_node', 'shell_exec',
   'open_browser', 'browser_click', 'browser_type', 'browser_extract',
   'mouse_move', 'mouse_click', 'keyboard_type', 'keyboard_press',

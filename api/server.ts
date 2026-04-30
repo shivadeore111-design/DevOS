@@ -5726,6 +5726,14 @@ export function startApiServer(portArg?: number): Express {
     console.log('[Startup] Tool count:', Object.keys(TOOL_DESCRIPTIONS).length)
   }
 
+  // v3.19 Phase 1: warn if hand-maintained list content diverges from TOOL_REGISTRY
+  try {
+    const { validateRegistry } = require('../core/registryValidator')
+    validateRegistry()
+  } catch (e: any) {
+    console.warn('[Startup] registryValidator error:', e.message)
+  }
+
   // ── Startup health check ─────────────────────────────────────
   try { startupCheck() } catch (e: any) {
     console.error('[Startup] startupCheck threw:', e.message)
