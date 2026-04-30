@@ -6608,8 +6608,9 @@ ${cognitionHint}${memoryContext}${greetingPreamble}${sessionContext}${memoryInde
 
     } else if (providerType === 'custom') {
       // ── Custom OpenAI-compatible endpoint — use the entry's own baseUrl ──
+      const apiEntry  = (cfg.providers?.apis as any[])?.find((a: any) => a.name === responderChat.apiName)
       const customCp  = cfg.customProviders?.find(c => c.id === responderChat.apiName)
-      const endpoint  = customCp?.baseUrl || ''
+      const endpoint  = apiEntry?.baseUrl || customCp?.baseUrl || ''
       if (!endpoint) throw new Error(`Custom provider "${responderChat.apiName}" has no baseUrl`)
       const resp = await fetch(endpoint, {
         method: 'POST',
