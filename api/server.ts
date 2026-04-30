@@ -157,41 +157,37 @@ const INSTANT_ACTIONS: InstantAction[] = [
       /^capture\s+(?:the\s+)?screen\s*$/i,
     ],
     action: async () => {
-      try {
-        const result = await executeTool('screenshot', {})
-        if (result.success && result.output) return result.output
-      } catch {}
-      return 'Screenshot taken.'
+      const result = await executeTool('screenshot', {})
+      if (result.success) return result.output || 'Screenshot taken.'
+      return `Couldn't take screenshot: ${result.error || 'tool returned no diagnostic'}`
     },
   },
   // 10. Volume Up
   {
     patterns: [/^(?:turn\s+(?:the\s+)?)?volume\s+up\s*$/i],
     action: async () => {
-      try {
-        await executeTool('shell_exec', { command: 'powershell -c “(New-Object -com WScript.Shell).SendKeys([char]175)”' })
-      } catch {}
-      return 'Volume up.'
+      const result = await executeTool('system_volume', { action: 'up' })
+      if (result.success) return result.output || 'Volume up.'
+      return `Couldn't change volume: ${result.error || 'tool returned no diagnostic'}`
     },
   },
   // 11. Volume Down
   {
     patterns: [/^(?:turn\s+(?:the\s+)?)?volume\s+down\s*$/i],
     action: async () => {
-      try {
-        await executeTool('shell_exec', { command: 'powershell -c “(New-Object -com WScript.Shell).SendKeys([char]174)”' })
-      } catch {}
-      return 'Volume down.'
+      const result = await executeTool('system_volume', { action: 'down' })
+      if (result.success) return result.output || 'Volume down.'
+      return `Couldn't change volume: ${result.error || 'tool returned no diagnostic'}`
     },
   },
   // 12. Mute / Unmute
   {
     patterns: [/^(?:toggle\s+)?mute\s*$/i, /^unmute\s*$/i],
-    action: async () => {
-      try {
-        await executeTool('shell_exec', { command: 'powershell -c “(New-Object -com WScript.Shell).SendKeys([char]173)”' })
-      } catch {}
-      return 'Toggled mute.'
+    action: async (_match, message) => {
+      const muteAction = /^unmute/i.test(message ?? '') ? 'unmute' : 'mute'
+      const result = await executeTool('system_volume', { action: muteAction })
+      if (result.success) return result.output || (muteAction === 'mute' ? 'Muted.' : 'Unmuted.')
+      return `Couldn't ${muteAction}: ${result.error || 'tool returned no diagnostic'}`
     },
   },
   // 13. Set Timer
@@ -230,10 +226,9 @@ const INSTANT_ACTIONS: InstantAction[] = [
   {
     patterns: [/^lock\s+(?:the\s+)?(?:screen|pc|computer|workstation)\s*$/i],
     action: async () => {
-      try {
-        await executeTool('shell_exec', { command: 'rundll32.exe user32.dll,LockWorkStation' })
-      } catch {}
-      return 'Locking screen...'
+      const result = await executeTool('shell_exec', { command: 'rundll32.exe user32.dll,LockWorkStation' })
+      if (result.success) return 'Locking screen...'
+      return `Couldn't lock screen: ${result.error || 'tool returned no diagnostic'}`
     },
   },
 ]
