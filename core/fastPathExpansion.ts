@@ -58,6 +58,8 @@ const PLANNER_REQUIRED_PATTERNS: RegExp[] = [
   /\b(then|after that|next|first .+ then|step by step|automate|workflow|pipeline|schedule|every (day|hour|minute)|on a schedule)\b/i,
   // Email / calendar
   /\b(send (email|mail|message)|check (email|calendar)|schedule (meeting|call)|remind me)\b/i,
+  // Music / media playback state — needs now_playing tool
+  /\b(now playing|currently playing|what (music|song|track|artist|album)|am i playing|is (playing|on))\b/i,
 ]
 
 /**
