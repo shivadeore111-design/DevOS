@@ -3758,6 +3758,8 @@ export function detectToolCategories(message: string): ToolCategory[] {
     categories.add('screen')
   if (/stock|nifty|market|price|nse|bse|sensex|reliance|trading|shares|equity|briefing|weather|natural|earthquake/i.test(msg))
     categories.add('data')
+  if (/email|inbox|mail|gmail|unread|read_email|send_email|calendar|meetings|events/i.test(msg))
+    categories.add('data')
   if (/notify|notification|remind|alert|system info|cpu|ram|disk|hardware|clipboard|launch|close app/i.test(msg))
     categories.add('system')
   if (/voice|speak|say aloud|listen|record audio|tts|text.to.speech|transcribe|speech.to.text|clone.*voice|voice.*design|voice.*clone|design.*voice/i.test(msg))
