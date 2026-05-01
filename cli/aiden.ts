@@ -5949,13 +5949,22 @@ const dropdown: DropdownState = {
   triggerChar: null, query: '', lineCount: 0, currentLine: '',
 }
 
-/** Build dropdown items from the canonical COMMAND_DETAIL map. */
+/** Generation-cached slash-command dropdown.
+ *  Re-builds only when commandCatalog.generation() changes (register/unregister).
+ *  Safe to call on every keystroke — O(1) when catalog is stable. */
+let _slashGen   = -1
+let _slashCache: DropdownItem[] = []
+
 function buildSlashCommands(): DropdownItem[] {
-  return Object.entries(COMMAND_DETAIL).map(([cmd, detail]) => ({
+  const gen = commandCatalog.generation()
+  if (gen === _slashGen) return _slashCache
+  _slashGen   = gen
+  _slashCache = commandCatalog.list().map(([cmd, detail]) => ({
     label:       cmd,
     description: detail.desc,
     category:    detail.section,
   }))
+  return _slashCache
 }
 
 /** Build dropdown items for all registered tool names. */
