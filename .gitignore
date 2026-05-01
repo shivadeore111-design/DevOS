@@ -153,6 +153,7 @@ SHIP-CHECKLIST.md
 # ── Test reports (generated output) ──────────────────────────────────────────
 tests/TEST_REPORT-*.md
 tests/results/
+docs/test-reports/
 
 # ── Claude Code local settings ────────────────────────────────────────────────
 .claude/settings.json
