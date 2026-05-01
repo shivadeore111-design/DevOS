@@ -2898,6 +2898,7 @@ const TOOL_TIERS: Record<string, ToolTier> = {
   system_info:             1,
   now_playing:             1,
   notify:                  1,
+  memory_store:            1,
   wait:                    1,
   get_briefing:            1,
   get_natural_events:      1,
@@ -2981,7 +2982,7 @@ export type ToolCategory =
   | 'data'          // market data, stocks, company info, briefing, natural events
   | 'system'        // notify, system_info, clipboard, app_launch/close, wait
   | 'git'           // git_status, git_commit, git_push
-  | 'memory'        // (reserved for future memory/knowledge tools)
+  | 'memory'        // memory_store (write), memory_show, search (read)
   | 'media'         // (reserved for future audio/media tools)
   | 'voice'         // voice_speak, voice_transcribe, voice_clone, voice_design
   | 'introspection' // status, analytics, spend, memory_show, lessons, skills_list, tools_list, whoami, channels_status, goals
@@ -3057,6 +3058,7 @@ const TOOL_CATEGORIES: Record<string, ToolCategory[]> = {
   analytics:               ['introspection'],
   spend:                   ['introspection'],
   memory_show:             ['introspection', 'memory'],
+  memory_store:            ['memory'],
   lessons:                 ['introspection', 'memory'],
   skills_list:             ['introspection'],
   tools_list:              ['introspection'],
@@ -3604,6 +3606,12 @@ export const TOOL_REGISTRY: Record<string, ToolRegistryMeta> = {
     tier: 1, category: ['interaction', 'core'],
     parallel: 'never',   // agentLoop.ts:1957 — not in PARALLEL_SAFE
     mcp: 'excluded',     // api/mcp.ts — not in SAFE_TOOLS or DESTRUCTIVE_TOOLS
+  },
+  memory_store: {
+    description: 'Persist a fact, preference, or observation to permanent memory right now. Use whenever the user says "remember", "save this", "keep track of", or similar. Pass { fact: "the thing to remember" }.',
+    tier: 1, category: ['memory'],
+    retry: false,        // write operation — don't double-write on retry
+    mcp: 'excluded',
   },
   search: {
     description: 'Search workspace memory, session context, and file system for relevant stored information',
