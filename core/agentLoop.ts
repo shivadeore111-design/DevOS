@@ -467,6 +467,22 @@ function buildHeaders(providerName: string, apiKey: string): Record<string, stri
   return headers
 }
 
+function extractChatMessageContent(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+
+  return content
+    .map((part) => {
+      if (typeof part === 'string') return part
+      if (part && typeof part === 'object' && 'text' in part) {
+        const text = (part as { text?: unknown }).text
+        return typeof text === 'string' ? text : ''
+      }
+      return ''
+    })
+    .join('')
+}
+
 /**
  * C9b: Resolve streaming URL for any provider — custom or known.
  *
@@ -714,7 +730,7 @@ async function racePlannerAPIs(
     })
     if (!r.ok) throw new Error(`${entry.provider} ${r.status}`)
     const d = await r.json() as any
-    const text = d?.choices?.[0]?.message?.content || ''
+    const text = extractChatMessageContent(d?.choices?.[0]?.message?.content)
     if (!text.trim() || !text.includes('{')) throw new Error('no JSON')
     return text
   }
@@ -3129,7 +3145,7 @@ export async function callLLM(
           opts?.traceId, opts?.isSystem ?? false,
         )
       } catch {}
-      return d?.choices?.[0]?.message?.content || ''
+      return extractChatMessageContent(d?.choices?.[0]?.message?.content)
 
     } else {
       // OpenAI-compatible: groq, openrouter, cerebras, nvidia, github
@@ -3157,7 +3173,7 @@ export async function callLLM(
           opts?.traceId, opts?.isSystem ?? false,
         )
       } catch {}
-      return d?.choices?.[0]?.message?.content || ''
+      return extractChatMessageContent(d?.choices?.[0]?.message?.content)
     }
   } catch (e: any) {
     if (e.name === 'AbortError') return ''
@@ -3232,4 +3248,3 @@ Respond in JSON:
 
   return allResults.join('\n\n')
 }
-
