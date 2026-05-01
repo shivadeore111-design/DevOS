@@ -956,9 +956,9 @@ function registerCoreCommands(rl: readline.Interface): void {
   }})
 
   const _newResetHandler = async (_args: string[]) => {
-    state.messages = []
-    state.attachedFile = undefined
-    state.attachedFileName = undefined
+    state.history    = []
+    state.turnCount  = 0
+    state.ctxPercent = 0
     ;(globalThis as any).__pinnedExchanges = []
     console.log(`\n  ${T.dim}Session cleared.${T.reset}\n`)
   }
@@ -971,15 +971,13 @@ function registerCoreCommands(rl: readline.Interface): void {
   }})
 
   commandCatalog.register('/history', { ...COMMAND_DETAIL['/history'], origin: 'core', handler: async (_args) => {
-    if (state.messages.length === 0) {
+    if (state.history.length === 0) {
       console.log(`\n  ${T.dim}No history yet.${T.reset}\n`); return
     }
     console.log()
-    for (const m of state.messages) {
+    for (const m of state.history) {
       const tag = m.role === 'user' ? `${fg(COLORS.orange)}you${T.reset}` : `${T.dim}ai${T.reset}`
-      const text = typeof m.content === 'string'
-        ? m.content
-        : Array.isArray(m.content) ? m.content.map((c: any) => c.text ?? '').join('') : ''
+      const text = m.content
       console.log(`  ${tag}  ${text.slice(0, 120)}`)
     }
     console.log()
@@ -1001,13 +999,11 @@ function registerCoreCommands(rl: readline.Interface): void {
     fs.mkdirSync(outDir, { recursive: true })
     const outFile = path.join(outDir, `session-${timestamp}.${fmt === 'json' ? 'json' : 'md'}`)
     if (fmt === 'json') {
-      fs.writeFileSync(outFile, JSON.stringify(state.messages, null, 2), 'utf8')
+      fs.writeFileSync(outFile, JSON.stringify(state.history, null, 2), 'utf8')
     } else {
-      const md = state.messages.map(m => {
+      const md = state.history.map(m => {
         const role = m.role === 'user' ? '**You**' : '**Aiden**'
-        const text = typeof m.content === 'string'
-          ? m.content
-          : Array.isArray(m.content) ? m.content.map((c: any) => c.text ?? '').join('') : ''
+        const text = m.content
         return `### ${role}\n\n${text}`
       }).join('\n\n---\n\n')
       fs.writeFileSync(outFile, md, 'utf8')
