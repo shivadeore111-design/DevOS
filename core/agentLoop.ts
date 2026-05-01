@@ -653,7 +653,14 @@ async function racePlannerAPIs(
   for (const a of cfg.providers.apis) {
     if (!a.enabled || a.rateLimited) continue
     const k = a.key.startsWith('env:') ? (process.env[a.key.replace('env:', '')] || '') : a.key
-    if (!k || !OPENAI_COMPAT_ENDPOINTS[a.provider]) continue
+    if (!k) continue
+    if (a.provider === 'custom') {
+      // providers.apis entries with provider:'custom' supply their own baseUrl
+      if (!a.baseUrl) continue
+      candidates.push({ provider: 'custom', model: a.model, key: k, url: a.baseUrl, tier: (a as any).tier ?? 50 })
+      continue
+    }
+    if (!OPENAI_COMPAT_ENDPOINTS[a.provider]) continue
     candidates.push({ provider: a.provider, model: a.model, key: k, url: OPENAI_COMPAT_ENDPOINTS[a.provider], tier: (a as any).tier ?? 50 })
   }
 
@@ -3011,11 +3018,24 @@ export async function callLLM(
       return d?.result?.response || ''
 
     } else if (providerName === 'custom') {
-      // Custom provider — look up baseUrl from config by matching apiKey
+      // Custom provider — look up baseUrl from config.
+      // Checks customProviders first (direct apiKey match), then providers.apis
+      // entries with provider:'custom' (key resolved from env).
       const cfgCustom = loadConfig()
-      const cp = cfgCustom.customProviders?.find((c: any) => c.enabled && c.apiKey === apiKey)
-      if (!cp?.baseUrl) throw new Error(`callLLM: no baseUrl for custom provider (model=${model})`)
-      const r = await fetch(cp.baseUrl, {
+      let customBaseUrl: string | undefined =
+        cfgCustom.customProviders?.find((c: any) => c.enabled && c.apiKey === apiKey)?.baseUrl
+      if (!customBaseUrl) {
+        const apiEntry = (cfgCustom.providers?.apis ?? []).find((a: any) => {
+          if (a.provider !== 'custom' || !a.enabled || !a.baseUrl) return false
+          const resolved = a.key?.startsWith('env:')
+            ? (process.env[a.key.replace('env:', '')] || '')
+            : a.key
+          return resolved === apiKey
+        })
+        customBaseUrl = apiEntry?.baseUrl
+      }
+      if (!customBaseUrl) throw new Error(`callLLM: no baseUrl for custom provider (model=${model})`)
+      const r = await fetch(customBaseUrl, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
         body: JSON.stringify({
