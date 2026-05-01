@@ -38,6 +38,16 @@ Self-Healing • Browser Automation • Terminal Control • Persistent Memory
 
 ---
 
+## Support Aiden
+
+Solo-built, AGPL-3.0. If Aiden saves you time, consider sponsoring development.
+
+[Sponsor →](https://razorpay.me/@whitelotus9625)
+
+Funds go to ongoing development, infrastructure costs, and contributor bounties.
+
+---
+
 ## Why Aiden
 
 Most AI agents answer questions. Aiden executes work.
