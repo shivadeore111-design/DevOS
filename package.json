@@ -70,6 +70,7 @@
     "test:audit": "npx ts-node scripts/test-suite.ts",
     "test:audit:full": "npx ts-node scripts/test-suite.ts --full",
     "test:audit:api": "npx ts-node scripts/test-suite.ts --api",
+    "test:audit:behavioral": "npx ts-node scripts/test-suite/behavioral.ts",
     "cli": "npx ts-node cli/aiden.ts",
     "uninstall": "powershell -ExecutionPolicy Bypass -File scripts\\uninstall.ps1",
     "livepulse": "powershell -ExecutionPolicy Bypass -File scripts\\livepulse.ps1",
