@@ -33,8 +33,8 @@ Self-Healing • Browser Automation • Terminal Control • Persistent Memory
 
 ---
 
-> **v3.18 — live dropdown UX · real PC control · smart model failover · anti-confabulation**
-> Type `/` for 63 commands or `@` for 61 tools with instant dropdown. Open/close apps, change volume, and control your PC for real — no more fake responses. Smart per-model failover with free-tier defaults. See [changelog](#changelog) below.
+> **v3.19.0 "ALIVE" — identity refreshes every turn · real-time state via tools · honest failure diagnostics · plugin slash commands**
+> Type `/` for 91 commands or `@` for 89 tools with instant dropdown. SOUL/USER/GOALS refresh every turn (not every 40 messages). Tool failures name the provider, retries, and fallback. Plugins extend slash commands via `commandCatalog.register()`. See [changelog](#changelog) below.
 
 ---
 
@@ -48,6 +48,10 @@ Most AI agents answer questions. Aiden executes work.
 - **Learns from every session** — writes skills from successes, lessons from failures
 - **Works fully offline** — Ollama support, zero cloud dependency
 - **One command to start** — `npx aiden-os` installs, configures, runs everything
+- **Lives where you do** — identity (SOUL/USER/GOALS) refreshes every turn, not every 40 messages; edit `USER.md` mid-conversation and the change lands within one reply
+- **Real-time state via tools** — `now_playing` and friends query live system state instead of returning stale snapshots cached at startup
+- **Honest failures** — every tool failure names the tool, provider, retry count, fallback chain, error, and next step; no silent swallowing
+- **Plugin extension** — drop a `.js` file into `workspace/plugins/` and call `ctx.commandCatalog.register('/mycommand', …)` to add slash commands without touching core
 
 ---
 
@@ -190,7 +194,7 @@ take a screenshot and describe what you see
 what files did I download today
 ```
 
-Type `/` to browse all 63 commands with instant search. Type `@` to select any of 61 tools directly.
+Type `/` to browse all 91 commands with instant search. Type `@` to select any of 89 tools directly.
 
 ---
 
@@ -462,8 +466,8 @@ Both the terminal TUI and the browser dashboard (`localhost:4200/ui`) expose the
 | Streaming responses | ✅ token-by-token | ✅ live SSE |
 | Markdown rendering | ✅ | ✅ |
 | Slash commands | ✅ `/help`, `/switch`, `/budget`… | ✅ same commands |
-| `/` command dropdown | ✅ instant, 63 commands | 🔜 v3.19 |
-| `@` tool picker | ✅ instant, 61 tools | 🔜 v3.19 |
+| `/` command dropdown | ✅ instant, 91 commands | ✅ |
+| `@` tool picker | ✅ instant, 89 tools | ✅ |
 | Provider panel | `/switch` | ✅ Providers tab |
 | Memory panel | `/memory` | ✅ Memory tab |
 | Skills panel | `/skills` | ✅ Skills tab |
@@ -527,7 +531,7 @@ npm run cli            # TUI in a second terminal
 
 ## Migration from Other Agents
 
-> **Detailed guides coming in v3.19.** Short version:
+> Short version (no breaking changes in v3.18 or v3.19 — existing plugins and `.env` files continue to work):
 
 - **Skills** — Aiden is fully compatible with [agentskills.io](https://agentskills.io). Any Hermes or OpenClaw skill with a valid `skill.json` manifest loads automatically via `/install <name>`.
 - **API clients** — Aiden exposes an OpenAI-compatible API at `localhost:4200/v1`. If you pointed your client at another agent, update the base URL and you're done.
@@ -536,6 +540,41 @@ npm run cli            # TUI in a second terminal
 ---
 
 ## Changelog
+
+### v3.19.0 — 2026-05-01 "ALIVE"
+
+**Source-of-truth tool registry**
+- 13 hand-maintained tool lists collapsed into a single `TOOL_REGISTRY`; every derived list is generated, not maintained
+- Validator throws on drift at startup — no more silent orphan tools
+- 12 previously-unreachable tools now reachable by the planner (`fetch_url`, `cmd`, `ps`, `wsl`, `git_status`, `manage_goals`, `get_calendar`, `read_email`, `send_email`, `ingest_youtube`, `schedule_reminder`, `compact_context`)
+
+**Per-turn protected context refresh**
+- SOUL / USER / GOALS / STANDING_ORDERS / LESSONS refresh every turn instead of every 40 messages
+- Hash-based file-level cache — 24× token reduction on stable turns (3,860 → 159 tokens)
+- Edit `USER.md` mid-conversation; Aiden picks up changes within one reply
+
+**Honesty enforcement**
+- 5 fake InstantActions removed (`screenshot`, `volume_up/down/mute`, `lock_screen`) — now route to real handlers, surface real errors
+- Action-verb planner guard: prevents respond-only plans for action intents
+- Diagnostic failure messages: every failure names tool, provider, retries, fallback, error, suggestion
+- Hidden bug fixed: `fastPath` was bypassing the planner for short action messages
+
+**Real-time state via tools**
+- `now_playing` tool: live media query via Windows `WinRT GlobalSystemMediaTransportControlsSessionManager`
+- Volatile startup state dump removed from system prompt
+- SOUL.md lazy-state rule: model calls tools for current state instead of using cached values
+
+**Registry-backed slash completer**
+- `commandCatalog` is the single source of truth for slash commands (91 total)
+- 6 previously-invisible commands now in dropdown (`/plugins`, `/profile`, `/failed`, `/install`, `/publish`, `/sandbox`)
+- Plugin contribution path live: plugins call `commandCatalog.register()` to add commands
+- Generation-cached dropdown: rebuild only when catalog changes
+
+**Provider chain expansion**
+- NVIDIA NIM promoted from executor-only to chat slots (`nvidia-1`, `nvidia-2`)
+- Chain order: `groq → gemini → nvidia → openrouter → together → ollama`
+
+---
 
 ### v3.18.0 — 2026-04-30
 
@@ -577,11 +616,6 @@ npm run cli            # TUI in a second terminal
 
 **Skill loader fix**
 - 1,484 skills now load (was blocking 1,445 due to overly broad patterns)
-
-**Known issues — fixing in v3.19**
-- Cross-provider failover not always reliable (Groq may not try other providers)
-- Real-time state queries (now playing, open tabs) need dedicated tools
-- YouTube auto-click occasionally fails on slow-loading pages
 
 ---
 
