@@ -1,8 +1,11 @@
 // ── cli/commandCatalog.ts ─────────────────────────────────────────────────────
 // Single source of truth for all slash commands — descriptions, usage, subs,
-// examples, and section groupings. Consumed by:
+// examples, section groupings, and (C2+) runtime dispatch handlers.
+//
+// Consumed by:
 //   • cli/commandPalette.ts (interactive arrow-key palette)
-//   • cli/aiden.ts           (Tab completer + /help handler)
+//   • cli/aiden.ts           (Tab completer + /help handler + dispatch)
+//   • core/pluginLoader.ts   (plugin command registration — C4)
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface CmdDetail {
@@ -11,6 +14,15 @@ export interface CmdDetail {
   subs?:     string[]
   examples?: string[]
   section?:  string
+  // ── C2 additions ─────────────────────────────────────────────────────────────
+  /** Runtime dispatch handler.  Populated by registerCoreCommands() in aiden.ts
+   *  and by plugin register() calls.  args = parts.slice(1) (everything after
+   *  the slash command name). */
+  handler?:  (args: string[]) => Promise<void>
+  /** Whether this entry was contributed by a plugin or shipped as core. */
+  origin?:   'core' | 'plugin'
+  /** Hint: safe to run in parallel with other commands (reserved for C4). */
+  parallel?: boolean
 }
 
 export interface PaletteCommand {
@@ -21,7 +33,10 @@ export interface PaletteCommand {
   section?:     string        // grouping label
 }
 
-// ── Full command registry ─────────────────────────────────────────────────────
+// ── Full command registry (static metadata) ───────────────────────────────────
+// C2 adds the 6 commands that existed in /help display but were missing here.
+// Handlers are NOT stored here — they are registered at runtime via
+// registerCoreCommands() in cli/aiden.ts, which closes over module-scope state.
 
 export const COMMAND_DETAIL: Record<string, CmdDetail> = {
   '/new':        { section: 'Session',   desc: 'Start a fresh session (clears local history).',                usage: '/new' },
@@ -62,6 +77,21 @@ export const COMMAND_DETAIL: Record<string, CmdDetail> = {
     examples: ['/skills list', '/skills search http', '/skills validate', '/skills import owner/repo',
                '/skills import-repo anthropics/skills', '/skills enable algorithmic-art'],
     usage: '/skills [list|search|install|enable|disable|validate|import|...] [args]',
+  },
+  // ── Gap 1 (C2): 3 Info commands previously missing from catalog ──────────────
+  '/plugins':    { section: 'Info',      desc: 'Plugin manager — list loaded plugins or force reload.',
+    subs:     ['list', 'reload'],
+    examples: ['/plugins', '/plugins reload'],
+    usage:    '/plugins [list|reload]',
+  },
+  '/profile':    { section: 'Info',      desc: 'View, edit, or clear the structured user profile (Honcho model).',
+    subs:     ['edit', 'clear'],
+    examples: ['/profile', '/profile edit', '/profile clear'],
+    usage:    '/profile [edit|clear]',
+  },
+  '/failed':     { section: 'Info',      desc: 'Signal last exchange failed — triggers failure trace analysis + lesson.',
+    usage:    '/failed [reason]',
+    examples: ['/failed', '/failed wrong file was edited'],
   },
   '/lessons':    { section: 'Info',      desc: 'Browse permanent failure rules stored in LESSONS.md.',
     subs:     ['search <q>', 'web|shell|files|planning|provider|memory|skills|errors|general'],
@@ -245,6 +275,20 @@ export const COMMAND_DETAIL: Record<string, CmdDetail> = {
     usage:    '/learn [<name>] [<description>]',
     examples: ['/learn TypeScript generics advanced patterns'],
   },
+  // ── Gap 1 (C2): 3 Power commands previously missing from catalog ─────────────
+  '/install':    { section: 'Power',     desc: 'Install a skill from the public registry (skills.taracod.com).',
+    usage:    '/install <skill_name>',
+    examples: ['/install http-client', '/install code-review'],
+  },
+  '/publish':    { section: 'Power',     desc: 'Publish a skill to the public registry (Pro — requires license key).',
+    usage:    '/publish <skill_name> [--key=<license>]',
+    examples: ['/publish my-skill', '/publish my-skill --key=abc123'],
+  },
+  '/sandbox':    { section: 'Power',     desc: 'Manage Docker sandbox mode (status / off / auto / strict / build).',
+    subs:     ['status', 'off', 'auto', 'strict', 'build'],
+    examples: ['/sandbox', '/sandbox strict', '/sandbox build'],
+    usage:    '/sandbox [status|off|auto|strict|build]',
+  },
   '/help':       { section: 'Meta',      desc: 'Show help overview, or search / get detail on a command.',
     subs:     ['search <q>', '<command>'],
     examples: ['/help', '/help search memory', '/help /skills'],
@@ -255,15 +299,60 @@ export const COMMAND_DETAIL: Record<string, CmdDetail> = {
   '/q':          { section: 'Exit',      desc: 'Alias for /quit.',                                          usage: '/q' },
 }
 
-// Flat list of command strings (used by Tab completer)
+// ── Runtime registry (C2) ─────────────────────────────────────────────────────
+// Seeded from COMMAND_DETAIL at module load.  register() / unregister() mutate
+// this map and bump _generation so downstream caches can invalidate.
+
+let _generation = 0
+
+/** Internal registry — DO NOT access directly; use list() / get(). */
+const _registry: Map<string, CmdDetail> = new Map(Object.entries(COMMAND_DETAIL))
+
+/**
+ * Register (or replace) a slash command at runtime.
+ * Bumps _generation so dropdown / palette caches know to rebuild.
+ */
+export function register(name: string, detail: CmdDetail): void {
+  _registry.set(name, detail)
+  _generation++
+}
+
+/**
+ * Unregister a slash command at runtime.
+ * No-ops silently if the name is not registered.
+ */
+export function unregister(name: string): void {
+  if (_registry.delete(name)) _generation++
+}
+
+/** All registered commands as [name, detail] pairs (includes plugins). */
+export function list(): Array<[string, CmdDetail]> {
+  return Array.from(_registry.entries())
+}
+
+/** Look up a single command by exact name (e.g. '/skills'). */
+export function get(name: string): CmdDetail | undefined {
+  return _registry.get(name)
+}
+
+/** Monotonic counter — incremented on every register() / unregister() call.
+ *  Consumers can cache against this value and rebuild when it changes. */
+export function generation(): number {
+  return _generation
+}
+
+// ── Flat list of command strings (used by Tab completer) ──────────────────────
+// Derived from the static COMMAND_DETAIL so it is available synchronously
+// before registerCoreCommands() runs.  Prefer commandCatalog.list() for
+// anything that needs runtime-registered plugin commands.
 export const COMMANDS: string[] = Object.keys(COMMAND_DETAIL)
 
 // ── Catalog builder ───────────────────────────────────────────────────────────
 
-/** Build a PaletteCommand array for the command palette. */
+/** Build a PaletteCommand array for the command palette.
+ *  Uses the live _registry so plugin commands are included. */
 export function getCatalog(): PaletteCommand[] {
-  return COMMANDS.map(cmd => {
-    const d = COMMAND_DETAIL[cmd]
+  return list().map(([cmd, d]) => {
     const subcommands: PaletteCommand[] | undefined = d.subs?.map(sub => {
       const subcmd = sub.split(' ')[0]   // first token is the subcommand keyword
       return {

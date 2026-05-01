@@ -19,6 +19,7 @@ import { checkForUpdate, formatUpdateLine }                  from '../core/updat
 import { VERSION }                                           from '../core/version'
 import { COMMANDS, COMMAND_DETAIL, getCatalog }             from './commandCatalog'
 import type { CmdDetail }                                    from './commandCatalog'
+import * as commandCatalog                                   from './commandCatalog'
 import { TOOL_DESCRIPTIONS }                                 from '../core/toolRegistry'
 
 // ── Constants ────────────────────────────────────────────────────────────────────
@@ -773,6 +774,666 @@ function fuzzyCmd(needle: string, haystack: string): boolean {
 function getPrompt(): string {
   const privTag = state.privateMode ? ` ${T.warning}[private]${T.reset}` : ''
   return `  ${fg(COLORS.orange)}${MARKS.TRI}${RST}${privTag} `
+}
+
+function registerCoreCommands(rl: readline.Interface): void {
+
+  commandCatalog.register('/help', { ...COMMAND_DETAIL['/help'], origin: 'core', handler: async (args) => {
+    const O  = fg(COLORS.orange)
+    const D  = T.dim
+    const R  = T.reset
+    const B  = T.bold
+
+    function helpRow(cmd: string, desc: string): string {
+      return `  ${O}${cmd.padEnd(26)}${RST}${D}${desc}${R}`
+    }
+    function helpSection(title: string): string {
+      return `\n  ${B}${MARKS.TRI} ${title}${R}\n  ${D}${hr()}${R}`
+    }
+
+    const sub = args[0]?.toLowerCase()
+    if (sub === 'search' || (sub && !sub.startsWith('/'))) {
+      const q = (sub === 'search' ? args.slice(1) : args).join(' ').toLowerCase()
+      if (!q) {
+        console.log(`  ${D}Usage: /help search <query>${R}\n`); return
+      }
+      const matches = Object.entries(COMMAND_DETAIL).filter(([cmd, d]) => {
+        return cmd.includes(q) ||
+          d.desc.toLowerCase().includes(q) ||
+          (d.subs ?? []).some(s => s.toLowerCase().includes(q)) ||
+          (d.section ?? '').toLowerCase().includes(q)
+      })
+      console.log()
+      if (matches.length === 0) {
+        console.log(`  ${D}No commands matching "${q}".${R}\n`); return
+      }
+      const rows = matches.map(([cmd, d]) => helpRow(cmd, d.desc))
+      console.log(panel({
+        title: `${MARKS.TRI} /help search "${q}"  (${matches.length} result${matches.length !== 1 ? 's' : ''})`,
+        lines: ['', ...rows, ''],
+        accent: COLORS.orange,
+      }))
+      console.log()
+      return
+    }
+
+    if (sub?.startsWith('/')) {
+      const d = COMMAND_DETAIL[sub]
+      if (!d) {
+        console.log(`  ${D}Unknown command: ${sub}  (try /help search <keyword>)${R}\n`); return
+      }
+      const lines: string[] = [
+        '',
+        `  ${B}${sub}${R}  ${D}(${d.section ?? ''})${R}`,
+        `  ${d.desc}`,
+        '',
+      ]
+      if (d.usage) {
+        lines.push(`  ${D}Usage:${R}`)
+        lines.push(`    ${O}${d.usage}${RST}`)
+        lines.push('')
+      }
+      if (d.subs && d.subs.length > 0) {
+        lines.push(`  ${D}Subcommands:${R}`)
+        for (const s of d.subs) lines.push(`    ${O}${sub} ${s}${RST}`)
+        lines.push('')
+      }
+      if (d.examples && d.examples.length > 0) {
+        lines.push(`  ${D}Examples:${R}`)
+        for (const ex of d.examples) lines.push(`    ${D}${ex}${R}`)
+        lines.push('')
+      }
+      console.log()
+      console.log(panel({ title: `${MARKS.TRI} /help ${sub}`, lines, accent: COLORS.orange }))
+      console.log()
+      return
+    }
+
+    const lines: string[] = [
+      helpSection('Session'),
+      helpRow('/new  /reset',       'Start fresh session'),
+      helpRow('/clear',             'Clear screen'),
+      helpRow('/history',           'Conversation history'),
+      helpRow('/stop',              'Interrupt execution'),
+      helpRow('/export md|json',    'Export conversation'),
+      helpRow('/fork <name>',       'Fork current session'),
+      helpRow('/checkpoint',        'Save state snapshot'),
+      helpSection('Info'),
+      helpRow('/timing',             'Last response timing breakdown'),
+      helpRow('/version',            'Current version + update check'),
+      helpRow('/status',            'Health + uptime'),
+      helpRow('/tools',             'All registered tools  (grouped by category)'),
+      helpRow('/kit',               'Toolkit categories — enable / disable'),
+      helpRow('/providers',         'Provider chain + rate limits'),
+      helpRow('/models',            'Model assignments'),
+      helpRow('/memory',            'Memory stats'),
+      helpRow('/memsearch',         'Search memories by keyword  — Layer 1 progressive disclosure'),
+      helpRow('/memtimeline',       'Chronological context around a memory ID  — Layer 2'),
+      helpRow('/memget',            'Full detail for specific memory IDs  — Layer 3'),
+      helpRow('/goals',             'Active goals'),
+      helpRow('/skills',            'Skill lifecycle  (search / registry / install / list / check / update / audit / remove / publish / export / import / stats)'),
+      helpRow('/plugins',           'Plugin manager  (list / reload)'),
+      helpRow('/permissions',       'Permission system  (status / reload / audit / edit)'),
+      helpRow('/uninstall',         'Uninstall Aiden from this system'),
+      helpRow('/install <name>',    'Install a skill from the public registry  (skills.taracod.com)'),
+      helpRow('/publish <name>',    'Publish a skill to the public registry  (Pro — requires license)'),
+      helpRow('/profile',             'View / edit / clear the structured user profile (Honcho model)'),
+      helpRow('/failed [reason]',    'Signal last exchange failed — triggers failure trace analysis + lesson'),
+      helpRow('/sandbox [sub]',      'Manage Docker sandbox mode  (status|off|auto|strict|build)'),
+      helpRow('/lessons',           'Browse permanent failure rules  (search / <category>)'),
+      helpRow('/teach',             'Add a manual rule to LESSONS.md'),
+      helpRow('/focus',             'Toggle zen mode — suppress tool traces and status output'),
+      helpRow('/explore',           'Capability browser  (tools / skills / providers)'),
+      helpRow('/pulse',             'Live system dashboard — uptime, RAM, providers, async tasks'),
+      helpRow('/rewind',            'Time-travel undo  (mark / undo / <n>)'),
+      helpRow('/pin',               'Protect exchange from compaction  (list / unpin <idx>)'),
+      helpRow('/diff',              'Filesystem changes since last commit  (git status)'),
+      helpRow('/trust',             'Per-tool approval levels  (list / set <tool> <0-3> / reset <tool>)'),
+      helpRow('/timeline',          'Session history tree'),
+      helpRow('/garden',            'Memory layer explorer  (semantic / entities / learning / facts / hot / cold)'),
+      helpRow('/decision',          'Per-turn reasoning trace  (last / clear)'),
+      helpSection('Core'),
+      helpRow('/log [N] [level]',   'Recent log buffer entries'),
+      helpRow('/save [file]',       'Save conversation to workspace/exports/'),
+      helpRow('/rerun',             'Re-send the last user message'),
+      helpRow('/name <label>',      'Give the current session a name'),
+      helpRow('/stack',             'Active plan steps + async tasks'),
+      helpRow('/halt',              'Hard-stop all execution + LLM calls'),
+      helpRow('/yolo',              'Toggle auto-approve all tool calls'),
+      helpRow('/attach <path>',     'Attach file as context for next message'),
+      helpRow('/changelog [N]',     'Recent git commits / workspace changes'),
+      helpRow('/recipes',           `YAML recipes  ${T.dim}(v3.6)${T.reset}`),
+      helpRow('/sessions',          `Recent sessions  ${T.dim}(v3.6)${T.reset}`),
+      helpRow('/analytics',         `Usage over time  ${T.dim}(v3.6)${T.reset}`),
+      helpRow('/budget',            `Token cost estimate  ${T.dim}(v3.6)${T.reset}`),
+      helpRow('/workspace',         `Current workspace  ${T.dim}(v3.6)${T.reset}`),
+      helpSection('Config'),
+      helpRow('/model <name>',      'Switch model'),
+      helpRow('/provider',          'List / add / remove / test providers'),
+      helpRow('/primary <name>',    'Pin provider to front of chain  (reset to clear)'),
+      helpRow('/theme <name>',      'Change theme  (default mono slate ember)'),
+      helpRow('/persona <name>',    'Change persona  (default concise technical)'),
+      helpRow('/detail',            'Cycle detail level  (off → tools → verbose)'),
+      helpRow('/depth',             'Cycle reasoning depth  (low → med → high)'),
+      helpRow('/config',            'Show current configuration'),
+      helpSection('Power'),
+      helpRow('/run <code|file>',   'Execute JS in sandbox with injected aiden SDK'),
+      helpRow('/spawn <task>',      'Isolated subagent with inherited provider chain'),
+      helpRow('/swarm <task>',      'Parallel subagents — vote / merge / best strategy'),
+      helpRow('/search <query>',    'Hybrid BM25 + semantic session + memory search'),
+      helpRow('/quick <q>',         'Quick side question  (no history, no tools)'),
+      helpRow('/compact',           'Manual context compression'),
+      helpRow('/async <task>',      'Run task in background'),
+      helpRow('/security',          'AgentShield scan'),
+      helpRow('/debug',             'Recent logs'),
+      helpRow('/private',           'Toggle private mode  (suppresses memory writes)'),
+      helpRow('/mcp <sub>',         'MCP server management  (list / tools / connect / disconnect / call)'),
+      helpRow('/cmd <command>',     'Run a Windows cmd.exe command'),
+      helpRow('/ps <command>',      'Run a PowerShell command directly'),
+      helpRow('/wsl <command>',     'Run a bash command inside WSL'),
+      helpRow('/refresh',            'Check for updates + reload config'),
+      helpRow('/channels',           'Channel adapter status (Discord, Slack, Webhook)'),
+      helpRow('/voice [on|off]',     'Toggle voice mode — TTS reads AI replies aloud'),
+      helpRow('/speak <text>',       'Speak text immediately via TTS'),
+      helpRow('/listen [secs]',      'Record mic → STT → send as message'),
+      helpRow('/todo <op>',          'Per-session task list  (add / done / remove / list / clear)'),
+      helpRow('/cron <op>',          'Schedule recurring commands  (add / list / pause / resume / delete / run)'),
+      helpRow('/vision <img>',       'Analyze image with AI vision (file path or URL)'),
+      helpSection('Exit'),
+      helpRow('/quit  /exit  /q',   ''),
+      '',
+      `  ${T.dim}/help search <q>  ·  /help <command> for detail${T.reset}`,
+      '',
+    ]
+
+    console.log()
+    console.log(panel({
+      title: `${MARKS.TRI} ▲IDEN Commands`,
+      lines,
+      accent: COLORS.orange,
+    }))
+    console.log()
+  }})
+
+  const _newResetHandler = async (_args: string[]) => {
+    state.messages = []
+    state.attachedFile = undefined
+    state.attachedFileName = undefined
+    ;(globalThis as any).__pinnedExchanges = []
+    console.log(`\n  ${T.dim}Session cleared.${T.reset}\n`)
+  }
+  commandCatalog.register('/new',   { ...COMMAND_DETAIL['/new'],   origin: 'core', handler: _newResetHandler })
+  commandCatalog.register('/reset', { ...COMMAND_DETAIL['/reset'], origin: 'core', handler: _newResetHandler })
+
+  commandCatalog.register('/clear', { ...COMMAND_DETAIL['/clear'], origin: 'core', handler: async (_args) => {
+    console.clear()
+    await printBanner()
+  }})
+
+  commandCatalog.register('/history', { ...COMMAND_DETAIL['/history'], origin: 'core', handler: async (_args) => {
+    if (state.messages.length === 0) {
+      console.log(`\n  ${T.dim}No history yet.${T.reset}\n`); return
+    }
+    console.log()
+    for (const m of state.messages) {
+      const tag = m.role === 'user' ? `${fg(COLORS.orange)}you${T.reset}` : `${T.dim}ai${T.reset}`
+      const text = typeof m.content === 'string'
+        ? m.content
+        : Array.isArray(m.content) ? m.content.map((c: any) => c.text ?? '').join('') : ''
+      console.log(`  ${tag}  ${text.slice(0, 120)}`)
+    }
+    console.log()
+  }})
+
+  commandCatalog.register('/stop', { ...COMMAND_DETAIL['/stop'], origin: 'core', handler: async (_args) => {
+    if (typeof (globalThis as any).__abortController?.abort === 'function') {
+      ;(globalThis as any).__abortController.abort()
+      console.log(`\n  ${T.dim}Abort signal sent.${T.reset}\n`)
+    } else {
+      console.log(`\n  ${T.dim}Nothing running.${T.reset}\n`)
+    }
+  }})
+
+  commandCatalog.register('/export', { ...COMMAND_DETAIL['/export'], origin: 'core', handler: async (args) => {
+    const fmt = args[0]?.toLowerCase() ?? 'md'
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+    const outDir  = path.join(process.cwd(), 'workspace', 'exports')
+    fs.mkdirSync(outDir, { recursive: true })
+    const outFile = path.join(outDir, `session-${timestamp}.${fmt === 'json' ? 'json' : 'md'}`)
+    if (fmt === 'json') {
+      fs.writeFileSync(outFile, JSON.stringify(state.messages, null, 2), 'utf8')
+    } else {
+      const md = state.messages.map(m => {
+        const role = m.role === 'user' ? '**You**' : '**Aiden**'
+        const text = typeof m.content === 'string'
+          ? m.content
+          : Array.isArray(m.content) ? m.content.map((c: any) => c.text ?? '').join('') : ''
+        return `### ${role}\n\n${text}`
+      }).join('\n\n---\n\n')
+      fs.writeFileSync(outFile, md, 'utf8')
+    }
+    console.log(`\n  ${T.dim}Exported to ${outFile}${T.reset}\n`)
+  }})
+
+  commandCatalog.register('/fork', { ...COMMAND_DETAIL['/fork'], origin: 'core', handler: async (args) => {
+    const label = args.join(' ').trim() || `fork-${Date.now()}`
+    const result = await apiFetch<any>('/api/session/fork', { label })
+    if (result?.sessionId) {
+      console.log(`\n  ${T.dim}Forked → session ${result.sessionId} (${label})${T.reset}\n`)
+    } else {
+      console.log(`\n  ${T.dim}Fork unavailable (server offline?).${T.reset}\n`)
+    }
+  }})
+
+  commandCatalog.register('/checkpoint', { ...COMMAND_DETAIL['/checkpoint'], origin: 'core', handler: async (_args) => {
+    const result = await apiFetch<any>('/api/session/checkpoint', {})
+    if (result?.ok) {
+      console.log(`\n  ${T.dim}Checkpoint saved.${T.reset}\n`)
+    } else {
+      console.log(`\n  ${T.dim}Checkpoint unavailable (server offline?).${T.reset}\n`)
+    }
+  }})
+
+  commandCatalog.register('/status', { ...COMMAND_DETAIL['/status'], origin: 'core', handler: async (_args) => {
+    const h     = await apiFetch<any>('/api/debug/health', {})
+    const ok    = h.status === 'ok'
+    const upMin = Math.floor((h.uptime || 0) / 60)
+    const ramMB = Math.round((h.memory?.heapUsed || 0) / 1024 / 1024)
+    const ctxC  = ctxColor(state.ctxPercent)
+    console.log()
+    console.log(`  ${ok ? T.success + '✓' : T.error + '✗'}${T.reset} Aiden ${ok ? 'Online' : 'Offline'}`)
+    console.log(`  ${T.dim}${hr()}${T.reset}`)
+    console.log(`  ${'Uptime'.padEnd(14)}${upMin}m`)
+    console.log(`  ${'RAM'.padEnd(14)}${ramMB} MB`)
+    console.log(`  ${'Ollama'.padEnd(14)}${h.ollama || 'unknown'}`)
+    console.log(`  ${'Sessions'.padEnd(14)}${h.workspace?.sessions || 0}`)
+    console.log(`  ${'Memories'.padEnd(14)}${h.workspace?.memories || 0}`)
+    console.log(`  ${'Context'.padEnd(14)}${ctxC}${ctxBar(state.ctxPercent)}${T.reset}`)
+    console.log(`  ${'Turns'.padEnd(14)}${state.turnCount}/${MAX_TURNS}`)
+    console.log()
+  }})
+
+  commandCatalog.register('/tools', { ...COMMAND_DETAIL['/tools'], origin: 'core', handler: async (_args) => {
+    const tools = await apiFetch<any[]>('/api/tools', [])
+
+    // Group by category (falling back to source, then 'other')
+    const groups = new Map<string, any[]>()
+    for (const t of tools) {
+      const cat = (t.category || t.source || 'other').toLowerCase()
+      if (!groups.has(cat)) groups.set(cat, [])
+      groups.get(cat)!.push(t)
+    }
+
+    // Print directly — bypasses panel() box-drawing so all tools are always visible
+    console.log()
+    console.log(`  ${fg(COLORS.orange)}${MARKS.TRI} Tools${RST}  ${T.dim}${tools.length} total${T.reset}`)
+    console.log()
+    for (const [cat, catTools] of groups) {
+      // Category header
+      console.log(
+        `  ${fg(COLORS.orange)}${T.bold}${cat.toUpperCase()}${T.reset}` +
+        `  ${T.dim}${catTools.length} tool${catTools.length !== 1 ? 's' : ''}${T.reset}`
+      )
+      // Each tool on its own line — name left-padded, description dimmed
+      for (const t of catTools) {
+        const name = (t.name || '').padEnd(24)
+        const desc = (t.description || '').substring(0, 55)
+        console.log(`    ${T.dim}${name}${T.reset}${T.dim}${desc}${T.reset}`)
+      }
+      console.log()
+    }
+    console.log(`  ${T.dim}/tools enable <cat>  |  /tools disable <cat>${T.reset}`)
+    console.log()
+  }})
+
+  commandCatalog.register('/kit', { ...COMMAND_DETAIL['/kit'], origin: 'core', handler: async (_args) => {
+    // Fetch tools and toolsets; fall back gracefully if toolsets endpoint absent
+    const [tools, kitData] = await Promise.all([
+      apiFetch<any[]>('/api/tools',    []),
+      apiFetch<any>  ('/api/toolsets', null),
+    ])
+
+    // Build category summary from live tool list
+    const catMap = new Map<string, { count: number; active: boolean }>()
+    for (const t of tools) {
+      const cat = (t.category || t.source || 'other').toLowerCase()
+      const cur = catMap.get(cat)
+      if (cur) { cur.count++ } else { catMap.set(cat, { count: 1, active: true }) }
+    }
+
+    // Merge with declared toolsets if available
+    const declared: any[] = Array.isArray(kitData)
+      ? kitData
+      : Array.isArray(kitData?.toolsets)
+        ? kitData.toolsets
+        : []
+
+    const CAT_ICONS: Record<string, string> = {
+      browser: '◈', file: '▤', terminal: '▣', web: '◉',
+      memory: '⬢', delegation: '◆', code: '⬡', windows: '▲',
+      mcp: '◎', voice: '◐', schedule: '⬟', vision: '◪',
+      'slash-mirror': '△', core: '▸',
+    }
+
+    const colDefs: ColDef[] = [
+      { header: 'Kit',    width: 18, align: 'left' },
+      { header: 'Tools',  width: 6,  align: 'right', color: COLORS.dim },
+      { header: 'Status', width: 8,  align: 'left' },
+      { header: 'Description' }, // flex
+    ]
+
+    // Merge declared + inferred
+    const allCats = new Set<string>([
+      ...catMap.keys(),
+      ...declared.map((d: any) => (d.id || d.name || '').toLowerCase()),
+    ])
+
+    const rows: string[][] = []
+    for (const cat of allCats) {
+      const dec     = declared.find((d: any) => (d.id || d.name || '').toLowerCase() === cat)
+      const inferred = catMap.get(cat)
+      const count   = dec?.toolCount ?? inferred?.count ?? 0
+      const active  = dec?.enabled   ?? inferred?.active ?? true
+      const icon    = CAT_ICONS[cat] || MARKS.DOT
+      const status  = active
+        ? `${fg(COLORS.success)}[active]${RST}`
+        : `${T.dim}[off]${T.reset}`
+      const desc    = (dec?.description || '').substring(0, 40)
+      const label   = `${fg(COLORS.orange)}${icon}${RST} ${cat}`
+      rows.push([label, String(count), status, desc])
+    }
+
+    console.log()
+    console.log(panel({
+      title: `${MARKS.TRI} Kit`,
+      lines: ['', ...['Kit categories — toggle with /kit enable <name>'].map(l => `  ${T.dim}${l}${T.reset}`), ''],
+    }))
+    console.log(table(colDefs, rows))
+    console.log(`\n  ${T.dim}${tools.length} tools · ${allCats.size} categories${T.reset}\n`)
+  }})
+
+  commandCatalog.register('/providers', { ...COMMAND_DETAIL['/providers'], origin: 'core', handler: async (_args) => {
+    const [data, customData] = await Promise.all([
+      apiFetch<any>('/api/providers', { apis: [], routing: {} }),
+      apiFetch<any>('/api/providers/custom', { customProviders: [] }),
+    ])
+    const apis    = Array.isArray(data.apis) ? data.apis : []
+    const customs = Array.isArray(customData.customProviders) ? customData.customProviders : []
+    console.log(`\n  ${T.bold}Providers${T.reset}`)
+    console.log(`  ${T.dim}${hr()}${T.reset}`)
+    for (const a of apis) {
+      const rawKey  = a.key || ''
+      const hasKey  = rawKey.startsWith('env:') ? !!(process.env[rawKey.replace('env:', '')]) : rawKey.length > 0
+      const dot     = a.enabled && hasKey ? `${T.success}●` : `${T.dim}○`
+      const rl      = a.rateLimited ? ` ${T.warning}[rate-limited]${T.reset}` : ''
+      console.log(`  ${dot}${T.reset} ${(a.name || '').padEnd(18)}${T.dim}${a.model || ''}${T.reset}${rl}`)
+    }
+    if (customs.length > 0) {
+      console.log(`\n  ${T.dim}Custom (OpenAI-compat)${T.reset}`)
+      for (const cp of customs) {
+        const dot = cp.enabled ? `${T.success}●` : `${T.dim}○`
+        console.log(`  ${dot}${T.reset} ${(cp.id || '').padEnd(18)}${T.dim}${cp.displayName} · ${cp.model || ''}${T.reset}`)
+      }
+    }
+    if (data.routing?.mode) console.log(`\n  ${T.dim}Routing: ${data.routing.mode}${T.reset}`)
+    console.log()
+  }})
+
+  commandCatalog.register('/models', { ...COMMAND_DETAIL['/models'], origin: 'core', handler: async (_args) => {
+    const m   = await apiFetch<any>('/api/debug/models', {})
+    const cfg = loadCfg()
+    const { MODEL_REGISTRY } = await import('../core/modelRegistry')
+
+    const activeProvider = cfg?.model?.active || m.activeProvider || 'unknown'
+    const activeModel    = cfg?.model?.activeModel || m.activeModel || 'unknown'
+
+    console.log()
+    console.log(`  ${T.bold}Models${T.reset}`)
+    console.log(`  ${T.dim}${hr()}${T.reset}`)
+    console.log(`  ${'Active'.padEnd(16)}${T.accent}${activeModel}${T.reset}  ${T.dim}← ${activeProvider}${T.reset}`)
+    console.log()
+
+    // Per-provider table
+    const apiEntries: any[] = cfg?.providers?.apis ?? []
+    const cloudEntries = apiEntries.filter((a: any) => a.enabled && a.provider !== 'ollama')
+
+    if (cloudEntries.length > 0) {
+      console.log(`  ${T.bold}Cloud providers${T.reset}`)
+      console.log(`  ${T.dim}${'NAME'.padEnd(16)}${'MODEL'.padEnd(46)}${'TIER'.padEnd(8)}STATUS${T.reset}`)
+      for (const entry of cloudEntries) {
+        const regModels = MODEL_REGISTRY[entry.provider] ?? []
+        const regEntry  = regModels.find((rm: any) => rm.id === entry.model)
+        const badge     = regEntry?.pricing === 'free' ? `${T.success}FREE${T.reset}` : `${T.dim}PAID${T.reset}`
+        const status    = entry.rateLimited
+          ? `${T.warning}rate-limited${T.reset}`
+          : `${T.success}ready${T.reset}`
+        const modelStr  = (entry.model || '—').padEnd(44)
+        console.log(`  ${entry.name.padEnd(16)}${T.dim}${modelStr}${T.reset}  ${badge.padEnd(8)}  ${status}`)
+      }
+      console.log()
+    }
+
+    // Ollama section
+    const ollamaModels: string[] = m.ollamaModels ?? []
+    if (ollamaModels.length > 0) {
+      console.log(`  ${T.bold}Local (Ollama)${T.reset}`)
+      for (const om of ollamaModels) {
+        const isActive = om === (cfg?.ollama?.model ?? '')
+        console.log(`  ${isActive ? T.accent : T.dim}${om}${T.reset}${isActive ? '  ← active' : ''}`)
+      }
+      console.log()
+    }
+  }})
+
+  commandCatalog.register('/model', { ...COMMAND_DETAIL['/model'], origin: 'core', handler: async (args) => {
+    if (args.length > 0) {
+      const modelName = args.join(' ')
+      const res = await apiPost('/api/models/active', { model: modelName })
+      if (res && !res.error) {
+        state.lastModel = modelName
+        console.log(`  ${T.success}✓ Model: ${modelName}${T.reset}\n`)
+      } else {
+        const cfg = loadCfg()
+        if (!cfg.model) cfg.model = {}
+        cfg.model.activeModel = modelName
+        saveCfg(cfg)
+        state.lastModel = modelName
+        console.log(`  ${T.success}✓ Model: ${modelName} ${T.dim}(saved to config)${T.reset}\n`)
+      }
+    } else {
+      const m   = await apiFetch<any>('/api/debug/models', {})
+      const cfg = loadCfg()
+      const { MODEL_REGISTRY } = await import('../core/modelRegistry')
+
+      const activeProvider = cfg?.model?.active || m.activeProvider || 'unknown'
+      const activeModel    = cfg?.model?.activeModel || m.activeModel || 'unknown'
+
+      console.log()
+      console.log(`  ${T.bold}Models${T.reset}`)
+      console.log(`  ${T.dim}${hr()}${T.reset}`)
+      console.log(`  ${'Active'.padEnd(16)}${T.accent}${activeModel}${T.reset}  ${T.dim}← ${activeProvider}${T.reset}`)
+      console.log()
+
+      const apiEntries: any[] = cfg?.providers?.apis ?? []
+      const cloudEntries = apiEntries.filter((a: any) => a.enabled && a.provider !== 'ollama')
+
+      if (cloudEntries.length > 0) {
+        console.log(`  ${T.bold}Cloud providers${T.reset}`)
+        console.log(`  ${T.dim}${'NAME'.padEnd(16)}${'MODEL'.padEnd(46)}${'TIER'.padEnd(8)}STATUS${T.reset}`)
+        for (const entry of cloudEntries) {
+          const regModels = MODEL_REGISTRY[entry.provider] ?? []
+          const regEntry  = regModels.find((rm: any) => rm.id === entry.model)
+          const badge     = regEntry?.pricing === 'free' ? `${T.success}FREE${T.reset}` : `${T.dim}PAID${T.reset}`
+          const status    = entry.rateLimited
+            ? `${T.warning}rate-limited${T.reset}`
+            : `${T.success}ready${T.reset}`
+          const modelStr  = (entry.model || '—').padEnd(44)
+          console.log(`  ${entry.name.padEnd(16)}${T.dim}${modelStr}${T.reset}  ${badge.padEnd(8)}  ${status}`)
+        }
+        console.log()
+      }
+
+      const ollamaModels: string[] = m.ollamaModels ?? []
+      if (ollamaModels.length > 0) {
+        console.log(`  ${T.bold}Local (Ollama)${T.reset}`)
+        for (const om of ollamaModels) {
+          const isActive = om === (cfg?.ollama?.model ?? '')
+          console.log(`  ${isActive ? T.accent : T.dim}${om}${T.reset}${isActive ? '  ← active' : ''}`)
+        }
+        console.log()
+      }
+    }
+  }})
+
+  commandCatalog.register('/memory', { ...COMMAND_DETAIL['/memory'], origin: 'core', handler: async (_args) => {
+    const m     = await apiFetch<any>('/api/memories', {})
+    const total = Array.isArray(m) ? m.length : (m.total || m.count || 0)
+    const sem   = m.semantic ?? 0
+    const ent   = m.entities ?? 0
+    console.log()
+    console.log(`  ${T.bold}Memory${T.reset}`)
+    console.log(`  ${T.dim}${hr()}${T.reset}`)
+    console.log(`  ${'Total'.padEnd(16)}${num(total)}`)
+    if (sem || ent) {
+      console.log(`  ${'Semantic'.padEnd(16)}${num(sem)}`)
+      console.log(`  ${'Entities'.padEnd(16)}${num(ent)}`)
+    }
+    console.log()
+  }})
+
+  commandCatalog.register('/memsearch', { ...COMMAND_DETAIL['/memsearch'], origin: 'core', handler: async (args) => {
+    const query = args.join(' ').trim()
+    if (!query) {
+      console.log(`  ${T.dim}Usage: /memsearch <query>   e.g. /memsearch archon provider${T.reset}\n`)
+      return
+    }
+    const data = await apiFetch<any>(`/api/memory/search?q=${encodeURIComponent(query)}&limit=10`, null)
+    const hits: Array<{ id: string; summary: string; type: string; date: string; score: number }> =
+      data?.hits ?? []
+    console.log()
+    if (hits.length === 0) {
+      console.log(`  ${T.dim}No memories matching "${query}"${T.reset}\n`)
+      return
+    }
+    const colDefs: ColDef[] = [
+      { header: 'ID',       width: 12, align: 'left',  color: COLORS.cyan  },
+      { header: 'Summary',  width: 52, align: 'left'                        },
+      { header: 'Type',     width: 12, align: 'left',  color: COLORS.dim   },
+      { header: 'Date',     width: 12, align: 'left',  color: COLORS.dim   },
+      { header: 'Score',    width: 6,  align: 'right', color: COLORS.dim   },
+    ]
+    const rows = hits.map(h => [
+      h.id,
+      h.summary.slice(0, 52),
+      h.type,
+      h.date,
+      String(Math.round(h.score * 100)) + '%',
+    ])
+    console.log(panel({ title: `${MARKS.TRI} Memory Search — "${query}"  (${hits.length} hit${hits.length !== 1 ? 's' : ''})`, lines: [''] }))
+    console.log(table(colDefs, rows))
+    if (data?.approxTokens != null) {
+      console.log(`  ${T.dim}~${data.approxTokens} tokens  ·  /memtimeline <id>  /memget <id1,id2>${T.reset}\n`)
+    } else {
+      console.log(`  ${T.dim}/memtimeline <id>  /memget <id1,id2>${T.reset}\n`)
+    }
+  }})
+
+  commandCatalog.register('/memtimeline', { ...COMMAND_DETAIL['/memtimeline'], origin: 'core', handler: async (args) => {
+    const id = args[0]?.trim()
+    if (!id) {
+      console.log(`  ${T.dim}Usage: /memtimeline <mem_id>   e.g. /memtimeline mem_000001${T.reset}\n`)
+      return
+    }
+    const data = await apiFetch<any>(`/api/memory/timeline/${encodeURIComponent(id)}`, null)
+    if (!data || data.error) {
+      console.log(`  ${T.error}Memory "${id}" not found.${T.reset}\n`)
+      return
+    }
+    const { center, before, after } = data
+    const relDate = (ts: string) => {
+      const diffMs = Date.now() - new Date(ts).getTime()
+      const days = Math.floor(diffMs / 86400000)
+      if (days === 0) return 'today'
+      if (days === 1) return 'yesterday'
+      if (days < 7)  return `${days}d ago`
+      return ts.slice(0, 10)
+    }
+    console.log()
+    console.log(panel({
+      title: `${MARKS.TRI} Timeline — ${id}  [${center.type}]`,
+      lines: [
+        '',
+        `  ${T.dim}${relDate(center.timestamp)}  ·  ${center.type}${T.reset}`,
+        `  ${T.bold}${center.summary.slice(0, 90)}${T.reset}`,
+        '',
+        ...before.length === 0 ? [] : [`  ${T.dim}── Before ─────────────────────────────${T.reset}`],
+        ...before.map((b: any) => `  ${fg(COLORS.dim)}${b.id}${RST}  ${T.dim}${relDate(b.timestamp)}${T.reset}  ${b.summary.slice(0, 60)}`),
+        ...after.length === 0 ? [] : [`  ${T.dim}── After ──────────────────────────────${T.reset}`],
+        ...after.map((a: any) => `  ${fg(COLORS.dim)}${a.id}${RST}  ${T.dim}${relDate(a.timestamp)}${T.reset}  ${a.summary.slice(0, 60)}`),
+        '',
+        `  ${T.dim}/memget ${id}  to see full content${T.reset}`,
+        '',
+      ],
+    }))
+    console.log()
+  }})
+
+  commandCatalog.register('/memget', { ...COMMAND_DETAIL['/memget'], origin: 'core', handler: async (args) => {
+    const ids = args.join(' ').replace(/\s+/g, ',').replace(/,+/g, ',').trim()
+    if (!ids) {
+      console.log(`  ${T.dim}Usage: /memget <id1,id2,...>   e.g. /memget mem_000001,mem_000002${T.reset}\n`)
+      return
+    }
+    const data = await apiFetch<any>(`/api/memory/get?ids=${encodeURIComponent(ids)}`, null)
+    const results: Array<{ id: string; record: any; found: boolean }> = data?.results ?? []
+    console.log()
+    for (const r of results) {
+      if (!r.found || !r.record) {
+        console.log(`  ${T.error}${r.id} — not found${T.reset}\n`)
+        continue
+      }
+      const rec = r.record
+      const relDate = (ts: string) => {
+        const diffMs = Date.now() - new Date(ts).getTime()
+        const days = Math.floor(diffMs / 86400000)
+        if (days < 7) return days === 0 ? 'today' : `${days}d ago`
+        return ts.slice(0, 10)
+      }
+      const bodyLines = (rec.content ?? '').split('\n').slice(0, 40)
+        .map((l: string) => `  ${T.dim}${l}${T.reset}`)
+      console.log(panel({
+        title: `${MARKS.TRI} ${rec.id}  [${rec.type}]`,
+        lines: [
+          '',
+          `  ${T.dim}${relDate(rec.timestamp)}  ·  ${rec.type}${rec.sessionId ? `  ·  session ${rec.sessionId.slice(0, 16)}` : ''}${T.reset}`,
+          `  ${T.bold}${rec.summary.slice(0, 90)}${T.reset}`,
+          '',
+          ...bodyLines,
+          '',
+          ...(rec.tags?.length ? [`  ${T.dim}tags: ${rec.tags.join(', ')}${T.reset}`] : []),
+          '',
+        ],
+      }))
+    }
+    console.log()
+  }})
+
+  commandCatalog.register('/goals', { ...COMMAND_DETAIL['/goals'], origin: 'core', handler: async (_args) => {
+    const g     = await apiFetch<any>('/api/goals', { goals: [] })
+    const goals = Array.isArray(g) ? g : (g.goals || [])
+    if (goals.length === 0) {
+      console.log(`  ${T.dim}No active goals.${T.reset}\n`)
+    } else {
+      console.log(`\n  ${T.bold}Goals${T.reset}`)
+      console.log(`  ${T.dim}${hr()}${T.reset}`)
+      for (const goal of goals) {
+        const dot = goal.status === 'active' ? `${T.success}●` : `${T.dim}○`
+        console.log(`  ${dot}${T.reset} ${goal.title || goal.id}`)
+      }
+      console.log()
+    }
+  }})
+
 }
 
 async function handleCommand(cmd: string, rl: readline.Interface): Promise<boolean> {
