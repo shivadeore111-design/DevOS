@@ -1,3 +1,5 @@
+import 'dotenv/config'   // load .env before any process.env reads
+
 // ============================================================
 // Aiden Audit Test Suite — Main Runner
 // scripts/test-suite.ts
