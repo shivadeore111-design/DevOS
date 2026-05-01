@@ -2894,8 +2894,8 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
         '',
         `  ${T.warning}This will remove Aiden from your system.${T.reset}`,
         '',
-        `  ${T.dim}Run:  npm run uninstall${T.reset}`,
-        `  ${T.dim}  or:  powershell -ExecutionPolicy Bypass -File scripts\\uninstall.ps1${T.reset}`,
+        `  ${T.dim}npm install:  irm https://aiden.taracod.com/uninstall.ps1 | iex${T.reset}`,
+        `  ${T.dim}repo clone:   npm run uninstall${T.reset}`,
         '',
         `  ${T.dim}Flags:  --keep-workspace  --keep-config  --yes (skip prompts)${T.reset}`,
         '',
@@ -2908,12 +2908,32 @@ async function handleCommand(cmd: string, rl: readline.Interface): Promise<boole
       ...(yes           ? ['-Yes']            : []),
     ]
 
-    const { spawn } = await import('child_process')
-    const ps = spawn(
-      'powershell.exe',
-      ['-ExecutionPolicy', 'Bypass', '-File', 'scripts\\uninstall.ps1', ...flags],
-      { stdio: 'inherit', shell: false },
-    )
+    const { spawn }    = await import('child_process')
+    const { existsSync } = await import('fs')
+    const { resolve }  = await import('path')
+
+    // Local path works in repo / Electron context; npm global installs don't
+    // ship scripts/ (not in package.json "files"), so fall back to hosted URL.
+    const localScript = resolve(__dirname, '..', 'scripts', 'uninstall.ps1')
+    const hasLocal    = existsSync(localScript)
+
+    let ps
+    if (hasLocal) {
+      ps = spawn(
+        'powershell.exe',
+        ['-ExecutionPolicy', 'Bypass', '-File', localScript, ...flags],
+        { stdio: 'inherit', shell: false },
+      )
+    } else {
+      // npm global install — download and run from hosted URL
+      const flagStr = flags.length ? ` ${flags.join(' ')}` : ''
+      const cmd = `& ([scriptblock]::Create((irm 'https://aiden.taracod.com/uninstall.ps1')))${flagStr}`
+      ps = spawn(
+        'powershell.exe',
+        ['-ExecutionPolicy', 'Bypass', '-Command', cmd],
+        { stdio: 'inherit', shell: false },
+      )
+    }
     ps.on('close', (code: number) => { process.exit(code ?? 0) })
     return true
   }
@@ -6645,15 +6665,31 @@ if (require.main === module) {
   if (process.argv[2] === 'uninstall') {
     // aiden uninstall [--keep-workspace] [--keep-config] [--yes]
     const { spawnSync } = require('child_process')
+    const { existsSync } = require('fs')
+    const { resolve }    = require('path')
     const flags: string[] = []
     if (process.argv.includes('--keep-workspace')) flags.push('-KeepWorkspace')
     if (process.argv.includes('--keep-config'))    flags.push('-KeepConfig')
     if (process.argv.includes('--yes') || process.argv.includes('-y')) flags.push('-Yes')
-    const result = spawnSync(
-      'powershell.exe',
-      ['-ExecutionPolicy', 'Bypass', '-File', 'scripts\\uninstall.ps1', ...flags],
-      { stdio: 'inherit', shell: false },
-    )
+
+    const localScript = resolve(__dirname, '..', 'scripts', 'uninstall.ps1')
+    const hasLocal    = existsSync(localScript)
+    let result
+    if (hasLocal) {
+      result = spawnSync(
+        'powershell.exe',
+        ['-ExecutionPolicy', 'Bypass', '-File', localScript, ...flags],
+        { stdio: 'inherit', shell: false },
+      )
+    } else {
+      const flagStr = flags.length ? ` ${flags.join(' ')}` : ''
+      const cmd = `& ([scriptblock]::Create((irm 'https://aiden.taracod.com/uninstall.ps1')))${flagStr}`
+      result = spawnSync(
+        'powershell.exe',
+        ['-ExecutionPolicy', 'Bypass', '-Command', cmd],
+        { stdio: 'inherit', shell: false },
+      )
+    }
     process.exit(result.status ?? 0)
   } else if (process.argv[2] === 'mcp') {
     if (process.argv[3] === 'inspect') {

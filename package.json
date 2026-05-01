@@ -34,6 +34,7 @@
     "dist-bundle/index.js",
     "config/",
     "scripts/postinstall.js",
+    "scripts/uninstall.ps1",
     "README.md",
     "LICENSE"
   ],
