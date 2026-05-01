@@ -6179,6 +6179,22 @@ export async function start(opts?: {
 // fetchProviderResponse: fires a single non-streaming request to a provider.
 // raceProviders: fires top-2 simultaneously, returns the fastest valid response.
 
+function extractChatMessageContent(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+
+  return content
+    .map((part) => {
+      if (typeof part === 'string') return part
+      if (part && typeof part === 'object' && 'text' in part) {
+        const text = (part as { text?: unknown }).text
+        return typeof text === 'string' ? text : ''
+      }
+      return ''
+    })
+    .join('')
+}
+
 async function fetchProviderResponse(
   api:      import('../providers/index').APIEntry,
   messages: { role: string; content: string }[],
@@ -6199,7 +6215,11 @@ async function fetchProviderResponse(
     })
     if (!resp.ok) throw new Error(`Gemini ${resp.status}`)
     const d = await resp.json() as any
-    return { text: d?.choices?.[0]?.message?.content || '', apiName: api.name, model }
+    return {
+      text: extractChatMessageContent(d?.choices?.[0]?.message?.content),
+      apiName: api.name,
+      model,
+    }
 
   } else if (providerType === 'ollama') {
     const resp = await fetch('http://localhost:11434/api/chat', {
@@ -6227,7 +6247,11 @@ async function fetchProviderResponse(
     })
     if (!resp.ok) throw new Error(`custom:${api.name} ${resp.status}`)
     const d = await resp.json() as any
-    return { text: d?.choices?.[0]?.message?.content || '', apiName: api.name, model }
+    return {
+      text: extractChatMessageContent(d?.choices?.[0]?.message?.content),
+      apiName: api.name,
+      model,
+    }
 
   } else {
     const COMPAT_ENDPOINTS: Record<string, string> = {
@@ -6253,7 +6277,11 @@ async function fetchProviderResponse(
     })
     if (!resp.ok) throw new Error(`${providerType} ${resp.status}`)
     const d = await resp.json() as any
-    return { text: d?.choices?.[0]?.message?.content || '', apiName: api.name, model }
+    return {
+      text: extractChatMessageContent(d?.choices?.[0]?.message?.content),
+      apiName: api.name,
+      model,
+    }
   }
 }
 
