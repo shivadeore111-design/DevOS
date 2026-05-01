@@ -90,6 +90,7 @@ import { sessionMemory, getSessionLineage, loadSessionMetadata } from '../core/s
 import { buildDiagnostic } from '../core/diagnosticError'
 import { memoryExtractor } from '../core/memoryExtractor'
 import { loadPlugins, reloadPlugins, listFlatPlugins, pluginHooks as flatPluginHooks } from '../core/pluginLoader'
+import * as commandCatalog from '../cli/commandCatalog'
 import { permissionSystem } from '../core/permissionSystem'
 import { getIdentity, refreshIdentity } from '../core/aidenIdentity'
 import { eventBus } from '../core/eventBus'
@@ -2689,7 +2690,7 @@ export function createApiServer(): Express {
   app.post('/api/plugins/reload', requireLocalhost, async (_req: Request, res: Response) => {
     try {
       const dir = path.join(process.cwd(), 'workspace', 'plugins')
-      await reloadPlugins(dir)
+      await reloadPlugins(dir, { commandCatalog })
       res.json({ ok: true, plugins: listFlatPlugins() })
     } catch (e: any) { res.status(500).json({ error: e.message }) }
   })
@@ -5834,8 +5835,9 @@ export function startApiServer(portArg?: number): Express {
   }
 
   // Load plugins from workspace/plugins/*.js (unified flat format)
+  // Pass commandCatalog so plugins can register slash commands at load time.
   const flatPluginDir = path.join(process.cwd(), 'workspace', 'plugins')
-  loadPlugins(flatPluginDir).catch(e => console.error('[PluginLoader] Load failed:', e.message))
+  loadPlugins(flatPluginDir, { commandCatalog }).catch(e => console.error('[PluginLoader] Load failed:', e.message))
 
   // Start background license refresh (12-hour interval, silent)
   startLicenseRefresh()

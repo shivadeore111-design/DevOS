@@ -1,5 +1,5 @@
-# CLAUDE_CHAT_BRIEFING — Aiden v3.19 Phase 4 SHIPPED
-Generated: 2026-04-30. Updated: 2026-05-01 (Phase 4 complete).
+# CLAUDE_CHAT_BRIEFING — Aiden v3.19 Phase 5 SHIPPED
+Generated: 2026-04-30. Updated: 2026-05-01 (Phase 5 complete — v3.19 DONE).
 
 ---
 
@@ -554,3 +554,87 @@ Additionally: `now_playing` was missing from `NO_INPUT_TOOLS` in the executor, c
 | C4 `e20faa2` | Instant dispatch for now_playing (correct plan schema) |
 | C4 `b5d851f` | `docs/v3.20-candidates.md`: planner debt + TODO(v3.20) comment |
 | C4 `4391add` | Fix: add `now_playing` to `NO_INPUT_TOOLS` — executor was skipping `{}` input |
+
+---
+
+## SECTION 5 — v3.19 PHASE 5: Registry-backed slash completer
+
+**Status: SHIPPED** — 2026-05-01. Commits: C1–C4 (see below).
+
+### Objective
+
+Make `commandCatalog` (`cli/commandCatalog.ts`) the single source of truth for all
+slash commands — catalog schema, runtime registry, Tab-dropdown, and plugin contribution
+path. Mirrors what Phase 1 did for `TOOL_REGISTRY`.
+
+### What shipped
+
+| Item | Detail |
+|------|--------|
+| Single-source command catalog | `COMMAND_DETAIL` (91 entries) is the canonical definition; all consumers derive from it |
+| 6 previously-invisible commands | `/plugins`, `/profile`, `/failed`, `/install`, `/publish`, `/sandbox` — were missing from catalog, now added |
+| Runtime registry API | `register()`, `unregister()`, `list()`, `get()`, `generation()` — live Map backed by COMMAND_DETAIL at startup |
+| Generation-cached dropdown | `buildSlashCommands()` re-builds only when `generation()` changes; O(1) on every keystroke |
+| 19 core handler pre-registrations | `registerCoreCommands(rl)` in `aiden.ts` registers 19 handlers as catalog closures (preview for v3.20 full extraction) |
+| Plugin contribution path | `ctx.commandCatalog` injected into every plugin's `init(ctx)` via `PluginServices` parameter on `loadPlugins()` |
+| Example plugin | `workspace/plugins/hello.js` + `workspace/plugins/_examples/hello/` — registers `/hello`, includes README |
+
+### What was deferred to v3.20
+
+| Item | Reason |
+|------|--------|
+| Full 72-handler extraction from `handleCommand()` if-chain | Scope/risk — complex multi-hundred-line handlers (/run, /voice, /provider). Dedicated v3.20 commit. |
+| Unified dispatch (replace if-chain with catalog lookup) | Depends on full extraction. |
+| `buildSlashCommands()` CLI-side generation cache (CLI path) | Already done server-side; CLI Tab completer also updated (C3). |
+
+### Architecture
+
+```
+commandCatalog.ts  ←── source of truth (COMMAND_DETAIL + _registry Map)
+      │
+      ├── register/unregister/list/get/generation   ← runtime API
+      │
+      ├── getCatalog()           ← used by /help, palette
+      ├── buildSlashCommands()   ← generation-cached, drives Tab dropdown
+      │
+      └── pluginLoader.ts (PluginServices.commandCatalog)
+                │
+                └── plugin init(ctx) → ctx.commandCatalog.register('/name', {...})
+```
+
+### Plugin contribution path (v3.19+)
+
+Plugins in `workspace/plugins/*.js` receive `ctx.commandCatalog` in `init(ctx)`.
+Any `ctx.commandCatalog.register()` call bumps `_generation`, which the dropdown
+cache detects on the next keystroke — no restart needed when hot-reload is used.
+
+```js
+exports.init = async function(ctx) {
+  ctx.commandCatalog.register('/mycommand', {
+    desc: 'Does something', section: 'tools', origin: 'plugin',
+    handler: async (args) => { /* ... */ },
+  })
+  return () => ctx.commandCatalog.unregister('/mycommand')  // dispose
+}
+```
+
+### Smoke test results (C4 verification)
+
+```
+[Plugin:hello] /hello registered
+gen after load:    1
+/hello present:    YES — Hello from example plugin!
+total commands:    92  (91 catalog + 1 plugin)
+[Plugin:hello] /hello unregistered
+gen after dispose: 2
+/hello after dispose: GONE
+```
+
+### Phase 5 commits
+
+| Commit | Description |
+|--------|-------------|
+| C1 `a260463` | `docs/phase5-command-audit.md` — full dispatch-site audit, 85 commands mapped |
+| C2 `947fc72` | `commandCatalog.ts` rewrite: CmdDetail+handler/origin/parallel, registry API, 6 missing entries, 19 handler preview |
+| C3 `1d7f05b` | `buildSlashCommands()` → `commandCatalog.list()` + generation cache (`_slashGen`, `_slashCache`) |
+| C4 `(this)` | `pluginLoader.ts` PluginServices injection, `server.ts` wiring, `hello.js` example plugin, BRIEFING update |

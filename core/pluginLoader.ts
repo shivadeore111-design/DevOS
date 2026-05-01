@@ -37,6 +37,43 @@ export const pluginHooks: PluginHooks = {
   onSessionEnd:   [],
 }
 
+// ── External services injectable into plugin context ─────────
+/**
+ * Services passed to loadPlugins / makeContext.
+ *
+ * Plugins receive { commandCatalog, ...other } in their load context.
+ * Register slash commands via:
+ *
+ *   ctx.commandCatalog.register('/name', {
+ *     desc:    'What it does',
+ *     section: 'tools',       // catalog section (info | session | tools | memory | power | debug)
+ *     origin:  'plugin',
+ *     handler: async (args) => { ... },  // args = parts after the command name
+ *   })
+ *
+ * Registered commands immediately appear in the CLI Tab-dropdown (next keystroke).
+ * Unregister on dispose:
+ *
+ *   ctx.commandCatalog.unregister('/name')
+ */
+export interface CommandCatalogService {
+  register(name: string, detail: {
+    desc:     string
+    section:  string
+    origin?:  'core' | 'plugin'
+    handler?: (args: string[]) => Promise<void>
+    [key: string]: any
+  }): void
+  unregister(name: string): void
+  list(): Array<[string, Record<string, any>]>
+  get(name: string): Record<string, any> | undefined
+  generation(): number
+}
+
+export interface PluginServices {
+  commandCatalog?: CommandCatalogService
+}
+
 // ── Loaded-plugin registry ────────────────────────────────────
 export interface LoadedPlugin {
   name:        string
@@ -52,7 +89,7 @@ export interface LoadedPlugin {
 export const loadedFlatPlugins: LoadedPlugin[] = []
 
 // ── Plugin context (passed to init / onLoad) ──────────────────
-function makeContext(pluginName: string) {
+function makeContext(pluginName: string, services: PluginServices = {}) {
   return {
     registerTool(def: {
       name:         string
@@ -79,11 +116,15 @@ function makeContext(pluginName: string) {
     log(...args: any[]) {
       console.log(`[Plugin:${pluginName}]`, ...args)
     },
+
+    // Slash-command registry — register/unregister commands that appear in the
+    // Tab-dropdown. See PluginServices JSDoc above for full usage.
+    commandCatalog: services.commandCatalog ?? null,
   }
 }
 
 // ── Loader ────────────────────────────────────────────────────
-export async function loadPlugins(pluginDir: string): Promise<void> {
+export async function loadPlugins(pluginDir: string, services: PluginServices = {}): Promise<void> {
   if (!fs.existsSync(pluginDir)) {
     fs.mkdirSync(pluginDir, { recursive: true })
     return
@@ -113,7 +154,7 @@ export async function loadPlugins(pluginDir: string): Promise<void> {
         continue
       }
 
-      const ctx     = makeContext(name)
+      const ctx     = makeContext(name, services)
       const dispose = await initFn.call(def.default ?? def, ctx)
 
       loadedFlatPlugins.push({
@@ -136,7 +177,7 @@ export async function loadPlugins(pluginDir: string): Promise<void> {
 }
 
 // ── Reload — dispose old plugins then reload all flat plugins ─
-export async function reloadPlugins(pluginDir: string): Promise<void> {
+export async function reloadPlugins(pluginDir: string, services: PluginServices = {}): Promise<void> {
   // Dispose in reverse order
   for (let i = loadedFlatPlugins.length - 1; i >= 0; i--) {
     const p = loadedFlatPlugins[i]
@@ -153,7 +194,7 @@ export async function reloadPlugins(pluginDir: string): Promise<void> {
   pluginHooks.onSessionStart.length = 0
   pluginHooks.onSessionEnd.length   = 0
 
-  await loadPlugins(pluginDir)
+  await loadPlugins(pluginDir, services)
 }
 
 // ── Status ────────────────────────────────────────────────────
