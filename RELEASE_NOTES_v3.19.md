@@ -1,3 +1,10 @@
+## v3.19.1 — patch
+
+- Fix: `cli/aiden.ts` handler extraction regression. `/new`, `/history`, `/export`
+  referenced non-existent `state.messages` property — broke `npm run cli`.
+  Now correctly uses `state.history`.
+- No behavior changes for `npm start` / Electron `.exe` users.
+
 ## v3.19.0 — "ALIVE"
 
 Aiden's character materially changed. Single-day ship of 5 phases targeting the "feels static" gap.
