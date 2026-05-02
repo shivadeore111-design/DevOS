@@ -2902,21 +2902,27 @@ CRITICAL RULES FOR YOUR RESPONSE:
 
     if (ollamaResponded) return
 
-    // Last resort: return raw tool output if tools ran successfully
-    if (results && results.length > 0 && results.some(r => r.success)) {
-      const successResults = results.filter(r => r.success)
-      const lastResult     = successResults[successResults.length - 1]
-      onToken(lastResult.output || 'Here are the results.')
-      return
-    }
-
-    // Include error info from failed tools if any
+    // Last resort: synthesize honest summary (all LLM providers down)
     if (results && results.length > 0) {
-      const failedResult = results[results.length - 1]
-      if (failedResult.error) {
-        onToken(`Error: ${failedResult.error}`)
+      const successes = results.filter(r => r.success)
+      const failures  = results.filter(r => !r.success)
+
+      if (failures.length === 0) {
+        // All steps succeeded — return last output as before
+        onToken(successes[successes.length - 1].output || 'Done.')
         return
       }
+
+      // Mixed or all-failed — surface both sides honestly
+      const parts: string[] = []
+      if (successes.length > 0)
+        parts.push(`Completed: ${successes.map(r => r.tool).join(', ')}.`)
+      parts.push(
+        `Failed: ${failures.map(r => `${r.tool} — ${r.error || 'unknown error'}`).join('; ')}.`
+      )
+      parts.push('(All language providers are currently unavailable — full response cannot be generated.)')
+      onToken(parts.join(' '))
+      return
     }
 
     const degraded = enterDegradedMode(e.message || 'unknown error')

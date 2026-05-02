@@ -6,11 +6,13 @@
 // Groups: A-TOOL_REGISTRY  B-SkillLoader  C-RegistryValidator
 //         D-CommandCatalog  E-ProtectedContext  F-PluginLoader
 //         G-ProviderConfig  H-agentLoop exports  I-FileSystem
+//         R-Regression (C1 honesty fallback)
 // ============================================================
 
 import fs   from 'fs'
 import path from 'path'
 import { runTest, runWarn, skip, summarize, printResult, C, GroupSummary } from './utils'
+import { groupR } from './regression/c1-honesty-fallback'
 
 const CWD = process.cwd()
 
@@ -633,5 +635,6 @@ export async function runPhase1(): Promise<GroupSummary[]> {
   out.push(await groupG())
   out.push(await groupH())
   out.push(await groupI())
+  out.push(await groupR())
   return out
 }
