@@ -13,6 +13,7 @@
 //         Y-Regression (C6 fabrication guards)
 //         Z-Regression (C3b screenshot schema + escape)
 //         Q-Regression (C8 code path guards)
+//         U-Regression (C9 responder custom-provider routing)
 // ============================================================
 
 import fs   from 'fs'
@@ -26,6 +27,7 @@ import { groupX } from './regression/c7-shell-safety'
 import { groupY } from './regression/c6-fabrication-guards'
 import { groupZ } from './regression/c3b-screenshot-schema-escape'
 import { groupQ } from './regression/c8-code-path-guard'
+import { groupU } from './regression/c9-responder-custom-routing'
 
 const CWD = process.cwd()
 
@@ -656,5 +658,6 @@ export async function runPhase1(): Promise<GroupSummary[]> {
   out.push(await groupY())
   out.push(await groupZ())
   out.push(await groupQ())
+  out.push(await groupU())
   return out
 }

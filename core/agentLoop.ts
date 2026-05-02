@@ -2805,8 +2805,41 @@ CRITICAL RULES FOR YOUR RESPONSE:
       console.log(`[Router] Ollama responded in ${Date.now() - _t0}ms (${ollamaTokens} tokens)`)
       if (ollamaTokens === 0) throw new Error('Ollama: empty response — no tokens emitted')
 
+    } else if (providerName === 'custom') {
+      // C9: Custom provider (e.g. Together AI) — resolve baseUrl from config.
+      // Mirrors callLLM's custom branch but with streaming enabled.
+      // Without this, custom providers fall through to the generic else block
+      // which looks up OPENAI_COMPAT_ENDPOINTS['custom'] → undefined → groq URL,
+      // sending the wrong API key to the wrong endpoint → 401.
+      const cfgCustom = loadConfig()
+      let customBaseUrl: string | undefined =
+        cfgCustom.customProviders?.find((c: any) => c.enabled && c.apiKey === apiKey)?.baseUrl
+      if (!customBaseUrl) {
+        const apiEntry = (cfgCustom.providers?.apis ?? []).find((a: any) => {
+          if (a.provider !== 'custom' || !a.enabled || !a.baseUrl) return false
+          const resolved = a.key?.startsWith('env:')
+            ? (process.env[a.key.replace('env:', '')] || '')
+            : a.key
+          return resolved === apiKey
+        })
+        customBaseUrl = apiEntry?.baseUrl
+      }
+      if (!customBaseUrl) throw new Error(`Responder: no baseUrl for custom provider (model=${model})`)
+      const r = await fetch(customBaseUrl, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body: JSON.stringify({ model, messages, stream: true }),
+        signal: AbortSignal.any([AbortSignal.timeout(30000), _respCtrl.signal]),
+      })
+      if (!r.ok) {
+        const errText = await r.text().catch(() => '')
+        if (r.status === 429 || r.status === 503) { try { markRateLimited(providerName) } catch {} }
+        throw new Error(`Responder ${r.status}: ${errText.slice(0, 200)}`)
+      }
+      await streamOpenAIResponse(r, onToken)
+
     } else {
-      // OpenAI-compatible
+      // OpenAI-compatible: groq, openrouter, cerebras, nvidia, github
       const url = OPENAI_COMPAT_ENDPOINTS[providerName] || OPENAI_COMPAT_ENDPOINTS.groq
       const r   = await fetch(url, {
         method:  'POST',
