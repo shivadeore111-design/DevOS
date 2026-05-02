@@ -6,10 +6,28 @@
 // whitespace. Add new verbs here — keep sorted for readability.
 
 const ACTION_VERB_RE =
-  /^\s*(?:please\s+|can\s+you\s+|could\s+you\s+)?(append|capture|close|copy|delete|download|edit|execute|fetch|get|kill|launch|lock|move|mute|open|pause|play|prepend|read|reboot|record|remind|remove|rename|replace|restart|resume|run|save|schedule|screenshot|send|set\s+timer|shutdown|skip|speak|start|stop|transcribe|unlock|unmute|upload|volume|write)\b/i
+  /^\s*(?:please\s+|can\s+you\s+|could\s+you\s+)?(append|capture|close|copy|delete|download|edit|execute|fetch|get|kill|launch|lock|move|mute|note|open|pause|play|prepend|read|reboot|record|remember|remind|remove|rename|replace|restart|resume|run|save|schedule|screenshot|send|set\s+timer|shutdown|skip|speak|start|stop|store|track|transcribe|unlock|unmute|upload|volume|write)\b/i
 
 export function isActionIntent(message: string): boolean {
   return ACTION_VERB_RE.test(message)
+}
+
+// Narrower set: verbs that specifically mean "persist to Aiden's memory system".
+// Used by MemoryGuard to override wrong-tool plans (e.g. file_write) for memory intents.
+const MEMORY_VERB_RE =
+  /^\s*(?:please\s+|can\s+you\s+|could\s+you\s+)?(remember|track|note|store|keep\s+track)\b/i
+
+export function isMemoryIntent(message: string): boolean {
+  return MEMORY_VERB_RE.test(message)
+}
+
+/** Extract the fact payload from a memory-intent message.
+ *  Strips the leading verb+prefix and returns the remainder, trimmed.
+ *  Falls back to the full message if no verb is stripped. */
+export function extractMemoryFact(message: string): string {
+  return message
+    .replace(/^\s*(?:please\s+|can\s+you\s+|could\s+you\s+)?(?:remember|track|note|store|keep\s+track\s+of?)\b[:—\s]*/i, '')
+    .trim() || message.trim()
 }
 
 export function detectActionVerb(message: string): string {
@@ -29,6 +47,10 @@ export function detectActionVerb(message: string): string {
  *   isActionIntent('set timer for 5 minutes')   // two-word verb
  *   isActionIntent('  volume up')               // leading whitespace
  *   isActionIntent('Close all windows')         // capitalised
+ *   isActionIntent('remember my color is purple')  // C5: memory verb
+ *   isActionIntent('track my water intake')        // C5: memory verb
+ *   isActionIntent('note that my name is shiva')   // C5: memory verb
+ *   isActionIntent('store this fact')              // C5: memory verb
  *
  * Expect false:
  *   isActionIntent('what can you do')           // question — no action verb at start
@@ -36,4 +58,5 @@ export function detectActionVerb(message: string): string {
  *   isActionIntent('tell me about open source') // 'open' not at intent position
  *   isActionIntent('how do I start a project')  // 'start' after 'how do I'
  *   isActionIntent('')                          // empty
+ *   isActionIntent('remembered yesterday I bought milk') // C5: past-tense narrative — anchor prevents match
  */

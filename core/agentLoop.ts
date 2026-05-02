@@ -10,7 +10,7 @@
 
 import { executeTool, TOOLS, getToolTier, detectToolCategories, getToolsForCategories, TOOL_NAMES_ONLY,
          registryAllowedTools, registryValidTools,
-         registryNoRetrySet, registryParallelSafeSet, registrySequentialOnlySet } from './toolRegistry'
+         registryNoRetrySet, registryParallelSafeSet, registrySequentialOnlySet, isKnownTool } from './toolRegistry'
 import { loadAllRecipes, matchRecipe, executeRecipe } from './recipeEngine'
 import { livePulse }          from '../coordination/livePulse'
 import { planTool }                        from './planTool'
@@ -49,7 +49,7 @@ import { repairToolName }    from './toolNameRepair'
 // SLASH_MIRROR_TOOL_NAMES import removed in Commit 4 — slash mirrors route
 // through slashAsTool.ts injection path, not the planner's allowed-tool list.
 import { repairPlanResponse }      from './planResponseRepair'
-import { isActionIntent, detectActionVerb } from './actionVerbDetector'
+import { isActionIntent, detectActionVerb, isMemoryIntent, extractMemoryFact } from './actionVerbDetector'
 import { buildDiagnostic } from './diagnosticError'
 import * as nodeFs             from 'fs'
 import * as nodePath           from 'path'
@@ -948,6 +948,7 @@ IMPORTANT: NEVER use "C:\\Users\\Aiden" — "Aiden" is the AI assistant's name, 
 
 CRITICAL RULES:
 0. LIVE STATE OVERRIDE (takes priority over all other rules): queries about current music/media/song/track → requires_execution: true, tool: now_playing (no params). You CANNOT know this from training data. Never answer "I'll respond directly" for these.
+0b. MEMORY OPERATIONS (highest priority after rule 0): When the user says "remember X", "track X", "note X", "store X", "keep track of X", or any variant → requires_execution: true, tool: memory_store({ fact: "<the thing to remember>" }). NEVER use file_write for memory intents. memory_store writes to Aiden's internal persistent memory (workspace/memory/records.jsonl). file_write is for user-visible files only.
 1. If the answer is in your training data (capitals, definitions, facts, opinions, advice) → requires_execution: false
 2. ONLY use tools when you need: live data, file operations, running code, or computer control
    Live data includes: current music, system state, time, weather, stock prices — these are NEVER in training data
@@ -1595,6 +1596,22 @@ Output ONLY valid JSON, nothing else:`
     }
   }
 
+  // ── MemoryGuard: override wrong-tool plans for memory intents ──────────────
+  // If the user said "remember/track/note/store X" but the planner chose a tool
+  // other than memory_store (e.g. file_write), force a memory_store plan.
+  if (isMemoryIntent(message)) {
+    const usesMemoryStore = candidatePlan.plan.some(s => s.tool === 'memory_store')
+    if (!usesMemoryStore) {
+      const verb = detectActionVerb(message)
+      const fact = extractMemoryFact(message)
+      process.stderr.write(
+        `[MemoryGuard] overriding plan [${candidatePlan.plan.map(s => s.tool).join(',')}] → memory_store for verb='${verb}'\n`
+      )
+      candidatePlan.plan               = [{ step: 1, tool: 'memory_store', input: { fact }, description: 'Store to permanent memory' }]
+      candidatePlan.requires_execution = true
+    }
+  }
+
   return candidatePlan
 }
 
@@ -2142,8 +2159,11 @@ async function executeSingleStep(
   console.log(`[ExecutePlan] Step ${step.step}: ${step.tool} — input: ${JSON.stringify(step.input).slice(0, 100)}`)
   livePulse.tool('Aiden', step.tool, JSON.stringify(step.input).slice(0, 80))
 
-  // Validate tool exists
-  if (!TOOLS[step.tool]) {
+  // Validate tool exists — use isKnownTool() which checks both static TOOLS and
+  // runtime-registered externalTools (e.g. memory_store from registerSlashMirrorTools).
+  // ALLOWED_TOOLS is frozen at module-load time before mirror tools are registered,
+  // so it cannot be used here.
+  if (!isKnownTool(step.tool)) {
     const stepResult: StepResult = {
       step: step.step, tool: step.tool, input: step.input,
       success: false, output: '',

@@ -8,6 +8,7 @@
 //         G-ProviderConfig  H-agentLoop exports  I-FileSystem
 //         R-Regression (C1 honesty fallback)  S-Regression (C3 screenshot)
 //         W-Regression (C4 file_write boundary)
+//         V-Regression (C5 memory action verbs)
 // ============================================================
 
 import fs   from 'fs'
@@ -16,6 +17,7 @@ import { runTest, runWarn, skip, summarize, printResult, C, GroupSummary } from 
 import { groupR } from './regression/c1-honesty-fallback'
 import { groupS } from './regression/c3-screenshot-path'
 import { groupW } from './regression/c4-file-write-boundary'
+import { groupV } from './regression/c5-memory-action-verbs'
 
 const CWD = process.cwd()
 
@@ -641,5 +643,6 @@ export async function runPhase1(): Promise<GroupSummary[]> {
   out.push(await groupR())
   out.push(await groupS())
   out.push(await groupW())
+  out.push(await groupV())
   return out
 }

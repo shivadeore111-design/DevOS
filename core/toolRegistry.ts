@@ -2679,6 +2679,14 @@ export function getExternalToolsMeta(): Record<string, { source: string }> {
   return { ...externalToolsMeta }
 }
 
+/** Dynamic tool-existence check that includes both TOOLS (static) and
+ *  externalTools (registered at runtime via registerExternalTool / registerSlashMirrorTools).
+ *  Use this in the executor instead of the pre-computed ALLOWED_TOOLS constant, which
+ *  is frozen at module-load time before mirror tools are registered. */
+export function isKnownTool(name: string): boolean {
+  return name in TOOLS || name in externalTools
+}
+
 // ── Internal dispatcher — no retry, no timeout ────────────────
 
 async function runTool(tool: string, input: Record<string, any>): Promise<RawResult> {
