@@ -90,6 +90,26 @@ export function loadRecordById(id: string): MemoryRecord | null {
   return all.find(r => r.id === id) ?? null
 }
 
+/**
+ * C11: Remove records matching a predicate from records.jsonl.
+ * Rewrites the file with only the non-matching records.
+ * Returns the count of removed entries.
+ */
+export function removeRecords(predicate: (r: MemoryRecord) => boolean): number {
+  const all  = loadAllRecords()
+  const kept = all.filter(r => !predicate(r))
+  const removed = all.length - kept.length
+  if (removed > 0) {
+    _ensureDir()
+    fs.writeFileSync(
+      RECORDS_FILE,
+      kept.map(r => JSON.stringify(r)).join('\n') + (kept.length ? '\n' : ''),
+      'utf-8',
+    )
+  }
+  return removed
+}
+
 // ── ID assignment helper ────────────────────────────────────────────────────
 
 export function assignId(

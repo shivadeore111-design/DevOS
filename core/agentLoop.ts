@@ -49,7 +49,7 @@ import { repairToolName }    from './toolNameRepair'
 // SLASH_MIRROR_TOOL_NAMES import removed in Commit 4 — slash mirrors route
 // through slashAsTool.ts injection path, not the planner's allowed-tool list.
 import { repairPlanResponse }      from './planResponseRepair'
-import { isActionIntent, detectActionVerb, isMemoryIntent, extractMemoryFact } from './actionVerbDetector'
+import { isActionIntent, detectActionVerb, isMemoryIntent, isForgetIntent, extractMemoryFact } from './actionVerbDetector'
 import { buildDiagnostic } from './diagnosticError'
 import * as nodeFs             from 'fs'
 import * as nodePath           from 'path'
@@ -995,7 +995,7 @@ IMPORTANT: NEVER use "C:\\Users\\Aiden" — "Aiden" is the AI assistant's name, 
 
 CRITICAL RULES:
 0. LIVE STATE OVERRIDE (takes priority over all other rules): queries about current music/media/song/track → requires_execution: true, tool: now_playing (no params). You CANNOT know this from training data. Never answer "I'll respond directly" for these.
-0b. MEMORY OPERATIONS (highest priority after rule 0): When the user says "remember X", "track X", "note X", "store X", "keep track of X", or any variant → requires_execution: true, tool: memory_store({ fact: "<the thing to remember>" }). NEVER use file_write for memory intents. memory_store writes to Aiden's internal persistent memory (workspace/memory/records.jsonl). file_write is for user-visible files only.
+0b. MEMORY OPERATIONS (highest priority after rule 0): When the user says "remember X", "track X", "note X", "store X", "keep track of X", or any variant → requires_execution: true, tool: memory_store({ fact: "<the thing to remember>" }). When the user says "forget X", "remove X from memory", "delete X from memory" → requires_execution: true, tool: memory_forget({ fact: "<keyword to match>" }). NEVER use file_write or file_read for memory intents. memory_store/memory_forget write to Aiden's internal persistent memory (workspace/memory/records.jsonl). file_write is for user-visible files only.
 1. If the answer is in your training data (capitals, definitions, facts, opinions, advice) → requires_execution: false
 2. ONLY use tools when you need: live data, file operations, running code, or computer control
    Live data includes: current music, system state, time, weather, stock prices — these are NEVER in training data
@@ -1648,16 +1648,32 @@ Output ONLY valid JSON, nothing else:`
   // ── MemoryGuard: override wrong-tool plans for memory intents ──────────────
   // If the user said "remember/track/note/store X" but the planner chose a tool
   // other than memory_store (e.g. file_write), force a memory_store plan.
+  // C11: Also handles forget intents → force memory_forget.
   if (isMemoryIntent(message)) {
-    const usesMemoryStore = candidatePlan.plan.some(s => s.tool === 'memory_store')
-    if (!usesMemoryStore) {
-      const verb = detectActionVerb(message)
-      const fact = extractMemoryFact(message)
-      process.stderr.write(
-        `[MemoryGuard] overriding plan [${candidatePlan.plan.map(s => s.tool).join(',')}] → memory_store for verb='${verb}'\n`
-      )
-      candidatePlan.plan               = [{ step: 1, tool: 'memory_store', input: { fact }, description: 'Store to permanent memory' }]
-      candidatePlan.requires_execution = true
+    if (isForgetIntent(message)) {
+      // C11: Forget branch — force memory_forget
+      const usesMemoryForget = candidatePlan.plan.some(s => s.tool === 'memory_forget')
+      if (!usesMemoryForget) {
+        const verb = detectActionVerb(message)
+        const fact = extractMemoryFact(message)
+        process.stderr.write(
+          `[MemoryGuard] overriding plan [${candidatePlan.plan.map(s => s.tool).join(',')}] → memory_forget for verb='${verb}'\n`
+        )
+        candidatePlan.plan               = [{ step: 1, tool: 'memory_forget', input: { fact }, description: 'Remove from permanent memory' }]
+        candidatePlan.requires_execution = true
+      }
+    } else {
+      // Store branch — force memory_store (original C5 logic)
+      const usesMemoryStore = candidatePlan.plan.some(s => s.tool === 'memory_store')
+      if (!usesMemoryStore) {
+        const verb = detectActionVerb(message)
+        const fact = extractMemoryFact(message)
+        process.stderr.write(
+          `[MemoryGuard] overriding plan [${candidatePlan.plan.map(s => s.tool).join(',')}] → memory_store for verb='${verb}'\n`
+        )
+        candidatePlan.plan               = [{ step: 1, tool: 'memory_store', input: { fact }, description: 'Store to permanent memory' }]
+        candidatePlan.requires_execution = true
+      }
     }
   }
 

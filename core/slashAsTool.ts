@@ -16,7 +16,7 @@ import path from 'path'
 import os   from 'os'
 
 import { registerExternalTool }  from './toolRegistry'
-import { assignId }              from './memoryIds'
+import { assignId, removeRecords } from './memoryIds'
 import { conversationMemory }    from './conversationMemory'
 import { learningMemory }        from './learningMemory'
 import { skillLoader }           from './skillLoader'
@@ -166,7 +166,14 @@ async function toolChannelsStatus(_: any): Promise<{ success: boolean; output: s
 // ── Memory store ──────────────────────────────────────────────────────────────
 
 async function toolMemoryStore(input: any): Promise<{ success: boolean; output: string }> {
-  const fact = String(input?.fact || input?.content || input?.text || '').trim()
+  // Accept any reasonable field name the planner might guess
+  const fact = String(
+    input?.fact || input?.content || input?.text ||
+    input?.preference || input?.value || input?.memory ||
+    input?.note || input?.data || input?.information || input?.detail ||
+    input?.message || input?.entry || input?.record ||
+    (input && typeof input === 'object' ? Object.values(input).find(v => typeof v === 'string' && (v as string).trim().length > 0) : '') || ''
+  ).trim()
   if (!fact) return { success: false, output: 'No fact provided. Pass { fact: "the thing to remember" }' }
   const record = assignId({
     timestamp: new Date().toISOString(),
@@ -176,6 +183,28 @@ async function toolMemoryStore(input: any): Promise<{ success: boolean; output: 
     tags:      Array.isArray(input?.tags) ? input.tags : [],
   })
   return { success: true, output: `Stored as ${record.id}: ${record.summary}` }
+}
+
+// ── Memory forget (C11) ──────────────────────────────────────────────────────
+
+async function toolMemoryForget(input: any): Promise<{ success: boolean; output: string }> {
+  const keyword = String(
+    input?.fact || input?.keyword || input?.content || input?.text ||
+    input?.query || input?.topic || input?.subject ||
+    (input && typeof input === 'object'
+      ? Object.values(input).find(v => typeof v === 'string' && (v as string).trim().length > 0)
+      : '') || ''
+  ).trim().toLowerCase()
+  if (!keyword)
+    return { success: false, output: 'No keyword provided. Pass { fact: "thing to forget" }' }
+
+  const removed = removeRecords(r =>
+    r.content.toLowerCase().includes(keyword) ||
+    r.summary.toLowerCase().includes(keyword),
+  )
+  if (removed === 0)
+    return { success: true, output: `No memory entries matched "${keyword}".` }
+  return { success: true, output: `Removed ${removed} memory entry(s) matching "${keyword}".` }
 }
 
 // ── Goals tool ────────────────────────────────────────────────────────────────
@@ -197,6 +226,7 @@ const MIRROR_TOOLS: Array<{
   { name: 'spend',           description: 'Show today\'s token cost and spend by provider',           fn: toolSpend          },
   { name: 'memory_show',     description: 'Show conversation memory facts and recent history',        fn: toolMemoryShow     },
   { name: 'memory_store',   description: 'Persist a fact or preference to permanent memory (records.jsonl) right now. Pass { fact: "..." }', fn: toolMemoryStore },
+  { name: 'memory_forget',  description: 'Remove a fact or preference from permanent memory (records.jsonl). Pass { fact: "thing to forget" }', fn: toolMemoryForget },
   { name: 'lessons',         description: 'Show permanent failure rules learned from past tasks',     fn: toolLessons        },
   { name: 'skills_list',     description: 'List all loaded skills with descriptions',                 fn: toolSkillsList     },
   { name: 'tools_list',      description: 'List all registered tool names',                           fn: toolToolsList      },

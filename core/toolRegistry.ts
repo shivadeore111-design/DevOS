@@ -2983,6 +2983,7 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   receive_file_local:      'Wait for an incoming LocalSend file transfer on the local network',
   ingest_youtube:          'Download and ingest a YouTube video into memory: transcribes audio, extracts metadata, and stores as a searchable memory entry.',
   memory_store:            'Persist a fact, preference, or note to permanent memory right now. Use when the user says "remember", "save this", "keep track of", or wants something stored. Pass { fact: "..." }.',
+  memory_forget:           'Remove a fact or preference from permanent memory. Use when the user says "forget", "remove from memory", "delete from memory". Pass { fact: "keyword to match" }.',
 }
 
 // ── N+28: TOOL_NAMES_ONLY ──────────────────────────────────────
@@ -3025,6 +3026,7 @@ const TOOL_TIERS: Record<string, ToolTier> = {
   now_playing:             1,
   notify:                  1,
   memory_store:            1,
+  memory_forget:           1,
   wait:                    1,
   get_briefing:            1,
   get_natural_events:      1,
@@ -3108,7 +3110,7 @@ export type ToolCategory =
   | 'data'          // market data, stocks, company info, briefing, natural events
   | 'system'        // notify, system_info, clipboard, app_launch/close, wait
   | 'git'           // git_status, git_commit, git_push
-  | 'memory'        // memory_store (write), memory_show, search (read)
+  | 'memory'        // memory_store (write), memory_forget (delete), memory_show, search (read)
   | 'media'         // (reserved for future audio/media tools)
   | 'voice'         // voice_speak, voice_transcribe, voice_clone, voice_design
   | 'introspection' // status, analytics, spend, memory_show, lessons, skills_list, tools_list, whoami, channels_status, goals
@@ -3185,6 +3187,7 @@ const TOOL_CATEGORIES: Record<string, ToolCategory[]> = {
   spend:                   ['introspection'],
   memory_show:             ['introspection', 'memory'],
   memory_store:            ['memory'],
+  memory_forget:           ['memory'],
   lessons:                 ['introspection', 'memory'],
   skills_list:             ['introspection'],
   tools_list:              ['introspection'],
@@ -3736,7 +3739,15 @@ export const TOOL_REGISTRY: Record<string, ToolRegistryMeta> = {
   memory_store: {
     description: 'Persist a fact, preference, or observation to permanent memory right now. Use whenever the user says "remember", "save this", "keep track of", or similar. Pass { fact: "the thing to remember" }.',
     tier: 1, category: ['memory'],
+    parallel: 'never',
     retry: false,        // write operation — don't double-write on retry
+    mcp: 'excluded',
+  },
+  memory_forget: {
+    description: 'Remove a fact or preference from permanent memory. Use when the user says "forget X", "remove X from memory", "delete X from memory". Pass { fact: "keyword to match" }.',
+    tier: 1, category: ['memory'],
+    parallel: 'never',
+    retry: false,        // write operation — don't double-delete on retry
     mcp: 'excluded',
   },
   search: {

@@ -16,6 +16,7 @@
 //         U-Regression (C9 responder custom-provider routing)
 //         T-Regression (C9b streaming URL helper)
 //         N-Regression (C10 null-plan action-intent guard)
+//         M-Regression (C11 memory_forget)
 // ============================================================
 
 import fs   from 'fs'
@@ -32,6 +33,7 @@ import { groupQ } from './regression/c8-code-path-guard'
 import { groupU } from './regression/c9-responder-custom-routing'
 import { groupT } from './regression/c9b-streaming-url-helper'
 import { groupN } from './regression/c10-null-plan-action-intent'
+import { groupM } from './regression/c11-memory-forget'
 
 const CWD = process.cwd()
 
@@ -67,8 +69,8 @@ async function groupA(): Promise<GroupSummary> {
     if (keys.length === 0) return 'empty object'
   }))
 
-  results.push(await runTest('A-03', 'A', 'TOOL_REGISTRY has exactly 78 keys', () => {
-    if (keys.length !== 78) return `expected 78, got ${keys.length}`
+  results.push(await runTest('A-03', 'A', 'TOOL_REGISTRY has exactly 80 keys', () => {
+    if (keys.length !== 80) return `expected 80, got ${keys.length}`
   }))
 
   results.push(await runTest('A-04', 'A', 'Every entry has a non-empty description', () => {
@@ -665,5 +667,6 @@ export async function runPhase1(): Promise<GroupSummary[]> {
   out.push(await groupU())
   out.push(await groupT())
   out.push(await groupN())
+  out.push(await groupM())
   return out
 }

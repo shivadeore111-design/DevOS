@@ -6,7 +6,7 @@
 // whitespace. Add new verbs here — keep sorted for readability.
 
 const ACTION_VERB_RE =
-  /^\s*(?:please\s+|can\s+you\s+|could\s+you\s+)?(append|capture|close|copy|delete|download|edit|execute|fetch|get|kill|launch|lock|move|mute|note|open|pause|play|prepend|read|reboot|record|remember|remind|remove|rename|replace|restart|resume|run|save|schedule|screenshot|send|set\s+timer|shutdown|skip|speak|start|stop|store|track|transcribe|unlock|unmute|upload|volume|write)\b/i
+  /^\s*(?:please\s+|can\s+you\s+|could\s+you\s+)?(append|capture|close|copy|delete|download|edit|execute|fetch|forget|get|kill|launch|lock|move|mute|note|open|pause|play|prepend|read|reboot|record|remember|remind|remove|rename|replace|restart|resume|run|save|schedule|screenshot|send|set\s+timer|shutdown|skip|speak|start|stop|store|track|transcribe|unlock|unmute|upload|volume|write)\b/i
 
 export function isActionIntent(message: string): boolean {
   return ACTION_VERB_RE.test(message)
@@ -15,7 +15,7 @@ export function isActionIntent(message: string): boolean {
 // Narrower set: verbs that specifically mean "persist to Aiden's memory system".
 // Used by MemoryGuard to override wrong-tool plans (e.g. file_write) for memory intents.
 const MEMORY_VERB_RE =
-  /^\s*(?:please\s+|can\s+you\s+|could\s+you\s+)?(remember|track|note|store|keep\s+track)\b/i
+  /^\s*(?:please\s+|can\s+you\s+|could\s+you\s+)?(remember|track|note|store|keep\s+track|forget|remove\s+from\s+memory|delete\s+from\s+memory)\b/i
 
 export function isMemoryIntent(message: string): boolean {
   return MEMORY_VERB_RE.test(message)
@@ -26,8 +26,16 @@ export function isMemoryIntent(message: string): boolean {
  *  Falls back to the full message if no verb is stripped. */
 export function extractMemoryFact(message: string): string {
   return message
-    .replace(/^\s*(?:please\s+|can\s+you\s+|could\s+you\s+)?(?:remember|track|note|store|keep\s+track\s+of?)\b[:—\s]*/i, '')
+    .replace(/^\s*(?:please\s+|can\s+you\s+|could\s+you\s+)?(?:remember|track|note|store|keep\s+track\s+of?|forget|forget\s+about|remove\s+from\s+memory|delete\s+from\s+memory)\b[:—\s]*/i, '')
     .trim() || message.trim()
+}
+
+// C11: Narrow subset of memory verbs that mean "delete from memory".
+const FORGET_VERB_RE =
+  /^\s*(?:please\s+|can\s+you\s+|could\s+you\s+)?(forget|remove\s+from\s+memory|delete\s+from\s+memory)\b/i
+
+export function isForgetIntent(message: string): boolean {
+  return FORGET_VERB_RE.test(message)
 }
 
 export function detectActionVerb(message: string): string {
