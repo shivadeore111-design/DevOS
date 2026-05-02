@@ -2724,10 +2724,16 @@ CRITICAL RULES FOR YOUR RESPONSE:
 - Include the ACTUAL output from the tools above in your response
 - Do NOT say "I ran the tool" — show the RESULT
 - If run_python returned a number, say that number
-- If file_read returned text, show that text
+- If file_read SUCCEEDED, show the actual text returned
+- If file_read FAILED (ENOENT or any error), state the file does not exist or could not be read — NEVER invent or fabricate file contents
+- If file_list SUCCEEDED, show the actual listing
+- If file_list FAILED, say the directory could not be listed — NEVER invent filenames
+- If web_fetch SUCCEEDED, show the actual fetched content
+- If web_fetch FAILED, say the page could not be fetched — NEVER invent page content
+- If a search tool returned no results, say no results were found — NEVER invent search results
 - If system_info returned hardware data, show the data
 - Be direct: show the actual output, then provide context if needed
-- If a tool failed, say it failed and why`
+- If a tool result starts with "FAILED:", tell the user it failed and why — NEVER fabricate a successful result`
     : `${capabilitiesSection}${entitySummary}${responderSystem(userName, date, sessionId)}${responseSkillContext}${knowledgeResponderSection}${multiGoalInstruction}`
 
   const userContent = executionSummary

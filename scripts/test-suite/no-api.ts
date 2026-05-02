@@ -10,6 +10,7 @@
 //         W-Regression (C4 file_write boundary)
 //         V-Regression (C5 memory action verbs)
 //         X-Regression (C7 shell safety)
+//         Y-Regression (C6 fabrication guards)
 // ============================================================
 
 import fs   from 'fs'
@@ -20,6 +21,7 @@ import { groupS } from './regression/c3-screenshot-path'
 import { groupW } from './regression/c4-file-write-boundary'
 import { groupV } from './regression/c5-memory-action-verbs'
 import { groupX } from './regression/c7-shell-safety'
+import { groupY } from './regression/c6-fabrication-guards'
 
 const CWD = process.cwd()
 
@@ -647,5 +649,6 @@ export async function runPhase1(): Promise<GroupSummary[]> {
   out.push(await groupW())
   out.push(await groupV())
   out.push(await groupX())
+  out.push(await groupY())
   return out
 }
