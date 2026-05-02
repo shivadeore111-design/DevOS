@@ -2576,12 +2576,16 @@ function responderSystem(userName: string, date: string, sessionId?: string): st
   const _ctx      = protectedContextManager.getProtectedContext()
   const _prevHash = sessionId ? soulHashBySession.get(sessionId) : undefined
   if (sessionId) soulHashBySession.set(sessionId, _ctx.hash)
+  const skills = skillLoader.loadAll()
+  const skillCount = skills.length
+  const responderPrompt = AIDEN_RESPONDER_SYSTEM(userName, date)
+    .replace(/\b\d{1,3}(?:,\d{3})?\+? skills\b/g, `${skillCount} skills`)
   // When soul is unchanged, prepend a compact block then the responder body.
   if (_prevHash !== undefined && _ctx.hash === _prevHash) {
     const refBlock = buildProtectedContextBlock(_ctx, _prevHash, sessionId)
-    return refBlock ? refBlock + '\n\n' + AIDEN_RESPONDER_SYSTEM(userName, date) : AIDEN_RESPONDER_SYSTEM(userName, date)
+    return refBlock ? refBlock + '\n\n' + responderPrompt : responderPrompt
   }
-  return AIDEN_RESPONDER_SYSTEM(userName, date)
+  return responderPrompt
 }
 
 export async function respondWithResults(
