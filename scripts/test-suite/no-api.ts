@@ -13,6 +13,7 @@ import fs   from 'fs'
 import path from 'path'
 import { runTest, runWarn, skip, summarize, printResult, C, GroupSummary } from './utils'
 import { groupR } from './regression/c1-honesty-fallback'
+import { groupS } from './regression/c3-screenshot-path'
 
 const CWD = process.cwd()
 
@@ -636,5 +637,6 @@ export async function runPhase1(): Promise<GroupSummary[]> {
   out.push(await groupH())
   out.push(await groupI())
   out.push(await groupR())
+  out.push(await groupS())
   return out
 }

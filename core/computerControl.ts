@@ -160,10 +160,25 @@ $wsh.SendKeys('${mapped}')
 
 // ── SCREENSHOT ─────────────────────────────────────────────────
 
-export async function takeScreenshot(): Promise<string> {
-  const filename = `screenshot_${Date.now()}.png`
-  const filepath = path.join(SCREENSHOTS_DIR, filename)
-  const escaped  = filepath.replace(/\\/g, '\\\\')
+/**
+ * Pure path resolver — exported for unit tests.
+ * Returns the absolute path where the screenshot should be saved.
+ * Throws if outputPath is provided but is not absolute.
+ */
+export function resolveScreenshotPath(outputPath?: string): string {
+  if (outputPath !== undefined && outputPath !== '') {
+    const isAbsolute = /^[A-Za-z]:[/\\]/.test(outputPath) || outputPath.startsWith('/')
+    if (!isAbsolute)
+      throw new Error(`outputPath must be an absolute path, got: ${outputPath}`)
+    return outputPath
+  }
+  return path.join(SCREENSHOTS_DIR, `screenshot_${Date.now()}.png`)
+}
+
+export async function takeScreenshot(opts?: { outputPath?: string }): Promise<string> {
+  const filepath  = resolveScreenshotPath(opts?.outputPath)
+  const useDefault = !opts?.outputPath
+  const escaped   = filepath.replace(/\\/g, '\\\\')
 
   await psFile(`
 Add-Type -AssemblyName System.Windows.Forms
@@ -177,17 +192,19 @@ $graphics.Dispose()
 $bitmap.Dispose()
 `)
 
-  // Trim old screenshots — keep only last 10
-  try {
-    const files = fs.readdirSync(SCREENSHOTS_DIR)
-      .filter(f => f.endsWith('.png'))
-      .sort()
-    if (files.length > 10) {
-      files.slice(0, files.length - 10).forEach(f => {
-        try { fs.unlinkSync(path.join(SCREENSHOTS_DIR, f)) } catch {}
-      })
-    }
-  } catch {}
+  // Trim old screenshots — keep only last 10 (default dir only)
+  if (useDefault) {
+    try {
+      const files = fs.readdirSync(SCREENSHOTS_DIR)
+        .filter(f => f.endsWith('.png'))
+        .sort()
+      if (files.length > 10) {
+        files.slice(0, files.length - 10).forEach(f => {
+          try { fs.unlinkSync(path.join(SCREENSHOTS_DIR, f)) } catch {}
+        })
+      }
+    } catch {}
+  }
 
   if (fs.existsSync(filepath)) return filepath
   throw new Error('Screenshot failed — file not created')
