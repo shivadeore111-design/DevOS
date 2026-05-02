@@ -928,7 +928,10 @@ export function createApiServer(): Express {
       }
     }
 
-    // ── Instant Actions — 15 direct OS commands, zero LLM overhead ─────────────
+    // ── Instant Actions — 7 direct OS commands, zero LLM overhead ──────────────
+    // NOTE: was 15 prior to v3.19 P3. Entries 1-8 (open/close/launch fake actions)
+    // removed entirely. Entries 9-15 (screenshot, volume, mute, timer, sysinfo,
+    // lock) retained with handlers rewritten to use real executeTool() calls.
     for (const ia of INSTANT_ACTIONS) {
       for (const pat of ia.patterns) {
         const m = message.match(pat)

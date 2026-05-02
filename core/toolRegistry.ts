@@ -10,6 +10,7 @@ import { exec, spawn } from 'child_process'
 import { promisify } from 'util'
 import fs   from 'fs'
 import path from 'path'
+import os   from 'os'
 import { getUserDataDir } from './paths'
 
 import {
@@ -121,9 +122,16 @@ const DENIED_COMMANDS: RegExp[] = [
   /\bnet\s+user\b/i,
   /Set-ExecutionPolicy/i,
   /\bNew-Service\b/i,
+  // ── C7: path-scoped deny — Remove-Item on critical system / user paths ──────
+  // Belt-and-suspenders: Remove-Item is also removed from SHELL_ALLOWLIST so it
+  // requires explicit approval. These patterns hard-block attempts to target
+  // system-owned directories regardless of approval state.
+  /Remove-Item\b.*[Cc]:[/\\][Uu]sers[/\\]/i,
+  /Remove-Item\b.*[Cc]:[/\\][Ww]indows[/\\]/i,
+  /Remove-Item\b.*[Cc]:[/\\][Pp]rogram/i,
 ]
 
-function isCommandDenied(cmd: string): boolean {
+export function isCommandDenied(cmd: string): boolean {
   return DENIED_COMMANDS.some(p => p.test(cmd))
 }
 
@@ -143,6 +151,68 @@ const SHELL_DANGEROUS_PATTERNS = [
 function isShellDangerous(cmd: string): boolean {
   const lower = cmd.toLowerCase()
   return SHELL_DANGEROUS_PATTERNS.some(p => lower.includes(p.toLowerCase()))
+}
+
+// ── C8: Code-level destructive path guard for run_node / run_python ──────────
+// Scans code strings for destructive filesystem operations targeting protected
+// system paths. Closes the bypass where the planner re-routes through run_node
+// or run_python after shell_exec is denied by DENIED_COMMANDS.
+//
+// Two-stage check: (1) code contains a destructive fs call, AND (2) code
+// references a protected path. Both must match for denial — benign code that
+// merely reads protected paths, or destructive code targeting workspace, passes.
+
+const PROTECTED_PATH_PATTERNS: RegExp[] = [
+  // {1,2} so we match both real paths (C:\Users\) and string-literal escapes (C:\\Users\\)
+  /[Cc]:[/\\]{1,2}[Uu]sers[/\\]{1,2}/,
+  /[Cc]:[/\\]{1,2}[Ww]indows[/\\]{1,2}/,
+  /[Cc]:[/\\]{1,2}[Pp]rogram\s?[Ff]iles/,
+  /[Cc]:[/\\]{1,2}[Ss]ystem/,
+  /['"`]\/etc[/'"` ]/,
+  /['"`]\/home[/'"` ]/,
+  /['"`]\/usr[/'"` ]/,
+  /['"`]\/var[/'"` ]/,
+]
+
+const CODE_DESTRUCTIVE_NODE: RegExp[] = [
+  /\bfs\s*\.\s*rmSync\b/,
+  /\bfs\s*\.\s*unlinkSync\b/,
+  /\bfs\s*\.\s*rmdirSync\b/,
+  /\bfs\.promises\s*\.\s*rm\b/,
+  /\bfs\.promises\s*\.\s*unlink\b/,
+  /\bfs\.promises\s*\.\s*rmdir\b/,
+  /\brimraf\b/,
+  /\bfs\s*\.\s*rm\s*\(/,
+  /\bdel\s*\(/,          // fs-extra del()
+  /\bunlinkSync\s*\(/,   // bare import
+]
+
+const CODE_DESTRUCTIVE_PYTHON: RegExp[] = [
+  /\bos\s*\.\s*remove\b/,
+  /\bos\s*\.\s*unlink\b/,
+  /\bos\s*\.\s*rmdir\b/,
+  /\bos\s*\.\s*removedirs\b/,
+  /\bshutil\s*\.\s*rmtree\b/,
+  /\bpathlib\b.*\bunlink\b/,
+  /\bsend2trash\b/,
+]
+
+export function scanCodeForDestructivePaths(
+  code: string,
+  lang: 'node' | 'python',
+): { denied: boolean; reason: string } {
+  const destructivePatterns = lang === 'node' ? CODE_DESTRUCTIVE_NODE : CODE_DESTRUCTIVE_PYTHON
+  const matchedOp = destructivePatterns.find(p => p.test(code))
+  if (!matchedOp) return { denied: false, reason: '' }
+
+  const matchedPath = PROTECTED_PATH_PATTERNS.find(p => p.test(code))
+  if (!matchedPath) return { denied: false, reason: '' }
+
+  const opStr = code.match(matchedOp)?.[0] ?? 'destructive op'
+  const pathStr = code.match(matchedPath)?.[0] ?? 'protected path'
+  const reason = `[Security] ${lang} code blocked: "${opStr}" targeting "${pathStr}" — destructive operation on protected system path`
+  process.stderr.write(reason + '\n')
+  return { denied: true, reason }
 }
 
 // ── Sprint 25: Shell command allowlist ────────────────────────
@@ -172,7 +242,9 @@ const SHELL_ALLOWLIST: RegExp[] = [
   // 11. Archive tools
   /^(tar|zip|unzip|7z|gzip|gunzip)\b/i,
   // 12. PowerShell safe cmdlets (read, navigate, item management, output)
-  /^(Get-|Select-|Where-|Sort-|Format-|Out-|Write-Output|Write-Host|ConvertTo-|ConvertFrom-|Measure-|Test-Path|Resolve-Path|Split-Path|Join-Path|Compare-Object|New-Item|Copy-Item|Move-Item|Rename-Item|Remove-Item|Set-Content|Add-Content|Clear-Content|Set-Location|Push-Location|Pop-Location)/i,
+  // Note: Remove-Item intentionally absent — falls through to needsApproval:true (C7).
+  // Hard-deny for Remove-Item on critical paths is in DENIED_COMMANDS above.
+  /^(Get-|Select-|Where-|Sort-|Format-|Out-|Write-Output|Write-Host|ConvertTo-|ConvertFrom-|Measure-|Test-Path|Resolve-Path|Split-Path|Join-Path|Compare-Object|New-Item|Copy-Item|Move-Item|Rename-Item|Set-Content|Add-Content|Clear-Content|Set-Location|Push-Location|Pop-Location)/i,
   // 13. Instant Actions: lock screen (rundll32) and volume one-liners (powershell -c)
   /^rundll32\b/i,
   /^powershell\s+-c\b/i,
@@ -188,7 +260,7 @@ const SHELL_ALLOWLIST: RegExp[] = [
   /^(start|explorer)\b/i,
 ]
 
-function isCommandAllowed(cmd: string): { allowed: boolean; needsApproval: boolean } {
+export function isCommandAllowed(cmd: string): { allowed: boolean; needsApproval: boolean } {
   // Hard-block: denylist and dangerous patterns take priority
   if (isCommandDenied(cmd))   return { allowed: false, needsApproval: false }
   if (isShellDangerous(cmd))  return { allowed: false, needsApproval: false }
@@ -353,6 +425,53 @@ export interface ToolContext {
 let _emitProgress: ((tool: string, message: string) => void) | null = null
 export function setProgressEmitter(fn: ((tool: string, message: string) => void) | null): void {
   _emitProgress = fn
+}
+
+// ── resolveWritePath ──────────────────────────────────────────
+// Pure path resolver for file_write. Exported for unit tests.
+// Expands shorthands, resolves to absolute, then enforces the
+// allow-list: workspace (cwd), Desktop, Documents.
+// Throws with a clear message if the resolved path falls outside.
+
+export function resolveWritePath(
+  rawPath: string,
+  opts?: { home?: string; cwd?: string },
+): string {
+  const home = opts?.home ?? os.homedir()
+  const cwd  = opts?.cwd  ?? process.cwd()
+  const user = process.env.USERNAME || process.env.USER || os.userInfo().username || 'User'
+
+  // Expand shorthands
+  let p = rawPath
+    .replace(/^~[\/\\]/,             home + path.sep)
+    .replace(/^Desktop[\/\\]/i,      path.join(home, 'Desktop')   + path.sep)
+    .replace(/^C:\\Users\\Aiden\\/i, `C:\\Users\\${user}\\`)
+    .replace(/^C:\/Users\/Aiden\//i, `C:/Users/${user}/`)
+
+  // Resolve relative paths against cwd
+  const resolved = /^[A-Za-z]:[/\\]/.test(p) || p.startsWith('/')
+    ? p
+    : path.join(cwd, p)
+
+  // Allow-list: workspace root, Desktop, Documents
+  const allowedRoots = [
+    cwd,
+    path.join(home, 'Desktop'),
+    path.join(home, 'Documents'),
+  ]
+  const norm = (s: string) => s.toLowerCase().replace(/\//g, '\\').replace(/\\$/, '')
+  const nr   = norm(resolved)
+  const ok   = allowedRoots.some(root => {
+    const r = norm(root)
+    return nr === r || nr.startsWith(r + '\\')
+  })
+
+  if (!ok) {
+    throw new Error(
+      `Path '${resolved}' is outside allowed write locations. Allowed: workspace, Desktop, Documents.`
+    )
+  }
+  return resolved
 }
 
 // ── Tool implementations ──────────────────────────────────────
@@ -772,18 +891,7 @@ export const TOOLS: Record<string, (payload: any, ctx?: ToolContext) => Promise<
       return { success: false, output: '', error: 'Access denied: protected path. Aiden cannot write credentials, SSH keys, or env files.' }
     }
     try {
-      // Expand Desktop and ~ shorthands, and fix any "Aiden" username to actual system user
-      const _user = process.env.USERNAME || process.env.USER || require('os').userInfo().username || 'User'
-      const _home = require('os').homedir()
-      filePath = filePath
-        .replace(/^~[\/\\]/i, _home + path.sep)
-        .replace(/^Desktop[\/\\]/i, path.join(_home, 'Desktop') + path.sep)
-        .replace(/^C:\\Users\\Aiden\\/i, `C:\\Users\\${_user}\\`)
-        .replace(/^C:\/Users\/Aiden\//i, `C:/Users/${_user}/`)
-
-      const resolved = filePath.match(/^[A-Z]:/i) || filePath.startsWith('/')
-        ? filePath
-        : path.join(process.cwd(), filePath)
+      const resolved = resolveWritePath(filePath)
       fs.mkdirSync(path.dirname(resolved), { recursive: true })
       fs.writeFileSync(resolved, content, 'utf-8')
       const written = fs.existsSync(resolved)
@@ -852,6 +960,10 @@ export const TOOLS: Record<string, (payload: any, ctx?: ToolContext) => Promise<
     const script = p.script || p.code || p.command || ''
     if (!script) return { success: false, output: '', error: 'No script' }
 
+    // ── C8: Destructive path guard ─────────────────────────────────
+    const pyGuard = scanCodeForDestructivePaths(script, 'python')
+    if (pyGuard.denied) return { success: false, output: '', error: pyGuard.reason }
+
     // ── N+34: Docker sandbox routing ───────────────────────────
     const _pyMode = process.env.AIDEN_SANDBOX_MODE || 'off'
     if (_pyMode === 'strict' || _pyMode === 'auto') {
@@ -897,6 +1009,11 @@ export const TOOLS: Record<string, (payload: any, ctx?: ToolContext) => Promise<
   run_node: async (p) => {
     const script = p.script || p.code || p.command || ''
     if (!script) return { success: false, output: '', error: 'No script' }
+
+    // ── C8: Destructive path guard ─────────────────────────────────
+    const nodeGuard = scanCodeForDestructivePaths(script, 'node')
+    if (nodeGuard.denied) return { success: false, output: '', error: nodeGuard.reason }
+
     const tmp = path.join(process.cwd(), 'workspace', `js_${Date.now()}.js`)
     fs.mkdirSync(path.dirname(tmp), { recursive: true })
     fs.writeFileSync(tmp, script)
@@ -1520,7 +1637,7 @@ export const TOOLS: Record<string, (payload: any, ctx?: ToolContext) => Promise<
 
   screenshot: async (_p: any) => {
     try {
-      const filepath = await takeScreenshot()
+      const filepath = await takeScreenshot(_p?.outputPath ? { outputPath: _p.outputPath } : undefined)
       const stats    = require('fs').statSync(filepath)
       return { success: true, output: `Screenshot saved: ${filepath} (${Math.round(stats.size / 1024)}kb)`, path: filepath }
     } catch (e: any) { return { success: false, output: '', error: e.message } }
@@ -2642,6 +2759,14 @@ export function getExternalToolsMeta(): Record<string, { source: string }> {
   return { ...externalToolsMeta }
 }
 
+/** Dynamic tool-existence check that includes both TOOLS (static) and
+ *  externalTools (registered at runtime via registerExternalTool / registerSlashMirrorTools).
+ *  Use this in the executor instead of the pre-computed ALLOWED_TOOLS constant, which
+ *  is frozen at module-load time before mirror tools are registered. */
+export function isKnownTool(name: string): boolean {
+  return name in TOOLS || name in externalTools
+}
+
 // ── Internal dispatcher — no retry, no timeout ────────────────
 
 async function runTool(tool: string, input: Record<string, any>): Promise<RawResult> {
@@ -2817,7 +2942,7 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   mouse_click:             'Click the mouse at screen coordinates',
   keyboard_type:           'Type text using the keyboard',
   keyboard_press:          'Press a keyboard key or shortcut (e.g. ctrl+c)',
-  screenshot:              'Take a screenshot of the entire screen',
+  screenshot:              'Take a screenshot of the entire screen. Optional: outputPath (absolute path, e.g. C:\\Users\\shiva\\Desktop\\shot.png) to save to a specific location; defaults to workspace/screenshots/.',
   screen_read:             'Read and describe the current screen contents',
   vision_loop:             'Autonomously control the computer using vision to complete a goal',
   wait:                    'Pause execution for a specified number of milliseconds',
@@ -2857,6 +2982,7 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   send_file_local:         'Send a file to another device on the local network via LocalSend (op: discover | send)',
   receive_file_local:      'Wait for an incoming LocalSend file transfer on the local network',
   ingest_youtube:          'Download and ingest a YouTube video into memory: transcribes audio, extracts metadata, and stores as a searchable memory entry.',
+  memory_store:            'Persist a fact, preference, or note to permanent memory right now. Use when the user says "remember", "save this", "keep track of", or wants something stored. Pass { fact: "..." }.',
 }
 
 // ── N+28: TOOL_NAMES_ONLY ──────────────────────────────────────
@@ -2898,6 +3024,7 @@ const TOOL_TIERS: Record<string, ToolTier> = {
   system_info:             1,
   now_playing:             1,
   notify:                  1,
+  memory_store:            1,
   wait:                    1,
   get_briefing:            1,
   get_natural_events:      1,
@@ -2981,7 +3108,7 @@ export type ToolCategory =
   | 'data'          // market data, stocks, company info, briefing, natural events
   | 'system'        // notify, system_info, clipboard, app_launch/close, wait
   | 'git'           // git_status, git_commit, git_push
-  | 'memory'        // (reserved for future memory/knowledge tools)
+  | 'memory'        // memory_store (write), memory_show, search (read)
   | 'media'         // (reserved for future audio/media tools)
   | 'voice'         // voice_speak, voice_transcribe, voice_clone, voice_design
   | 'introspection' // status, analytics, spend, memory_show, lessons, skills_list, tools_list, whoami, channels_status, goals
@@ -3057,6 +3184,7 @@ const TOOL_CATEGORIES: Record<string, ToolCategory[]> = {
   analytics:               ['introspection'],
   spend:                   ['introspection'],
   memory_show:             ['introspection', 'memory'],
+  memory_store:            ['memory'],
   lessons:                 ['introspection', 'memory'],
   skills_list:             ['introspection'],
   tools_list:              ['introspection'],
@@ -3333,7 +3461,7 @@ export const TOOL_REGISTRY: Record<string, ToolRegistryMeta> = {
 
   // ── Screen / vision / input ──────────────────────────────────────────────────
   screenshot: {
-    description: 'Take a screenshot of the entire screen',
+    description: 'Take a screenshot of the entire screen. Optional param: outputPath (absolute path, e.g. C:\\Users\\shiva\\Desktop\\shot.png) — if omitted, saves to workspace/screenshots/.',
     tier: 4, category: ['screen'], timeoutMs: 10000,
     parallel: 'sequential', // agentLoop.ts:1965 SEQUENTIAL_ONLY
     mcp: 'safe',             // api/mcp.ts:25
@@ -3604,6 +3732,12 @@ export const TOOL_REGISTRY: Record<string, ToolRegistryMeta> = {
     tier: 1, category: ['interaction', 'core'],
     parallel: 'never',   // agentLoop.ts:1957 — not in PARALLEL_SAFE
     mcp: 'excluded',     // api/mcp.ts — not in SAFE_TOOLS or DESTRUCTIVE_TOOLS
+  },
+  memory_store: {
+    description: 'Persist a fact, preference, or observation to permanent memory right now. Use whenever the user says "remember", "save this", "keep track of", or similar. Pass { fact: "the thing to remember" }.',
+    tier: 1, category: ['memory'],
+    retry: false,        // write operation — don't double-write on retry
+    mcp: 'excluded',
   },
   search: {
     description: 'Search workspace memory, session context, and file system for relevant stored information',

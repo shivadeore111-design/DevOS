@@ -1,6 +1,5 @@
 # Sponsor Aiden development
 # https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/displaying-a-sponsor-button-in-your-repository
 
-github: []
 custom:
-  -https://razorpay.me/@whitelotus9625
+  - https://razorpay.me/@whitelotus9625

@@ -10,7 +10,7 @@
 
 import { executeTool, TOOLS, getToolTier, detectToolCategories, getToolsForCategories, TOOL_NAMES_ONLY,
          registryAllowedTools, registryValidTools,
-         registryNoRetrySet, registryParallelSafeSet, registrySequentialOnlySet } from './toolRegistry'
+         registryNoRetrySet, registryParallelSafeSet, registrySequentialOnlySet, isKnownTool } from './toolRegistry'
 import { loadAllRecipes, matchRecipe, executeRecipe } from './recipeEngine'
 import { livePulse }          from '../coordination/livePulse'
 import { planTool }                        from './planTool'
@@ -49,7 +49,7 @@ import { repairToolName }    from './toolNameRepair'
 // SLASH_MIRROR_TOOL_NAMES import removed in Commit 4 — slash mirrors route
 // through slashAsTool.ts injection path, not the planner's allowed-tool list.
 import { repairPlanResponse }      from './planResponseRepair'
-import { isActionIntent, detectActionVerb } from './actionVerbDetector'
+import { isActionIntent, detectActionVerb, isMemoryIntent, extractMemoryFact } from './actionVerbDetector'
 import { buildDiagnostic } from './diagnosticError'
 import * as nodeFs             from 'fs'
 import * as nodePath           from 'path'
@@ -653,7 +653,14 @@ async function racePlannerAPIs(
   for (const a of cfg.providers.apis) {
     if (!a.enabled || a.rateLimited) continue
     const k = a.key.startsWith('env:') ? (process.env[a.key.replace('env:', '')] || '') : a.key
-    if (!k || !OPENAI_COMPAT_ENDPOINTS[a.provider]) continue
+    if (!k) continue
+    if (a.provider === 'custom') {
+      // providers.apis entries with provider:'custom' supply their own baseUrl
+      if (!a.baseUrl) continue
+      candidates.push({ provider: 'custom', model: a.model, key: k, url: a.baseUrl, tier: (a as any).tier ?? 50 })
+      continue
+    }
+    if (!OPENAI_COMPAT_ENDPOINTS[a.provider]) continue
     candidates.push({ provider: a.provider, model: a.model, key: k, url: OPENAI_COMPAT_ENDPOINTS[a.provider], tier: (a as any).tier ?? 50 })
   }
 
@@ -941,6 +948,7 @@ IMPORTANT: NEVER use "C:\\Users\\Aiden" — "Aiden" is the AI assistant's name, 
 
 CRITICAL RULES:
 0. LIVE STATE OVERRIDE (takes priority over all other rules): queries about current music/media/song/track → requires_execution: true, tool: now_playing (no params). You CANNOT know this from training data. Never answer "I'll respond directly" for these.
+0b. MEMORY OPERATIONS (highest priority after rule 0): When the user says "remember X", "track X", "note X", "store X", "keep track of X", or any variant → requires_execution: true, tool: memory_store({ fact: "<the thing to remember>" }). NEVER use file_write for memory intents. memory_store writes to Aiden's internal persistent memory (workspace/memory/records.jsonl). file_write is for user-visible files only.
 1. If the answer is in your training data (capitals, definitions, facts, opinions, advice) → requires_execution: false
 2. ONLY use tools when you need: live data, file operations, running code, or computer control
    Live data includes: current music, system state, time, weather, stock prices — these are NEVER in training data
@@ -1588,6 +1596,22 @@ Output ONLY valid JSON, nothing else:`
     }
   }
 
+  // ── MemoryGuard: override wrong-tool plans for memory intents ──────────────
+  // If the user said "remember/track/note/store X" but the planner chose a tool
+  // other than memory_store (e.g. file_write), force a memory_store plan.
+  if (isMemoryIntent(message)) {
+    const usesMemoryStore = candidatePlan.plan.some(s => s.tool === 'memory_store')
+    if (!usesMemoryStore) {
+      const verb = detectActionVerb(message)
+      const fact = extractMemoryFact(message)
+      process.stderr.write(
+        `[MemoryGuard] overriding plan [${candidatePlan.plan.map(s => s.tool).join(',')}] → memory_store for verb='${verb}'\n`
+      )
+      candidatePlan.plan               = [{ step: 1, tool: 'memory_store', input: { fact }, description: 'Store to permanent memory' }]
+      candidatePlan.requires_execution = true
+    }
+  }
+
   return candidatePlan
 }
 
@@ -2135,8 +2159,11 @@ async function executeSingleStep(
   console.log(`[ExecutePlan] Step ${step.step}: ${step.tool} — input: ${JSON.stringify(step.input).slice(0, 100)}`)
   livePulse.tool('Aiden', step.tool, JSON.stringify(step.input).slice(0, 80))
 
-  // Validate tool exists
-  if (!TOOLS[step.tool]) {
+  // Validate tool exists — use isKnownTool() which checks both static TOOLS and
+  // runtime-registered externalTools (e.g. memory_store from registerSlashMirrorTools).
+  // ALLOWED_TOOLS is frozen at module-load time before mirror tools are registered,
+  // so it cannot be used here.
+  if (!isKnownTool(step.tool)) {
     const stepResult: StepResult = {
       step: step.step, tool: step.tool, input: step.input,
       success: false, output: '',
@@ -2697,10 +2724,16 @@ CRITICAL RULES FOR YOUR RESPONSE:
 - Include the ACTUAL output from the tools above in your response
 - Do NOT say "I ran the tool" — show the RESULT
 - If run_python returned a number, say that number
-- If file_read returned text, show that text
+- If file_read SUCCEEDED, show the actual text returned
+- If file_read FAILED (ENOENT or any error), state the file does not exist or could not be read — NEVER invent or fabricate file contents
+- If file_list SUCCEEDED, show the actual listing
+- If file_list FAILED, say the directory could not be listed — NEVER invent filenames
+- If web_fetch SUCCEEDED, show the actual fetched content
+- If web_fetch FAILED, say the page could not be fetched — NEVER invent page content
+- If a search tool returned no results, say no results were found — NEVER invent search results
 - If system_info returned hardware data, show the data
 - Be direct: show the actual output, then provide context if needed
-- If a tool failed, say it failed and why`
+- If a tool result starts with "FAILED:", tell the user it failed and why — NEVER fabricate a successful result`
     : `${capabilitiesSection}${entitySummary}${responderSystem(userName, date, sessionId)}${responseSkillContext}${knowledgeResponderSection}${multiGoalInstruction}`
 
   const userContent = executionSummary
@@ -2895,21 +2928,27 @@ CRITICAL RULES FOR YOUR RESPONSE:
 
     if (ollamaResponded) return
 
-    // Last resort: return raw tool output if tools ran successfully
-    if (results && results.length > 0 && results.some(r => r.success)) {
-      const successResults = results.filter(r => r.success)
-      const lastResult     = successResults[successResults.length - 1]
-      onToken(lastResult.output || 'Here are the results.')
-      return
-    }
-
-    // Include error info from failed tools if any
+    // Last resort: synthesize honest summary (all LLM providers down)
     if (results && results.length > 0) {
-      const failedResult = results[results.length - 1]
-      if (failedResult.error) {
-        onToken(`Error: ${failedResult.error}`)
+      const successes = results.filter(r => r.success)
+      const failures  = results.filter(r => !r.success)
+
+      if (failures.length === 0) {
+        // All steps succeeded — return last output as before
+        onToken(successes[successes.length - 1].output || 'Done.')
         return
       }
+
+      // Mixed or all-failed — surface both sides honestly
+      const parts: string[] = []
+      if (successes.length > 0)
+        parts.push(`Completed: ${successes.map(r => r.tool).join(', ')}.`)
+      parts.push(
+        `Failed: ${failures.map(r => `${r.tool} — ${r.error || 'unknown error'}`).join('; ')}.`
+      )
+      parts.push('(All language providers are currently unavailable — full response cannot be generated.)')
+      onToken(parts.join(' '))
+      return
     }
 
     const degraded = enterDegradedMode(e.message || 'unknown error')
@@ -3011,11 +3050,24 @@ export async function callLLM(
       return d?.result?.response || ''
 
     } else if (providerName === 'custom') {
-      // Custom provider — look up baseUrl from config by matching apiKey
+      // Custom provider — look up baseUrl from config.
+      // Checks customProviders first (direct apiKey match), then providers.apis
+      // entries with provider:'custom' (key resolved from env).
       const cfgCustom = loadConfig()
-      const cp = cfgCustom.customProviders?.find((c: any) => c.enabled && c.apiKey === apiKey)
-      if (!cp?.baseUrl) throw new Error(`callLLM: no baseUrl for custom provider (model=${model})`)
-      const r = await fetch(cp.baseUrl, {
+      let customBaseUrl: string | undefined =
+        cfgCustom.customProviders?.find((c: any) => c.enabled && c.apiKey === apiKey)?.baseUrl
+      if (!customBaseUrl) {
+        const apiEntry = (cfgCustom.providers?.apis ?? []).find((a: any) => {
+          if (a.provider !== 'custom' || !a.enabled || !a.baseUrl) return false
+          const resolved = a.key?.startsWith('env:')
+            ? (process.env[a.key.replace('env:', '')] || '')
+            : a.key
+          return resolved === apiKey
+        })
+        customBaseUrl = apiEntry?.baseUrl
+      }
+      if (!customBaseUrl) throw new Error(`callLLM: no baseUrl for custom provider (model=${model})`)
+      const r = await fetch(customBaseUrl, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
         body: JSON.stringify({

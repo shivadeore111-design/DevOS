@@ -16,6 +16,7 @@ import path from 'path'
 import os   from 'os'
 
 import { registerExternalTool }  from './toolRegistry'
+import { assignId }              from './memoryIds'
 import { conversationMemory }    from './conversationMemory'
 import { learningMemory }        from './learningMemory'
 import { skillLoader }           from './skillLoader'
@@ -162,6 +163,21 @@ async function toolChannelsStatus(_: any): Promise<{ success: boolean; output: s
   }
 }
 
+// ── Memory store ──────────────────────────────────────────────────────────────
+
+async function toolMemoryStore(input: any): Promise<{ success: boolean; output: string }> {
+  const fact = String(input?.fact || input?.content || input?.text || '').trim()
+  if (!fact) return { success: false, output: 'No fact provided. Pass { fact: "the thing to remember" }' }
+  const record = assignId({
+    timestamp: new Date().toISOString(),
+    type:      (input?.type as any) ?? 'fact',
+    content:   fact,
+    summary:   fact.slice(0, 100),
+    tags:      Array.isArray(input?.tags) ? input.tags : [],
+  })
+  return { success: true, output: `Stored as ${record.id}: ${record.summary}` }
+}
+
 // ── Goals tool ────────────────────────────────────────────────────────────────
 
 async function toolGoals(_: any): Promise<{ success: boolean; output: string }> {
@@ -180,6 +196,7 @@ const MIRROR_TOOLS: Array<{
   { name: 'analytics',       description: 'Show learning analytics: task count, success rate',        fn: toolAnalytics      },
   { name: 'spend',           description: 'Show today\'s token cost and spend by provider',           fn: toolSpend          },
   { name: 'memory_show',     description: 'Show conversation memory facts and recent history',        fn: toolMemoryShow     },
+  { name: 'memory_store',   description: 'Persist a fact or preference to permanent memory (records.jsonl) right now. Pass { fact: "..." }', fn: toolMemoryStore },
   { name: 'lessons',         description: 'Show permanent failure rules learned from past tasks',     fn: toolLessons        },
   { name: 'skills_list',     description: 'List all loaded skills with descriptions',                 fn: toolSkillsList     },
   { name: 'tools_list',      description: 'List all registered tool names',                           fn: toolToolsList      },
