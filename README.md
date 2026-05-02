@@ -283,20 +283,15 @@ Full chat interface with live activity panel. Local-first, connects to Ollama or
 
 ---
 
-## Aiden vs alternatives
+## What Aiden is
 
-| Feature | Aiden | Hermes | OpenClaw |
-|---|---|---|---|
-| **Windows native installer** | ✅ | ❌ | ❌ |
-| **Desktop OS control** | ✅ vision + mouse + keyboard | ❌ | ❌ |
-| **One-command install** | ✅ `npx aiden-os` | ❌ | ❌ |
-| **OpenAI-compatible API** | ✅ `/v1/chat/completions` | ❌ | ❌ |
-| **agentskills.io skills** | ✅ 1500+ | ✅ | ✅ 13K+ |
-| **Offline (Ollama)** | ✅ | ✅ | ✅ |
-| **Local web dashboard** | ✅ | ✅ | ✅ |
-| **Pro license system** | ✅ | ❌ | ❌ |
-| **Zero CVEs** | ✅ | ❌ | ❌ |
-| **License** | AGPL-3.0 | MIT | MIT |
+Aiden runs locally on your machine. It controls your desktop, browser, and terminal through natural conversation. It learns from your work and remembers what matters across sessions.
+
+- **Local-first** — your conversations and data stay on your machine. No cloud account required.
+- **Real desktop control** — vision, mouse, keyboard, browser, terminal, files. Not a chatbot wrapped in a sandbox.
+- **Persistent memory** — Aiden remembers facts, preferences, and lessons from prior sessions. The longer you use it, the better it knows your work.
+- **Honest by design** — when a tool fails, Aiden surfaces the failure rather than fabricating success.
+- **Open source** — AGPL-3.0. Read every line, modify anything, contribute back.
 
 ---
 
@@ -543,7 +538,7 @@ npm run cli            # TUI in a second terminal
 
 > Short version (no breaking changes in v3.18 or v3.19 — existing plugins and `.env` files continue to work):
 
-- **Skills** — Aiden is fully compatible with [agentskills.io](https://agentskills.io). Any Hermes or OpenClaw skill with a valid `skill.json` manifest loads automatically via `/install <name>`.
+- **Skills** — Aiden is fully compatible with [agentskills.io](https://agentskills.io). Any skill with a valid `skill.json` manifest loads automatically via `/install <name>`.
 - **API clients** — Aiden exposes an OpenAI-compatible API at `localhost:4200/v1`. If you pointed your client at another agent, update the base URL and you're done.
 - **Config / env** — Most standard keys (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GROQ_API_KEY`, etc.) are recognized as-is. Copy your existing `.env` and Aiden picks them up on first start.
 
@@ -588,7 +583,7 @@ npm run cli            # TUI in a second terminal
 
 ### v3.18.0 — 2026-04-30
 
-**Live dropdown UX (Hermes-style)**
+**Live dropdown UX**
 - Type `/` for instant command dropdown (63 commands)
 - Type `@` for tool dropdown (61 tools)
 - Prefix-match filter, arrow nav, Tab to select, Esc to close
@@ -704,7 +699,7 @@ npm run cli            # TUI in a second terminal
 
 **Ecosystem & Interoperability**
 - OpenAI-compatible API — `/v1/chat/completions` + `/v1/models`. Point Open WebUI, LibreChat, Cursor, or any OpenAI SDK at `localhost:4200` and get Aiden's full 89-tool agent (not just raw LLM inference)
-- agentskills.io compatibility — skills now ship with `skill.json` manifest. Compatible with Hermes, OpenClaw, and any agentskills.io agent. 1,515 existing skills backfilled automatically
+- agentskills.io compatibility — skills now ship with `skill.json` manifest. Compatible with the agentskills.io specification. 1,515 existing skills backfilled automatically
 - Streaming tool output — shell commands, Python scripts, and browser extraction stream live progress lines as they execute. Set `AIDEN_SHOW_TOOL_OUTPUT=false` to suppress
 
 ---
