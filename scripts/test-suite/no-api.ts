@@ -9,6 +9,7 @@
 //         R-Regression (C1 honesty fallback)  S-Regression (C3 screenshot)
 //         W-Regression (C4 file_write boundary)
 //         V-Regression (C5 memory action verbs)
+//         X-Regression (C7 shell safety)
 // ============================================================
 
 import fs   from 'fs'
@@ -18,6 +19,7 @@ import { groupR } from './regression/c1-honesty-fallback'
 import { groupS } from './regression/c3-screenshot-path'
 import { groupW } from './regression/c4-file-write-boundary'
 import { groupV } from './regression/c5-memory-action-verbs'
+import { groupX } from './regression/c7-shell-safety'
 
 const CWD = process.cwd()
 
@@ -644,5 +646,6 @@ export async function runPhase1(): Promise<GroupSummary[]> {
   out.push(await groupS())
   out.push(await groupW())
   out.push(await groupV())
+  out.push(await groupX())
   return out
 }

@@ -122,9 +122,16 @@ const DENIED_COMMANDS: RegExp[] = [
   /\bnet\s+user\b/i,
   /Set-ExecutionPolicy/i,
   /\bNew-Service\b/i,
+  // ── C7: path-scoped deny — Remove-Item on critical system / user paths ──────
+  // Belt-and-suspenders: Remove-Item is also removed from SHELL_ALLOWLIST so it
+  // requires explicit approval. These patterns hard-block attempts to target
+  // system-owned directories regardless of approval state.
+  /Remove-Item\b.*[Cc]:[/\\][Uu]sers[/\\]/i,
+  /Remove-Item\b.*[Cc]:[/\\][Ww]indows[/\\]/i,
+  /Remove-Item\b.*[Cc]:[/\\][Pp]rogram/i,
 ]
 
-function isCommandDenied(cmd: string): boolean {
+export function isCommandDenied(cmd: string): boolean {
   return DENIED_COMMANDS.some(p => p.test(cmd))
 }
 
@@ -173,7 +180,9 @@ const SHELL_ALLOWLIST: RegExp[] = [
   // 11. Archive tools
   /^(tar|zip|unzip|7z|gzip|gunzip)\b/i,
   // 12. PowerShell safe cmdlets (read, navigate, item management, output)
-  /^(Get-|Select-|Where-|Sort-|Format-|Out-|Write-Output|Write-Host|ConvertTo-|ConvertFrom-|Measure-|Test-Path|Resolve-Path|Split-Path|Join-Path|Compare-Object|New-Item|Copy-Item|Move-Item|Rename-Item|Remove-Item|Set-Content|Add-Content|Clear-Content|Set-Location|Push-Location|Pop-Location)/i,
+  // Note: Remove-Item intentionally absent — falls through to needsApproval:true (C7).
+  // Hard-deny for Remove-Item on critical paths is in DENIED_COMMANDS above.
+  /^(Get-|Select-|Where-|Sort-|Format-|Out-|Write-Output|Write-Host|ConvertTo-|ConvertFrom-|Measure-|Test-Path|Resolve-Path|Split-Path|Join-Path|Compare-Object|New-Item|Copy-Item|Move-Item|Rename-Item|Set-Content|Add-Content|Clear-Content|Set-Location|Push-Location|Pop-Location)/i,
   // 13. Instant Actions: lock screen (rundll32) and volume one-liners (powershell -c)
   /^rundll32\b/i,
   /^powershell\s+-c\b/i,
@@ -189,7 +198,7 @@ const SHELL_ALLOWLIST: RegExp[] = [
   /^(start|explorer)\b/i,
 ]
 
-function isCommandAllowed(cmd: string): { allowed: boolean; needsApproval: boolean } {
+export function isCommandAllowed(cmd: string): { allowed: boolean; needsApproval: boolean } {
   // Hard-block: denylist and dangerous patterns take priority
   if (isCommandDenied(cmd))   return { allowed: false, needsApproval: false }
   if (isShellDangerous(cmd))  return { allowed: false, needsApproval: false }

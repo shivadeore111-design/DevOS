@@ -230,6 +230,19 @@ export class SkillTeacher {
       return
     }
 
+    // ── C7: Destructive-skill prevention ──────────────────────
+    // Reject any skill that pairs shell_exec with a destructive task description.
+    // Prevents poisoned skills like "delete_users_shiva" that accidentally learned
+    // from test-triggered or misrouted Delete/Remove operations.
+    const DESTRUCTIVE_TASK_RE = /\b(delete|remove|rm\s|del\s|wipe|purge|erase|format|uninstall|drop\s+table|truncate)\b/i
+    const usesShellExec        = tools.some(t => t === 'shell_exec')
+    if (DESTRUCTIVE_TASK_RE.test(task) && usesShellExec) {
+      process.stderr.write(
+        `[SkillTeacher] Rejected destructive skill: "${skillName}" (task="${task.slice(0, 60)}")\n`
+      )
+      return
+    }
+
     // ── Session rate limit — max SESSION_SKILL_LIMIT new skills ─
     if (_sessionSkillsCreated >= SESSION_SKILL_LIMIT) {
       console.log(`[SkillTeacher] Session limit reached (${SESSION_SKILL_LIMIT}), skipping: "${skillName}"`)
