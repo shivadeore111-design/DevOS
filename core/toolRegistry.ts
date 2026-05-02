@@ -10,6 +10,7 @@ import { exec, spawn } from 'child_process'
 import { promisify } from 'util'
 import fs   from 'fs'
 import path from 'path'
+import os   from 'os'
 import { getUserDataDir } from './paths'
 
 import {
@@ -353,6 +354,53 @@ export interface ToolContext {
 let _emitProgress: ((tool: string, message: string) => void) | null = null
 export function setProgressEmitter(fn: ((tool: string, message: string) => void) | null): void {
   _emitProgress = fn
+}
+
+// ── resolveWritePath ──────────────────────────────────────────
+// Pure path resolver for file_write. Exported for unit tests.
+// Expands shorthands, resolves to absolute, then enforces the
+// allow-list: workspace (cwd), Desktop, Documents.
+// Throws with a clear message if the resolved path falls outside.
+
+export function resolveWritePath(
+  rawPath: string,
+  opts?: { home?: string; cwd?: string },
+): string {
+  const home = opts?.home ?? os.homedir()
+  const cwd  = opts?.cwd  ?? process.cwd()
+  const user = process.env.USERNAME || process.env.USER || os.userInfo().username || 'User'
+
+  // Expand shorthands
+  let p = rawPath
+    .replace(/^~[\/\\]/,             home + path.sep)
+    .replace(/^Desktop[\/\\]/i,      path.join(home, 'Desktop')   + path.sep)
+    .replace(/^C:\\Users\\Aiden\\/i, `C:\\Users\\${user}\\`)
+    .replace(/^C:\/Users\/Aiden\//i, `C:/Users/${user}/`)
+
+  // Resolve relative paths against cwd
+  const resolved = /^[A-Za-z]:[/\\]/.test(p) || p.startsWith('/')
+    ? p
+    : path.join(cwd, p)
+
+  // Allow-list: workspace root, Desktop, Documents
+  const allowedRoots = [
+    cwd,
+    path.join(home, 'Desktop'),
+    path.join(home, 'Documents'),
+  ]
+  const norm = (s: string) => s.toLowerCase().replace(/\//g, '\\').replace(/\\$/, '')
+  const nr   = norm(resolved)
+  const ok   = allowedRoots.some(root => {
+    const r = norm(root)
+    return nr === r || nr.startsWith(r + '\\')
+  })
+
+  if (!ok) {
+    throw new Error(
+      `Path '${resolved}' is outside allowed write locations. Allowed: workspace, Desktop, Documents.`
+    )
+  }
+  return resolved
 }
 
 // ── Tool implementations ──────────────────────────────────────
@@ -772,18 +820,7 @@ export const TOOLS: Record<string, (payload: any, ctx?: ToolContext) => Promise<
       return { success: false, output: '', error: 'Access denied: protected path. Aiden cannot write credentials, SSH keys, or env files.' }
     }
     try {
-      // Expand Desktop and ~ shorthands, and fix any "Aiden" username to actual system user
-      const _user = process.env.USERNAME || process.env.USER || require('os').userInfo().username || 'User'
-      const _home = require('os').homedir()
-      filePath = filePath
-        .replace(/^~[\/\\]/i, _home + path.sep)
-        .replace(/^Desktop[\/\\]/i, path.join(_home, 'Desktop') + path.sep)
-        .replace(/^C:\\Users\\Aiden\\/i, `C:\\Users\\${_user}\\`)
-        .replace(/^C:\/Users\/Aiden\//i, `C:/Users/${_user}/`)
-
-      const resolved = filePath.match(/^[A-Z]:/i) || filePath.startsWith('/')
-        ? filePath
-        : path.join(process.cwd(), filePath)
+      const resolved = resolveWritePath(filePath)
       fs.mkdirSync(path.dirname(resolved), { recursive: true })
       fs.writeFileSync(resolved, content, 'utf-8')
       const written = fs.existsSync(resolved)
