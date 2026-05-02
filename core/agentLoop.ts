@@ -1461,7 +1461,9 @@ Output ONLY valid JSON, nothing else:`
   }
 
   // Guard against null/empty plan object — direct_response path bypasses guard (no action tools involved)
-  if (!parsed.plan && !parsed.steps) {
+  // C10: But NOT for action intents — "read X", "delete X", etc. must flow through
+  // PlannerGuard and respondWithResults so C6 CRITICAL RULES can fire.
+  if (!parsed.plan && !parsed.steps && !isActionIntent(message)) {
     return {
       goal:               message,
       requires_execution: false,

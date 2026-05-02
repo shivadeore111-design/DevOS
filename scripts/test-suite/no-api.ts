@@ -15,6 +15,7 @@
 //         Q-Regression (C8 code path guards)
 //         U-Regression (C9 responder custom-provider routing)
 //         T-Regression (C9b streaming URL helper)
+//         N-Regression (C10 null-plan action-intent guard)
 // ============================================================
 
 import fs   from 'fs'
@@ -30,6 +31,7 @@ import { groupZ } from './regression/c3b-screenshot-schema-escape'
 import { groupQ } from './regression/c8-code-path-guard'
 import { groupU } from './regression/c9-responder-custom-routing'
 import { groupT } from './regression/c9b-streaming-url-helper'
+import { groupN } from './regression/c10-null-plan-action-intent'
 
 const CWD = process.cwd()
 
@@ -662,5 +664,6 @@ export async function runPhase1(): Promise<GroupSummary[]> {
   out.push(await groupQ())
   out.push(await groupU())
   out.push(await groupT())
+  out.push(await groupN())
   return out
 }
