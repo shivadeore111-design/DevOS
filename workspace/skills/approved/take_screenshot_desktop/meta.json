@@ -1,0 +1,15 @@
+{
+  "name": "take_screenshot_desktop",
+  "taskPattern": "Take a screenshot and save it to my Desktop as audit_shot.png",
+  "toolSequence": [
+    "screenshot",
+    "file_write"
+  ],
+  "successCount": 2,
+  "failCount": 0,
+  "confidence": 0.6666666666666666,
+  "promoted": false,
+  "createdAt": 1777702437043,
+  "lastUsed": 1777713949442,
+  "avgDuration": 1268
+}

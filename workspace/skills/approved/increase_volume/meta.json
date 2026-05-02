@@ -1,0 +1,14 @@
+{
+  "name": "increase_volume",
+  "taskPattern": "increase volume by 20",
+  "toolSequence": [
+    "system_volume"
+  ],
+  "successCount": 2,
+  "failCount": 0,
+  "confidence": 0.6666666666666666,
+  "promoted": false,
+  "createdAt": 1777484040693,
+  "lastUsed": 1777491901272,
+  "avgDuration": 1099
+}

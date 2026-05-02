@@ -1,0 +1,14 @@
+{
+  "name": "decrease_volume_little",
+  "taskPattern": "decrease volume a little",
+  "toolSequence": [
+    "system_volume"
+  ],
+  "successCount": 1,
+  "failCount": 0,
+  "confidence": 0.3333333333333333,
+  "promoted": false,
+  "createdAt": 1777491945462,
+  "lastUsed": 1777491945462,
+  "avgDuration": 654
+}

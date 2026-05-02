@@ -1,0 +1,15 @@
+{
+  "name": "havent_receviced_any_desktop_notification",
+  "taskPattern": "i havent receviced any desktop notification",
+  "toolSequence": [
+    "notify",
+    "respond"
+  ],
+  "successCount": 1,
+  "failCount": 0,
+  "confidence": 0.5,
+  "promoted": false,
+  "createdAt": 1777657622446,
+  "lastUsed": 1777657622446,
+  "avgDuration": 0
+}

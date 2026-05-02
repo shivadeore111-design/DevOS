@@ -1,0 +1,14 @@
+{
+  "name": "disk_usage_drive",
+  "taskPattern": "Show me the disk usage for my C: drive.",
+  "toolSequence": [
+    "run_powershell"
+  ],
+  "successCount": 3,
+  "failCount": 0,
+  "confidence": 1,
+  "promoted": true,
+  "createdAt": 1777715203213,
+  "lastUsed": 1777734520854,
+  "avgDuration": 1804
+}

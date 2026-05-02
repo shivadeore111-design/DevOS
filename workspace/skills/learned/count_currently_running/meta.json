@@ -1,0 +1,15 @@
+{
+  "name": "count_currently_running",
+  "taskPattern": "Count my currently running processes and save just the number to a file called audit_procs.txt on my",
+  "toolSequence": [
+    "run_powershell",
+    "file_write"
+  ],
+  "successCount": 1,
+  "failCount": 0,
+  "confidence": 0.3333333333333333,
+  "promoted": false,
+  "createdAt": 1777718130435,
+  "lastUsed": 1777718130435,
+  "avgDuration": 477
+}

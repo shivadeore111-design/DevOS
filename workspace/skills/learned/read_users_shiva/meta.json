@@ -1,0 +1,15 @@
+{
+  "name": "read_users_shiva",
+  "taskPattern": "Read C:\\Users\\shiva\\Desktop\\audit_test1.txt audit_test1.txt on my Desktop and tell me its contents.",
+  "toolSequence": [
+    "file_read",
+    "respond"
+  ],
+  "successCount": 8,
+  "failCount": 4,
+  "confidence": 1,
+  "promoted": true,
+  "createdAt": 1777665062634,
+  "lastUsed": 1777734072426,
+  "avgDuration": 5
+}

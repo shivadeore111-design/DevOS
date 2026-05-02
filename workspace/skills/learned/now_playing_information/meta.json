@@ -1,0 +1,14 @@
+{
+  "name": "now_playing_information",
+  "taskPattern": "now playing information",
+  "toolSequence": [
+    "respond"
+  ],
+  "successCount": 1,
+  "failCount": 0,
+  "confidence": 0.3333333333333333,
+  "promoted": false,
+  "createdAt": 1777575830243,
+  "lastUsed": 1777575830243,
+  "avgDuration": 4
+}

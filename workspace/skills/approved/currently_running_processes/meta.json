@@ -1,0 +1,14 @@
+{
+  "name": "currently_running_processes",
+  "taskPattern": "Show me my currently running processes.",
+  "toolSequence": [
+    "run_powershell"
+  ],
+  "successCount": 2,
+  "failCount": 0,
+  "confidence": 0.6666666666666666,
+  "promoted": false,
+  "createdAt": 1777715120854,
+  "lastUsed": 1777717926201,
+  "avgDuration": 502
+}

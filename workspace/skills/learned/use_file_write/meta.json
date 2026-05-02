@@ -1,0 +1,14 @@
+{
+  "name": "use_file_write",
+  "taskPattern": "use the file_write tool to write the text \"C4-allowed\" to the file C:UsersshivaDesktopc4_test.txt",
+  "toolSequence": [
+    "file_write"
+  ],
+  "successCount": 2,
+  "failCount": 0,
+  "confidence": 0.6666666666666666,
+  "promoted": false,
+  "createdAt": 1777701803552,
+  "lastUsed": 1777701844826,
+  "avgDuration": 4
+}

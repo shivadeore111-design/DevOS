@@ -1,0 +1,15 @@
+{
+  "name": "its_now_close_google_chrome",
+  "taskPattern": "ok its open now, close google chrome",
+  "toolSequence": [
+    "app_close",
+    "respond"
+  ],
+  "successCount": 1,
+  "failCount": 0,
+  "confidence": 0.5,
+  "promoted": false,
+  "createdAt": 1777484017977,
+  "lastUsed": 1777484017977,
+  "avgDuration": 0
+}

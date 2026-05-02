@@ -1,0 +1,14 @@
+{
+  "name": "open_google_chrome",
+  "taskPattern": "open Google Chrome",
+  "toolSequence": [
+    "app_launch"
+  ],
+  "successCount": 1,
+  "failCount": 0,
+  "confidence": 0.3333333333333333,
+  "promoted": false,
+  "createdAt": 1777655130425,
+  "lastUsed": 1777655130425,
+  "avgDuration": 128
+}

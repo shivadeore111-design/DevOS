@@ -1,0 +1,15 @@
+{
+  "name": "append_text_appended",
+  "taskPattern": "Append the text \"APPENDED_CONTENT\" to C:\\Users\\shiva\\Desktop\\audit_fileops.txt",
+  "toolSequence": [
+    "file_read",
+    "file_write"
+  ],
+  "successCount": 5,
+  "failCount": 0,
+  "confidence": 1,
+  "promoted": true,
+  "createdAt": 1777714140291,
+  "lastUsed": 1777734362614,
+  "avgDuration": 5
+}

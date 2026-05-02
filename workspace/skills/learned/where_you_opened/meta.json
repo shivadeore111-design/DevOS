@@ -1,0 +1,14 @@
+{
+  "name": "where_you_opened",
+  "taskPattern": "where you opened , its not open, open a new window in google chrome",
+  "toolSequence": [
+    "respond"
+  ],
+  "successCount": 1,
+  "failCount": 0,
+  "confidence": 0.3333333333333333,
+  "promoted": false,
+  "createdAt": 1777487332888,
+  "lastUsed": 1777487332888,
+  "avgDuration": 1
+}

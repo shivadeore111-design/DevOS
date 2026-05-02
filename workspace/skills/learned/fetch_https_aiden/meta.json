@@ -1,0 +1,14 @@
+{
+  "name": "fetch_https_aiden",
+  "taskPattern": "Fetch https://aiden.taracod.com and tell me what's on that page.",
+  "toolSequence": [
+    "now_playing"
+  ],
+  "successCount": 4,
+  "failCount": 0,
+  "confidence": 1,
+  "promoted": true,
+  "createdAt": 1777714610234,
+  "lastUsed": 1777734442989,
+  "avgDuration": 944
+}

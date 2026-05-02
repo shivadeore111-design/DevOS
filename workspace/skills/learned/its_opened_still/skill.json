@@ -1,0 +1,22 @@
+{
+  "name": "its_opened_still",
+  "version": "1.0.0",
+  "description": "its not opened still",
+  "author": "local",
+  "license": "MIT",
+  "tools": [
+    "app_launch",
+    "shell_exec"
+  ],
+  "trigger_phrases": [
+    "its not opened still"
+  ],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "code"
+  ],
+  "created": "2026-04-29T17:33:12.102Z"
+}

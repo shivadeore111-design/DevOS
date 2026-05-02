@@ -1,0 +1,14 @@
+{
+  "name": "remember_favorite_color",
+  "taskPattern": "remember my favorite color is purple",
+  "toolSequence": [
+    "memory_store"
+  ],
+  "successCount": 3,
+  "failCount": 0,
+  "confidence": 1,
+  "promoted": true,
+  "createdAt": 1777709010757,
+  "lastUsed": 1777736873311,
+  "avgDuration": 7
+}

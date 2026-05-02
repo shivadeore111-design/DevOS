@@ -1,0 +1,14 @@
+{
+  "name": "create_txt_file",
+  "taskPattern": "create a txt file on desktop named test.txt with content hello",
+  "toolSequence": [
+    "file_write"
+  ],
+  "successCount": 1,
+  "failCount": 0,
+  "confidence": 0.3333333333333333,
+  "promoted": false,
+  "createdAt": 1777659685826,
+  "lastUsed": 1777659685826,
+  "avgDuration": 6
+}

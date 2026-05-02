@@ -1,0 +1,14 @@
+{
+  "name": "what_music_playing",
+  "taskPattern": "what music am i playing right now",
+  "toolSequence": [
+    "respond"
+  ],
+  "successCount": 2,
+  "failCount": 6,
+  "confidence": 0.6666666666666666,
+  "promoted": false,
+  "createdAt": 1777578171190,
+  "lastUsed": 1777580979368,
+  "avgDuration": 6
+}

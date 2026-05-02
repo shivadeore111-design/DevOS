@@ -1,0 +1,14 @@
+{
+  "name": "use_screenshot_tool",
+  "taskPattern": "Use the screenshot tool with outputPath set to C:\\Users\\shiva\\Desktop\\c3b_direct.png",
+  "toolSequence": [
+    "screenshot"
+  ],
+  "successCount": 1,
+  "failCount": 0,
+  "confidence": 0.3333333333333333,
+  "promoted": false,
+  "createdAt": 1777712872460,
+  "lastUsed": 1777712872460,
+  "avgDuration": 635
+}

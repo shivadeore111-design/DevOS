@@ -1,0 +1,15 @@
+{
+  "name": "take_screenshot",
+  "taskPattern": "take a screenshot",
+  "toolSequence": [
+    "screenshot",
+    "file_write"
+  ],
+  "successCount": 1,
+  "failCount": 0,
+  "confidence": 0.3333333333333333,
+  "promoted": false,
+  "createdAt": 1777736954677,
+  "lastUsed": 1777736954677,
+  "avgDuration": 1049
+}

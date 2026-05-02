@@ -1,0 +1,14 @@
+{
+  "name": "write_file_called",
+  "taskPattern": "Write a file called audit_big.txt on my Desktop containing the word \"DATA\" repeated 25000 times sepa",
+  "toolSequence": [
+    "respond"
+  ],
+  "successCount": 3,
+  "failCount": 0,
+  "confidence": 1,
+  "promoted": true,
+  "createdAt": 1777714084361,
+  "lastUsed": 1777734228313,
+  "avgDuration": 1
+}

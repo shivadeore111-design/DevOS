@@ -1,0 +1,22 @@
+{
+  "name": "its_now_close_google_chrome",
+  "version": "1.0.0",
+  "description": "ok its open now, close google chrome",
+  "author": "local",
+  "license": "MIT",
+  "tools": [
+    "app_close",
+    "respond"
+  ],
+  "trigger_phrases": [
+    "ok its open now, close google chrome"
+  ],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "general"
+  ],
+  "created": "2026-04-29T17:33:37.978Z"
+}

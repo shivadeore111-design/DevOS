@@ -1,0 +1,14 @@
+{
+  "name": "what_current_weather",
+  "taskPattern": "What is the current weather in Mumbai?",
+  "toolSequence": [
+    "web_search"
+  ],
+  "successCount": 4,
+  "failCount": 0,
+  "confidence": 1,
+  "promoted": true,
+  "createdAt": 1777714554780,
+  "lastUsed": 1777734420895,
+  "avgDuration": 816
+}
