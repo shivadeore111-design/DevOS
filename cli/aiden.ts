@@ -323,7 +323,7 @@ async function printBanner(): Promise<void> {
   console.log(
     `  ${provDot} ${fg(COLORS.orange)}${provName}${RST} ${T.dim}${modelName}${T.reset}` +
     sep +
-    `${skillDot} ${T.dim}${enabled.length} skills${T.reset}` +
+    `${skillDot} ${T.dim}${enabled.length}/${skillArr.length} skills${T.reset}` +
     sep +
     `${T.dim}${toolCount} tools${T.reset}` +
     sep +
