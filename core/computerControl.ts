@@ -178,7 +178,8 @@ export function resolveScreenshotPath(outputPath?: string): string {
 export async function takeScreenshot(opts?: { outputPath?: string }): Promise<string> {
   const filepath  = resolveScreenshotPath(opts?.outputPath)
   const useDefault = !opts?.outputPath
-  const escaped   = filepath.replace(/\\/g, '\\\\')
+  // C3b: No backslash escaping — PS single-quoted strings are literal, \\ would be passed verbatim to .NET
+  const escaped   = filepath
 
   await psFile(`
 Add-Type -AssemblyName System.Windows.Forms
