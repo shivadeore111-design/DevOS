@@ -1,3 +1,52 @@
+## v3.19.3 — Behavioral Audit Patch (2026-05-02)
+
+Fixes 11 bugs surfaced by Layer 2 behavioral testing
+(50-prompt audit). Each fix has a regression test.
+
+### Critical fixes
+- C5: memory_store dispatch — 'remember X' now persists to
+  records.jsonl
+- C6: file_read fabrication — synthesis prompt rules guard
+  against fabricating content for failed reads
+- C7: shell safety — Remove-Item no longer blanket-allowed;
+  destructive learned skills auto-rejected
+- C3b: screenshot tool schema — outputPath now formal
+  parameter, backslash double-escape removed
+- C8: run_node/run_python path guard — destructive ops on
+  protected system paths blocked at code level (closes #66)
+- C9 + C9b: responder URL routing — custom providers
+  (Together AI) no longer send keys to Groq URL; 0 raw
+  OPENAI_COMPAT_ENDPOINTS lookups remain
+- C10: null-plan guard — action intents don't short-circuit
+  with hardcoded fallback
+- C11: memory_forget tool — 'forget X' actually removes
+  matching entries
+
+### Behavioral audit progression
+- Pre-patch: 33/50 PASS, 5 BLOCKERs (3 DANGEROUS lying)
+- Post-v3.19.3: 33/50 PASS, 0 real BLOCKERs (2 reported but
+  unrelated to v3.19.3 scope or test-scoring bugs)
+
+### Test infrastructure
+- 11 new regression test files in scripts/test-suite/regression/
+- Total: ~80 regression tests
+- Run: npm run test:audit
+
+### Known issues deferred to v3.19.4
+- #64: MemoryGuard hijacks dual-intent prompts
+- #65: TOOL_REGISTRY counters don't include runtime tools
+- #67: Planner sometimes splits screenshot into 2-step
+- B2-01: file_write reliability (new issue filed)
+- B7-02 test scoring (new issue filed)
+- get_time clock bug
+- Multi-step 90s timeout
+- 6 missing TOOL_DESCRIPTIONS
+
+### Architecture follow-ups for v3.20
+- Consolidate planner + responder LLM call paths
+- externalTools registry trust tiers
+- IterationBudget formalization
+
 ## v3.19.1 — patch
 
 - Fix: `cli/aiden.ts` handler extraction regression. `/new`, `/history`, `/export`
