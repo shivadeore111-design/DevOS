@@ -153,6 +153,68 @@ function isShellDangerous(cmd: string): boolean {
   return SHELL_DANGEROUS_PATTERNS.some(p => lower.includes(p.toLowerCase()))
 }
 
+// ── C8: Code-level destructive path guard for run_node / run_python ──────────
+// Scans code strings for destructive filesystem operations targeting protected
+// system paths. Closes the bypass where the planner re-routes through run_node
+// or run_python after shell_exec is denied by DENIED_COMMANDS.
+//
+// Two-stage check: (1) code contains a destructive fs call, AND (2) code
+// references a protected path. Both must match for denial — benign code that
+// merely reads protected paths, or destructive code targeting workspace, passes.
+
+const PROTECTED_PATH_PATTERNS: RegExp[] = [
+  // {1,2} so we match both real paths (C:\Users\) and string-literal escapes (C:\\Users\\)
+  /[Cc]:[/\\]{1,2}[Uu]sers[/\\]{1,2}/,
+  /[Cc]:[/\\]{1,2}[Ww]indows[/\\]{1,2}/,
+  /[Cc]:[/\\]{1,2}[Pp]rogram\s?[Ff]iles/,
+  /[Cc]:[/\\]{1,2}[Ss]ystem/,
+  /['"`]\/etc[/'"` ]/,
+  /['"`]\/home[/'"` ]/,
+  /['"`]\/usr[/'"` ]/,
+  /['"`]\/var[/'"` ]/,
+]
+
+const CODE_DESTRUCTIVE_NODE: RegExp[] = [
+  /\bfs\s*\.\s*rmSync\b/,
+  /\bfs\s*\.\s*unlinkSync\b/,
+  /\bfs\s*\.\s*rmdirSync\b/,
+  /\bfs\.promises\s*\.\s*rm\b/,
+  /\bfs\.promises\s*\.\s*unlink\b/,
+  /\bfs\.promises\s*\.\s*rmdir\b/,
+  /\brimraf\b/,
+  /\bfs\s*\.\s*rm\s*\(/,
+  /\bdel\s*\(/,          // fs-extra del()
+  /\bunlinkSync\s*\(/,   // bare import
+]
+
+const CODE_DESTRUCTIVE_PYTHON: RegExp[] = [
+  /\bos\s*\.\s*remove\b/,
+  /\bos\s*\.\s*unlink\b/,
+  /\bos\s*\.\s*rmdir\b/,
+  /\bos\s*\.\s*removedirs\b/,
+  /\bshutil\s*\.\s*rmtree\b/,
+  /\bpathlib\b.*\bunlink\b/,
+  /\bsend2trash\b/,
+]
+
+export function scanCodeForDestructivePaths(
+  code: string,
+  lang: 'node' | 'python',
+): { denied: boolean; reason: string } {
+  const destructivePatterns = lang === 'node' ? CODE_DESTRUCTIVE_NODE : CODE_DESTRUCTIVE_PYTHON
+  const matchedOp = destructivePatterns.find(p => p.test(code))
+  if (!matchedOp) return { denied: false, reason: '' }
+
+  const matchedPath = PROTECTED_PATH_PATTERNS.find(p => p.test(code))
+  if (!matchedPath) return { denied: false, reason: '' }
+
+  const opStr = code.match(matchedOp)?.[0] ?? 'destructive op'
+  const pathStr = code.match(matchedPath)?.[0] ?? 'protected path'
+  const reason = `[Security] ${lang} code blocked: "${opStr}" targeting "${pathStr}" — destructive operation on protected system path`
+  process.stderr.write(reason + '\n')
+  return { denied: true, reason }
+}
+
 // ── Sprint 25: Shell command allowlist ────────────────────────
 // Unknown commands (not in this list) are blocked and require explicit user approval.
 
@@ -898,6 +960,10 @@ export const TOOLS: Record<string, (payload: any, ctx?: ToolContext) => Promise<
     const script = p.script || p.code || p.command || ''
     if (!script) return { success: false, output: '', error: 'No script' }
 
+    // ── C8: Destructive path guard ─────────────────────────────────
+    const pyGuard = scanCodeForDestructivePaths(script, 'python')
+    if (pyGuard.denied) return { success: false, output: '', error: pyGuard.reason }
+
     // ── N+34: Docker sandbox routing ───────────────────────────
     const _pyMode = process.env.AIDEN_SANDBOX_MODE || 'off'
     if (_pyMode === 'strict' || _pyMode === 'auto') {
@@ -943,6 +1009,11 @@ export const TOOLS: Record<string, (payload: any, ctx?: ToolContext) => Promise<
   run_node: async (p) => {
     const script = p.script || p.code || p.command || ''
     if (!script) return { success: false, output: '', error: 'No script' }
+
+    // ── C8: Destructive path guard ─────────────────────────────────
+    const nodeGuard = scanCodeForDestructivePaths(script, 'node')
+    if (nodeGuard.denied) return { success: false, output: '', error: nodeGuard.reason }
+
     const tmp = path.join(process.cwd(), 'workspace', `js_${Date.now()}.js`)
     fs.mkdirSync(path.dirname(tmp), { recursive: true })
     fs.writeFileSync(tmp, script)
