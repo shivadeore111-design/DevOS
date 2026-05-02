@@ -1883,6 +1883,7 @@ export function createApiServer(): Express {
       { id: 'groq',       label: 'Groq',           subtitle: 'Free tier · llama3.3:70b · blazing fast',  url: 'https://console.groq.com',                       models: ['llama-3.3-70b-versatile', 'llama-3.1-70b-versatile', 'mixtral-8x7b-32768'] },
       { id: 'openrouter', label: 'OpenRouter',      subtitle: 'Access 200+ models · pay per use',           url: 'https://openrouter.ai/keys',                     models: ['meta-llama/llama-3.3-70b-instruct', 'anthropic/claude-3.5-sonnet', 'openai/gpt-4o'] },
       { id: 'gemini',     label: 'Gemini',          subtitle: 'Free tier available · fast',                 url: 'https://aistudio.google.com/app/apikey',         models: ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash-exp'] },
+      { id: 'mistral',    label: 'Mistral AI',      subtitle: 'Mistral Large/Small · Codestral',            url: 'https://console.mistral.ai/api-keys',            models: ['mistral-large-latest', 'mistral-small-latest', 'codestral-latest'] },
       { id: 'cloudflare', label: 'Cloudflare AI',  subtitle: '60+ models · free tier · edge inference',  url: 'https://dash.cloudflare.com/profile/api-tokens', models: ['accountId|@cf/meta/llama-3.1-8b-instruct'] },
       { id: 'github',     label: 'GitHub Models',  subtitle: 'GPT-4o · free for GitHub users',             url: 'https://github.com/marketplace/models',          models: ['gpt-4o-mini', 'gpt-4o'] },
     ]
@@ -2907,6 +2908,17 @@ export function createApiServer(): Express {
           if (!r.ok) error = `${r.status}: ${await r.text()}`
           break
         }
+        case 'mistral': {
+          const r = await fetch('https://api.mistral.ai/v1/chat/completions', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+            body:    JSON.stringify({ model: testModel, messages: testMessages, max_tokens: 5 }),
+            signal:  AbortSignal.timeout(8000),
+          })
+          valid = r.ok
+          if (!r.ok) error = `${r.status}: ${await r.text()}`
+          break
+        }
         case 'nvidia': {
           const r = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
             method:  'POST',
@@ -2988,6 +3000,19 @@ export function createApiServer(): Express {
           }
         )
         return res.json({ valid: r.ok, status: r.status, provider: 'groq' })
+      }
+
+      if (provider === 'mistral') {
+        const r = await fetch(
+          'https://api.mistral.ai/v1/chat/completions',
+          {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+            body:    JSON.stringify({ model: 'mistral-large-latest', messages: [{ role: 'user', content: 'hi' }], max_tokens: 5 }),
+            signal:  AbortSignal.timeout(8000),
+          }
+        )
+        return res.json({ valid: r.ok, status: r.status, provider: 'mistral' })
       }
 
       if (provider === 'ollama') {
@@ -5583,6 +5608,7 @@ export function getDefaultModel(provider: string): string {
     gemini:     'gemini-1.5-flash',
     cerebras:   'llama3.1-8b',
     nvidia:     'meta/llama-3.3-70b-instruct',
+    mistral:    'mistral-large-latest',
   }
   return defaults[provider] || 'llama-3.3-70b-versatile'
 }
@@ -6153,6 +6179,22 @@ export async function start(opts?: {
 // fetchProviderResponse: fires a single non-streaming request to a provider.
 // raceProviders: fires top-2 simultaneously, returns the fastest valid response.
 
+function extractChatMessageContent(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+
+  return content
+    .map((part) => {
+      if (typeof part === 'string') return part
+      if (part && typeof part === 'object' && 'text' in part) {
+        const text = (part as { text?: unknown }).text
+        return typeof text === 'string' ? text : ''
+      }
+      return ''
+    })
+    .join('')
+}
+
 async function fetchProviderResponse(
   api:      import('../providers/index').APIEntry,
   messages: { role: string; content: string }[],
@@ -6173,7 +6215,11 @@ async function fetchProviderResponse(
     })
     if (!resp.ok) throw new Error(`Gemini ${resp.status}`)
     const d = await resp.json() as any
-    return { text: d?.choices?.[0]?.message?.content || '', apiName: api.name, model }
+    return {
+      text: extractChatMessageContent(d?.choices?.[0]?.message?.content),
+      apiName: api.name,
+      model,
+    }
 
   } else if (providerType === 'ollama') {
     const resp = await fetch('http://localhost:11434/api/chat', {
@@ -6201,7 +6247,11 @@ async function fetchProviderResponse(
     })
     if (!resp.ok) throw new Error(`custom:${api.name} ${resp.status}`)
     const d = await resp.json() as any
-    return { text: d?.choices?.[0]?.message?.content || '', apiName: api.name, model }
+    return {
+      text: extractChatMessageContent(d?.choices?.[0]?.message?.content),
+      apiName: api.name,
+      model,
+    }
 
   } else {
     const COMPAT_ENDPOINTS: Record<string, string> = {
@@ -6212,6 +6262,7 @@ async function fetchProviderResponse(
       nvidia:     'https://integrate.api.nvidia.com/v1/chat/completions',
       github:     'https://models.inference.ai.azure.com/chat/completions',
       boa:        'https://api.bayofassets.com/v1/chat/completions',
+      mistral:    'https://api.mistral.ai/v1/chat/completions',
     }
     const endpoint = COMPAT_ENDPOINTS[providerType] ?? COMPAT_ENDPOINTS['groq']
     const resp = await fetch(endpoint, {
@@ -6226,7 +6277,11 @@ async function fetchProviderResponse(
     })
     if (!resp.ok) throw new Error(`${providerType} ${resp.status}`)
     const d = await resp.json() as any
-    return { text: d?.choices?.[0]?.message?.content || '', apiName: api.name, model }
+    return {
+      text: extractChatMessageContent(d?.choices?.[0]?.message?.content),
+      apiName: api.name,
+      model,
+    }
   }
 }
 
@@ -6325,6 +6380,7 @@ async function* streamTokens(
     openai:     'https://api.openai.com/v1/chat/completions',
     boa:        'https://api.bayofassets.com/v1/chat/completions',
     gemini:     'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+    mistral:    'https://api.mistral.ai/v1/chat/completions',
   }
 
   // Shared tool-call buffering helper
@@ -6660,6 +6716,7 @@ ${cognitionHint}${memoryContext}${greetingPreamble}${sessionContext}${memoryInde
         cerebras:   'https://api.cerebras.ai/v1/chat/completions',
         openai:     'https://api.openai.com/v1/chat/completions',
         boa:        'https://api.bayofassets.com/v1/chat/completions',
+        mistral:    'https://api.mistral.ai/v1/chat/completions',
       }
       const endpoint = ENDPOINTS[providerType] ?? ENDPOINTS['groq']
       const resp = await fetch(endpoint, {
@@ -6713,6 +6770,7 @@ ${cognitionHint}${memoryContext}${greetingPreamble}${sessionContext}${memoryInde
             cerebras:   'https://api.cerebras.ai/v1/chat/completions',
             openai:     'https://api.openai.com/v1/chat/completions',
             boa:        'https://api.bayofassets.com/v1/chat/completions',
+            mistral:    'https://api.mistral.ai/v1/chat/completions',
           }
           const fbEndpoint = ENDPOINTS[cloudTier.providerName] ?? ENDPOINTS['groq']
           const fbHeaders: Record<string, string> = {
