@@ -17,6 +17,7 @@
 //         T-Regression (C9b streaming URL helper)
 //         N-Regression (C10 null-plan action-intent guard)
 //         M-Regression (C11 memory_forget)
+//         J-Regression (C12 skill pollution prevention)
 // ============================================================
 
 import fs   from 'fs'
@@ -34,6 +35,7 @@ import { groupU } from './regression/c9-responder-custom-routing'
 import { groupT } from './regression/c9b-streaming-url-helper'
 import { groupN } from './regression/c10-null-plan-action-intent'
 import { groupM } from './regression/c11-memory-forget'
+import { groupJ } from './regression/c12-skill-pollution-prevention'
 
 const CWD = process.cwd()
 
@@ -668,5 +670,6 @@ export async function runPhase1(): Promise<GroupSummary[]> {
   out.push(await groupT())
   out.push(await groupN())
   out.push(await groupM())
+  out.push(await groupJ())
   return out
 }

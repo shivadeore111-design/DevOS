@@ -69,6 +69,42 @@ function extractSkillName(task: string, tools: string[]): string {
   return words.join('_') || 'general_task'
 }
 
+// ── C12: Skill pollution prevention — exported for testing ──────
+
+const QUESTION_WORD_RE = /^(what|where|why|when|who|how|can|could|would|should|is|are)_/
+const PRONOUN_RE       = /^(its|im|youre|whats|theyre|were)_/
+const PERSONAL_ID_RE   = /(^|_)(users|shiva|admin|desktop|appdata)(_|$)/
+
+/**
+ * Validate a candidate skill name. Returns null if valid,
+ * or a rejection reason string.
+ */
+export function validateSkillName(name: string): string | null {
+  const words = name.split('_')
+  if (words.length > 4)            return `name has >4 underscore-separated words (${words.length})`
+  if (QUESTION_WORD_RE.test(name)) return 'name starts with question word'
+  if (PRONOUN_RE.test(name))       return 'name starts with pronoun pattern'
+  if (PERSONAL_ID_RE.test(name))   return 'name contains personal identifier'
+  return null
+}
+
+/**
+ * Validate a candidate skill task description. Returns null if valid,
+ * or a rejection reason string.
+ * @param task        - The skill's task description
+ * @param userMessage - Original user message (for verbatim check)
+ */
+export function validateSkillTask(task: string, userMessage?: string): string | null {
+  const norm = task.toLowerCase().trim()
+  if (norm.length < 30)   return `task too short (${norm.length} chars, min 30)`
+  if (norm.endsWith('?')) return 'task is a question'
+  if (userMessage) {
+    const msgNorm = userMessage.toLowerCase().trim()
+    if (norm === msgNorm)  return 'task is verbatim copy of user message'
+  }
+  return null
+}
+
 // ── SKILL.md generator ─────────────────────────────────────────
 
 async function generateSkillContent(
@@ -240,6 +276,20 @@ export class SkillTeacher {
       process.stderr.write(
         `[SkillTeacher] Rejected destructive skill: "${skillName}" (task="${task.slice(0, 60)}")\n`
       )
+      return
+    }
+
+    // ── C12: Name pollution prevention ──────────────────────────
+    const nameRejection = validateSkillName(skillName)
+    if (nameRejection) {
+      process.stderr.write(`[SkillTeacher] Rejected "${skillName}": ${nameRejection}\n`)
+      return
+    }
+
+    // ── C12: Task content validation ────────────────────────────
+    const taskRejection = validateSkillTask(task)
+    if (taskRejection) {
+      process.stderr.write(`[SkillTeacher] Rejected "${skillName}": ${taskRejection}\n`)
       return
     }
 
