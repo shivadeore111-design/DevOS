@@ -474,6 +474,75 @@ export function resolveWritePath(
   return resolved
 }
 
+// ── C13: Cross-platform app launch aliases ─────────────────────
+
+type LaunchType = 'uri' | 'cmd' | 'app'
+interface LaunchEntry { type: LaunchType; value: string }
+type PlatformKey = 'win32' | 'darwin' | 'linux'
+
+export const APP_ALIASES: Record<string, Partial<Record<PlatformKey, LaunchEntry>>> = {
+  spotify:     { win32: { type: 'uri', value: 'spotify' },       darwin: { type: 'app', value: 'Spotify' },            linux: { type: 'cmd', value: 'spotify' }},
+  chrome:      { win32: { type: 'cmd', value: 'chrome' },        darwin: { type: 'app', value: 'Google Chrome' },      linux: { type: 'cmd', value: 'google-chrome' }},
+  firefox:     { win32: { type: 'cmd', value: 'firefox' },       darwin: { type: 'app', value: 'Firefox' },            linux: { type: 'cmd', value: 'firefox' }},
+  edge:        { win32: { type: 'cmd', value: 'msedge' },        darwin: { type: 'app', value: 'Microsoft Edge' },     linux: { type: 'cmd', value: 'microsoft-edge' }},
+  discord:     { win32: { type: 'uri', value: 'discord' },       darwin: { type: 'app', value: 'Discord' },            linux: { type: 'cmd', value: 'discord' }},
+  slack:       { win32: { type: 'uri', value: 'slack' },         darwin: { type: 'app', value: 'Slack' },              linux: { type: 'cmd', value: 'slack' }},
+  zoom:        { win32: { type: 'uri', value: 'zoommtg' },       darwin: { type: 'app', value: 'zoom.us' },            linux: { type: 'cmd', value: 'zoom' }},
+  teams:       { win32: { type: 'uri', value: 'msteams' },       darwin: { type: 'app', value: 'Microsoft Teams' },    linux: { type: 'cmd', value: 'teams' }},
+  vscode:      { win32: { type: 'cmd', value: 'code' },          darwin: { type: 'app', value: 'Visual Studio Code' }, linux: { type: 'cmd', value: 'code' }},
+  notepad:     { win32: { type: 'cmd', value: 'notepad.exe' },   darwin: { type: 'app', value: 'TextEdit' },           linux: { type: 'cmd', value: 'gedit' }},
+  'notepad++': { win32: { type: 'cmd', value: 'notepad++' }},
+  calculator:  { win32: { type: 'cmd', value: 'calc' },          darwin: { type: 'app', value: 'Calculator' },         linux: { type: 'cmd', value: 'gnome-calculator' }},
+  paint:       { win32: { type: 'cmd', value: 'mspaint' }},
+  explorer:    { win32: { type: 'cmd', value: 'explorer' },      darwin: { type: 'cmd', value: 'open ~' },             linux: { type: 'cmd', value: 'nautilus' }},
+  terminal:    { win32: { type: 'cmd', value: 'wt' },            darwin: { type: 'app', value: 'Terminal' },           linux: { type: 'cmd', value: 'gnome-terminal' }},
+  word:        { win32: { type: 'cmd', value: 'winword' }},
+  excel:       { win32: { type: 'cmd', value: 'excel' }},
+  powershell:  { win32: { type: 'cmd', value: 'powershell' }},
+  cmd:         { win32: { type: 'cmd', value: 'cmd' }},
+}
+
+// Display name aliases → canonical key in APP_ALIASES
+const DISPLAY_ALIASES: Record<string, string> = {
+  'google chrome': 'chrome', 'microsoft edge': 'edge',
+  'vs code': 'vscode', 'visual studio code': 'vscode',
+  'microsoft teams': 'teams', 'file explorer': 'explorer',
+  'windows terminal': 'terminal', 'task manager': 'calculator',
+  'calc': 'calculator',
+}
+
+/**
+ * C13: Resolve the shell command to launch an app on a given platform.
+ * Pure function — takes platform arg for testability.
+ * @param appName  - user-facing app name (lowercase, trimmed)
+ * @param platform - override for process.platform (for testing)
+ */
+export function resolveLaunchCommand(appName: string, platform?: string): string {
+  const plat = (platform ?? process.platform) as PlatformKey
+  const canonical = DISPLAY_ALIASES[appName] ?? appName
+  const entry = APP_ALIASES[canonical]?.[plat]
+
+  if (entry) {
+    switch (entry.type) {
+      case 'uri':
+        return plat === 'win32'  ? `cmd /c start "" "${entry.value}:"`
+             : plat === 'darwin' ? `open "${entry.value}://"`
+             :                     `xdg-open "${entry.value}://"`
+      case 'app':
+        return `open -a "${entry.value}"`
+      case 'cmd':
+        if (plat === 'win32')  return `cmd /c start "" "${entry.value}"`
+        if (plat === 'darwin') return `open -a "${entry.value}"`
+        return entry.value
+    }
+  }
+
+  // Fallback for unknown apps
+  if (plat === 'win32')  return `cmd /c start "" "${appName}"`
+  if (plat === 'darwin') return `open -a "${appName}"`
+  return `xdg-open "${appName}"`
+}
+
 // ── Tool implementations ──────────────────────────────────────
 
 export const TOOLS: Record<string, (payload: any, ctx?: ToolContext) => Promise<RawResult>> = {
@@ -1750,46 +1819,13 @@ export const TOOLS: Record<string, (payload: any, ctx?: ToolContext) => Promise<
       p.app_name ?? p.appName ?? p.app ?? p.path ?? p.command ?? p.name ?? p.target ?? ''
     ).toString().toLowerCase().trim()
     if (!appName) return { success: false, output: '', error: 'No app_name provided. Pass app_name e.g. "chrome" or "spotify".' }
-    // Map friendly display names → executable/URI names
-    const exeMap: Record<string, string> = {
-      'chrome':               'chrome',
-      'google chrome':        'chrome',
-      'firefox':              'firefox',
-      'edge':                 'msedge',
-      'microsoft edge':       'msedge',
-      'spotify':              'spotify',
-      'discord':              'discord',
-      'vscode':               'code',
-      'vs code':              'code',
-      'visual studio code':   'code',
-      'notepad':              'notepad',
-      'notepad++':            'notepad++',
-      'word':                 'winword',
-      'excel':                'excel',
-      'powerpoint':           'powerpnt',
-      'slack':                'slack',
-      'zoom':                 'zoom',
-      'teams':                'teams',
-      'microsoft teams':      'teams',
-      'explorer':             'explorer',
-      'file explorer':        'explorer',
-      'task manager':         'taskmgr',
-      'taskmgr':              'taskmgr',
-      'calculator':           'calc',
-      'calc':                 'calc',
-      'paint':                'mspaint',
-      'terminal':             'wt',
-      'windows terminal':     'wt',
-      'cmd':                  'cmd',
-      'powershell':           'powershell',
-    }
-    const exe = exeMap[appName] ?? appName
+    // C13: cross-platform launch via resolveLaunchCommand()
+    const cmd = resolveLaunchCommand(appName)
     try {
       const { execSync } = await import('child_process')
-      // Use cmd /c start — cmd built-in, avoids Start-Process (blocked by permissions)
-      execSync(`cmd /c start "" "${exe}"`, { timeout: 10000 })
-      return { success: true, output: `Launched: "${appName}"` }
-    } catch (e: any) { return { success: false, output: '', error: e.message } }
+      execSync(cmd, { timeout: 10000 })
+      return { success: true, output: `Launched: "${appName}" via: ${cmd}` }
+    } catch (e: any) { return { success: false, output: '', error: `Failed to launch "${appName}": ${e.message}` } }
   },
 
   app_close: async (p) => {

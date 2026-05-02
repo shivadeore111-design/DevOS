@@ -18,6 +18,7 @@
 //         N-Regression (C10 null-plan action-intent guard)
 //         M-Regression (C11 memory_forget)
 //         J-Regression (C12 skill pollution prevention)
+//         K-Regression (C13 cross-platform app launching)
 // ============================================================
 
 import fs   from 'fs'
@@ -36,6 +37,7 @@ import { groupT } from './regression/c9b-streaming-url-helper'
 import { groupN } from './regression/c10-null-plan-action-intent'
 import { groupM } from './regression/c11-memory-forget'
 import { groupJ } from './regression/c12-skill-pollution-prevention'
+import { groupK } from './regression/c13-app-launching'
 
 const CWD = process.cwd()
 
@@ -671,5 +673,6 @@ export async function runPhase1(): Promise<GroupSummary[]> {
   out.push(await groupN())
   out.push(await groupM())
   out.push(await groupJ())
+  out.push(await groupK())
   return out
 }
