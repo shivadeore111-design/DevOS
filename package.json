@@ -1,6 +1,6 @@
 {
   "name": "aiden-runtime",
-  "version": "3.19.3",
+  "version": "3.19.4",
   "description": "Autonomous AI Operating System — Local, Private, Free. Runs on your machine with Ollama.",
   "author": "Taracod <hello@taracod.com>",
   "license": "AGPL-3.0-only",

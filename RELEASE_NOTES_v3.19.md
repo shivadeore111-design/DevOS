@@ -1,3 +1,62 @@
+## v3.19.4 — Manual Test Findings Patch (2026-05-02)
+
+Two bugs found in post-v3.19.3 manual CLI testing, both fixed
+with regression coverage.
+
+### Critical fixes
+
+**C12 — Skill pollution prevention + cleanup**
+SkillTeacher quality gates added. validateSkillName() rejects
+garbage names with question-word/pronoun prefixes, personal
+identifiers, or >4 underscore-separated words. validateSkillTask()
+rejects tasks shorter than 30 chars, tasks ending in "?", and
+tasks that are verbatim copies of user messages.
+
+49 polluted skills purged from workspace/skills/learned/ and
+approved/. Pre-purge state preserved in backup commit ec2d2ad
+(recoverable via git revert if needed).
+
+16 regression tests prevent recurrence.
+
+**C13 — Cross-platform app launching**
+app_launch tool rewritten to handle UWP/Store apps. Previously
+"open spotify" tried to exec literal "spotify" command and
+failed with Windows error popup. New resolveLaunchCommand()
+helper uses URI schemes for UWP apps on Windows (spotify:,
+discord:, msteams:, slack:, zoommtg:), bare exe for system
+apps (notepad.exe, calc, chrome), graceful fallback for
+unknown apps.
+
+macOS uses 'open -a' for all apps. Linux uses bare command
+or xdg-open. Foundation for v3.20 cross-platform support.
+
+17 regression tests cover platform-specific resolution.
+
+### Test infrastructure
+
+13 new regression test files total in v3.19.x patches. Suite
+is now ~110 tests across 12 group letters. Run with:
+npm run test:audit
+
+### Known issues deferred to v3.19.5+
+- Provider chain rate-limit cascades (groq/openrouter/together
+  all 429 simultaneously in manual test)
+- together-1 Llama 405B "non-serverless model" HTTP 400
+  (Together changed model availability)
+- Context window 8192 limit hitting 106-107% on every turn
+- Multi-step plan timeout cascade
+- /cmd approval flow doesn't execute
+- CLI rendering bugs (cursor, dropdown, wrap) — issue #38
+
+### Architecture follow-ups for v3.20 ROBUST
+- Skills system with agentskills.io frontmatter
+- /goal persistent loop
+- Checkpoints + /rollback
+- SQLite session storage with FTS5
+- Linux + macOS port (foundation laid by C13)
+- Plugin hook timeouts
+- Single-source registry
+
 ## v3.19.3 — Behavioral Audit Patch (2026-05-02)
 
 Fixes 11 bugs surfaced by Layer 2 behavioral testing
