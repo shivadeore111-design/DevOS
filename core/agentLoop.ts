@@ -466,6 +466,36 @@ function buildHeaders(providerName: string, apiKey: string): Record<string, stri
   return headers
 }
 
+/**
+ * C9b: Resolve streaming URL for any provider — custom or known.
+ *
+ * Custom providers look up baseUrl from config; known providers
+ * use OPENAI_COMPAT_ENDPOINTS; unknown falls back to groq.
+ *
+ * Note: when multiple custom providers share the same API key
+ * (e.g. together-1 and together-deepseek both using
+ * TOGETHER_API_KEY), the first matching enabled entry wins.
+ * Consumers should not rely on which specific entry resolves
+ * if keys overlap.
+ */
+export function resolveStreamingUrl(providerName: string, apiKey: string): string {
+  if (OPENAI_COMPAT_ENDPOINTS[providerName]) return OPENAI_COMPAT_ENDPOINTS[providerName]
+  if (providerName === 'custom') {
+    const cfg = loadConfig()
+    const fromCustom = cfg.customProviders?.find((c: any) => c.enabled && c.apiKey === apiKey)?.baseUrl
+    if (fromCustom) return fromCustom
+    const apiEntry = (cfg.providers?.apis ?? []).find((a: any) => {
+      if (a.provider !== 'custom' || !a.enabled || !a.baseUrl) return false
+      const resolved = a.key?.startsWith('env:')
+        ? (process.env[a.key.replace('env:', '')] || '')
+        : a.key
+      return resolved === apiKey
+    })
+    if (apiEntry?.baseUrl) return apiEntry.baseUrl
+  }
+  return OPENAI_COMPAT_ENDPOINTS.groq  // last resort
+}
+
 // ── Phase inference from tool steps ───────────────────────────
 // Groups consecutive steps of the same capability type into phases.
 
@@ -2805,42 +2835,10 @@ CRITICAL RULES FOR YOUR RESPONSE:
       console.log(`[Router] Ollama responded in ${Date.now() - _t0}ms (${ollamaTokens} tokens)`)
       if (ollamaTokens === 0) throw new Error('Ollama: empty response — no tokens emitted')
 
-    } else if (providerName === 'custom') {
-      // C9: Custom provider (e.g. Together AI) — resolve baseUrl from config.
-      // Mirrors callLLM's custom branch but with streaming enabled.
-      // Without this, custom providers fall through to the generic else block
-      // which looks up OPENAI_COMPAT_ENDPOINTS['custom'] → undefined → groq URL,
-      // sending the wrong API key to the wrong endpoint → 401.
-      const cfgCustom = loadConfig()
-      let customBaseUrl: string | undefined =
-        cfgCustom.customProviders?.find((c: any) => c.enabled && c.apiKey === apiKey)?.baseUrl
-      if (!customBaseUrl) {
-        const apiEntry = (cfgCustom.providers?.apis ?? []).find((a: any) => {
-          if (a.provider !== 'custom' || !a.enabled || !a.baseUrl) return false
-          const resolved = a.key?.startsWith('env:')
-            ? (process.env[a.key.replace('env:', '')] || '')
-            : a.key
-          return resolved === apiKey
-        })
-        customBaseUrl = apiEntry?.baseUrl
-      }
-      if (!customBaseUrl) throw new Error(`Responder: no baseUrl for custom provider (model=${model})`)
-      const r = await fetch(customBaseUrl, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-        body: JSON.stringify({ model, messages, stream: true }),
-        signal: AbortSignal.any([AbortSignal.timeout(30000), _respCtrl.signal]),
-      })
-      if (!r.ok) {
-        const errText = await r.text().catch(() => '')
-        if (r.status === 429 || r.status === 503) { try { markRateLimited(providerName) } catch {} }
-        throw new Error(`Responder ${r.status}: ${errText.slice(0, 200)}`)
-      }
-      await streamOpenAIResponse(r, onToken)
-
     } else {
-      // OpenAI-compatible: groq, openrouter, cerebras, nvidia, github
-      const url = OPENAI_COMPAT_ENDPOINTS[providerName] || OPENAI_COMPAT_ENDPOINTS.groq
+      // C9b: Unified path for all OpenAI-compatible providers (known + custom).
+      // resolveStreamingUrl handles custom→config lookup and known→endpoint map.
+      const url = resolveStreamingUrl(providerName, apiKey)
       const r   = await fetch(url, {
         method:  'POST',
         headers: buildHeaders(providerName, apiKey),
@@ -2878,7 +2876,8 @@ CRITICAL RULES FOR YOUR RESPONSE:
       if (nextCloud.providerName !== 'ollama' && nextCloud.apiName !== providerName && nextCloud.apiKey) {
         console.log(`[Responder] ${providerName} at capacity — trying ${nextCloud.providerName} (${nextCloud.model})`)
         try {
-          const url     = OPENAI_COMPAT_ENDPOINTS[nextCloud.providerName] || OPENAI_COMPAT_ENDPOINTS.groq
+          // C9b: use resolveStreamingUrl for correct custom-provider routing
+          const url     = resolveStreamingUrl(nextCloud.providerName, nextCloud.apiKey)
           const headers = buildHeaders(nextCloud.providerName, nextCloud.apiKey)
           const r = await fetch(url, {
             method:  'POST',
@@ -2902,7 +2901,8 @@ CRITICAL RULES FOR YOUR RESPONSE:
       if (cloudFallback.providerName !== 'ollama' && cloudFallback.apiKey) {
         console.log(`[Router] Ollama timeout/error — falling back to ${cloudFallback.providerName} (${cloudFallback.model})`)
         try {
-          const url     = OPENAI_COMPAT_ENDPOINTS[cloudFallback.providerName] || OPENAI_COMPAT_ENDPOINTS.groq
+          // C9b: use resolveStreamingUrl for correct custom-provider routing
+          const url     = resolveStreamingUrl(cloudFallback.providerName, cloudFallback.apiKey)
           const headers = buildHeaders(cloudFallback.providerName, cloudFallback.apiKey)
           const r = await fetch(url, {
             method:  'POST',
