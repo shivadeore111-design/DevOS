@@ -1,3 +1,64 @@
+## v3.19.7 — Honesty Patches (2026-05-03)
+
+Four patches eliminating Aiden's biggest trust-breaking bugs on fresh installs.
+
+### Patches
+
+- **C18 — SkillTeacher trigger spam**: Per-session rejection cache prevents
+  repeated quality-gate cycles on same rejected name+task combos. 8 regression
+  tests (groupL).
+
+- **C19 — Self-knowledge fabrication**: "How many skills do you have" now
+  returns dynamic counts from real state, not hardcoded "48 tools, 31 specialist
+  agents, 500+ memories" template. Removed non-existent "31 specialist agents"
+  and "6-layer memory system" claims entirely. 9 regression tests (groupO).
+
+- **C20 — Fabricated tool execution**: Synthesis prompt now includes explicit
+  "NO TOOLS WERE EXECUTED THIS TURN" + 8 specific DO NOT rules when results
+  array is empty. Aiden no longer claims to have written files it didn't write.
+  9 regression tests (groupP).
+
+- **C21 — Ollama identity context**: workspace-templates/SOUL.md ships in npm
+  package, copies to user workspace on first install. MINIMUM_SOUL fallback in
+  protectedContext.ts ensures identity even on corrupted installs. All LLM paths
+  (cloud + Ollama + direct_response) now inject Aiden identity, tool list,
+  honesty rules. Fresh install on Ollama-only correctly identifies itself. 11
+  regression tests (groupAA).
+
+### Context
+
+This release is part of the v3.19.x stabilization arc following extensive
+manual testing of v3.19.5/v3.19.6. Manual sessions surfaced patterns where
+Aiden lied about capabilities or fabricated tool execution — particularly on
+fresh installs running Ollama-only fallback. v3.19.7 addresses the four
+highest-impact instances.
+
+### Known trade-off
+
+C21 routes direct_response through streamChat for identity injection, adding
+~1-3s latency to simple greetings. v3.20 will optimize by injecting identity
+into the planner's direct_response generation prompt instead.
+
+### Coming in v3.19.8
+
+- Setup wizard auto-trigger on fresh install (Investigation B)
+- User identity bootstrap with name + pronouns (Investigation F)
+- /skills install <name> with agentskills.io integration
+
+### Architecture follow-ups for v3.20 ROBUST
+
+- CLI noise / logger rewrite (Finding C)
+- Browser automation cascade (Finding F13)
+- Optimize direct_response identity injection (remove C21 latency)
+- Workflows feature ("do it again button")
+- Skills system (Hermes-imbibe)
+- /goal persistent loop
+- Checkpoints + /rollback (shadow git)
+- SQLite session storage with FTS5
+- Linux + macOS port
+
+---
+
 ## v3.19.6 — 40 Starter Skills Bundle (2026-05-03)
 
 New users now get a working skill library on first install. 40 curated
