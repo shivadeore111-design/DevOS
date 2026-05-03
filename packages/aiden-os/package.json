@@ -1,6 +1,6 @@
 {
   "name": "aiden-os",
-  "version": "3.19.4",
+  "version": "3.19.5",
   "description": "npx launcher for DevOS — Autonomous AI Operating System. One command installs and runs Aiden locally.",
   "author": "Taracod <hello@taracod.com>",
   "license": "AGPL-3.0-only",

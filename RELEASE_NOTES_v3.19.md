@@ -1,3 +1,59 @@
+## v3.19.5 — UX patches + first-real-runtime ship (2026-05-03)
+
+This release ships three patches AND fixes a critical npm delivery gap.
+v3.19.0-v3.19.4 published the launcher (aiden-os) to npm correctly, but
+the runtime package (aiden-runtime) stayed pinned at v3.18.0 -- meaning
+users who ran `npx aiden-os` between May 1-3 got the v3.18.0 runtime
+without 11 bug fixes. v3.19.5 is the first release where both packages
+publish atomically via the new release-npm.ps1 script.
+
+### Patches
+
+**C14 -- Disable together-1 (Llama 405B)**
+Together AI moved meta-llama/llama-3.1-405b-instruct off the serverless
+tier, returning HTTP 400 on every request. callLLM() only marked 429 as
+rate-limited, so together-1 silently failed every cycle. Set enabled:
+false on this provider entry. (config change only, ships via npm publish)
+
+**C15 -- TOOL_REGISTRY handler stubs**
+A-12 audit failure pre-existing since C5. memory_store and memory_forget
+handlers lived only in core/slashAsTool.ts MIRROR_TOOLS, registered at
+runtime into private externalTools map. Added static stubs in TOOLS map
+that lazy-import real handlers from slashAsTool (avoids circular dep).
+Audit now 100% on A-group.
+
+**C16 -- Rate-limit message accuracy**
+Fresh install with no API keys was showing "all cloud providers
+rate-limited" -- misleading. Router now distinguishes 'unconfigured',
+'rate-limited', and 'mixed' states via new diagnoseProviderPool() helper.
+Users without API keys see "No API keys configured -- add keys in
+Settings > API Keys or set env vars" instead.
+
+### Release infrastructure
+
+New scripts/release-npm.ps1: 9-step atomic dual-publish pipeline.
+Refuses to ship unless both aiden-runtime and aiden-os publish
+successfully and version-verify post-publish.
+
+### Known issues deferred to v3.19.6
+
+- Setup wizard not auto-triggered on fresh install (Investigation B)
+- User identity bootstrap missing (Investigation F)
+- Aiden self-knowledge fabrication (Finding F9)
+- Ollama identity context loss (Finding F10)
+- Fabricated tool execution claims (Finding F11)
+- SkillTeacher trigger spam (Finding F12)
+- Skill installer + agentskills.io integration (new scope)
+
+### Architecture follow-ups for v3.20 ROBUST
+
+- CLI noise / logger rewrite (Finding C, ~400+ LOC)
+- Browser automation cascade (Finding F13)
+- Hermes-imbibe: skills system, /goal loop, checkpoints, SQLite session storage
+- Linux + macOS port
+
+---
+
 ## v3.19.4 — Manual Test Findings Patch (2026-05-02)
 
 Two bugs found in post-v3.19.3 manual CLI testing, both fixed
