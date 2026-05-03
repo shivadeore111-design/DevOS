@@ -1,3 +1,36 @@
+## v3.19.9 — Hotfix: PACKAGE_ROOT for template copies (2026-05-03)
+
+Manual verification of v3.19.8 fresh install via npx revealed that C22's skill
+bundle copy still didn't fire. Templates were sourced from WORKSPACE_ROOT
+(user's temp dir) instead of the npm package root.
+
+### Patch
+
+**C24 — PACKAGE_ROOT constant**
+
+api/server.ts now defines PACKAGE_ROOT that resolves to the npm package install
+directory via __dirname (with fallbacks for esbuild bundle, tsc output, and dev
+mode). All three template copy blocks (permissions.yaml, SOUL.md, skills) now
+source from PACKAGE_ROOT.
+
+### What this fixes
+
+Fresh `npx aiden-os@3.19.9` installs now correctly:
+- Copy workspace-templates/SOUL.md to workspace/SOUL.md
+- Copy workspace-templates/skills/ (40 skills) to workspace/skills/learned/
+- Copy default permissions.yaml
+
+v3.19.8 had the right fix logic but wrong source path. This hotfix completes the
+v3.19.6 skill bundle delivery that's been broken across v3.19.6/v3.19.7/v3.19.8
+publishes.
+
+### Affected installs
+
+If you installed Aiden via npx between v3.19.6 and v3.19.8, you got 0 skills
+despite the bundle. v3.19.9 fixes this. Re-run: npx aiden-os@latest
+
+---
+
 ## v3.19.8 — Skill bundle fix + CLI noise reduction (2026-05-03)
 
 Two patches addressing real fresh-install bugs surfaced during v3.19.7 manual
