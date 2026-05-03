@@ -2663,7 +2663,7 @@ function resolvePreviousOutput(
 
 // ── STEP 3: respondWithResults ────────────────────────────────
 
-function responderSystem(userName: string, date: string, sessionId?: string): string {
+function responderSystem(userName: string, date: string, sessionId?: string, hasToolResults = true): string {
   // Option-B: SOUL.md in full on first turn or when content changed on disk;
   // reference line only on unchanged turns. AIDEN_RESPONDER_SYSTEM already
   // calls getLiveSoul() — hash tracking here is additional cost guard.
@@ -2673,9 +2673,9 @@ function responderSystem(userName: string, date: string, sessionId?: string): st
   // When soul is unchanged, prepend a compact block then the responder body.
   if (_prevHash !== undefined && _ctx.hash === _prevHash) {
     const refBlock = buildProtectedContextBlock(_ctx, _prevHash, sessionId)
-    return refBlock ? refBlock + '\n\n' + AIDEN_RESPONDER_SYSTEM(userName, date) : AIDEN_RESPONDER_SYSTEM(userName, date)
+    return refBlock ? refBlock + '\n\n' + AIDEN_RESPONDER_SYSTEM(userName, date, hasToolResults) : AIDEN_RESPONDER_SYSTEM(userName, date, hasToolResults)
   }
-  return AIDEN_RESPONDER_SYSTEM(userName, date)
+  return AIDEN_RESPONDER_SYSTEM(userName, date, hasToolResults)
 }
 
 export async function respondWithResults(
@@ -2781,8 +2781,11 @@ export async function respondWithResults(
     ? results.map(r => `[${r.tool} result]: ${r.success ? r.output.slice(0, 1000) : 'FAILED: ' + r.error}`).join('\n')
     : ''
 
+  // ── C20: Detect if any real tools ran (exclude 'respond' pseudo-tool) ──
+  const hasRealToolExecution = results.some(r => r.tool !== 'respond')
+
   const systemWithResults = toolResultsContext
-    ? `${capabilitiesSection}${entitySummary}${responderSystem(userName, date, sessionId)}${responseSkillContext}${knowledgeResponderSection}${multiGoalInstruction}
+    ? `${capabilitiesSection}${entitySummary}${responderSystem(userName, date, sessionId, hasRealToolExecution)}${responseSkillContext}${knowledgeResponderSection}${multiGoalInstruction}
 
 YOU JUST RAN THESE TOOLS AND GOT THESE RESULTS:
 ${toolResultsContext}
@@ -2801,7 +2804,7 @@ CRITICAL RULES FOR YOUR RESPONSE:
 - If system_info returned hardware data, show the data
 - Be direct: show the actual output, then provide context if needed
 - If a tool result starts with "FAILED:", tell the user it failed and why — NEVER fabricate a successful result`
-    : `${capabilitiesSection}${entitySummary}${responderSystem(userName, date, sessionId)}${responseSkillContext}${knowledgeResponderSection}${multiGoalInstruction}`
+    : `${capabilitiesSection}${entitySummary}${responderSystem(userName, date, sessionId, false)}${responseSkillContext}${knowledgeResponderSection}${multiGoalInstruction}`
 
   const userContent = executionSummary
     ? `User asked: "${originalMessage}"\n\nReal execution results:\n${executionSummary}\n\nRespond naturally based on these real results only. Show the actual output, not a description of it.${depthInstruction}${memSection}`
