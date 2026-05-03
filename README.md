@@ -8,7 +8,7 @@
 
 Autonomous AI Operating System
 
-1,500+ Skills • 89+ Tools • 14+ Providers • AGPL-3.0
+89+ Tools • 14+ Providers • AGPL-3.0
 
 Windows • Linux • WSL • macOS (API Mode)
 
