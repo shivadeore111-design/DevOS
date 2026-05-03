@@ -39,6 +39,7 @@ import { groupM } from './regression/c11-memory-forget'
 import { groupJ } from './regression/c12-skill-pollution-prevention'
 import { groupK } from './regression/c13-app-launching'
 import { groupL } from './regression/c18-skillteacher-spam.test'
+import { groupO } from './regression/c19-self-knowledge-honesty.test'
 
 const CWD = process.cwd()
 
@@ -676,5 +677,6 @@ export async function runPhase1(): Promise<GroupSummary[]> {
   out.push(await groupJ())
   out.push(await groupK())
   out.push(await groupL())
+  out.push(await groupO())
   return out
 }

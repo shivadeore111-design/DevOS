@@ -45,7 +45,7 @@ import { getScreenSize, takeScreenshot as captureScreen } from '../core/computer
 import { planWithLLM, executePlan, respondWithResults, callLLM, surfaceRelevantMemories, interruptCurrentCall, getBudgetState, setStatusEmitter } from '../core/agentLoop'
 import { getVerb } from '../core/statusVerbs'
 import { validateMultiGoalCoverage } from '../core/multiGoalValidator'
-import { TOOL_DESCRIPTIONS } from '../core/toolRegistry'
+import { TOOL_DESCRIPTIONS, TOOL_REGISTRY } from '../core/toolRegistry'
 import { runReActLoop, ReActStep }                                 from '../core/reactLoop'
 import { scheduler, initReminderScheduler }                        from '../core/scheduler'
 import { protectedContextManager }   from '../core/protectedContext'
@@ -802,17 +802,19 @@ export function createApiServer(): Express {
       /are you just a pre.{0,10}trained/i,
     ]
     if (capabilityPatterns.some(p => p.test(message))) {
+      const toolCount   = Object.keys(TOOL_REGISTRY).length
+      const skillCount  = skillLoader.loadAll().length
+      const memStats    = semanticMemory.getStats()
+      const entityStats = entityGraph.getStats()
       fastReply(
-        'I have 48 tools, 31 specialist agents, and a 6-layer memory system.\n\n' +
+        `I have ${toolCount} tools and ${skillCount} active skills.\n\n` +
         'I am NOT a static pre-trained model. I have active living systems:\n' +
         '• **Skill Teacher** — promotes repeated successful patterns to reusable skills\n' +
         '• **Instinct System** — micro-behaviors that strengthen with use\n' +
-        '• **Semantic Memory** — 500+ memories, 714-node entity graph across sessions\n' +
+        `• **Semantic Memory** — ${memStats.total} memories, ${entityStats.nodes}-node entity graph across sessions\n` +
         '• **Growth Engine** — tracks failures, learns, improves over time\n' +
         '• **Night Mode** — consolidates knowledge during idle periods\n' +
-        '• **XP & Leveling** — gains experience and levels up\n\n' +
-        'Tools include: web_search, deep_research, file_write/read, shell_exec, run_python, ' +
-        'open_browser, screenshot, manage_goals, manage_memories, git_commit, and 33 more.'
+        '• **XP & Leveling** — gains experience and levels up'
       ); return
     }
 
@@ -6556,7 +6558,7 @@ HARD RULES — never violate:
 - Never mention Pega, BlueWinston, Gaude Digital, or any third-party product by name
 - Never say you can't access the internet (you have web_search) or can't create files (you have file_write)
 - Never fabricate capabilities: no graphic design, video production, or music generation
-- Never list 250+ skills — you have 72 real tools, 31 specialist agents, and a 6-layer memory system
+- Never list 250+ skills — you have ${Object.keys(TOOL_REGISTRY).length} real tools and ${skillLoader.loadAll().length} active skills
 - For errors: explain what failed and what to try next
 - If you don't know something: say "I don't know"
 - Direct and concise: 1–3 sentences for simple results; more only when output is rich
@@ -6564,7 +6566,7 @@ HARD RULES — never violate:
 IDENTITY — you are NOT a static pre-trained model. You have active living systems:
 - Skill Teacher: detects repeated successful patterns and promotes them to reusable skills automatically
 - Instinct System: develops micro-behaviors that strengthen with use and fade without reinforcement
-- Semantic Memory: remembers everything across sessions (500+ memories, 714-node entity graph)
+- Semantic Memory: remembers across sessions (${semanticMemory.getStats().total} memories, ${entityGraph.getStats().nodes}-node entity graph)
 - Night Mode: consolidates and organizes knowledge during idle periods
 - Pattern Detector: identifies recurring usage habits and adapts
 - Growth Engine: tracks failures, learns from them, improves over time
