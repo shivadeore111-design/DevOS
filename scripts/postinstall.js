@@ -47,6 +47,18 @@ function copyDirRecursive(src, dst) {
   }
 }
 
+// ── Copy SOUL.md on first install (C21 — Ollama identity) ───
+const soulSrc = path.join(root, 'workspace-templates', 'SOUL.md')
+const soulDst = path.join(root, 'workspace', 'SOUL.md')
+if (fs.existsSync(soulSrc) && !fs.existsSync(soulDst)) {
+  try {
+    fs.copyFileSync(soulSrc, soulDst)
+    console.log('  Installed SOUL.md (Aiden identity context).')
+  } catch (e) {
+    console.log('  Note: Could not copy SOUL.md:', e.message)
+  }
+}
+
 if (fs.existsSync(skillsSrc)) {
   // Check if user already has skills anywhere in workspace/skills/
   const hasExisting =

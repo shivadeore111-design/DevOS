@@ -386,6 +386,14 @@ function initWorkspaceDefaults(): void {
     fs.copyFileSync(permTemplate, permTarget)
     console.log('[init] Created workspace/permissions.yaml from template')
   }
+
+  // C21: Copy SOUL.md from template if not present (Ollama identity)
+  const soulTarget   = path.join(WORKSPACE_ROOT, 'workspace', 'SOUL.md')
+  const soulTemplate = path.join(WORKSPACE_ROOT, 'workspace-templates', 'SOUL.md')
+  if (!fs.existsSync(soulTarget) && fs.existsSync(soulTemplate)) {
+    fs.copyFileSync(soulTemplate, soulTarget)
+    console.log('[init] Created workspace/SOUL.md from template')
+  }
 }
 initWorkspaceDefaults()
 
@@ -1262,9 +1270,9 @@ export function createApiServer(): Express {
         const plan: AgentPlan = await planWithLLM(resolvedMessage, history, plannerKey, plannerModel, plannerProv, fullMemoryCtx)
 
         if (!plan.requires_execution || plan.plan.length === 0) {
-          if (plan.direct_response) {
-            fullReply = plan.direct_response
-          } else {
+          // C21: Always route through streamChat for full identity injection.
+          // direct_response from planner has no Aiden identity context.
+          {
             await streamChat(resolvedMessage, history, userName, provider, activeModel, apiName, (data: object) => {
               const d = data as any
               if (d.token) jsonTokens.push(d.token)
@@ -1647,20 +1655,11 @@ export function createApiServer(): Express {
       if (!plan.requires_execution || plan.plan.length === 0) {
         let fullReply = ''
 
-        // Capability/skills questions must go through LLM with full context injection.
-        // direct_response from the planner has no capabilities awareness â€” it will lie.
-        const isCapabilityQuery = /what.*(can you do|skills|tools|capabilities|abilities)|how many skills|what are you capable/i.test(resolvedMessage)
-
-        if (plan.direct_response && !isCapabilityQuery) {
-          fullReply = plan.direct_response
-          const words = plan.direct_response.split(' ')
-          for (const word of words) {
-            send({ token: word + ' ', done: false, provider: apiName })
-            await new Promise(r => setTimeout(r, 10))
-          }
-        } else {
-          await streamChat(resolvedMessage, history, userName, provider, activeModel, apiName, send, sessionId)
-        }
+        // C21: Always route through streamChat which has full SOUL/identity injection.
+        // direct_response from the planner has no Aiden identity, tool list, or honesty
+        // rules — it will fabricate or deny capabilities. Slight latency tradeoff (~1-3s)
+        // for honesty on every response.
+        await streamChat(resolvedMessage, history, userName, provider, activeModel, apiName, send, sessionId)
 
         incrementUsage(apiName)
         send({ done: true, provider: apiName })

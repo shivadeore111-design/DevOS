@@ -41,6 +41,7 @@ import { groupK } from './regression/c13-app-launching'
 import { groupL } from './regression/c18-skillteacher-spam.test'
 import { groupO } from './regression/c19-self-knowledge-honesty.test'
 import { groupP } from './regression/c20-fabricated-execution.test'
+import { groupAA } from './regression/c21-ollama-identity.test'
 
 const CWD = process.cwd()
 
@@ -680,5 +681,6 @@ export async function runPhase1(): Promise<GroupSummary[]> {
   out.push(await groupL())
   out.push(await groupO())
   out.push(await groupP())
+  out.push(await groupAA())
   return out
 }

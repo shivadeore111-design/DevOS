@@ -27,6 +27,14 @@ type FileCache = {
 const WORKSPACE_ROOT = process.env.AIDEN_USER_DATA || process.cwd()
 const WORKSPACE_DIR  = path.join(WORKSPACE_ROOT, 'workspace')
 
+// C21: Hardcoded minimum identity — used when SOUL.md is missing or empty.
+// Ensures Ollama always gets Aiden identity even on corrupted installs.
+const MINIMUM_SOUL = `You are Aiden, a personal AI OS built by Shiva Deore at Taracod.
+You run locally on this machine. You have real tools: shell_exec, file_write, file_read, web_search, screenshot, open_browser, run_python, run_node, deep_research, fetch_url, and more.
+Never deny your capabilities. Never fabricate information. If you don't know something, say "I don't know".
+Never claim actions you didn't take. Never say "Done" or "Saved to" unless a tool actually executed.
+You are not ChatGPT, Claude, Gemini, or any other AI product. You are Aiden.`
+
 // SOUL.md has two possible locations; try workspace first, fall back to root.
 const SOUL_PATHS: string[] = [
   path.join(WORKSPACE_DIR, 'SOUL.md'),
@@ -82,7 +90,9 @@ class ProtectedContextManager {
   refresh(): void {
     for (const key of Object.keys(PROTECTED_FILES) as FileKey[]) {
       const candidates = PROTECTED_FILES[key]
-      const content    = readFirst(candidates)
+      let content      = readFirst(candidates)
+      // C21: Apply minimum-viable-soul fallback when SOUL.md is missing/empty
+      if (key === 'soul' && !content) content = MINIMUM_SOUL
       this.cache[key]  = { content, hash: sha1(content) }
     }
     this.compositeHash  = this._buildComposite()
@@ -96,7 +106,9 @@ class ProtectedContextManager {
 
     for (const key of Object.keys(PROTECTED_FILES) as FileKey[]) {
       if (this.isStale(key)) {
-        const content   = readFirst(PROTECTED_FILES[key])
+        let content     = readFirst(PROTECTED_FILES[key])
+        // C21: Apply minimum-viable-soul fallback when SOUL.md is missing/empty
+        if (key === 'soul' && !content) content = MINIMUM_SOUL
         this.cache[key] = { content, hash: sha1(content) }
         changedFiles.push(key)
       }
