@@ -3,6 +3,7 @@ name: urlscan
 description: Submit URLs for automated malware and phishing analysis, then retrieve safety verdicts and screenshots via urlscan.io
 category: security
 version: 1.0.0
+license: Apache-2.0
 origin: aiden
 tags: security, malware, phishing, url, scan, osint, urlscan, threat-intel
 env_required:

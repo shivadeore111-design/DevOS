@@ -3,6 +3,7 @@ name: haveibeenpwned
 description: Check if an email address or username appears in known data breaches using the Have I Been Pwned v3 API
 category: security
 version: 1.0.0
+license: Apache-2.0
 origin: aiden
 tags: security, breach, pwned, email, password, leak, osint, hibp
 env_required:

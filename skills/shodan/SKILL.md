@@ -3,6 +3,7 @@ name: shodan
 description: Search Shodan for internet-connected devices, open ports, and services — host lookups and database queries
 category: security
 version: 1.0.0
+license: Apache-2.0
 origin: aiden
 tags: security, shodan, osint, recon, ports, services, iot, asset-discovery, cve, infosec
 env_required:

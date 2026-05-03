@@ -3,6 +3,7 @@ name: cveapi
 description: Look up CVE vulnerability details by ID via MITRE CVE API with NVD fallback — severity, CVSS score, affected products, and references
 category: security
 version: 1.0.0
+license: Apache-2.0
 origin: aiden
 tags: security, cve, vulnerability, nvd, mitre, cvss, patch, incident-response, compliance
 ---

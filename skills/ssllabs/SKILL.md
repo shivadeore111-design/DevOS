@@ -3,6 +3,7 @@ name: ssllabs
 description: Comprehensive TLS/SSL analysis via Qualys SSL Labs — grades cipher suites, certificate chains, protocol versions, and known vulnerabilities
 category: security
 version: 1.0.0
+license: Apache-2.0
 origin: aiden
 tags: security, ssl, tls, certificates, ssllabs, qualys, https, ciphers, heartbleed, poodle, compliance
 ---

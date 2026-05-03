@@ -3,6 +3,7 @@ name: explainshell
 description: Break down shell commands and one-liners into plain-English explanations — powered by explainshell.com
 category: developer
 version: 1.0.0
+license: Apache-2.0
 origin: aiden
 tags: shell, bash, linux, commands, explainer, learning, devops, documentation, scripting
 ---

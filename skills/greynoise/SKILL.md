@@ -3,6 +3,7 @@ name: greynoise
 description: Classify IP addresses as internet scanners (benign/malicious) or targeted attackers — filters noise from security alerts
 category: security
 version: 1.0.0
+license: Apache-2.0
 origin: aiden
 tags: security, greynoise, scanner, threat-intel, ip, osint, soc, incident-response, noise-filtering
 env_required:

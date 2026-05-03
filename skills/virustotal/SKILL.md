@@ -3,6 +3,7 @@ name: virustotal
 description: Check file hashes, URLs, domains, and IP addresses against 70+ antivirus engines and threat intelligence feeds via VirusTotal
 category: security
 version: 1.0.0
+license: Apache-2.0
 origin: aiden
 tags: security, virustotal, malware, antivirus, threat-intel, hash, url, domain, ip, incident-response
 env_required:

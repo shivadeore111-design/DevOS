@@ -3,6 +3,7 @@ name: crt.sh
 description: Search certificate transparency logs to enumerate subdomains and TLS certificates for any domain — no API key required
 category: security
 version: 1.0.0
+license: Apache-2.0
 origin: aiden
 tags: security, osint, certificates, subdomains, tls, ssl, ct-logs, recon, crt.sh
 ---
