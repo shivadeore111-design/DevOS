@@ -26,7 +26,7 @@ import { getNextModelOnFailure } from './modelRegistry'
 import { ollamaProvider } from '../providers/ollama'
 import { loadConfig }     from '../providers/index'
 import { knowledgeBase } from './knowledgeBase'
-import { skillTeacher }  from './skillTeacher'
+import { skillTeacher, SkillTeacher }  from './skillTeacher'
 import { growthEngine }  from './growthEngine'
 import { AIDEN_RESPONDER_SYSTEM } from './aidenPersonality'
 import { protectedContextManager }   from './protectedContext'
@@ -2570,7 +2570,7 @@ async function executeSingleStep(
   const totalDuration  = results.reduce((s, r) => s + (r.duration || 0), 0)
   const anyFailed      = results.some(r => !r.success)
 
-  if (allSucceeded && executedTools.length > 0) {
+  if (allSucceeded && executedTools.length > 0 && SkillTeacher.hasCapacity()) {
     // GrowthEngine — record success for gap-resolution tracking
     growthEngine.logSuccess(plan.goal, executedTools)
 

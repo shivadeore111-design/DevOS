@@ -37,6 +37,10 @@ const SESSION_SKILL_LIMIT = 2  // max NEW skills generated per process session
 // ── Session-scoped new-skill counter (reset on process restart) ─
 let _sessionSkillsCreated = 0
 
+// ── C18: Session-scoped rejection cache — skip re-evaluating names
+// that already failed quality gates this session ─────────────────
+const _rejectedNames: Set<string> = new Set()
+
 // ── LLM caller type — matches callLLM signature ───────────────
 
 type LLMCaller = (prompt: string, apiKey: string, model: string, provider: string) => Promise<string>
@@ -196,6 +200,11 @@ export class SkillTeacher {
     return SkillTeacher.instance
   }
 
+  /** C18: Allow call sites to skip recordSuccess entirely when session is full */
+  static hasCapacity(): boolean {
+    return _sessionSkillsCreated < SESSION_SKILL_LIMIT
+  }
+
   // ── Check if a matching skill already exists ──────────────
 
   hasMatchingSkill(task: string, tools: string[]): boolean {
@@ -229,6 +238,14 @@ export class SkillTeacher {
     if (tools.length === 0) return
 
     const skillName = extractSkillName(task, tools)
+
+    // ── C18: Skip names already rejected this session ────────────
+    if (_rejectedNames.has(skillName)) return
+
+    // ── C18: Session rate limit (moved up — avoids running all
+    //    quality gates when limit is already exhausted) ────────────
+    if (_sessionSkillsCreated >= SESSION_SKILL_LIMIT) return
+
     const metaPath  = path.join(LEARNED_DIR, skillName, 'meta.json')
     const skillPath = path.join(LEARNED_DIR, skillName, 'SKILL.md')
 
@@ -263,6 +280,7 @@ export class SkillTeacher {
     )
     if (isLowQuality) {
       console.log(`[SkillTeacher] Rejected low-quality skill: "${skillName}"`)
+      _rejectedNames.add(skillName)
       return
     }
 
@@ -276,6 +294,7 @@ export class SkillTeacher {
       process.stderr.write(
         `[SkillTeacher] Rejected destructive skill: "${skillName}" (task="${task.slice(0, 60)}")\n`
       )
+      _rejectedNames.add(skillName)
       return
     }
 
@@ -283,6 +302,7 @@ export class SkillTeacher {
     const nameRejection = validateSkillName(skillName)
     if (nameRejection) {
       process.stderr.write(`[SkillTeacher] Rejected "${skillName}": ${nameRejection}\n`)
+      _rejectedNames.add(skillName)
       return
     }
 
@@ -290,12 +310,7 @@ export class SkillTeacher {
     const taskRejection = validateSkillTask(task)
     if (taskRejection) {
       process.stderr.write(`[SkillTeacher] Rejected "${skillName}": ${taskRejection}\n`)
-      return
-    }
-
-    // ── Session rate limit — max SESSION_SKILL_LIMIT new skills ─
-    if (_sessionSkillsCreated >= SESSION_SKILL_LIMIT) {
-      console.log(`[SkillTeacher] Session limit reached (${SESSION_SKILL_LIMIT}), skipping: "${skillName}"`)
+      _rejectedNames.add(skillName)
       return
     }
 
