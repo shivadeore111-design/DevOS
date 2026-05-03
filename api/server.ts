@@ -340,6 +340,18 @@ function handleChatError(
 // Workspace root — AIDEN_USER_DATA in packaged Electron, cwd in dev
 const WORKSPACE_ROOT = process.env.AIDEN_USER_DATA || process.cwd()
 
+// Package root — where workspace-templates/ ships inside the npm tarball.
+// In esbuild bundle (dist-bundle/index.js): __dirname = <pkg>/dist-bundle/ → parent is <pkg>
+// In tsc output   (dist/api/server.js):     __dirname = <pkg>/dist/api/   → grandparent is <pkg>
+// C22: needed because WORKSPACE_ROOT may differ from the npm install dir.
+const _pkgCandidate1 = path.join(__dirname, '..')
+const _pkgCandidate2 = path.join(__dirname, '..', '..')
+const PACKAGE_ROOT = fs.existsSync(path.join(_pkgCandidate1, 'workspace-templates'))
+  ? _pkgCandidate1
+  : fs.existsSync(path.join(_pkgCandidate2, 'workspace-templates'))
+    ? _pkgCandidate2
+    : WORKSPACE_ROOT  // dev mode: cwd has workspace-templates
+
 // Per-session soul hash for Option-B protected-context injection.
 // First turn: undefined → full SOUL inject. Subsequent turns: compare → emit
 // reference line when unchanged, re-inject when SOUL.md edited on disk.
@@ -380,24 +392,27 @@ function initWorkspaceDefaults(): void {
   }
 
   // Copy permissions.yaml from template if not present
+  // C22: Source from PACKAGE_ROOT (npm install dir), dest to WORKSPACE_ROOT (user data)
   const permTarget   = path.join(WORKSPACE_ROOT, 'workspace', 'permissions.yaml')
-  const permTemplate = path.join(WORKSPACE_ROOT, 'workspace-templates', 'permissions.yaml')
+  const permTemplate = path.join(PACKAGE_ROOT, 'workspace-templates', 'permissions.yaml')
   if (!fs.existsSync(permTarget) && fs.existsSync(permTemplate)) {
     fs.copyFileSync(permTemplate, permTarget)
     console.log('[init] Created workspace/permissions.yaml from template')
   }
 
   // C21: Copy SOUL.md from template if not present (Ollama identity)
+  // C22: Source from PACKAGE_ROOT (npm install dir), dest to WORKSPACE_ROOT (user data)
   const soulTarget   = path.join(WORKSPACE_ROOT, 'workspace', 'SOUL.md')
-  const soulTemplate = path.join(WORKSPACE_ROOT, 'workspace-templates', 'SOUL.md')
+  const soulTemplate = path.join(PACKAGE_ROOT, 'workspace-templates', 'SOUL.md')
   if (!fs.existsSync(soulTarget) && fs.existsSync(soulTemplate)) {
     fs.copyFileSync(soulTemplate, soulTarget)
     console.log('[init] Created workspace/SOUL.md from template')
   }
 
   // C22: Copy bundled starter skills from workspace-templates/ on first boot.
-  // Mirrors the SOUL.md pattern above. Idempotent — skips if skills already exist.
-  const skillTemplateSrc = path.join(WORKSPACE_ROOT, 'workspace-templates', 'skills')
+  // Source from PACKAGE_ROOT (npm install dir), dest to WORKSPACE_ROOT (user data).
+  // Idempotent — skips if skills already exist.
+  const skillTemplateSrc = path.join(PACKAGE_ROOT, 'workspace-templates', 'skills')
   const skillDst         = path.join(WORKSPACE_ROOT, 'workspace', 'skills', 'learned')
   if (fs.existsSync(skillTemplateSrc)) {
     const hasExisting = (() => {

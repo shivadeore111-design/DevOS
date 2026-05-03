@@ -57,13 +57,15 @@ export async function groupAB(): Promise<GroupSummary> {
     }
   ))
 
-  // ── AB-04: initWorkspaceDefaults has skill copy block ────────────────────
+  // ── AB-04: initWorkspaceDefaults has skill copy block using PACKAGE_ROOT ──
   results.push(await runTest('AB-04', 'AB',
-    'initWorkspaceDefaults() copies skills from workspace-templates/', () => {
+    'initWorkspaceDefaults() copies skills from PACKAGE_ROOT/workspace-templates/', () => {
       if (!SERVER_SRC.includes('workspace-templates') || !SERVER_SRC.includes('starter skills'))
         return 'initWorkspaceDefaults() missing skill template copy block'
       if (!SERVER_SRC.includes('skillTemplateSrc'))
         return 'Missing skillTemplateSrc variable in initWorkspaceDefaults()'
+      if (!SERVER_SRC.includes('PACKAGE_ROOT'))
+        return 'Missing PACKAGE_ROOT — skill templates must be sourced from npm package dir, not WORKSPACE_ROOT'
     }
   ))
 
@@ -109,6 +111,27 @@ export async function groupAB(): Promise<GroupSummary> {
         .filter(e => e.isDirectory())
       if (entries.length < 30)
         return `Expected 30+ skill template dirs, found ${entries.length}`
+    }
+  ))
+
+  // ── AB-09: PACKAGE_ROOT defined with __dirname resolution ─────────────────
+  results.push(await runTest('AB-09', 'AB',
+    'PACKAGE_ROOT resolves npm package dir via __dirname', () => {
+      if (!SERVER_SRC.includes('PACKAGE_ROOT'))
+        return 'PACKAGE_ROOT constant not found in api/server.ts'
+      if (!SERVER_SRC.includes('__dirname'))
+        return 'PACKAGE_ROOT should resolve via __dirname (npm package location)'
+    }
+  ))
+
+  // ── AB-10: skillTemplateSrc uses PACKAGE_ROOT not WORKSPACE_ROOT ─────────
+  results.push(await runTest('AB-10', 'AB',
+    'skillTemplateSrc sourced from PACKAGE_ROOT (not WORKSPACE_ROOT)', () => {
+      const srcLine = SERVER_SRC.match(/skillTemplateSrc\s*=\s*path\.join\((\w+),/)
+      if (!srcLine)
+        return 'skillTemplateSrc path.join not found'
+      if (srcLine[1] !== 'PACKAGE_ROOT')
+        return `skillTemplateSrc uses ${srcLine[1]} instead of PACKAGE_ROOT — will fail when AIDEN_USER_DATA differs from npm dir`
     }
   ))
 
