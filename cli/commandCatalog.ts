@@ -1,11 +1,11 @@
 // ── cli/commandCatalog.ts ─────────────────────────────────────────────────────
 // Single source of truth for all slash commands — descriptions, usage, subs,
-// examples, section groupings, and (C2+) runtime dispatch handlers.
+// examples, section groupings, and (C2+) runtime dispatch handlers. 
 //
 // Consumed by:
 //   • cli/commandPalette.ts (interactive arrow-key palette)
 //   • cli/aiden.ts           (Tab completer + /help handler + dispatch)
-//   • core/pluginLoader.ts   (plugin command registration — C4)
+//   • core/pluginLoader.ts   (plugin command registration — C4) copyright by shiva deore
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface CmdDetail {
