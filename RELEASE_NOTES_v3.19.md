@@ -1,3 +1,69 @@
+## v3.19.8 — Skill bundle fix + CLI noise reduction (2026-05-03)
+
+Two patches addressing real fresh-install bugs surfaced during v3.19.7 manual
+verification.
+
+### Patches
+
+**C22 — Skill bundle path mismatch**
+v3.19.6 shipped 40 starter skills but they didn't load on fresh installs. Three
+components used different root paths:
+- scripts/postinstall.js wrote to npm install dir
+- api/server.ts initWorkspaceDefaults wrote SOUL.md to LOCALAPPDATA but not
+  skills
+- core/skillLoader.ts scanned process.cwd()
+
+Boot logs showed soul=FULL but skills=0 because SOUL.md had two copy mechanisms
+targeting AIDEN_USER_DATA while skills had only the npm-install-dir copy.
+
+Fix:
+- core/skillLoader.ts: SkillLoader respects AIDEN_USER_DATA env var (fallback to
+  process.cwd())
+- api/server.ts: initWorkspaceDefaults() now copies workspace-templates/skills/
+  to workspace/skills/learned/ on first boot (idempotent, mirrors SOUL.md
+  pattern)
+
+Fresh installs now correctly load 40 starter skills. 8 regression tests
+(groupAB).
+
+**C23 — CLI noise reduction**
+[Router] [Planner] [ProtectedCtx] [Memory] [Tools] log lines were appearing
+inline with chat in CLI window. Made product look broken even when functioning.
+
+Quick fix (full logger rewrite is v3.20 Investigation C):
+- api/server.ts: _toStderr replaced with _gatedLog (level-aware:
+  debug/info/warn/error/silent)
+- Bracket-prefixed informational logs suppressed when level >= warn (default for
+  CLI mode)
+- console.warn always writes (real warnings stay visible)
+- coordination/livePulse.ts: 6 redundant console calls removed (SSE is real
+  delivery channel)
+- packages/aiden-os/bin/aiden.js: Sets AIDEN_CLI_MODE=1 + AIDEN_LOG_LEVEL=warn
+  by default
+
+Users can opt into verbose: AIDEN_LOG_LEVEL=debug npx aiden-os
+
+10 regression tests (groupAC).
+
+### Coming in v3.19.9
+- Setup wizard auto-trigger on fresh install (Investigation B)
+- User identity bootstrap with name + pronouns (Investigation F)
+- /skills install + agentskills.io integration
+- Update notification banner on boot
+
+### Architecture follow-ups for v3.20 ROBUST
+- Full logger rewrite with separate stderr pane (Investigation C — current C23
+  is minimal fix)
+- Browser automation cascade (F13)
+- Skills system Hermes-imbibe (agentskills.io frontmatter)
+- /goal persistent loop
+- Checkpoints + /rollback
+- SQLite session storage
+- Linux + macOS port
+- "Do it again" workflow feature
+
+---
+
 ## v3.19.7 — Honesty Patches (2026-05-03)
 
 Four patches eliminating Aiden's biggest trust-breaking bugs on fresh installs.
