@@ -1,0 +1,25 @@
+{
+  "name": "censys",
+  "version": "1.0.0",
+  "description": "Search Censys for internet-exposed hosts, certificates, and services — host lookups, queries, and certificate analysis",
+  "author": "aiden",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "security",
+    "censys",
+    "osint",
+    "recon",
+    "ports",
+    "certificates",
+    "tls",
+    "asset-discovery",
+    "internet-scan"
+  ],
+  "created": "2026-04-27T17:11:39.264Z"
+}

@@ -1,0 +1,24 @@
+{
+  "name": "obsidian",
+  "version": "1.0.0",
+  "description": "Read, search, and create notes in Obsidian vaults using file system operations and CLI tools",
+  "author": "aiden",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "obsidian",
+    "notes",
+    "vault",
+    "markdown",
+    "knowledge-base",
+    "zettelkasten",
+    "wiki",
+    "pkm"
+  ],
+  "created": "2026-04-27T17:11:40.306Z"
+}

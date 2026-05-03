@@ -1,0 +1,26 @@
+{
+  "name": "ascii-art",
+  "version": "1.0.0",
+  "description": "Generate ASCII art text banners, box art, and decorative text using pyfiglet, cowsay, and boxes CLI tools",
+  "author": "aiden",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "ascii",
+    "art",
+    "banner",
+    "text",
+    "figlet",
+    "cowsay",
+    "terminal",
+    "decoration",
+    "cli",
+    "creative"
+  ],
+  "created": "2026-04-27T17:11:39.195Z"
+}

@@ -1,0 +1,24 @@
+{
+  "name": "financial_research",
+  "version": "1.0.0",
+  "description": "Research stocks, companies, and market data using real-time financial APIs",
+  "author": "local",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "finance",
+    "stocks",
+    "market",
+    "investment",
+    "NSE",
+    "BSE",
+    "equity",
+    "company"
+  ],
+  "created": "2026-04-27T17:11:39.591Z"
+}

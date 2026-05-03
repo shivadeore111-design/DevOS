@@ -1,0 +1,26 @@
+{
+  "name": "securityheaders",
+  "version": "1.0.0",
+  "description": "Audit HTTP security headers for any URL and receive a grade (A+ to F) with specific recommendations for missing headers",
+  "author": "aiden",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "security",
+    "http",
+    "headers",
+    "csp",
+    "hsts",
+    "xframe",
+    "audit",
+    "web",
+    "hardening",
+    "compliance"
+  ],
+  "created": "2026-04-27T17:11:40.692Z"
+}

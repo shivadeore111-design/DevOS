@@ -249,6 +249,8 @@ export class SkillLoader {
       path.join(process.cwd(), 'workspace', 'skills'),
       path.join(process.cwd(), 'workspace', 'skills', 'learned'),
       path.join(process.cwd(), 'workspace', 'skills', 'approved'),
+      // Workspace-level installed skills (written by skillRegistry.ts)
+      path.join(process.cwd(), 'workspace', 'skills', 'installed'),
       // A2/A3 approved drafts
       path.join(process.cwd(), 'skills', 'learned', 'approved'),
       // A4 library-installed skills

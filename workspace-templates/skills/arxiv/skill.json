@@ -1,0 +1,26 @@
+{
+  "name": "arxiv",
+  "version": "1.0.0",
+  "description": "Search, fetch, and download academic papers from arXiv using the public REST API — no API key required",
+  "author": "aiden",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "arxiv",
+    "research",
+    "papers",
+    "academic",
+    "ai",
+    "ml",
+    "science",
+    "pdf",
+    "preprint",
+    "citations"
+  ],
+  "created": "2026-04-27T17:11:39.176Z"
+}

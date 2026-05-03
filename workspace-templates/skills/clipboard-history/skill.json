@@ -1,0 +1,23 @@
+{
+  "name": "clipboard-history",
+  "version": "1.0.0",
+  "description": "Read, write, and manage Windows clipboard content including text, HTML, images, and clipboard history via PowerShell",
+  "author": "local",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "clipboard",
+    "copy",
+    "paste",
+    "history",
+    "windows",
+    "powershell",
+    "text"
+  ],
+  "created": "2026-04-27T17:11:39.322Z"
+}

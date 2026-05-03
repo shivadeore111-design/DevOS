@@ -33,6 +33,7 @@
     "dist-bundle/cli.js",
     "dist-bundle/index.js",
     "config/",
+    "workspace-templates/",
     "scripts/postinstall.js",
     "scripts/uninstall.ps1",
     "README.md",

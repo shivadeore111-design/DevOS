@@ -1,0 +1,24 @@
+{
+  "name": "notion",
+  "version": "1.0.0",
+  "description": "Read, create, and update Notion pages and databases via the Notion REST API",
+  "author": "aiden",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "notion",
+    "notes",
+    "database",
+    "pages",
+    "workspace",
+    "api",
+    "knowledge-base",
+    "tasks"
+  ],
+  "created": "2026-04-27T17:11:39.995Z"
+}

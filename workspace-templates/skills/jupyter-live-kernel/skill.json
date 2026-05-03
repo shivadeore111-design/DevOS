@@ -1,0 +1,25 @@
+{
+  "name": "jupyter-live-kernel",
+  "version": "1.0.0",
+  "description": "Execute code in a stateful Jupyter kernel session, maintaining variables across cells using hamelnb or jupyter CLI",
+  "author": "aiden",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "jupyter",
+    "notebook",
+    "kernel",
+    "python",
+    "data-science",
+    "ipython",
+    "stateful",
+    "cells",
+    "pandas"
+  ],
+  "created": "2026-04-27T17:11:39.871Z"
+}

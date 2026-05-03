@@ -1,0 +1,26 @@
+{
+  "name": "github-pr-workflow",
+  "version": "1.0.0",
+  "description": "Full pull request lifecycle — create, review, merge, and manage PRs using the gh CLI",
+  "author": "aiden",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "github",
+    "pull-request",
+    "pr",
+    "review",
+    "merge",
+    "gh-cli",
+    "code-review",
+    "workflow",
+    "branch",
+    "diff"
+  ],
+  "created": "2026-04-27T17:11:39.693Z"
+}

@@ -1,0 +1,25 @@
+{
+  "name": "architecture-diagram",
+  "version": "1.0.0",
+  "description": "Generate dark-themed system architecture and component diagrams as HTML/SVG for rendering in the browser",
+  "author": "aiden",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "architecture",
+    "diagram",
+    "svg",
+    "html",
+    "dark-theme",
+    "system-design",
+    "visualization",
+    "components",
+    "flowchart"
+  ],
+  "created": "2026-04-27T17:11:39.148Z"
+}

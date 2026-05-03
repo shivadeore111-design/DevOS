@@ -1,0 +1,25 @@
+{
+  "name": "github-issues",
+  "version": "1.0.0",
+  "description": "Create, list, view, and manage GitHub issues using the gh CLI",
+  "author": "aiden",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "github",
+    "issues",
+    "bug-tracker",
+    "gh-cli",
+    "labels",
+    "milestones",
+    "comments",
+    "triage",
+    "project-management"
+  ],
+  "created": "2026-04-27T17:11:39.674Z"
+}

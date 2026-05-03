@@ -1,0 +1,26 @@
+{
+  "name": "shodan",
+  "version": "1.0.0",
+  "description": "Search Shodan for internet-connected devices, open ports, and services — host lookups and database queries",
+  "author": "aiden",
+  "license": "MIT",
+  "tools": [],
+  "trigger_phrases": [],
+  "compatible_agents": [
+    "aiden"
+  ],
+  "min_agent_version": "3.0.0",
+  "tags": [
+    "security",
+    "shodan",
+    "osint",
+    "recon",
+    "ports",
+    "services",
+    "iot",
+    "asset-discovery",
+    "cve",
+    "infosec"
+  ],
+  "created": "2026-04-27T17:11:40.713Z"
+}
