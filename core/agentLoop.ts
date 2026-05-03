@@ -21,7 +21,7 @@ import { skillLoader, isSimpleMessage, needsMemory } from './skillLoader'
 import { entityGraph }                      from './entityGraph'
 import { learningMemory }                  from './learningMemory'
 import { conversationMemory }             from './conversationMemory'
-import { getNextAvailableAPI, markRateLimited, markHealthy, incrementUsage, getModelForTask, getOllamaModelForTask, enterDegradedMode } from '../providers/router'
+import { getNextAvailableAPI, markRateLimited, markHealthy, incrementUsage, getModelForTask, getOllamaModelForTask, enterDegradedMode, diagnoseProviderPool } from '../providers/router'
 import { getNextModelOnFailure } from './modelRegistry'
 import { ollamaProvider } from '../providers/ollama'
 import { loadConfig }     from '../providers/index'
@@ -1471,7 +1471,7 @@ Output ONLY valid JSON, nothing else:`
     // Don't return early — let FORCE_RESPOND_TEST hook and PlannerGuard process the fallback plan
     console.warn('[Planner] All LLM attempts failed — respond fallback (going through guard)')
     parsed = {
-      plan:               [{ step: 1, tool: 'respond', input: { message: buildDiagnostic({ tool: 'planner', error: 'All LLM attempts failed', retries: 3, suggestion: 'Provider chain may be rate-limited. Try again in 1–2 minutes or rephrase your request.' }) }, description: 'Fallback response' }],
+      plan:               [{ step: 1, tool: 'respond', input: { message: buildDiagnostic({ tool: 'planner', error: 'All LLM attempts failed', retries: 3, suggestion: diagnoseProviderPool().state === 'unconfigured' ? 'No API keys configured. Add keys in Settings > API Keys, or start Ollama for local inference.' : 'Provider chain is rate-limited. Try again in 1-2 minutes or rephrase your request.' }) }, description: 'Fallback response' }],
       requires_execution: true,
       goal:               message,
     }
@@ -1613,7 +1613,9 @@ Output ONLY valid JSON, nothing else:`
           tool:       'planner',
           error:      'Could not generate tool plan for action intent',
           retries:    1,
-          suggestion: 'Provider chain may be rate-limited. Try again in 1–2 minutes or use a more specific instruction.',
+          suggestion: diagnoseProviderPool().state === 'unconfigured'
+            ? 'No API keys configured. Add keys in Settings > API Keys, or start Ollama for local inference.'
+            : 'Provider chain is rate-limited. Try again in 1-2 minutes or use a more specific instruction.',
         })
       }
       if (guardMatch) {
@@ -3014,7 +3016,10 @@ CRITICAL RULES FOR YOUR RESPONSE:
       parts.push(
         `Failed: ${failures.map(r => `${r.tool} — ${r.error || 'unknown error'}`).join('; ')}.`
       )
-      parts.push('(All language providers are currently unavailable — full response cannot be generated.)')
+      const poolDiag = diagnoseProviderPool()
+      parts.push(`(${poolDiag.state === 'unconfigured'
+        ? 'No API keys configured - add keys in Settings > API Keys'
+        : 'All language providers are currently unavailable'} - full response cannot be generated.)`)
       onToken(parts.join(' '))
       return
     }

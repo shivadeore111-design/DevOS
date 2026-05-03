@@ -36,7 +36,7 @@ import { modelRouter }    from '../core/modelRouter'
 import { registerComputerUseRoutes } from './routes/computerUse'
 import { loadConfig, saveConfig, APIEntry } from '../providers/index'
 import { ollamaProvider } from '../providers/ollama'
-import { getSmartProvider, markRateLimited, incrementUsage, logProviderStatus, getModelForTask, getLocalModels } from '../providers/router'
+import { getSmartProvider, markRateLimited, incrementUsage, logProviderStatus, getModelForTask, getLocalModels, diagnoseProviderPool } from '../providers/router'
 import { discoverLocalModels, getOllamaTimeout } from '../core/modelDiscovery'
 import { detectTimezone } from '../core/userProfile'
 import { executeTool, getActiveBrowserPage, setProgressEmitter } from '../core/toolRegistry'
@@ -6856,7 +6856,13 @@ ${cognitionHint}${memoryContext}${greetingPreamble}${sessionContext}${memoryInde
     }
     // Both failed — send a graceful error token
     console.error('[Router] All providers failed. Last error:', err?.message ?? 'unknown')
-    send({ token: buildDiagnostic({ tool: 'respond', provider: 'all', retries: 2, error: 'All AI providers failed or are at capacity', suggestion: 'Try again in a few minutes, or add more API keys in Settings → API Keys.' }), done: false, provider: 'error' })
+    const poolDiag = diagnoseProviderPool()
+    send({ token: buildDiagnostic({ tool: 'respond', provider: 'all', retries: 2,
+      error: poolDiag.state === 'unconfigured' ? 'No API keys configured' : 'All AI providers failed or are at capacity',
+      suggestion: poolDiag.state === 'unconfigured'
+        ? 'Add API keys in Settings > API Keys, or start Ollama for local inference.'
+        : 'Try again in a few minutes, or add more API keys in Settings > API Keys.',
+    }), done: false, provider: 'error' })
   }
 
   streamEnded = true

@@ -184,6 +184,45 @@ function autoResetExpiredLimits(): boolean {
   return changed
 }
 
+// ── Diagnose WHY the provider pool is empty ─────────────────
+
+export function diagnoseProviderPool(): {
+  state: 'ok' | 'unconfigured' | 'rate-limited' | 'mixed'
+  noKeyCount: number
+  rateLimitedCount: number
+  disabledCount: number
+  enabledCount: number
+  message: string
+} {
+  const config  = loadConfig()
+  const allApis = mergeCustomProviders(config.providers.apis)
+  const enabled = allApis.filter(a => a.enabled)
+  const disabledCount = allApis.length - enabled.length
+
+  let noKey = 0, rateLimited = 0
+  for (const a of enabled) {
+    if (a.rateLimited) { rateLimited++; continue }
+    if (a.provider === 'custom') continue
+    const k = a.key.startsWith('env:') ? (process.env[a.key.replace('env:', '')] || '') : a.key
+    if (k.length === 0) noKey++
+  }
+
+  const active = enabled.length - noKey - rateLimited
+  if (active > 0)
+    return { state: 'ok', noKeyCount: noKey, rateLimitedCount: rateLimited, disabledCount: disabledCount, enabledCount: enabled.length, message: '' }
+
+  if (noKey > 0 && rateLimited === 0)
+    return { state: 'unconfigured', noKeyCount: noKey, rateLimitedCount: 0, disabledCount: disabledCount, enabledCount: enabled.length,
+      message: 'No API keys configured - add keys in Settings > API Keys or set env vars' }
+
+  if (rateLimited > 0 && noKey === 0)
+    return { state: 'rate-limited', noKeyCount: 0, rateLimitedCount: rateLimited, disabledCount: disabledCount, enabledCount: enabled.length,
+      message: `All ${rateLimited} cloud provider(s) rate-limited - retrying automatically` }
+
+  return { state: 'mixed', noKeyCount: noKey, rateLimitedCount: rateLimited, disabledCount: disabledCount, enabledCount: enabled.length,
+    message: `${noKey} provider(s) have no key, ${rateLimited} rate-limited` }
+}
+
 // ── Get next available API — scored by response time + failures ──
 
 export function getNextAvailableAPI(): { provider: Provider; model: string; entry: APIEntry } | null {
@@ -200,7 +239,11 @@ export function getNextAvailableAPI(): { provider: Provider; model: string; entr
       : api.key
     return resolvedKey.length > 0
   })
-  if (!available.length) return null
+  if (!available.length) {
+    const diag = diagnoseProviderPool()
+    if (diag.message) console.log(`[Router] ${diag.message}`)
+    return null
+  }
 
   // Score: lower is better — blend usage count, response time, and failure history
   const primary = config.primaryProvider
@@ -448,7 +491,8 @@ export function getModelForTask(
       return resolveKey(chosen)
     }
     const model = getOllamaModelForTask(task === 'planner' ? 'planner' : 'responder')
-    console.log(`[Router] ${task}: all cloud providers rate-limited - using Ollama ${model}`)
+    const diag = diagnoseProviderPool()
+    console.log(`[Router] ${task}: ${diag.message || 'all cloud providers unavailable'} - using Ollama ${model}`)
     return { apiKey: '', model, providerName: 'ollama', apiName: 'ollama' }
   }
 
@@ -459,7 +503,8 @@ export function getModelForTask(
       if (api) return resolveKey(api)
     }
     const model = getOllamaModelForTask('executor')
-    console.log(`[Router] Executor: all cloud providers unavailable - falling back to Ollama ${model}`)
+    const diag = diagnoseProviderPool()
+    console.log(`[Router] Executor: ${diag.message || 'all cloud providers unavailable'} - falling back to Ollama ${model}`)
     return { apiKey: '', model, providerName: 'ollama', apiName: 'ollama' }
   }
 
@@ -500,7 +545,8 @@ export function getSmartProvider(): {
   // FALLBACK: best discovered Ollama model
   if (config.routing?.fallbackToOllama !== false) {
     const model = getOllamaModelForTask('responder')
-    console.log(`[Router] All APIs unavailable — falling back to Ollama ${model}`)
+    const diag = diagnoseProviderPool()
+    console.log(`[Router] ${diag.message || 'All APIs unavailable'} - falling back to Ollama ${model}`)
     return { provider: ollamaProvider, model, userName, apiName: 'ollama' }
   }
 
@@ -557,8 +603,10 @@ export function enterDegradedMode(reason: string): DegradedResponse {
 
   return {
     mode:    'degraded',
-    message: `I'm temporarily running in limited mode — my AI providers ` +
-      `are at capacity. I can still:\n` +
+    message: `I'm temporarily running in limited mode — ` +
+      `${diagnoseProviderPool().state === 'unconfigured'
+        ? 'no API keys are configured'
+        : 'my AI providers are at capacity'}. I can still:\n` +
       `• Search your files and memory\n` +
       `• Run scheduled tasks\n` +
       `• Execute shell commands and scripts\n` +
