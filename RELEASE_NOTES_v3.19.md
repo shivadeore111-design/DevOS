@@ -1,3 +1,57 @@
+## v3.19.6 — 40 Starter Skills Bundle (2026-05-03)
+
+New users now get a working skill library on first install. 40 curated
+skills ship inside the npm tarball and are auto-copied to workspace/skills/
+on `npm install`. No manual skill installation needed to start using Aiden.
+
+### What ships
+
+**25 Category A skills** (no API keys needed — work immediately):
+architecture-diagram, arxiv, ascii-art, blogwatcher, clipboard-history,
+crt-sh, cveapi, docker-management, excalidraw, explainshell,
+financial_research, github-auth, github-issues, github-pr-workflow,
+github-repo-management, jupyter-live-kernel, nano-pdf, obsidian,
+ocr-and-documents, p5js, research-paper-writing, securityheaders,
+songsee, ssllabs, systematic-debugging
+
+**15 Category B skills** (need API key or credentials to function):
+censys, gif-search, google-workspace, greynoise, haveibeenpwned,
+linear, notion, shodan, stable-diffusion-image-generation,
+test-driven-development, urlscan, virustotal, web_research,
+xitter, youtube-content
+
+### How it works
+
+- Skills bundled in `workspace-templates/skills/` (new npm files entry)
+- `scripts/postinstall.js` copies them to `workspace/skills/` on first install
+- Idempotent: skips copy if user already has skills (checks for SKILL.md)
+- Tarball delta: +100 KB (11.3 → 11.4 MB)
+
+### Other fixes
+
+- **SkillLoader installed/ path**: `workspace/skills/installed/` was written
+  by skillRegistry.ts but never scanned by SkillLoader. Added to scan paths.
+- **License audit**: 11 security skills had missing `license:` frontmatter.
+  All now have `license: Apache-2.0`. Zero GPL/LGPL skills in bundle.
+
+### Excluded (Category C)
+
+27 skills not shipped: code_execution and file_operations (redundant with
+built-in tools, leaked personal paths, Windows-only without platform gate),
+plus India-specific financial tools, game integrations, platform-specific
+system tools, and experimental bridges.
+
+### Known issues deferred to v3.19.7
+
+- Setup wizard not auto-triggered on fresh install (Investigation B)
+- User identity bootstrap missing (Investigation F)
+- `/skills install` command for agentskills.io (Part 2 of skills work)
+- Aiden self-knowledge fabrication (Finding F9)
+- Fabricated tool execution claims (Finding F11)
+- SkillTeacher trigger spam (Finding F12)
+
+---
+
 ## v3.19.5 — UX patches + first-real-runtime ship (2026-05-03)
 
 This release ships three patches AND fixes a critical npm delivery gap.
