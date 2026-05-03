@@ -247,6 +247,9 @@ export class SkillLoader {
     // C22: Use AIDEN_USER_DATA (set by npx launcher) so SkillLoader reads
     // from the same workspace root that initWorkspaceDefaults() writes to.
     const root = process.env.AIDEN_USER_DATA || process.cwd()
+    // C24: Do NOT filter by existsSync here — the singleton is created at
+    // import time, before initWorkspaceDefaults() copies templates. loadAll()
+    // wraps readdirSync in try/catch, so non-existent dirs are safe.
     this.skillsDirs = [
       path.join(root, 'skills'),
       path.join(root, 'workspace', 'skills'),
@@ -258,9 +261,7 @@ export class SkillLoader {
       path.join(root, 'skills', 'learned', 'approved'),
       // A4 library-installed skills
       path.join(root, 'skills', 'installed'),
-    ].filter(d => {
-      try { return fs.existsSync(d) } catch { return false }
-    })
+    ]
   }
 
   // loadAllRaw — bypasses the disabled-skills filter

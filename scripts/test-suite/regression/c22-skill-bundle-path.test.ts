@@ -114,8 +114,20 @@ export async function groupAB(): Promise<GroupSummary> {
     }
   ))
 
-  // ── AB-09: PACKAGE_ROOT defined with __dirname resolution ─────────────────
+  // ── AB-09: SkillLoader does NOT filter dirs by existsSync at construction ──
   results.push(await runTest('AB-09', 'AB',
+    'SkillLoader skillsDirs not filtered by existsSync (init-order safe)', () => {
+      // The old .filter(d => existsSync(d)) caused dirs created by
+      // initWorkspaceDefaults() AFTER SkillLoader import to be missed.
+      const constructorBlock = SKILLLOADER_SRC.match(/this\.skillsDirs\s*=\s*\[[\s\S]*?\](\s*\.filter)?/)
+      if (constructorBlock && constructorBlock[1]) {
+        return 'SkillLoader skillsDirs still has .filter() — dirs created after import will be missed'
+      }
+    }
+  ))
+
+  // ── AB-10: PACKAGE_ROOT defined with __dirname resolution ─────────────────
+  results.push(await runTest('AB-10', 'AB',
     'PACKAGE_ROOT resolves npm package dir via __dirname', () => {
       if (!SERVER_SRC.includes('PACKAGE_ROOT'))
         return 'PACKAGE_ROOT constant not found in api/server.ts'
@@ -124,8 +136,8 @@ export async function groupAB(): Promise<GroupSummary> {
     }
   ))
 
-  // ── AB-10: skillTemplateSrc uses PACKAGE_ROOT not WORKSPACE_ROOT ─────────
-  results.push(await runTest('AB-10', 'AB',
+  // ── AB-11: skillTemplateSrc uses PACKAGE_ROOT not WORKSPACE_ROOT ─────────
+  results.push(await runTest('AB-11', 'AB',
     'skillTemplateSrc sourced from PACKAGE_ROOT (not WORKSPACE_ROOT)', () => {
       const srcLine = SERVER_SRC.match(/skillTemplateSrc\s*=\s*path\.join\((\w+),/)
       if (!srcLine)
