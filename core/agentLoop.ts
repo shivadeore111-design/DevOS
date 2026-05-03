@@ -2579,7 +2579,6 @@ function responderSystem(userName: string, date: string, sessionId?: string): st
   const skills = skillLoader.loadAll()
   const skillCount = skills.length
   const responderPrompt = AIDEN_RESPONDER_SYSTEM(userName, date)
-    .replace(/\b\d{1,3}(?:,\d{3})?\+? skills\b/g, `${skillCount} skills`)
   // When soul is unchanged, prepend a compact block then the responder body.
   if (_prevHash !== undefined && _ctx.hash === _prevHash) {
     const refBlock = buildProtectedContextBlock(_ctx, _prevHash, sessionId)
