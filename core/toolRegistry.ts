@@ -2502,6 +2502,22 @@ public class AidenVolSet {
     }
   },
 
+  // ── memory_store — persist a fact to permanent memory ──
+  memory_store: async (p) => {
+    const fact = p.fact || p.text || p.content || ''
+    if (!fact) return { success: false, output: '', error: 'No fact provided' }
+    const { toolMemoryStore } = await import('./slashAsTool')
+    return toolMemoryStore(p)
+  },
+
+  // ── memory_forget — remove a fact from permanent memory ──
+  memory_forget: async (p) => {
+    const fact = p.fact || p.keyword || p.text || ''
+    if (!fact) return { success: false, output: '', error: 'No fact provided' }
+    const { toolMemoryForget } = await import('./slashAsTool')
+    return toolMemoryForget(p)
+  },
+
   // ── clarify — ask the user a multi-choice or free-text question mid-task ──
   clarify: async (p) => {
     const question      = p.question || p.q || ''

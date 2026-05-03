@@ -165,7 +165,7 @@ async function toolChannelsStatus(_: any): Promise<{ success: boolean; output: s
 
 // ── Memory store ──────────────────────────────────────────────────────────────
 
-async function toolMemoryStore(input: any): Promise<{ success: boolean; output: string }> {
+export async function toolMemoryStore(input: any): Promise<{ success: boolean; output: string }> {
   // Accept any reasonable field name the planner might guess
   const fact = String(
     input?.fact || input?.content || input?.text ||
@@ -187,7 +187,7 @@ async function toolMemoryStore(input: any): Promise<{ success: boolean; output: 
 
 // ── Memory forget (C11) ──────────────────────────────────────────────────────
 
-async function toolMemoryForget(input: any): Promise<{ success: boolean; output: string }> {
+export async function toolMemoryForget(input: any): Promise<{ success: boolean; output: string }> {
   const keyword = String(
     input?.fact || input?.keyword || input?.content || input?.text ||
     input?.query || input?.topic || input?.subject ||
