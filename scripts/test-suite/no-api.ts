@@ -43,6 +43,7 @@ import { groupO } from './regression/c19-self-knowledge-honesty.test'
 import { groupP } from './regression/c20-fabricated-execution.test'
 import { groupAA } from './regression/c21-ollama-identity.test'
 import { groupAB } from './regression/c22-skill-bundle-path.test'
+import { groupAC } from './regression/c23-cli-noise.test'
 
 const CWD = process.cwd()
 
@@ -684,5 +685,6 @@ export async function runPhase1(): Promise<GroupSummary[]> {
   out.push(await groupP())
   out.push(await groupAA())
   out.push(await groupAB())
+  out.push(await groupAC())
   return out
 }

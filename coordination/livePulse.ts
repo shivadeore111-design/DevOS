@@ -74,7 +74,6 @@ class LivePulse extends EventEmitter {
 
   act(agent: string, message: string, missionId?: string): void {
     try {
-      console.log(`[${agent}] ${message}`)
       this.emit_event({ type: 'act', agent, message, timestamp: Date.now(), missionId })
     } catch {
       // Silent fail — never throw from pulse methods
@@ -83,7 +82,6 @@ class LivePulse extends EventEmitter {
 
   done(agent: string, message: string, missionId?: string): void {
     try {
-      console.log(`[${agent}] ✓ ${message}`)
       this.emit_event({ type: 'done', agent, message, timestamp: Date.now(), missionId })
     } catch {
       // Silent fail — never throw from pulse methods
@@ -102,7 +100,6 @@ class LivePulse extends EventEmitter {
 
   warn(agent: string, message: string, missionId?: string): void {
     try {
-      console.warn(`[${agent}] ⚠ ${message}`)
       this.emit_event({ type: 'warn', agent, message, timestamp: Date.now(), missionId })
     } catch {
       // Silent fail — never throw from pulse methods
@@ -111,7 +108,6 @@ class LivePulse extends EventEmitter {
 
   info(agent: string, message: string, missionId?: string): void {
     try {
-      console.log(`[${agent}] ℹ ${message}`)
       this.emit_event({ type: 'info', agent, message, timestamp: Date.now(), missionId })
     } catch {
       // Silent fail — never throw from pulse methods
@@ -120,7 +116,6 @@ class LivePulse extends EventEmitter {
 
   thinking(agent: string, message: string, missionId?: string): void {
     try {
-      console.log(`[${agent}] 💭 ${message}`)
       this.emit_event({ type: 'thinking', agent, message, timestamp: Date.now(), missionId })
     } catch {
       // Silent fail — never throw from pulse methods
@@ -132,7 +127,6 @@ class LivePulse extends EventEmitter {
       const message = output
         ? `${toolName}: ${command} → ${output.slice(0, 120)}`
         : `${toolName}: ${command}`
-      console.log(`[${agent}] 🔧 ${message}`)
       this.emit_event({
         type:      'tool',
         agent,

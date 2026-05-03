@@ -441,6 +441,11 @@ async function main() {
   process.env.AIDEN_USER_DATA = APP_DIR
   process.env.AIDEN_PORT      = String(PORT)
 
+  // C23: CLI log defaults — suppress noisy bracket-prefixed diagnostics.
+  // User can override: AIDEN_LOG_LEVEL=debug npx aiden-os
+  process.env.AIDEN_CLI_MODE = '1'
+  if (!process.env.AIDEN_LOG_LEVEL) process.env.AIDEN_LOG_LEVEL = 'warn'
+
   const serverPath = resolveDevOs()
   let serverModule
   try {

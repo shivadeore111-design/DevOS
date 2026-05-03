@@ -5715,17 +5715,38 @@ export function startApiServer(portArg?: number): Express {
 
   // ── Redirect all diagnostic output to stderr ─────────────────────────────
   // The CLI writes the streaming response to process.stdout character-by-character.
-  // If console.log also writes to stdout (the default), server logs physically
-  // interleave with rendered tokens in the same terminal, producing output like:
-  //   "I'm back. What's up, sh[Router] planner: groq-1...iva?"
-  // Sending ALL diagnostic output to stderr prevents this regardless of how the
-  // user runs the server (same terminal, background process, pipe, etc.).
-  // console.error already targets stderr — leave it alone.
-  const _toStderr = (...args: any[]) =>
+  // ── C23: Level-aware log gate ──────────────────────────────────
+  // Levels: debug=0, info=1, warn=2, error=3, silent=4
+  // Default: 'warn' in CLI mode (AIDEN_CLI_MODE=1), 'info' otherwise.
+  // Users opt in to verbose: AIDEN_LOG_LEVEL=debug npx aiden-os
+  // Full logger rewrite is v3.20 Investigation C scope.
+  const _LOG_LEVELS: Record<string, number> = {
+    debug: 0, info: 1, warn: 2, error: 3, silent: 4,
+  }
+  const _cliMode    = process.env.AIDEN_CLI_MODE === '1'
+  const _defaultLvl = _cliMode ? 'warn' : 'info'
+  const _envLvl     = (process.env.AIDEN_LOG_LEVEL || _defaultLvl).toLowerCase()
+  const _minLevel   = _LOG_LEVELS[_envLvl] ?? _LOG_LEVELS.warn
+  const _bracketRe  = /^\[[\w$:]+\]/
+
+  function _gatedLog(level: number, ...args: any[]): void {
+    if (level >= _minLevel) {
+      process.stderr.write(args.map(String).join(' ') + '\n')
+      return
+    }
+    // Below threshold: suppress bracket-prefixed diagnostic lines.
+    // Non-prefixed console.log (user-facing output) passes through.
+    const first = typeof args[0] === 'string' ? args[0] : ''
+    if (_bracketRe.test(first)) return
     process.stderr.write(args.map(String).join(' ') + '\n')
-  console.log  = _toStderr
-  console.info = _toStderr
-  console.warn = _toStderr
+  }
+
+  console.log  = (...args: any[]) => _gatedLog(_LOG_LEVELS.info, ...args)
+  console.info = (...args: any[]) => _gatedLog(_LOG_LEVELS.info, ...args)
+  // console.warn always writes — warnings indicate real issues users should see.
+  console.warn = (...args: any[]) =>
+    process.stderr.write(args.map(String).join(' ') + '\n')
+  // console.error left untouched — already targets stderr
 
   // Read port from config/api.json with sensible fallback.
   // Host defaults to 127.0.0.1 (loopback only) for security.
