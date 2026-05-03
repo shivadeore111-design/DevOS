@@ -394,6 +394,36 @@ function initWorkspaceDefaults(): void {
     fs.copyFileSync(soulTemplate, soulTarget)
     console.log('[init] Created workspace/SOUL.md from template')
   }
+
+  // C22: Copy bundled starter skills from workspace-templates/ on first boot.
+  // Mirrors the SOUL.md pattern above. Idempotent — skips if skills already exist.
+  const skillTemplateSrc = path.join(WORKSPACE_ROOT, 'workspace-templates', 'skills')
+  const skillDst         = path.join(WORKSPACE_ROOT, 'workspace', 'skills', 'learned')
+  if (fs.existsSync(skillTemplateSrc)) {
+    const hasExisting = (() => {
+      try {
+        return fs.readdirSync(skillDst, { withFileTypes: true })
+          .some(e => e.isDirectory() && fs.existsSync(path.join(skillDst, e.name, 'SKILL.md')))
+      } catch { return false }
+    })()
+    if (!hasExisting) {
+      let copied = 0
+      try {
+        const entries = fs.readdirSync(skillTemplateSrc, { withFileTypes: true }).filter(e => e.isDirectory())
+        for (const entry of entries) {
+          const from = path.join(skillTemplateSrc, entry.name)
+          const to   = path.join(skillDst, entry.name)
+          if (!fs.existsSync(to)) {
+            fs.cpSync(from, to, { recursive: true })
+            copied++
+          }
+        }
+      } catch (e: any) {
+        console.warn(`[init] Skill template copy error: ${e.message}`)
+      }
+      if (copied > 0) console.log(`[init] Copied ${copied} starter skills from templates`)
+    }
+  }
 }
 initWorkspaceDefaults()
 

@@ -244,17 +244,20 @@ export class SkillLoader {
     // Check built-in skills, workspace skills, and self-learned/promoted skills.
     // NOTE: skills/learned/pending/ is intentionally excluded — pending skills
     // are never auto-loaded; they require explicit /skills approve first.
+    // C22: Use AIDEN_USER_DATA (set by npx launcher) so SkillLoader reads
+    // from the same workspace root that initWorkspaceDefaults() writes to.
+    const root = process.env.AIDEN_USER_DATA || process.cwd()
     this.skillsDirs = [
-      path.join(process.cwd(), 'skills'),
-      path.join(process.cwd(), 'workspace', 'skills'),
-      path.join(process.cwd(), 'workspace', 'skills', 'learned'),
-      path.join(process.cwd(), 'workspace', 'skills', 'approved'),
+      path.join(root, 'skills'),
+      path.join(root, 'workspace', 'skills'),
+      path.join(root, 'workspace', 'skills', 'learned'),
+      path.join(root, 'workspace', 'skills', 'approved'),
       // Workspace-level installed skills (written by skillRegistry.ts)
-      path.join(process.cwd(), 'workspace', 'skills', 'installed'),
+      path.join(root, 'workspace', 'skills', 'installed'),
       // A2/A3 approved drafts
-      path.join(process.cwd(), 'skills', 'learned', 'approved'),
+      path.join(root, 'skills', 'learned', 'approved'),
       // A4 library-installed skills
-      path.join(process.cwd(), 'skills', 'installed'),
+      path.join(root, 'skills', 'installed'),
     ].filter(d => {
       try { return fs.existsSync(d) } catch { return false }
     })
